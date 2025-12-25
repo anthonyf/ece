@@ -3,9 +3,9 @@
 (in-package :asdf-user)
 
 
-#+nil(initialize-source-registry
+(initialize-source-registry
  '(:source-registry
-   (:tree (:here "lib"))
+   (:tree (:here))
    :inherit-configuration))
 
 (defsystem "ece"
