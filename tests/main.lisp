@@ -176,6 +176,32 @@
                                (if (= n 0) 0 (countdown (- n 1))))
                              (countdown 100000))) 0))))
 
+(deftest test-io-primitives
+  (testing "print is bound"
+    (ok (eq (car (evaluate 'print)) 'ece::primitive)))
+
+  (testing "read is bound"
+    (ok (eq (car (evaluate 'read)) 'ece::primitive)))
+
+  (testing "display is bound"
+    (ok (eq (car (evaluate 'ece::display)) 'ece::primitive)))
+
+  (testing "newline is bound"
+    (ok (eq (car (evaluate 'ece::newline)) 'ece::primitive)))
+
+  (testing "eof? is bound"
+    (ok (eq (car (evaluate 'ece::eof?)) 'ece::primitive)))
+
+  (testing "display outputs without leading newline"
+    (ok (equal (with-output-to-string (*standard-output*)
+                (evaluate '(ece::display "hello")))
+              "hello")))
+
+  (testing "print outputs value"
+    (let ((output (with-output-to-string (*standard-output*)
+                    (evaluate '(print 42)))))
+      (ok (search "42" output)))))
+
 (deftest test-unknown-expression-error
   (testing "unrecognized expression types signal an error"
     (signals (evaluate (make-hash-table) nil))))

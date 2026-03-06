@@ -12,6 +12,7 @@ An **Explicit Control Evaluator** for a small Lisp, written in Common Lisp. Insp
 - **`begin`**: `(begin expr...)` evaluates sequentially, returns last value
 - **`define`**: `(define var expr)` or `(define (name params...) body...)` for variable and function definitions
 - **`call/cc`**: `(call/cc receiver)` captures the current continuation
+- **I/O**: `read`, `print`, `display`, `newline`
 - **Primitives**: `+`, `-`, `*`, `/`, `=`, `<`, `>`, `<=`, `>=`, `car`, `cdr`, `cons`, `list`, `null?`, `not`
 - **Tail call optimization**: tail-recursive functions run in constant stack space
 
@@ -26,7 +27,25 @@ An **Explicit Control Evaluator** for a small Lisp, written in Common Lisp. Insp
 qlot install
 ```
 
-## Usage
+## Interactive REPL
+
+```sh
+qlot exec sbcl --load ece.asd --eval '(ql:quickload :ece)' --eval '(ece:repl)'
+```
+
+```
+ece> (+ 1 2)
+3
+ece> (define (factorial n) (if (= n 0) 1 (* n (factorial (- n 1)))))
+ece> (factorial 5)
+120
+ece> ^D
+Bye!
+```
+
+The REPL itself is implemented as a tail-recursive ECE function. Errors are caught and printed without crashing the session.
+
+## Programmatic Usage
 
 ```sh
 qlot exec sbcl --load ece.asd --eval '(ql:quickload :ece)'

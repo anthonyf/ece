@@ -9,7 +9,8 @@
 	   #:begin
 	   #:quote
 	   #:call/cc
-	   #:define))
+	   #:define
+	   #:repl))
 
 (in-package :ece)
 
@@ -70,6 +71,50 @@
   (extend-environment *primitive-procedure-names*
                        *primitive-procedure-objects*
                        nil))
+
+;; EOF sentinel for safe read
+(defvar *eof-sentinel* (gensym "EOF"))
+
+;; I/O primitives with custom wrappers
+(defun ece-read ()
+  "Read an s-expression with *read-eval* disabled. Returns *eof-sentinel* on EOF."
+  (handler-case
+      (let ((*read-eval* nil))
+        (read))
+    (end-of-file () *eof-sentinel*)))
+
+(defun ece-display (obj)
+  "Write obj without leading newline (princ)."
+  (princ obj)
+  (finish-output)
+  obj)
+
+(defun ece-newline ()
+  "Write a newline."
+  (terpri)
+  (finish-output)
+  nil)
+
+(defun ece-eof-p (obj)
+  "Test if obj is the EOF sentinel."
+  (eq obj *eof-sentinel*))
+
+(defun ece-try-eval (expr)
+  "Evaluate expr, catching errors. Prints the error and returns nil on failure."
+  (handler-case
+      (evaluate expr)
+    (error (c)
+      (format t "Error: ~A~%" c)
+      (finish-output)
+      nil)))
+
+(dolist (entry (list (cons 'read (list 'primitive #'ece-read))
+                     (cons 'print (list 'primitive #'print))
+                     (cons 'display (list 'primitive #'ece-display))
+                     (cons 'newline (list 'primitive #'ece-newline))
+                     (cons 'eof? (list 'primitive #'ece-eof-p))
+                     (cons 'try-eval (list 'primitive #'ece-try-eval))))
+  (define-variable! (car entry) (cdr entry) *global-env*))
 
 (defun self-evaluating-p (expr)
   (or (numberp expr)
@@ -528,4 +573,19 @@
 		
 		 (t (error "Unknown cont: ~A" cont)))))
     val))
+
+(defun repl ()
+  "Bootstrap and run the ECE REPL as a tail-recursive ECE function."
+  (evaluate
+   '(begin
+     (define (repl-loop)
+       (display "ece> ")
+       (define input (read))
+       (if (eof? input)
+           (begin (newline) (display "Bye!") (newline))
+           (begin
+             (define result (try-eval input))
+             (if result (print result) (quote ()))
+             (repl-loop))))
+     (repl-loop))))
 
