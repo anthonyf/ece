@@ -33,7 +33,24 @@
   (cdr frame))
 
 (defun extend-environment (vars vals base-env)
-  (cons (make-frame vars vals) base-env))
+  (if (or (listp vars) (null vars))
+      ;; Walk vars/vals, handling dotted pair rest parameters
+      (let ((var-list nil)
+            (val-list nil)
+            (v vars)
+            (a vals))
+        (loop while (consp v)
+              do (push (car v) var-list)
+                 (push (car a) val-list)
+                 (setf v (cdr v))
+                 (setf a (cdr a)))
+        ;; If v is non-nil atom, it's the rest parameter
+        (when v
+          (push v var-list)
+          (push a val-list))
+        (cons (make-frame (nreverse var-list) (nreverse val-list)) base-env))
+      ;; vars is a symbol: rest-only parameter
+      (cons (make-frame (list vars) (list vals)) base-env)))
 
 (defun lookup-variable-value (var env)
   (labels ((scan-frame (vars vals)

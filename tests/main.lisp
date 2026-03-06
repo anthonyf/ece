@@ -204,6 +204,29 @@
                         (inc)
                         counter)) 3))))
 
+(deftest test-rest-params
+  (testing "rest parameter captures extra arguments"
+    (ok (equal (evaluate '((lambda (x . rest) rest) 1 2 3)) '(2 3))))
+
+  (testing "rest parameter with no extra arguments"
+    (ok (equal (evaluate '((lambda (x . rest) rest) 1)) nil)))
+
+  (testing "rest parameter with fixed and rest args"
+    (ok (equal (evaluate '((lambda (x y . rest) (list x y rest)) 1 2 3 4))
+              '(1 2 (3 4)))))
+
+  (testing "rest-only parameter (symbol instead of list)"
+    (ok (equal (evaluate '((lambda args args) 1 2 3)) '(1 2 3)))))
+
+(deftest test-rest-params-define
+  (testing "define with rest parameter"
+    (ok (equal (evaluate '(begin (define (f x . rest) rest) (f 1 2 3)))
+              '(2 3))))
+
+  (testing "define rest-only"
+    (ok (equal (evaluate '(begin (define (f . args) args) (f 1 2 3)))
+              '(1 2 3)))))
+
 (deftest test-io-primitives
   (testing "print is bound"
     (ok (eq (car (evaluate 'print)) 'primitive)))
