@@ -7,7 +7,8 @@
 	   #:set
 	   #:if
 	   #:begin
-	   #:quote))
+	   #:quote
+	   #:call/cc))
 
 (in-package :ece)
 
@@ -62,8 +63,12 @@
   (and (listp expr)
        (eq (car expr) 'if)))
 
+(defun callcc-p (expr)
+  (and (listp expr)
+       (eq (car expr) 'call/cc)))
 
-(defparameter *special-forms* '(quote if var set lambda begin))
+
+(defparameter *special-forms* '(quote if var set lambda begin call/cc))
 
 (defun application-p (expr)
   (and (listp expr)
@@ -95,6 +100,7 @@
 		    ((lambda-p expr)          (push :ev-lambda conts))
 		    ((application-p expr)     (push :ev-application conts))
 		    ((if-p expr)              (push :ev-if conts))
+		    ((callcc-p expr)          (push :ev-callcc conts))
 		    ((begin-p expr)           (push :ev-begin conts))
 		    (t (error "Unknown expression type: ~A" expr)))
 		  #+nil (dbg :ev-dispatch :end))
@@ -251,11 +257,11 @@
 		  ;; (branch (label compound-apply))
 		  ;; (goto (label unknown-procedure-type))
 		  #+nil (dbg :apply-dispatch :start)
-		  (if (eq (car proc) 'primitive)
-		      (push :primitive-apply conts)
-		      (if (eq (car proc) 'procedure)
-			  (push :compound-apply conts)
-			  (push :unknown-procedure-type conts)))
+		  (cond
+		    ((eq (car proc) 'primitive)     (push :primitive-apply conts))
+		    ((eq (car proc) 'procedure)     (push :compound-apply conts))
+		    ((eq (car proc) 'continuation)  (push :continuation-apply conts))
+		    (t                              (push :unknown-procedure-type conts)))
 		  #+nil (dbg :apply-dispatch :end)
 		  )
 		 (:primitive-apply
@@ -294,6 +300,14 @@
 		  (setf unev (caddr proc)) ;; body
 		  (push :ev-sequence conts)
 		  #+nil (dbg :compound-apply :end)
+		  )
+		 (:continuation-apply
+		  ;; Restore captured continuation state, set val to argument
+		  #+nil (dbg :continuation-apply :start)
+		  (setf stack (copy-list (cadr proc)))
+		  (setf conts (copy-list (caddr proc)))
+		  (setf val (car argl))
+		  #+nil (dbg :continuation-apply :end)
 		  )
 		 (:unknown-procedure-type
 		  #+nil (dbg :unknown-procedure-type :start)
@@ -357,10 +371,26 @@
 		  )
 		 (:ev-callcc
 		  ;; ev-callcc
-		  ;; (assign exp (op callcc-receiver) (reg exp)) ; Get the receiver function
-		  ;; (assign val (op make-continuation) (reg stack) (reg continue)) ; Capture stack/continue
-		  ;; (assign argl (op list) (reg val)) ; Wrap continuation as the argument
-		  ;; (goto (label apply-dispatch)) ; Apply the receiver to the continuation
+		  ;; Capture current continuation, then evaluate receiver
+		  #+nil (dbg :ev-callcc :start)
+		  (let ((captured (list 'continuation
+					(copy-list stack)
+					(copy-list conts))))
+		    (push captured stack))
+		  (setf expr (cadr expr)) ;; receiver expression
+		  (push :ev-callcc-apply conts)
+		  (push :ev-dispatch conts)
+		  #+nil (dbg :ev-callcc :end)
+		  )
+		 (:ev-callcc-apply
+		  ;; Apply evaluated receiver (in val) to captured continuation
+		  #+nil (dbg :ev-callcc-apply :start)
+		  (let ((captured (pop stack)))
+		    (setf proc val)
+		    (setf argl (list captured))
+		    (push conts stack) ;; save return continuation for compound-apply's ev-sequence
+		    (push :apply-dispatch conts))
+		  #+nil (dbg :ev-callcc-apply :end)
 		  )
 		 (:ev-if
 		  ;; ev-if

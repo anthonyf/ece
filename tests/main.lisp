@@ -110,6 +110,25 @@
     (ok (= (evaluate '(if (= (+ 1 1) 2) (* 3 4) (- 5 1))) 12))
     (ok (= (evaluate '(if (< 1 2) (if (< 2 3) 100 200) 300)) 100))))
 
+(deftest test-callcc-eval
+  (testing "simple call/cc returns receiver's value"
+    (ok (= (evaluate '(ece::call/cc (lambda (k) 42))) 42)))
+
+  (testing "continuation used for non-local exit"
+    (ok (= (evaluate '(ece::call/cc (lambda (k) (k 10) 20))) 10)))
+
+  (testing "call/cc in arithmetic expression"
+    (ok (= (evaluate '(+ 1 (ece::call/cc (lambda (k) (k 10))))) 11)))
+
+  (testing "nested non-local exit abandons inner computation"
+    (ok (= (evaluate '(+ 1 (ece::call/cc (lambda (k) (+ 2 (k 10)))))) 11)))
+
+  (testing "variable as receiver"
+    (ok (= (evaluate '((lambda (f) (ece::call/cc f)) (lambda (k) (k 99)))) 99)))
+
+  (testing "continuation ignored returns receiver result"
+    (ok (= (evaluate '(+ 1 (ece::call/cc (lambda (k) 5)))) 6))))
+
 (deftest test-unknown-expression-error
   (testing "unrecognized expression types signal an error"
     (signals (evaluate (make-hash-table) nil))))
