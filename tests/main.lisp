@@ -41,3 +41,57 @@
 						    '((y . 10)))) 15))
     (ok (= (evaluate '((lambda (a b) (+ a b)) b 2) (append *global-env*
 							'((b . 8)))) 10))))
+
+(deftest test-begin-eval
+  (testing "begin evaluates sequence and returns last value"
+    (ok (= (evaluate '(begin 42)) 42))
+    (ok (= (evaluate '(begin 1 2 3)) 3))
+    (ok (= (evaluate '(begin (+ 1 2) (* 3 4))) 12))))
+
+(deftest test-string-self-eval
+  (testing "strings evaluate to themselves"
+    (ok (equal (evaluate "hello" nil) "hello"))
+    (ok (equal (evaluate "" nil) ""))))
+
+(deftest test-division
+  (testing "division primitive"
+    (ok (= (evaluate '(/ 10 2)) 5))))
+
+(deftest test-comparison-primitives
+  (testing "comparison operators"
+    (ok (evaluate '(= 3 3)))
+    (ok (evaluate '(< 1 2)))
+    (ok (evaluate '(> 5 3)))
+    (ok (evaluate '(<= 3 3)))
+    (ok (evaluate '(>= 4 3)))))
+
+(deftest test-list-primitives
+  (testing "cons, car, cdr"
+    (ok (equal (evaluate '(cons 1 2)) '(1 . 2)))
+    (ok (= (evaluate '(car (cons 1 2))) 1))
+    (ok (= (evaluate '(cdr (cons 1 2))) 2)))
+
+  (testing "list"
+    (ok (equal (evaluate '(list 1 2 3)) '(1 2 3))))
+
+  (testing "null? and not"
+    (ok (evaluate '(ece::null? (quote ()))))
+    (ok (not (evaluate '(ece::null? (quote (1))))))
+    (ok (evaluate '(not (quote ()))))))
+
+(deftest test-multi-body-lambda
+  (testing "lambda with multiple body expressions returns last value"
+    (ok (= (evaluate '((lambda (x) (+ x 1) (+ x 2)) 10)) 12))))
+
+(deftest test-nested-application
+  (testing "nested function calls"
+    (ok (= (evaluate '(+ (* 2 3) (- 10 4))) 12))
+    (ok (= (evaluate '(+ (+ 1 2) (+ 3 (+ 4 5)))) 15))))
+
+(deftest test-zero-arg-application
+  (testing "zero-argument function application"
+    (ok (equal (evaluate '(list)) nil))))
+
+(deftest test-unknown-expression-error
+  (testing "unrecognized expression types signal an error"
+    (signals (evaluate (make-hash-table) nil))))
