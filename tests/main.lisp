@@ -309,6 +309,79 @@
                     (evaluate '(print 42)))))
       (ok (search "42" output)))))
 
+(deftest test-define-macro
+  (testing "simple macro definition and expansion"
+    (ok (eq (evaluate '(begin (define-macro (my-const name) (list (quote quote) name))
+                              (my-const hello)))
+            'hello)))
+
+  (testing "macro receives unevaluated operands"
+    (ok (= (evaluate '(begin (define-macro (identity-macro expr) expr)
+                             (identity-macro (+ 1 2))))
+           3)))
+
+  (testing "macro with multiple body expressions"
+    (ok (= (evaluate '(begin (define-macro (last-of a b) b)
+                             (last-of (error "never") (+ 10 20))))
+           30))))
+
+(deftest test-cond
+  (testing "first true clause"
+    (ok (= (evaluate '(cond ((= 1 1) 10) ((= 2 3) 20))) 10)))
+
+  (testing "second clause matches"
+    (ok (= (evaluate '(cond ((= 1 2) 10) ((= 2 2) 20))) 20)))
+
+  (testing "no clause matches returns nil"
+    (ok (null (evaluate '(cond ((= 1 2) 10) ((= 3 4) 20)))))))
+
+(deftest test-let
+  (testing "simple let binding"
+    (ok (= (evaluate '(let ((x 10) (y 20)) (+ x y))) 30)))
+
+  (testing "let bindings do not see each other"
+    (ok (= (evaluate '(begin (define x 1) (let ((x 10) (y x)) y))) 1))))
+
+(deftest test-let*
+  (testing "sequential bindings"
+    (ok (= (evaluate '(let* ((x 10) (y (+ x 5))) y)) 15)))
+
+  (testing "single binding"
+    (ok (= (evaluate '(let* ((x 42)) x)) 42))))
+
+(deftest test-and
+  (testing "all truthy"
+    (ok (= (evaluate '(and 1 2 3)) 3)))
+
+  (testing "short-circuit on false"
+    (ok (null (evaluate '(and 1 (quote ()) 3)))))
+
+  (testing "empty and"
+    (ok (evaluate '(and)))))
+
+(deftest test-or
+  (testing "first truthy"
+    (ok (= (evaluate '(or (quote ()) 2 3)) 2)))
+
+  (testing "all falsy"
+    (ok (null (evaluate '(or (quote ()) (quote ()))))))
+
+  (testing "empty or"
+    (ok (null (evaluate '(or))))))
+
+(deftest test-when-unless
+  (testing "when with truthy test evaluates body"
+    (ok (= (evaluate '(when (= 1 1) 42)) 42)))
+
+  (testing "when with falsy test returns nil"
+    (ok (null (evaluate '(when (= 1 2) 42)))))
+
+  (testing "unless with falsy test evaluates body"
+    (ok (= (evaluate '(unless (= 1 2) 42)) 42)))
+
+  (testing "unless with truthy test returns nil"
+    (ok (null (evaluate '(unless (= 1 1) 42))))))
+
 (deftest test-unknown-expression-error
   (testing "unrecognized expression types signal an error"
     (signals (evaluate (make-hash-table) nil))))

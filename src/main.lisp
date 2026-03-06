@@ -18,6 +18,7 @@
 	   #:pair?
 	   #:map
 	   #:apply
+	   #:define-macro
 	   #:repl))
 
 (in-package :ece)
@@ -162,7 +163,9 @@
 
 (defun self-evaluating-p (expr)
   (or (numberp expr)
-      (stringp expr)))
+      (stringp expr)
+      (null expr)
+      (eq expr t)))
 
 (defun variable-p (expr)
   (symbolp expr))
@@ -202,7 +205,11 @@
   (and (listp expr)
        (eq (car expr) 'apply)))
 
-(defparameter *special-forms* '(quote if var set lambda begin call/cc define apply))
+(defun define-macro-p (expr)
+  (and (listp expr)
+       (eq (car expr) 'define-macro)))
+
+(defparameter *special-forms* '(quote if var set lambda begin call/cc define apply define-macro))
 
 (defun application-p (expr)
   (and (listp expr)
@@ -237,6 +244,7 @@
 		    ((callcc-p expr)          (push :ev-callcc conts))
 		    ((assignment-p expr)      (push :ev-assignment conts))
 		    ((apply-form-p expr)     (push :ev-apply conts))
+		    ((define-macro-p expr)   (push :ev-define-macro conts))
 		    ((define-p expr)          (push :ev-define conts))
 		    ((begin-p expr)           (push :ev-begin conts))
 		    (t (error "Unknown expression type: ~A" expr)))
@@ -309,10 +317,13 @@
 		  (setf env (pop stack))
 		  (setf argl nil)
 		  (setf proc val)
-		  (if (null unev)
-		      (push :apply-dispatch conts)
-		      (progn (push proc stack)
-			     (push :ev-appl-operand-loop conts)))
+		  (if (and (listp proc) (eq (car proc) 'macro))
+		      ;; Macro: don't evaluate operands, expand and re-dispatch
+		      (push :macro-apply conts)
+		      (if (null unev)
+			  (push :apply-dispatch conts)
+			  (progn (push proc stack)
+				 (push :ev-appl-operand-loop conts))))
 		  #+nil (dbg :ev-appl-did-operator :end))
 		 (:ev-appl-operand-loop
 		  ;; ev-appl-operand-loop
@@ -449,6 +460,24 @@
 		 (:unknown-procedure-type
 		  #+nil (dbg :unknown-procedure-type :start)
 		  (error "Unknown procedure type: ~A" proc))
+		 (:macro-apply
+		  ;; Macro expansion: extend macro env with unevaluated operands, evaluate body
+		  ;; Stack: [caller-conts, ...]
+		  #+nil (dbg :macro-apply :start)
+		  (push env stack)
+		  (push (list :macro-apply-result) stack)
+		  (setf env (extend-environment (cadr proc) unev (cadddr proc)))
+		  (setf unev (caddr proc))
+		  (push :ev-sequence conts)
+		  #+nil (dbg :macro-apply :end))
+		 (:macro-apply-result
+		  ;; val is the expanded form — re-dispatch it in the caller's context
+		  #+nil (dbg :macro-apply-result :start)
+		  (setf env (pop stack))
+		  (setf conts (pop stack))
+		  (setf expr val)
+		  (push :ev-dispatch conts)
+		  #+nil (dbg :macro-apply-result :end))
 		 (:ev-begin
 		  ;; ev-begin
 		  ;; (assign unev
@@ -602,6 +631,16 @@
 		  (push :ev-define-assign conts)
 		  (push :ev-dispatch conts)
 		  #+nil (dbg :ev-define :end))
+		 (:ev-define-macro
+		  ;; (define-macro (name params...) body...)
+		  ;; Create macro value directly (no evaluation needed) and store it
+		  #+nil (dbg :ev-define-macro :start)
+		  (let* ((variable (caadr expr))
+			 (params (cdadr expr))
+			 (body (cddr expr)))
+		    (define-variable! variable (list 'macro params body env) env)
+		    (setf val variable))
+		  #+nil (dbg :ev-define-macro :end))
 		 (:ev-define-assign
 		  ;; ev-definition-1 (SICP)
 		  ;; (restore continue)
@@ -680,6 +719,58 @@
         (quote ())
         (cons (f (car lst))
               (map f (cdr lst))))))
+
+;; Standard derived forms (defined as macros)
+(evaluate
+ '(define-macro (cond . clauses)
+    (if (null? clauses)
+        (quote ())
+        (list (quote if)
+              (caar clauses)
+              (cadr (car clauses))
+              (cons (quote cond) (cdr clauses))))))
+
+(evaluate
+ '(define-macro (let bindings . body)
+    (cons (cons (quote lambda)
+                (cons (map car bindings)
+                      body))
+          (map cadr bindings))))
+
+(evaluate
+ '(define-macro (let* bindings . body)
+    (if (null? bindings)
+        (cons (quote begin) body)
+        (list (quote let) (list (car bindings))
+              (cons (quote let*) (cons (cdr bindings) body))))))
+
+(evaluate
+ '(define-macro (and . args)
+    (if (null? args)
+        (quote t)
+        (if (null? (cdr args))
+            (car args)
+            (list (quote if) (car args)
+                  (cons (quote and) (cdr args))
+                  (quote ()))))))
+
+(evaluate
+ '(define-macro (or . args)
+    (if (null? args)
+        (quote ())
+        (if (null? (cdr args))
+            (car args)
+            (list (quote if) (car args)
+                  (car args)
+                  (cons (quote or) (cdr args)))))))
+
+(evaluate
+ '(define-macro (when test . body)
+    (list (quote if) test (cons (quote begin) body) (quote ()))))
+
+(evaluate
+ '(define-macro (unless test . body)
+    (list (quote if) test (quote ()) (cons (quote begin) body))))
 
 (defun repl ()
   "Bootstrap and run the ECE REPL as a tail-recursive ECE function."
