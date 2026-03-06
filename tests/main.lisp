@@ -421,6 +421,71 @@
                              (my-if (= 1 1) 42)))
            42))))
 
+(deftest test-type-predicates
+  (testing "number?"
+    (ok (evaluate '(number? 42)))
+    (ok (not (evaluate '(number? "hello")))))
+
+  (testing "string?"
+    (ok (evaluate '(string? "hello")))
+    (ok (not (evaluate '(string? 42)))))
+
+  (testing "symbol?"
+    (ok (evaluate '(symbol? (quote foo))))
+    (ok (not (evaluate '(symbol? 42)))))
+
+  (testing "boolean?"
+    (ok (evaluate '(boolean? t)))
+    (ok (evaluate '(boolean? (quote ()))))
+    (ok (not (evaluate '(boolean? 42)))))
+
+  (testing "zero?"
+    (ok (evaluate '(zero? 0)))
+    (ok (not (evaluate '(zero? 5))))))
+
+(deftest test-equality
+  (testing "eq? on same symbol"
+    (ok (evaluate '(eq? (quote a) (quote a)))))
+
+  (testing "eq? on different symbols"
+    (ok (not (evaluate '(eq? (quote a) (quote b))))))
+
+  (testing "equal? on identical lists"
+    (ok (evaluate '(equal? (quote (1 2 3)) (quote (1 2 3))))))
+
+  (testing "equal? on different lists"
+    (ok (not (evaluate '(equal? (quote (1 2)) (quote (1 3)))))))
+
+  (testing "equal? on strings"
+    (ok (evaluate '(equal? "hello" "hello")))))
+
+(deftest test-numeric-utilities
+  (testing "modulo"
+    (ok (= (evaluate '(modulo 10 3)) 1)))
+
+  (testing "abs"
+    (ok (= (evaluate '(abs -5)) 5)))
+
+  (testing "min"
+    (ok (= (evaluate '(min 3 1 4 1 5)) 1)))
+
+  (testing "max"
+    (ok (= (evaluate '(max 3 1 4 1 5)) 5)))
+
+  (testing "even?"
+    (ok (evaluate '(even? 4)))
+    (ok (not (evaluate '(even? 3)))))
+
+  (testing "odd?"
+    (ok (evaluate '(odd? 3))))
+
+  (testing "positive?"
+    (ok (evaluate '(positive? 5)))
+    (ok (not (evaluate '(positive? -1)))))
+
+  (testing "negative?"
+    (ok (evaluate '(negative? -1)))))
+
 (deftest test-unknown-expression-error
   (testing "unrecognized expression types signal an error"
     (signals (evaluate (make-hash-table) nil))))

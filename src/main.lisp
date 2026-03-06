@@ -22,6 +22,18 @@
 	   #:quasiquote
 	   #:unquote
 	   #:unquote-splicing
+	   #:number?
+	   #:string?
+	   #:symbol?
+	   #:boolean?
+	   #:zero?
+	   #:eq?
+	   #:equal?
+	   #:modulo
+	   #:even?
+	   #:odd?
+	   #:positive?
+	   #:negative?
 	   #:repl))
 
 (in-package :ece)
@@ -104,16 +116,30 @@
                  (t (scan (cdr vars) (cdr vals))))))
       (scan (frame-variables frame) (frame-values frame)))))
 
+(defun ece-boolean-p (x)
+  "Test if x is a boolean (t or nil)."
+  (or (eq x t) (eq x nil)))
+
 (defparameter *primitive-procedure-names*
   (mapcar (lambda (proc) (if (listp proc) (car proc) proc))
           '(+ - * / = < > <= >= car cdr cadr caddr caar cddr cons list append length
-            (null? . null) (pair? . consp) not)))
+            (null? . null) (pair? . consp) not
+            (number? . numberp) (string? . stringp) (symbol? . symbolp)
+            (zero? . zerop) (even? . evenp) (odd? . oddp)
+            (positive? . plusp) (negative? . minusp)
+            (eq? . eq) (equal? . equal)
+            (modulo . mod) abs min max)))
 
 (defparameter *primitive-procedure-objects*
   (mapcar (lambda (proc)
             (list 'primitive (symbol-function (if (listp proc) (cdr proc) proc))))
           '(+ - * / = < > <= >= car cdr cadr caddr caar cddr cons list append length
-            (null? . null) (pair? . consp) not)))
+            (null? . null) (pair? . consp) not
+            (number? . numberp) (string? . stringp) (symbol? . symbolp)
+            (zero? . zerop) (even? . evenp) (odd? . oddp)
+            (positive? . plusp) (negative? . minusp)
+            (eq? . eq) (equal? . equal)
+            (modulo . mod) abs min max)))
 
 (defparameter *global-env*
   (extend-environment *primitive-procedure-names*
@@ -180,7 +206,8 @@
                      (cons 'display (list 'primitive #'ece-display))
                      (cons 'newline (list 'primitive #'ece-newline))
                      (cons 'eof? (list 'primitive #'ece-eof-p))
-                     (cons 'try-eval (list 'primitive #'ece-try-eval))))
+                     (cons 'try-eval (list 'primitive #'ece-try-eval))
+                     (cons 'boolean? (list 'primitive #'ece-boolean-p))))
   (define-variable! (car entry) (cdr entry) *global-env*))
 
 (defun self-evaluating-p (expr)
