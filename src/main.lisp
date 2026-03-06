@@ -46,6 +46,23 @@
                        (env-loop (cdr env)))))))
     (env-loop env)))
 
+(defun set-variable-value! (var val env)
+  (labels ((scan (vars vals)
+             (cond
+               ((null vars) nil)
+               ((eq var (car vars))
+                (setf (car vals) val)
+                t)
+               (t (scan (cdr vars) (cdr vals)))))
+           (env-loop (env)
+             (if (null env)
+                 (error "Unbound variable: ~A" var)
+                 (if (scan (frame-variables (car env))
+                           (frame-values (car env)))
+                     val
+                     (env-loop (cdr env))))))
+    (env-loop env)))
+
 (defun define-variable! (var val env)
   (let ((frame (car env)))
     (labels ((scan (vars vals)
@@ -187,6 +204,7 @@
 		    ((application-p expr)     (push :ev-application conts))
 		    ((if-p expr)              (push :ev-if conts))
 		    ((callcc-p expr)          (push :ev-callcc conts))
+		    ((assignment-p expr)      (push :ev-assignment conts))
 		    ((define-p expr)          (push :ev-define conts))
 		    ((begin-p expr)           (push :ev-begin conts))
 		    (t (error "Unknown expression type: ~A" expr)))
@@ -479,6 +497,25 @@
 		    (push :apply-dispatch conts))
 		  #+nil (dbg :ev-callcc-apply :end)
 		  )
+		 (:ev-assignment
+		  ;; ev-assignment (SICP)
+		  ;; Save variable name, env, conts; evaluate value expression
+		  #+nil (dbg :ev-assignment :start)
+		  (push (cadr expr) stack)     ;; variable name
+		  (setf expr (caddr expr))     ;; value expression
+		  (push env stack)
+		  (push conts stack)
+		  (push :ev-assignment-assign conts)
+		  (push :ev-dispatch conts)
+		  #+nil (dbg :ev-assignment :end))
+		 (:ev-assignment-assign
+		  ;; Restore state, call set-variable-value!, set val
+		  #+nil (dbg :ev-assignment-assign :start)
+		  (setf conts (pop stack))
+		  (setf env (pop stack))
+		  (let ((variable (pop stack)))
+		    (set-variable-value! variable val env))
+		  #+nil (dbg :ev-assignment-assign :end))
 		 (:ev-define
 		  ;; ev-definition (SICP)
 		  ;; (assign unev (op definition-variable) (reg exp))

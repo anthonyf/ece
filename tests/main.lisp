@@ -176,6 +176,34 @@
                                (if (= n 0) 0 (countdown (- n 1))))
                              (countdown 100000))) 0))))
 
+(deftest test-set-eval
+  (testing "update a defined variable"
+    (ok (= (evaluate '(begin (ece::define x 1) (ece::set x 2) x)) 2)))
+
+  (testing "update with a computed value"
+    (ok (= (evaluate '(begin (ece::define x 1) (ece::set x (+ x 10)) x)) 11)))
+
+  (testing "set returns the new value"
+    (ok (= (evaluate '(begin (ece::define x 1) (ece::set x 42))) 42)))
+
+  (testing "unbound variable signals error"
+    (signals (evaluate '(ece::set nonexistent 10))))
+
+  (testing "update variable in enclosing scope"
+    (ok (= (evaluate '(begin (ece::define x 1)
+                             (ece::define (f) (ece::set x 99))
+                             (f)
+                             x)) 99)))
+
+  (testing "closure mutation counter pattern"
+    (ok (= (evaluate '(begin
+                        (ece::define counter 0)
+                        (ece::define (inc) (ece::set counter (+ counter 1)))
+                        (inc)
+                        (inc)
+                        (inc)
+                        counter)) 3))))
+
 (deftest test-io-primitives
   (testing "print is bound"
     (ok (eq (car (evaluate 'print)) 'ece::primitive)))
