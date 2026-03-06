@@ -14,12 +14,12 @@
 
 (deftest test-variable-eval
   (testing "variables evaluate to their bound values"
-    (ok (= (evaluate 'x '((x . 5)(y . 10))) 5))
-    (ok (= (evaluate 'y '((x . 5)(y . 10))) 10))
-    (ok (= (evaluate 'z '((x . 5)(y . 10)(z . -3))) -3)))
+    (ok (= (evaluate 'x (list (cons '(x y) '(5 10)))) 5))
+    (ok (= (evaluate 'y (list (cons '(x y) '(5 10)))) 10))
+    (ok (= (evaluate 'z (list (cons '(x y z) '(5 10 -3)))) -3)))
 
   (testing "unbound variables signal an error"
-    (signals (evaluate 'a '((b . 2)(c . 3))))
+    (signals (evaluate 'a (list (cons '(b c) '(2 3)))))
     (signals (evaluate 'foo nil))))
 
 
@@ -27,7 +27,7 @@
   (testing "quote special form returns the quoted expression without evaluating it"
     (ok (equal (evaluate '(quote a) nil) 'a))
     (ok (equal (evaluate '(quote (1 2 3)) nil) '(1 2 3)))
-    (ok (equal (evaluate '(quote (x y z)) '((x . 10)(y . 20)(z . 30))) '(x y z)))))
+    (ok (equal (evaluate '(quote (x y z)) (list (cons '(x y z) '(10 20 30)))) '(x y z)))))
 
 
 (deftest test-lambda-eval
@@ -37,10 +37,10 @@
     (ok (= (evaluate '((lambda (a b c) (- a b c)) 10 3 2)) 5)))
 
   (testing "lambda expressions with variable bindings"
-    (ok (= (evaluate '((lambda (x) (+ x y)) 5) (append *global-env*
-						    '((y . 10)))) 15))
-    (ok (= (evaluate '((lambda (a b) (+ a b)) b 2) (append *global-env*
-							'((b . 8)))) 10))))
+    (ok (= (evaluate '((lambda (x) (+ x y)) 5) (cons (cons '(y) '(10))
+                                                      *global-env*)) 15))
+    (ok (= (evaluate '((lambda (a b) (+ a b)) b 2) (cons (cons '(b) '(8))
+                                                          *global-env*)) 10))))
 
 (deftest test-begin-eval
   (testing "begin evaluates sequence and returns last value"
@@ -138,6 +138,43 @@
                             0
                             (self self (- n 1))))))
            0))))
+
+(deftest test-define-eval
+  (testing "simple value binding"
+    (ok (= (evaluate '(begin (ece::define x 42) x)) 42)))
+
+  (testing "expression value binding"
+    (ok (= (evaluate '(begin (ece::define y (+ 1 2)) y)) 3)))
+
+  (testing "define returns the value"
+    (ok (= (evaluate '(ece::define z 10)) 10)))
+
+  (testing "function shorthand"
+    (ok (= (evaluate '(begin (ece::define (square x) (* x x))
+                             (square 5))) 25)))
+
+  (testing "function shorthand with multiple parameters"
+    (ok (= (evaluate '(begin (ece::define (add a b) (+ a b))
+                             (add 3 4))) 7)))
+
+  (testing "function shorthand with multi-body"
+    (ok (= (evaluate '(begin (ece::define (f x) (+ x 1) (+ x 2))
+                             (f 10))) 12)))
+
+  (testing "redefine a variable"
+    (ok (= (evaluate '(begin (ece::define a 1)
+                             (ece::define a 2)
+                             a)) 2)))
+
+  (testing "named recursion"
+    (ok (= (evaluate '(begin (ece::define (countdown n)
+                               (if (= n 0) 0 (countdown (- n 1))))
+                             (countdown 10))) 0)))
+
+  (testing "tail-recursive define does not blow the stack"
+    (ok (= (evaluate '(begin (ece::define (countdown n)
+                               (if (= n 0) 0 (countdown (- n 1))))
+                             (countdown 100000))) 0))))
 
 (deftest test-unknown-expression-error
   (testing "unrecognized expression types signal an error"

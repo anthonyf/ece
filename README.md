@@ -10,8 +10,10 @@ An **Explicit Control Evaluator** for a small Lisp, written in Common Lisp. Insp
 - **`lambda`**: `(lambda (params...) body...)` with lexical scoping and multi-body support
 - **`if`**: `(if predicate consequent alternative?)` with optional alternative
 - **`begin`**: `(begin expr...)` evaluates sequentially, returns last value
+- **`define`**: `(define var expr)` or `(define (name params...) body...)` for variable and function definitions
 - **`call/cc`**: `(call/cc receiver)` captures the current continuation
 - **Primitives**: `+`, `-`, `*`, `/`, `=`, `<`, `>`, `<=`, `>=`, `car`, `cdr`, `cons`, `list`, `null?`, `not`
+- **Tail call optimization**: tail-recursive functions run in constant stack space
 
 ## Prerequisites
 
@@ -47,6 +49,11 @@ Then in the SBCL REPL:
 
 (ece:evaluate '(+ 1 (call/cc (lambda (k) (k 10)))))
 ;; => 11
+
+(ece:evaluate '(begin (define (factorial n)
+                        (if (= n 0) 1 (* n (factorial (- n 1)))))
+                      (factorial 5)))
+;; => 120
 ```
 
 ## Testing

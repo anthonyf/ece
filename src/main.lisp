@@ -8,30 +8,68 @@
 	   #:if
 	   #:begin
 	   #:quote
-	   #:call/cc))
+	   #:call/cc
+	   #:define))
 
 (in-package :ece)
 
-(defun env-lookup (env var)
-  (cond
-    ((null env)
-     (error "Unbound variable: ~A" var))
-    ((eq var (caar env))
-     (cdar env))
-    (t
-     (env-lookup (cdr env) var))))
+;; Frame-based environment (SICP Section 4.1.3)
+;; A frame is (cons vars vals) — parallel lists of variable names and values
+;; An environment is a list of frames
 
-(defparameter *primitive-procedures* (mapcar (lambda (proc)
-					       (if (listp proc)
-						   (cons (car proc) (list 'primitive (symbol-function (cdr proc))))
-						   (cons proc (list 'primitive (symbol-function proc)))))
-					     '(+ - * / = < > <= >= car cdr cons list (null? . null) not)))
+(defun make-frame (vars vals)
+  (cons vars vals))
 
-(defparameter *global-env* (append *primitive-procedures*
-				   nil))
+(defun frame-variables (frame)
+  (car frame))
 
-#+nil
-(env-lookup '((x . 10) (y . 20)) 'x) ;; => 10
+(defun frame-values (frame)
+  (cdr frame))
+
+(defun extend-environment (vars vals base-env)
+  (cons (make-frame vars vals) base-env))
+
+(defun lookup-variable-value (var env)
+  (labels ((scan-frame (vars vals)
+             (cond
+               ((null vars) nil)
+               ((eq var (car vars)) (cons t (car vals)))
+               (t (scan-frame (cdr vars) (cdr vals)))))
+           (env-loop (env)
+             (if (null env)
+                 (error "Unbound variable: ~A" var)
+                 (let ((result (scan-frame (frame-variables (car env))
+                                           (frame-values (car env)))))
+                   (if result
+                       (cdr result)
+                       (env-loop (cdr env)))))))
+    (env-loop env)))
+
+(defun define-variable! (var val env)
+  (let ((frame (car env)))
+    (labels ((scan (vars vals)
+               (cond
+                 ((null vars)
+                  (setf (car frame) (cons var (car frame)))
+                  (setf (cdr frame) (cons val (cdr frame))))
+                 ((eq var (car vars))
+                  (setf (car vals) val))
+                 (t (scan (cdr vars) (cdr vals))))))
+      (scan (frame-variables frame) (frame-values frame)))))
+
+(defparameter *primitive-procedure-names*
+  (mapcar (lambda (proc) (if (listp proc) (car proc) proc))
+          '(+ - * / = < > <= >= car cdr cons list (null? . null) not)))
+
+(defparameter *primitive-procedure-objects*
+  (mapcar (lambda (proc)
+            (list 'primitive (symbol-function (if (listp proc) (cdr proc) proc))))
+          '(+ - * / = < > <= >= car cdr cons list (null? . null) not)))
+
+(defparameter *global-env*
+  (extend-environment *primitive-procedure-names*
+                       *primitive-procedure-objects*
+                       nil))
 
 (defun self-evaluating-p (expr)
   (or (numberp expr)
@@ -67,8 +105,11 @@
   (and (listp expr)
        (eq (car expr) 'call/cc)))
 
+(defun define-p (expr)
+  (and (listp expr)
+       (eq (car expr) 'define)))
 
-(defparameter *special-forms* '(quote if var set lambda begin call/cc))
+(defparameter *special-forms* '(quote if var set lambda begin call/cc define))
 
 (defun application-p (expr)
   (and (listp expr)
@@ -101,6 +142,7 @@
 		    ((application-p expr)     (push :ev-application conts))
 		    ((if-p expr)              (push :ev-if conts))
 		    ((callcc-p expr)          (push :ev-callcc conts))
+		    ((define-p expr)          (push :ev-define conts))
 		    ((begin-p expr)           (push :ev-begin conts))
 		    (t (error "Unknown expression type: ~A" expr)))
 		  #+nil (dbg :ev-dispatch :end))
@@ -112,7 +154,7 @@
 
 		 (:ev-variable
 		  #+nil (dbg :ev-variable :start)
-		  (setf val (env-lookup env expr))
+		  (setf val (lookup-variable-value expr env))
 		  #+nil (dbg :ev-variable :end))
 
 		 (:ev-quoted
@@ -296,7 +338,7 @@
 		  #+nil (dbg :compound-apply :start)
 		  (setf unev (cadr proc))  ;; parameters
 		  (setf env (cadddr proc)) ;; environment
-		  (setf env (append (mapcar #'cons unev (nreverse argl)) env)) ;; extend env
+		  (setf env (extend-environment unev (nreverse argl) env)) ;; extend env
 		  (setf unev (caddr proc)) ;; body
 		  (push :ev-sequence conts)
 		  #+nil (dbg :compound-apply :end)
@@ -392,6 +434,44 @@
 		    (push :apply-dispatch conts))
 		  #+nil (dbg :ev-callcc-apply :end)
 		  )
+		 (:ev-define
+		  ;; ev-definition (SICP)
+		  ;; (assign unev (op definition-variable) (reg exp))
+		  ;; (save unev)
+		  ;; (assign exp (op definition-value) (reg exp))
+		  ;; (save env)
+		  ;; (save continue)
+		  ;; (assign continue (label ev-definition-1))
+		  ;; (goto (label eval-dispatch))
+		  #+nil (dbg :ev-define :start)
+		  (let ((variable (if (listp (cadr expr))
+				      (caadr expr)                ;; (define (f x) body...) → f
+				      (cadr expr))))               ;; (define x val) → x
+		    (push variable stack))
+		  (setf expr (if (listp (cadr expr))
+				 ;; function shorthand: build lambda
+				 (cons 'lambda (cons (cdadr expr) (cddr expr)))
+				 ;; value form
+				 (caddr expr)))
+		  (push env stack)
+		  (push conts stack)
+		  (push :ev-define-assign conts)
+		  (push :ev-dispatch conts)
+		  #+nil (dbg :ev-define :end))
+		 (:ev-define-assign
+		  ;; ev-definition-1 (SICP)
+		  ;; (restore continue)
+		  ;; (restore env)
+		  ;; (restore unev)
+		  ;; (perform (op define-variable!) (reg unev) (reg val) (reg env))
+		  ;; (assign val (const ok))
+		  ;; (goto (reg continue))
+		  #+nil (dbg :ev-define-assign :start)
+		  (setf conts (pop stack))
+		  (setf env (pop stack))
+		  (let ((variable (pop stack)))
+		    (define-variable! variable val env))
+		  #+nil (dbg :ev-define-assign :end))
 		 (:ev-if
 		  ;; ev-if
 		  ;; (save exp)   ; save expression for later
