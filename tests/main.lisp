@@ -129,6 +129,16 @@
   (testing "continuation ignored returns receiver result"
     (ok (= (evaluate '(+ 1 (ece::call/cc (lambda (k) 5)))) 6))))
 
+(deftest test-tail-call-optimization
+  (testing "deep tail recursion does not blow the stack"
+    (ok (= (evaluate '((lambda (loop)
+                          (loop loop 1000000))
+                        (lambda (self n)
+                          (if (= n 0)
+                            0
+                            (self self (- n 1))))))
+           0))))
+
 (deftest test-unknown-expression-error
   (testing "unrecognized expression types signal an error"
     (signals (evaluate (make-hash-table) nil))))
