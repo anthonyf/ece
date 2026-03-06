@@ -15,6 +15,9 @@
 	   #:null?
 	   #:eof?
 	   #:primitive
+	   #:pair?
+	   #:map
+	   #:apply
 	   #:repl))
 
 (in-package :ece)
@@ -99,12 +102,14 @@
 
 (defparameter *primitive-procedure-names*
   (mapcar (lambda (proc) (if (listp proc) (car proc) proc))
-          '(+ - * / = < > <= >= car cdr cons list (null? . null) not)))
+          '(+ - * / = < > <= >= car cdr cadr caddr caar cddr cons list append length
+            (null? . null) (pair? . consp) not)))
 
 (defparameter *primitive-procedure-objects*
   (mapcar (lambda (proc)
             (list 'primitive (symbol-function (if (listp proc) (cdr proc) proc))))
-          '(+ - * / = < > <= >= car cdr cons list (null? . null) not)))
+          '(+ - * / = < > <= >= car cdr cadr caddr caar cddr cons list append length
+            (null? . null) (pair? . consp) not)))
 
 (defparameter *global-env*
   (extend-environment *primitive-procedure-names*
@@ -193,7 +198,11 @@
   (and (listp expr)
        (eq (car expr) 'define)))
 
-(defparameter *special-forms* '(quote if var set lambda begin call/cc define))
+(defun apply-form-p (expr)
+  (and (listp expr)
+       (eq (car expr) 'apply)))
+
+(defparameter *special-forms* '(quote if var set lambda begin call/cc define apply))
 
 (defun application-p (expr)
   (and (listp expr)
@@ -227,6 +236,7 @@
 		    ((if-p expr)              (push :ev-if conts))
 		    ((callcc-p expr)          (push :ev-callcc conts))
 		    ((assignment-p expr)      (push :ev-assignment conts))
+		    ((apply-form-p expr)     (push :ev-apply conts))
 		    ((define-p expr)          (push :ev-define conts))
 		    ((begin-p expr)           (push :ev-begin conts))
 		    (t (error "Unknown expression type: ~A" expr)))
@@ -519,6 +529,36 @@
 		    (push :apply-dispatch conts))
 		  #+nil (dbg :ev-callcc-apply :end)
 		  )
+		 (:ev-apply
+		  ;; (apply proc-expr args-expr)
+		  ;; Save env and conts, evaluate proc-expr
+		  #+nil (dbg :ev-apply :start)
+		  (push env stack)
+		  (push conts stack)
+		  (push (caddr expr) stack)  ;; save args-expr for later
+		  (setf expr (cadr expr))    ;; proc-expr
+		  (push :ev-apply-did-proc conts)
+		  (push :ev-dispatch conts)
+		  #+nil (dbg :ev-apply :end))
+		 (:ev-apply-did-proc
+		  ;; proc is in val, now evaluate args-expr
+		  #+nil (dbg :ev-apply-did-proc :start)
+		  (setf expr (pop stack))    ;; restore args-expr
+		  (push val stack)           ;; save proc
+		  (push :ev-apply-dispatch conts)
+		  (push :ev-dispatch conts)
+		  #+nil (dbg :ev-apply-did-proc :end))
+		 (:ev-apply-dispatch
+		  ;; args list is in val, proc is on stack
+		  ;; Set up argl/proc and jump to apply-dispatch
+		  #+nil (dbg :ev-apply-dispatch :start)
+		  (setf proc (pop stack))
+		  (setf argl (reverse val))  ;; reverse so nreverse in apply handlers produces correct order
+		  (setf conts (pop stack))   ;; restore caller's conts
+		  (setf env (pop stack))     ;; restore caller's env
+		  (push conts stack)         ;; apply-dispatch expects conts on stack
+		  (push :apply-dispatch conts)
+		  #+nil (dbg :ev-apply-dispatch :end))
 		 (:ev-assignment
 		  ;; ev-assignment (SICP)
 		  ;; Save variable name, env, conts; evaluate value expression
@@ -632,6 +672,14 @@
 		
 		 (t (error "Unknown cont: ~A" cont)))))
     val))
+
+;; Define map as an ECE function (must be after evaluate is defined)
+(evaluate
+ '(define (map f lst)
+    (if (null? lst)
+        (quote ())
+        (cons (f (car lst))
+              (map f (cdr lst))))))
 
 (defun repl ()
   "Bootstrap and run the ECE REPL as a tail-recursive ECE function."

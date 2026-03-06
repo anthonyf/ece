@@ -227,6 +227,62 @@
     (ok (equal (evaluate '(begin (define (f . args) args) (f 1 2 3)))
               '(1 2 3)))))
 
+(deftest test-list-access-primitives
+  (testing "cadr returns second element"
+    (ok (= (evaluate '(cadr (quote (1 2 3)))) 2)))
+
+  (testing "caddr returns third element"
+    (ok (= (evaluate '(caddr (quote (1 2 3)))) 3)))
+
+  (testing "caar returns car of car"
+    (ok (eq (evaluate '(caar (quote ((a b) c)))) 'a)))
+
+  (testing "cddr returns cdr of cdr"
+    (ok (equal (evaluate '(cddr (quote (1 2 3)))) '(3)))))
+
+(deftest test-append-length-pair
+  (testing "append two lists"
+    (ok (equal (evaluate '(append (quote (1 2)) (quote (3 4)))) '(1 2 3 4))))
+
+  (testing "append empty list"
+    (ok (equal (evaluate '(append (quote ()) (quote (1 2)))) '(1 2))))
+
+  (testing "length of a list"
+    (ok (= (evaluate '(length (quote (a b c)))) 3)))
+
+  (testing "length of empty list"
+    (ok (= (evaluate '(length (quote ()))) 0)))
+
+  (testing "pair? on cons cell"
+    (ok (evaluate '(pair? (cons 1 2)))))
+
+  (testing "pair? on number"
+    (ok (not (evaluate '(pair? 42)))))
+
+  (testing "pair? on empty list"
+    (ok (not (evaluate '(pair? (quote ())))))))
+
+(deftest test-map
+  (testing "map with lambda"
+    (ok (equal (evaluate '(map (lambda (x) (+ x 1)) (quote (1 2 3)))) '(2 3 4))))
+
+  (testing "map with primitive"
+    (ok (equal (evaluate '(map car (quote ((1 2) (3 4) (5 6))))) '(1 3 5))))
+
+  (testing "map over empty list"
+    (ok (equal (evaluate '(map (lambda (x) x) (quote ()))) nil))))
+
+(deftest test-apply-special-form
+  (testing "apply primitive with argument list"
+    (ok (= (evaluate '(apply + (quote (1 2 3)))) 6)))
+
+  (testing "apply lambda with argument list"
+    (ok (= (evaluate '(apply (lambda (x y) (+ x y)) (quote (3 4)))) 7)))
+
+  (testing "apply named ECE function"
+    (ok (= (evaluate '(begin (define (add a b) (+ a b))
+                             (apply add (quote (10 20))))) 30))))
+
 (deftest test-io-primitives
   (testing "print is bound"
     (ok (eq (car (evaluate 'print)) 'primitive)))
