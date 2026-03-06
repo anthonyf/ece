@@ -19,6 +19,9 @@
 	   #:map
 	   #:apply
 	   #:define-macro
+	   #:quasiquote
+	   #:unquote
+	   #:unquote-splicing
 	   #:repl))
 
 (in-package :ece)
@@ -120,11 +123,30 @@
 ;; EOF sentinel for safe read
 (defvar *eof-sentinel* (gensym "EOF"))
 
+;; Custom readtable for ECE: ` → quasiquote, , → unquote, ,@ → unquote-splicing
+(defvar *ece-readtable* (copy-readtable))
+
+(set-macro-character #\`
+  (lambda (stream char)
+    (declare (ignore char))
+    (list 'quasiquote (read stream t nil t)))
+  nil *ece-readtable*)
+
+(set-macro-character #\,
+  (lambda (stream char)
+    (declare (ignore char))
+    (if (eql (peek-char nil stream nil nil) #\@)
+        (progn (read-char stream)
+               (list 'unquote-splicing (read stream t nil t)))
+        (list 'unquote (read stream t nil t))))
+  nil *ece-readtable*)
+
 ;; I/O primitives with custom wrappers
 (defun ece-read ()
   "Read an s-expression with *read-eval* disabled. Returns *eof-sentinel* on EOF."
   (handler-case
-      (let ((*read-eval* nil))
+      (let ((*read-eval* nil)
+            (*readtable* *ece-readtable*))
         (read))
     (end-of-file () *eof-sentinel*)))
 
@@ -209,7 +231,21 @@
   (and (listp expr)
        (eq (car expr) 'define-macro)))
 
-(defparameter *special-forms* '(quote if var set lambda begin call/cc define apply define-macro))
+(defun quasiquote-p (expr)
+  (and (listp expr)
+       (eq (car expr) 'quasiquote)))
+
+(defun qq-expand (form)
+  "Walk a quasiquote template and produce a cons/append construction expression."
+  (cond
+    ((null form) '(quote ()))
+    ((atom form) (list 'quote form))
+    ((eq (car form) 'unquote) (cadr form))
+    ((and (consp (car form)) (eq (caar form) 'unquote-splicing))
+     (list 'append (cadar form) (qq-expand (cdr form))))
+    (t (list 'cons (qq-expand (car form)) (qq-expand (cdr form))))))
+
+(defparameter *special-forms* '(quote if var set lambda begin call/cc define apply define-macro quasiquote))
 
 (defun application-p (expr)
   (and (listp expr)
@@ -238,6 +274,7 @@
 		    ((self-evaluating-p expr) (push :ev-self-eval conts))
 		    ((variable-p expr)        (push :ev-variable conts))
 		    ((quoted-p expr)          (push :ev-quoted conts))
+		    ((quasiquote-p expr)     (push :ev-quasiquote conts))
 		    ((lambda-p expr)          (push :ev-lambda conts))
 		    ((application-p expr)     (push :ev-application conts))
 		    ((if-p expr)              (push :ev-if conts))
@@ -264,6 +301,13 @@
 		  #+nil (dbg :ev-quoted :start)
 		  (setf val (cadr expr))
 		  #+nil (dbg :ev-quoted :end))
+
+		 (:ev-quasiquote
+		  ;; Transform quasiquote template into cons/append expression, re-dispatch
+		  #+nil (dbg :ev-quasiquote :start)
+		  (setf expr (qq-expand (cadr expr)))
+		  (push :ev-dispatch conts)
+		  #+nil (dbg :ev-quasiquote :end))
 
 		 (:ev-lambda
 		  ;; ev-lambda

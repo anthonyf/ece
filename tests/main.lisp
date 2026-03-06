@@ -382,6 +382,45 @@
   (testing "unless with truthy test returns nil"
     (ok (null (evaluate '(unless (= 1 1) 42))))))
 
+(deftest test-quasiquote
+  (testing "all-literal template"
+    (ok (equal (evaluate '(quasiquote (a b c))) '(a b c))))
+
+  (testing "atomic template"
+    (ok (eq (evaluate '(quasiquote hello)) 'hello))))
+
+(deftest test-unquote
+  (testing "unquote a variable"
+    (ok (equal (evaluate '(begin (define x 42) (quasiquote (a (unquote x) c))))
+              '(a 42 c))))
+
+  (testing "unquote an expression"
+    (ok (equal (evaluate '(quasiquote (result (unquote (+ 1 2)))))
+              '(result 3))))
+
+  (testing "unquote in tail position"
+    (ok (equal (evaluate '(begin (define xs (quote (1 2 3)))
+                                 (quasiquote (prefix (unquote xs)))))
+              '(prefix (1 2 3))))))
+
+(deftest test-unquote-splicing
+  (testing "splice a list"
+    (ok (equal (evaluate '(begin (define xs (quote (1 2 3)))
+                                 (quasiquote (a (unquote-splicing xs) d))))
+              '(a 1 2 3 d))))
+
+  (testing "splice an empty list"
+    (ok (equal (evaluate '(begin (define xs (quote ()))
+                                 (quasiquote (a (unquote-splicing xs) b))))
+              '(a b)))))
+
+(deftest test-quasiquote-in-macro
+  (testing "macro using quasiquote"
+    (ok (= (evaluate '(begin (define-macro (my-if test then)
+                               (quasiquote (if (unquote test) (unquote then))))
+                             (my-if (= 1 1) 42)))
+           42))))
+
 (deftest test-unknown-expression-error
   (testing "unrecognized expression types signal an error"
     (signals (evaluate (make-hash-table) nil))))
