@@ -10,6 +10,11 @@
 	   #:quote
 	   #:call/cc
 	   #:define
+	   #:display
+	   #:newline
+	   #:null?
+	   #:eof?
+	   #:primitive
 	   #:repl))
 
 (in-package :ece)
