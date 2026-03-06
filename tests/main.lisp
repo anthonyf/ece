@@ -92,6 +92,24 @@
   (testing "zero-argument function application"
     (ok (equal (evaluate '(list)) nil))))
 
+(deftest test-if-eval
+  (testing "truthy predicate takes consequent"
+    (ok (= (evaluate '(if 1 42 0)) 42))
+    (ok (= (evaluate '(if (< 1 2) 10 20)) 10))
+    (ok (= (evaluate '(if (quote t) 1 2)) 1)))
+
+  (testing "nil predicate takes alternative"
+    (ok (= (evaluate '(if (quote ()) 10 20)) 20))
+    (ok (= (evaluate '(if (> 1 2) 10 20)) 20)))
+
+  (testing "omitted alternative returns nil"
+    (ok (equal (evaluate '(if (quote ()) 42)) nil))
+    (ok (= (evaluate '(if 1 42)) 42)))
+
+  (testing "computed subexpressions and nested if"
+    (ok (= (evaluate '(if (= (+ 1 1) 2) (* 3 4) (- 5 1))) 12))
+    (ok (= (evaluate '(if (< 1 2) (if (< 2 3) 100 200) 300)) 100))))
+
 (deftest test-unknown-expression-error
   (testing "unrecognized expression types signal an error"
     (signals (evaluate (make-hash-table) nil))))

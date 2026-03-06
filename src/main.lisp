@@ -58,6 +58,10 @@
   (and (listp expr)
        (eq (car expr) 'begin)))
 
+(defun if-p (expr)
+  (and (listp expr)
+       (eq (car expr) 'if)))
+
 
 (defparameter *special-forms* '(quote if var set lambda begin))
 
@@ -90,6 +94,7 @@
 		    ((quoted-p expr)          (push :ev-quoted conts))
 		    ((lambda-p expr)          (push :ev-lambda conts))
 		    ((application-p expr)     (push :ev-application conts))
+		    ((if-p expr)              (push :ev-if conts))
 		    ((begin-p expr)           (push :ev-begin conts))
 		    (t (error "Unknown expression type: ~A" expr)))
 		  #+nil (dbg :ev-dispatch :end))
@@ -364,8 +369,15 @@
 		  ;; (save continue)
 		  ;; (assign continue (label ev-if-decide))
 		  ;; (assign exp (op if-predicate) (reg exp))
-		  ;; 			; evaluate the predicate:
-		  ;; (goto (label eval-dispatch))  
+		  ;; (goto (label eval-dispatch))
+		  #+nil (dbg :ev-if :start)
+		  (push expr stack)
+		  (push env stack)
+		  (push conts stack)
+		  (setf expr (cadr expr)) ;; if-predicate
+		  (push :ev-if-decide conts)
+		  (push :ev-dispatch conts)
+		  #+nil (dbg :ev-if :end)
 		  )
 		 (:ev-if-decide
 		  ;; ev-if-decide
@@ -374,16 +386,34 @@
 		  ;; (restore exp)
 		  ;; (test (op true?) (reg val))
 		  ;; (branch (label ev-if-consequent))
+		  #+nil (dbg :ev-if-decide :start)
+		  (setf conts (pop stack))
+		  (setf env (pop stack))
+		  (setf expr (pop stack))
+		  (if val
+		      (push :ev-if-consequent conts)
+		      (push :ev-if-alternative conts))
+		  #+nil (dbg :ev-if-decide :end)
 		  )
 		 (:ev-if-alternative
 		  ;; ev-if-alternative
 		  ;; (assign exp (op if-alternative) (reg exp))
 		  ;; (goto (label eval-dispatch))
+		  #+nil (dbg :ev-if-alternative :start)
+		  (setf expr (cadddr expr)) ;; if-alternative (nil if absent)
+		  (if expr
+		      (progn (push :ev-dispatch conts))
+		      (setf val nil))
+		  #+nil (dbg :ev-if-alternative :end)
 		  )
 		 (:ev-if-consequent
 		  ;; ev-if-consequent
 		  ;; (assign exp (op if-consequent) (reg exp))
-		  ;; (goto (label eval-dispatch))		  
+		  ;; (goto (label eval-dispatch))
+		  #+nil (dbg :ev-if-consequent :start)
+		  (setf expr (caddr expr)) ;; if-consequent
+		  (push :ev-dispatch conts)
+		  #+nil (dbg :ev-if-consequent :end)
 		  )
 		
 		 (t (error "Unknown cont: ~A" cont)))))

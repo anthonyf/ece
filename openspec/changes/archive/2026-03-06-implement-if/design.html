@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+	"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+
+<head>
+<title>design.html</title>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8"/>
+
+</head>
+
+<body>
+
+<h2>Context</h2>
+
+<p>The evaluator uses an explicit continuation-passing style with a continuation stack (<code>conts</code>). The <code>if</code> special form already has four stubbed continuations: <code>:ev-if</code>, <code>:ev-if-decide</code>, <code>:ev-if-consequent</code>, and <code>:ev-if-alternative</code>. The dispatch in <code>:ev-dispatch</code> does not yet route to <code>:ev-if</code> because there is no <code>if-p</code> predicate — <code>if</code> is in <code>*special-forms*</code> so it's excluded from <code>application-p</code>, but nothing catches it, causing an "Unknown expression type" error.</p>
+
+<h2>Goals / Non-Goals</h2>
+
+<p><strong>Goals:</strong>
+- Implement <code>(if predicate consequent alternative)</code> with standard Lisp truthiness (only <code>nil</code> is false)
+- Support optional alternative (omitted alternative defaults to <code>nil</code>)
+- Follow the existing continuation-based pattern used by <code>begin</code> and <code>lambda</code></p>
+
+<p><strong>Non-Goals:</strong>
+- <code>cond</code> or other conditional forms
+- Short-circuit boolean operators (<code>and</code>, <code>or</code>)</p>
+
+<h2>Decisions</h2>
+
+<p><strong>Add <code>if-p</code> predicate and dispatch</strong>: Add an <code>if-p</code> function matching the pattern of <code>begin-p</code>, <code>lambda-p</code>, etc. Add a dispatch clause in <code>:ev-dispatch</code> before the <code>application-p</code> check (alongside <code>begin-p</code>).</p>
+
+<p><strong>Truthiness</strong>: Follow standard Lisp convention — only <code>nil</code> is falsy, everything else (including <code>0</code>, <code>""</code>, empty list represented as <code>nil</code>) is truthy. This matches CL's behavior directly so no special truthiness function is needed.</p>
+
+<p><strong>Optional alternative</strong>: <code>(if pred conseq)</code> with no alternative returns <code>nil</code> when predicate is false. Implementation: <code>(if-alternative expr)</code> returns <code>(cadddr expr)</code>, which is <code>nil</code> when absent.</p>
+
+<p><strong>Continuation flow</strong>: Following the SICP register machine pattern already commented in the stubs:
+1. <code>:ev-if</code> — save <code>expr</code>, <code>env</code>, push <code>:ev-if-decide</code>, evaluate predicate
+2. <code>:ev-if-decide</code> — restore <code>expr</code>, <code>env</code>, check <code>val</code> (predicate result), branch to consequent or alternative
+3. <code>:ev-if-consequent</code> — extract consequent, dispatch to evaluate it
+4. <code>:ev-if-alternative</code> — extract alternative, dispatch to evaluate it</p>
+
+<h2>Risks / Trade-offs</h2>
+
+<ul>
+<li>[No tail-call optimization for if] → Acceptable for now; TCO would be a separate change</li>
+<li>[nil vs false ambiguity] → Using CL's native truthiness keeps things simple and consistent</li>
+</ul>
+
+</body>
+</html>
