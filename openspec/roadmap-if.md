@@ -37,8 +37,11 @@ ECE stays general-purpose. The IF framework is a loadable library (`(load "if-li
 | Value to string | `write-to-string` |
 | String operations | `string-append`, `substring`, `string->number`, etc. |
 | Randomness | `random`, `random-seed!` (xorshift32 PRNG) |
-| Save state (in-memory) | `call/cc` |
-| Load game files | `load` |
+| Hash tables | `hash-table`, `hash-ref`, `hash-set!`, `hash-set`, `{}` literals |
+| Save/restore state | `call/cc` (in-memory), `save-continuation!`/`load-continuation` (disk) |
+| Load source files | `load` |
+| Timing/terminal | `sleep`, `clear-screen` |
+| String case/split | `string-downcase`, `string-upcase`, `string-split` |
 | Macros | `define-macro` + quasiquote |
 | Loops | `do`, named `let` |
 | Error handling | `error` + `try-eval` |
@@ -47,19 +50,19 @@ ECE stays general-purpose. The IF framework is a loadable library (`(load "if-li
 
 ## Implementation Progress
 
-### Priority 1: IF Library + Sample Game ← CURRENT
+### Priority 1: IF Library + Sample Game ✓
 - [x] Add `read-line`, `random`, `fmt`/`print-text`, `write-to-string`, bitwise primitives
-- [ ] Build `room` and `choose` macros in `if-lib.scm`
-- [ ] Write a sample game (`simple-game.scm`) to validate the design
+- [x] Build `room` and `choose` macros in `if-lib.scm`
+- [x] Write a sample game (`simple-game.scm`) to validate the design
 
-### Priority 2: Quality-of-Life Core Additions
-- [ ] Hash tables (game state gets unwieldy with alists)
-- [ ] `sleep` (dramatic pacing)
-- [ ] `clear-screen` (room transitions)
-- [ ] `string-downcase` / `string-split` (input handling)
+### Priority 2: Quality-of-Life Core Additions ✓
+- [x] Hash tables (game state gets unwieldy with alists)
+- [x] `sleep` (dramatic pacing)
+- [x] `clear-screen` (room transitions)
+- [x] `string-downcase` / `string-upcase` / `string-split` (input handling)
 
-### Priority 3: Save/Load
-- [ ] Continuation serialization to disk (`write`/`read` with `*print-circle*`)
+### Priority 3: Save/Load ← CURRENT
+- [x] Continuation serialization to disk (`save-continuation!` / `load-continuation`)
 
 ### Priority 4: Polish & Game State
 - [ ] ANSI text styling helpers (bold, color)

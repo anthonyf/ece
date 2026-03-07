@@ -99,6 +99,8 @@
 	   #:string-downcase
 	   #:string-upcase
 	   #:string-split
+	   #:save-continuation!
+	   #:load-continuation
 	   #:repl))
 
 (in-package :ece)
@@ -435,6 +437,25 @@
     (push (subseq str start len) result)
     (nreverse result)))
 
+(defun ece-save-continuation! (filename value)
+  "Write a value to a file as a readable s-expression with circular structure support."
+  (with-open-file (stream filename :direction :output
+                                    :if-exists :supersede
+                                    :if-does-not-exist :create)
+    (let ((*print-circle* t)
+          (*print-readably* t)
+          (*package* (find-package :ece)))
+      (write value :stream stream)))
+  t)
+
+(defun ece-load-continuation (filename)
+  "Read a single s-expression from a file, returning it as an ECE value."
+  (with-open-file (stream filename :direction :input)
+    (let ((*readtable* *ece-readtable*)
+          (*read-eval* nil)
+          (*package* (find-package :ece)))
+      (read stream))))
+
 (defun ece-load (filename)
   "Load and evaluate all expressions from an ECE source file."
   (with-open-file (stream filename :direction :input)
@@ -488,7 +509,9 @@
     (clear-screen . ece-clear-screen)
     (string-downcase . string-downcase)
     (string-upcase . string-upcase)
-    (string-split . ece-string-split)))
+    (string-split . ece-string-split)
+    (save-continuation! . ece-save-continuation!)
+    (load-continuation . ece-load-continuation)))
 
 (dolist (entry *wrapper-primitives*)
   (define-variable! (car entry) (list 'primitive (cdr entry)) *global-env*))

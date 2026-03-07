@@ -1,4 +1,4 @@
-## ADDED Requirements
+## MODIFIED Requirements
 
 ### Requirement: README describes the project
 The README SHALL include a title, a brief description of what ECE is (an explicit control evaluator for a small Lisp), and a list of supported language features. The roadmap SHALL accurately reflect implementation progress: Priorities 1 and 2 marked complete, Priority 3 marked current.
@@ -10,10 +10,3 @@ The README SHALL include a title, a brief description of what ECE is (an explici
 #### Scenario: Roadmap reflects current progress
 - **WHEN** a user reads the roadmap
 - **THEN** Priorities 1 and 2 SHALL be marked as complete and Priority 3 SHALL be marked as current
-
-### Requirement: README includes setup and usage instructions
-The README SHALL document prerequisites (SBCL, qlot), setup steps, how to load the system, and how to run tests.
-
-#### Scenario: Reader can set up and run the project
-- **WHEN** a user follows the README instructions
-- **THEN** they SHALL be able to install dependencies with qlot, load the system, evaluate expressions, and run tests

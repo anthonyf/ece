@@ -1210,6 +1210,71 @@
     (ok (null (let ((*standard-output* (make-string-output-stream)))
                 (evaluate '(clear-screen)))))))
 
+(deftest test-save-load-continuation
+  (testing "round-trip with plain value"
+    (let ((tmpfile (uiop:with-temporary-file (:stream s :pathname p :keep t
+                                              :type "sav")
+                    (declare (ignore s))
+                    p)))
+      (unwind-protect
+           (progn
+             (evaluate `(save-continuation! ,(namestring tmpfile) (quote (1 2 3))))
+             (ok (equal (evaluate `(load-continuation ,(namestring tmpfile)))
+                        '(1 2 3))))
+        (delete-file tmpfile))))
+
+  (testing "round-trip with hash table"
+    (let ((tmpfile (uiop:with-temporary-file (:stream s :pathname p :keep t
+                                              :type "sav")
+                    (declare (ignore s))
+                    p)))
+      (unwind-protect
+           (progn
+             (evaluate `(save-continuation! ,(namestring tmpfile)
+                                            (hash-table 'name "Alice" 'age 30)))
+             (let ((loaded (evaluate `(load-continuation ,(namestring tmpfile)))))
+               (ok (equal loaded '(:hash-table (name . "Alice") (age . 30))))))
+        (delete-file tmpfile))))
+
+  (testing "round-trip with continuation"
+    (let ((tmpfile (uiop:with-temporary-file (:stream s :pathname p :keep t
+                                              :type "sav")
+                    (declare (ignore s))
+                    p)))
+      (unwind-protect
+           (progn
+             ;; Capture a continuation and save it
+             (evaluate `(begin
+                          (define k nil)
+                          (call/cc (lambda (cont) (set k cont)))
+                          (save-continuation! ,(namestring tmpfile) k)))
+             ;; Load it back and verify it's a continuation
+             (let ((loaded (evaluate `(load-continuation ,(namestring tmpfile)))))
+               (ok (and (listp loaded) (eq (car loaded) (intern "CONTINUATION" :ece))))))
+        (delete-file tmpfile))))
+
+  (testing "save-continuation! returns t"
+    (let ((tmpfile (uiop:with-temporary-file (:stream s :pathname p :keep t
+                                              :type "sav")
+                    (declare (ignore s))
+                    p)))
+      (unwind-protect
+           (ok (eq (evaluate `(save-continuation! ,(namestring tmpfile) 42)) t))
+        (delete-file tmpfile))))
+
+  (testing "save-continuation! overwrites existing file"
+    (let ((tmpfile (uiop:with-temporary-file (:stream s :pathname p :keep t
+                                              :type "sav")
+                    (declare (ignore s))
+                    p)))
+      (unwind-protect
+           (progn
+             (evaluate `(save-continuation! ,(namestring tmpfile) "old"))
+             (evaluate `(save-continuation! ,(namestring tmpfile) "new"))
+             (ok (equal (evaluate `(load-continuation ,(namestring tmpfile)))
+                        "new")))
+        (delete-file tmpfile)))))
+
 (deftest test-unknown-expression-error
   (testing "unrecognized expression types signal an error"
     (signals (evaluate (make-hash-table) nil))))
