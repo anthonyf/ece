@@ -14,7 +14,7 @@
 A corridor leads north, and a locked door stands to the east."
   (choose
     ("Go north to the library" (library))
-    (when has-key
+    (when (and has-key (not door-unlocked))
       ("Unlock the east door" (begin (set door-unlocked t)
                                      (display "You turn the key. The lock clicks open.")
                                      (newline)
