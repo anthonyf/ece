@@ -53,3 +53,10 @@ The evaluator SHALL execute calls in the tail position of `let` and `let*` bodie
 #### Scenario: Tail call in let* body
 - **WHEN** evaluating `(begin (define (loop-let* n) (let* ((m (- n 1)) (k m)) (if (= k 0) (quote done) (loop-let* k)))) (loop-let* 1000000))`
 - **THEN** the result SHALL be `done`
+
+### Requirement: Tail calls via apply execute in constant stack space
+The evaluator SHALL execute `(apply f args)` in tail position without growing the continuation stack, enabling unbounded tail recursion through apply.
+
+#### Scenario: Tail call via apply
+- **WHEN** evaluating `(begin (define (loop-apply n) (if (= n 0) (quote done) (apply loop-apply (list (- n 1))))) (loop-apply 1000000))`
+- **THEN** the result SHALL be `done`

@@ -195,6 +195,13 @@
                                 (let* ((m (- n 1)) (k m))
                                   (if (= k 0) (quote done) (tco-let* k))))
                               (tco-let* 1000000)))
+            'done)))
+
+  (testing "tail call via apply"
+    (ok (eq (evaluate '(begin (define (tco-apply n)
+                                (if (= n 0) (quote done)
+                                    (apply tco-apply (list (- n 1)))))
+                              (tco-apply 1000000)))
             'done))))
 
 (deftest test-define-eval
