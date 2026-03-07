@@ -171,42 +171,30 @@
   "Test if x is a boolean (t or nil)."
   (or (eq x t) (eq x nil)))
 
+(defparameter *primitive-procedures*
+  '(+ - * / = < > <= >= car cdr cadr caddr caar cddr cons list append length
+    (null? . null) (pair? . consp) not
+    (number? . numberp) (string? . stringp) (symbol? . symbolp)
+    (zero? . zerop) (even? . evenp) (odd? . oddp)
+    (positive? . plusp) (negative? . minusp)
+    (eq? . eq) (equal? . equal)
+    (modulo . mod) abs min max reverse
+    (char? . characterp) (char=? . char=) (char<? . char<)
+    (char->integer . char-code) (integer->char . code-char)
+    (error . error)
+    (assoc . assoc) (member . member)
+    (string=? . string=) (string<? . string<) (string>? . string>)
+    (vector-length . length) (vector-ref . aref)
+    (bitwise-and . logand) (bitwise-or . logior) (bitwise-xor . logxor)
+    (bitwise-not . lognot) (arithmetic-shift . ash)))
+
 (defparameter *primitive-procedure-names*
-  (mapcar (lambda (proc) (if (listp proc) (car proc) proc))
-          '(+ - * / = < > <= >= car cdr cadr caddr caar cddr cons list append length
-            (null? . null) (pair? . consp) not
-            (number? . numberp) (string? . stringp) (symbol? . symbolp)
-            (zero? . zerop) (even? . evenp) (odd? . oddp)
-            (positive? . plusp) (negative? . minusp)
-            (eq? . eq) (equal? . equal)
-            (modulo . mod) abs min max reverse
-            (char? . characterp) (char=? . char=) (char<? . char<)
-            (char->integer . char-code) (integer->char . code-char)
-            (error . error)
-            (assoc . assoc) (member . member)
-            (string=? . string=) (string<? . string<) (string>? . string>)
-            (vector-length . length) (vector-ref . aref)
-            (bitwise-and . logand) (bitwise-or . logior) (bitwise-xor . logxor)
-            (bitwise-not . lognot) (arithmetic-shift . ash))))
+  (mapcar (lambda (p) (if (listp p) (car p) p))
+          *primitive-procedures*))
 
 (defparameter *primitive-procedure-objects*
-  (mapcar (lambda (proc)
-            (list 'primitive (if (listp proc) (cdr proc) proc)))
-          '(+ - * / = < > <= >= car cdr cadr caddr caar cddr cons list append length
-            (null? . null) (pair? . consp) not
-            (number? . numberp) (string? . stringp) (symbol? . symbolp)
-            (zero? . zerop) (even? . evenp) (odd? . oddp)
-            (positive? . plusp) (negative? . minusp)
-            (eq? . eq) (equal? . equal)
-            (modulo . mod) abs min max reverse
-            (char? . characterp) (char=? . char=) (char<? . char<)
-            (char->integer . char-code) (integer->char . code-char)
-            (error . error)
-            (assoc . assoc) (member . member)
-            (string=? . string=) (string<? . string<) (string>? . string>)
-            (vector-length . length) (vector-ref . aref)
-            (bitwise-and . logand) (bitwise-or . logior) (bitwise-xor . logxor)
-            (bitwise-not . lognot) (arithmetic-shift . ash))))
+  (mapcar (lambda (p) (list 'primitive (if (listp p) (cdr p) p)))
+          *primitive-procedures*))
 
 (defparameter *global-env*
   (extend-environment *primitive-procedure-names*
@@ -355,34 +343,37 @@
             do (setf result (evaluate expr)))
       result)))
 
-(dolist (entry (list (cons 'read (list 'primitive 'ece-read))
-                     (cons 'print (list 'primitive 'print))
-                     (cons 'display (list 'primitive 'ece-display))
-                     (cons 'newline (list 'primitive 'ece-newline))
-                     (cons 'eof? (list 'primitive 'ece-eof-p))
-                     (cons 'try-eval (list 'primitive 'ece-try-eval))
-                     (cons 'boolean? (list 'primitive 'ece-boolean-p))
-                     (cons 'gensym (list 'primitive 'gensym))
-                     (cons 'string-length (list 'primitive 'length))
-                     (cons 'string-ref (list 'primitive 'ece-string-ref))
-                     (cons 'string-append (list 'primitive 'ece-string-append))
-                     (cons 'substring (list 'primitive 'ece-substring))
-                     (cons 'string->number (list 'primitive 'ece-string->number))
-                     (cons 'number->string (list 'primitive 'ece-number->string))
-                     (cons 'string->symbol (list 'primitive 'ece-string->symbol))
-                     (cons 'symbol->string (list 'primitive 'ece-symbol->string))
-                     (cons 'list-ref (list 'primitive 'ece-list-ref))
-                     (cons 'list-tail (list 'primitive 'ece-list-tail))
-                     (cons 'vector? (list 'primitive 'ece-vector-p))
-                     (cons 'make-vector (list 'primitive 'ece-make-vector))
-                     (cons 'vector (list 'primitive 'ece-vector))
-                     (cons 'vector-set! (list 'primitive 'ece-vector-set!))
-                     (cons 'vector->list (list 'primitive 'ece-vector->list))
-                     (cons 'list->vector (list 'primitive 'ece-list->vector))
-                     (cons 'load (list 'primitive 'ece-load))
-                     (cons 'read-line (list 'primitive 'ece-read-line))
-                     (cons 'write-to-string (list 'primitive 'ece-write-to-string))))
-  (define-variable! (car entry) (cdr entry) *global-env*))
+(defparameter *wrapper-primitives*
+  '((read . ece-read)
+    (print . print)
+    (display . ece-display)
+    (newline . ece-newline)
+    (eof? . ece-eof-p)
+    (try-eval . ece-try-eval)
+    (boolean? . ece-boolean-p)
+    (gensym . gensym)
+    (string-length . length)
+    (string-ref . ece-string-ref)
+    (string-append . ece-string-append)
+    (substring . ece-substring)
+    (string->number . ece-string->number)
+    (number->string . ece-number->string)
+    (string->symbol . ece-string->symbol)
+    (symbol->string . ece-symbol->string)
+    (list-ref . ece-list-ref)
+    (list-tail . ece-list-tail)
+    (vector? . ece-vector-p)
+    (make-vector . ece-make-vector)
+    (vector . ece-vector)
+    (vector-set! . ece-vector-set!)
+    (vector->list . ece-vector->list)
+    (list->vector . ece-list->vector)
+    (load . ece-load)
+    (read-line . ece-read-line)
+    (write-to-string . ece-write-to-string)))
+
+(dolist (entry *wrapper-primitives*)
+  (define-variable! (car entry) (list 'primitive (cdr entry)) *global-env*))
 
 (defun self-evaluating-p (expr)
   (or (numberp expr)
@@ -395,48 +386,24 @@
 (defun variable-p (expr)
   (symbolp expr))
 
-(defun assignment-p (expr)
-  (and (listp expr)
-       (eq (car expr) 'set)))
+(defmacro define-special-form-predicate (symbol name)
+  "Generate a predicate NAME-P that tests if expr starts with SYMBOL."
+  `(defun ,(intern (format nil "~A-P" name)) (expr)
+     (and (listp expr) (eq (car expr) ',symbol))))
 
-(defun quoted-p (expr)
-  (and (listp expr)
-       (eq (car expr) 'quote)))
-
-(defun lambda-p (expr)
-  (and (listp expr)
-       (eq (car expr) 'lambda)))
+(define-special-form-predicate set assignment)
+(define-special-form-predicate quote quoted)
+(define-special-form-predicate lambda lambda)
+(define-special-form-predicate begin begin)
+(define-special-form-predicate if if)
+(define-special-form-predicate call/cc callcc)
+(define-special-form-predicate define define)
+(define-special-form-predicate apply apply-form)
+(define-special-form-predicate define-macro define-macro)
+(define-special-form-predicate quasiquote quasiquote)
 
 (defun make-procedure (parameters body env)
   (list 'procedure parameters body env))
-
-(defun begin-p (expr)
-  (and (listp expr)
-       (eq (car expr) 'begin)))
-
-(defun if-p (expr)
-  (and (listp expr)
-       (eq (car expr) 'if)))
-
-(defun callcc-p (expr)
-  (and (listp expr)
-       (eq (car expr) 'call/cc)))
-
-(defun define-p (expr)
-  (and (listp expr)
-       (eq (car expr) 'define)))
-
-(defun apply-form-p (expr)
-  (and (listp expr)
-       (eq (car expr) 'apply)))
-
-(defun define-macro-p (expr)
-  (and (listp expr)
-       (eq (car expr) 'define-macro)))
-
-(defun quasiquote-p (expr)
-  (and (listp expr)
-       (eq (car expr) 'quasiquote)))
 
 (defun qq-expand (form &optional (depth 0))
   "Walk a quasiquote template and produce a cons/append construction expression.
