@@ -10,8 +10,8 @@
 
 (defsystem "ece"
   :version "0.1.0"
-  :author ""
-  :license ""
+  :author "Anthony Fairchild"
+  :license "MIT"
   :description ""
   :depends-on ()
   :serial t
