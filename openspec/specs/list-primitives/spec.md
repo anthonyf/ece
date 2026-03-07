@@ -57,7 +57,7 @@ The evaluator SHALL provide `pair?` which returns true for cons cells and false 
 - **THEN** the result SHALL be false
 
 ### Requirement: map applies a function to each element
-The evaluator SHALL provide `map` that applies a function to each element of a list, returning a new list of results.
+The evaluator SHALL provide `map` that applies a function to each element of a list, returning a new list of results. The implementation SHALL be tail-recursive and SHALL not grow the stack proportionally to list length.
 
 #### Scenario: Map with lambda
 - **WHEN** evaluating `(map (lambda (x) (+ x 1)) (quote (1 2 3)))`
@@ -70,6 +70,10 @@ The evaluator SHALL provide `map` that applies a function to each element of a l
 #### Scenario: Map over empty list
 - **WHEN** evaluating `(map (lambda (x) x) (quote ()))`
 - **THEN** the result SHALL be `()`
+
+#### Scenario: Map large list without stack overflow
+- **WHEN** evaluating `(map (lambda (x) (+ x 1)) <list of 100000 elements>)`
+- **THEN** the result SHALL complete without stack overflow
 
 ### Requirement: apply calls a procedure with a list of arguments
 The evaluator SHALL provide `apply` that calls a procedure with arguments from a list.

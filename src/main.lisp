@@ -40,6 +40,7 @@
 	   #:gensym
 	   #:letrec
 	   #:else
+	   #:reverse
 	   #:repl))
 
 (in-package :ece)
@@ -134,7 +135,7 @@
             (zero? . zerop) (even? . evenp) (odd? . oddp)
             (positive? . plusp) (negative? . minusp)
             (eq? . eq) (equal? . equal)
-            (modulo . mod) abs min max)))
+            (modulo . mod) abs min max reverse)))
 
 (defparameter *primitive-procedure-objects*
   (mapcar (lambda (proc)
@@ -145,7 +146,7 @@
             (zero? . zerop) (even? . evenp) (odd? . oddp)
             (positive? . plusp) (negative? . minusp)
             (eq? . eq) (equal? . equal)
-            (modulo . mod) abs min max)))
+            (modulo . mod) abs min max reverse)))
 
 (defparameter *global-env*
   (extend-environment *primitive-procedure-names*
@@ -811,10 +812,12 @@
 ;; Define map as an ECE function (must be after evaluate is defined)
 (evaluate
  '(define (map f lst)
-    (if (null? lst)
-        (quote ())
-        (cons (f (car lst))
-              (map f (cdr lst))))))
+    (begin
+      (define (loop rest acc)
+        (if (null? rest)
+            (reverse acc)
+            (loop (cdr rest) (cons (f (car rest)) acc))))
+      (loop lst (quote ())))))
 
 (evaluate
  '(define (reduce f init lst)
@@ -831,11 +834,14 @@
 
 (evaluate
  '(define (filter pred lst)
-    (if (null? lst)
-        (quote ())
-        (if (pred (car lst))
-            (cons (car lst) (filter pred (cdr lst)))
-            (filter pred (cdr lst))))))
+    (begin
+      (define (loop rest acc)
+        (if (null? rest)
+            (reverse acc)
+            (if (pred (car rest))
+                (loop (cdr rest) (cons (car rest) acc))
+                (loop (cdr rest) acc))))
+      (loop lst (quote ())))))
 
 ;; Standard derived forms (defined as macros)
 ;; Switch to ECE readtable so ` , ,@ produce ECE quasiquote forms

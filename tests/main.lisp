@@ -77,7 +77,12 @@
   (testing "null? and not"
     (ok (evaluate '(null? (quote ()))))
     (ok (not (evaluate '(null? (quote (1))))))
-    (ok (evaluate '(not (quote ()))))))
+    (ok (evaluate '(not (quote ())))))
+
+  (testing "reverse"
+    (ok (equal (evaluate '(reverse (quote (1 2 3)))) '(3 2 1)))
+    (ok (equal (evaluate '(reverse (quote ()))) '()))
+    (ok (equal (evaluate '(reverse (quote (42)))) '(42)))))
 
 (deftest test-multi-body-lambda
   (testing "lambda with multiple body expressions returns last value"
@@ -335,7 +340,15 @@
     (ok (equal (evaluate '(map car (quote ((1 2) (3 4) (5 6))))) '(1 3 5))))
 
   (testing "map over empty list"
-    (ok (equal (evaluate '(map (lambda (x) x) (quote ()))) nil))))
+    (ok (equal (evaluate '(map (lambda (x) x) (quote ()))) nil)))
+
+  (testing "map large list without stack overflow"
+    (ok (= (evaluate '(begin
+                        (define (make-list n)
+                          (let loop ((i 0) (acc (quote ())))
+                            (if (= i n) acc (loop (+ i 1) (cons i acc)))))
+                        (car (map (lambda (x) (+ x 1)) (make-list 10000)))))
+           10000))))
 
 (deftest test-apply-special-form
   (testing "apply primitive with argument list"
@@ -632,7 +645,15 @@
     (ok (equal (evaluate '(filter even? (quote ()))) '())))
 
   (testing "filter with lambda"
-    (ok (equal (evaluate '(filter (lambda (x) (> x 3)) (quote (1 2 3 4 5)))) '(4 5)))))
+    (ok (equal (evaluate '(filter (lambda (x) (> x 3)) (quote (1 2 3 4 5)))) '(4 5))))
+
+  (testing "filter large list without stack overflow"
+    (ok (= (evaluate '(begin
+                        (define (make-list n)
+                          (let loop ((i 0) (acc (quote ())))
+                            (if (= i n) acc (loop (+ i 1) (cons i acc)))))
+                        (length (filter even? (make-list 10000)))))
+           5000))))
 
 (deftest test-reduce
   (testing "reduce sum"
