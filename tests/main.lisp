@@ -439,6 +439,29 @@
   (testing "single binding"
     (ok (= (evaluate '(let* ((x 42)) x)) 42))))
 
+(deftest test-letrec
+  (testing "single recursive binding"
+    (ok (= (evaluate '(letrec ((fact (lambda (n) (if (= n 0) 1 (* n (fact (- n 1)))))))
+                        (fact 5)))
+           120)))
+
+  (testing "mutually recursive bindings"
+    (ok (eq (evaluate '(letrec ((even? (lambda (n) (if (= n 0) (quote t) (odd? (- n 1)))))
+                                (odd? (lambda (n) (if (= n 0) (quote ()) (even? (- n 1))))))
+                        (even? 10)))
+            't)))
+
+  (testing "mutually recursive bindings (odd case)"
+    (ok (eq (evaluate '(letrec ((even? (lambda (n) (if (= n 0) (quote t) (odd? (- n 1)))))
+                                (odd? (lambda (n) (if (= n 0) (quote ()) (even? (- n 1))))))
+                        (odd? 7)))
+            't)))
+
+  (testing "body in tail position"
+    (ok (eq (evaluate '(letrec ((loop (lambda (n) (if (= n 0) (quote done) (loop (- n 1))))))
+                        (loop 1000000)))
+            'done))))
+
 (deftest test-and
   (testing "all truthy"
     (ok (= (evaluate '(and 1 2 3)) 3)))

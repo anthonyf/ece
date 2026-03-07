@@ -38,6 +38,7 @@
 	   #:reduce
 	   #:for-each
 	   #:gensym
+	   #:letrec
 	   #:repl))
 
 (in-package :ece)
@@ -896,6 +897,12 @@
 (evaluate
  '(define-macro (unless test . body)
     `(if ,test () (begin ,@body))))
+
+(evaluate
+ '(define-macro (letrec bindings . body)
+    `(let ,(map (lambda (b) (list (car b) (quote ()))) bindings)
+       ,@(map (lambda (b) `(set ,(car b) ,(cadr b))) bindings)
+       ,@body)))
 
 ;; Restore standard readtable
 (eval-when (:compile-toplevel :load-toplevel :execute)
