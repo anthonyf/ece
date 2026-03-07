@@ -53,6 +53,33 @@
     (ok (equal (evaluate "hello" nil) "hello"))
     (ok (equal (evaluate "" nil) ""))))
 
+(deftest test-char-ops
+  (testing "character literal self-evaluates"
+    (ok (char= (evaluate #\a) #\a))
+    (ok (char= (evaluate #\space) #\space)))
+
+  (testing "char? predicate"
+    (ok (evaluate '(char? #\a)))
+    (ok (not (evaluate '(char? 42))))
+    (ok (not (evaluate '(char? "a")))))
+
+  (testing "char=? equality"
+    (ok (evaluate '(char=? #\a #\a)))
+    (ok (not (evaluate '(char=? #\a #\b)))))
+
+  (testing "char<? ordering"
+    (ok (evaluate '(char<? #\a #\b)))
+    (ok (not (evaluate '(char<? #\b #\a)))))
+
+  (testing "char->integer"
+    (ok (= (evaluate '(char->integer #\a)) 97)))
+
+  (testing "integer->char"
+    (ok (char= (evaluate '(integer->char 97)) #\a)))
+
+  (testing "round-trip conversion"
+    (ok (evaluate '(char=? (integer->char (char->integer #\z)) #\z)))))
+
 (deftest test-division
   (testing "division primitive"
     (ok (= (evaluate '(/ 10 2)) 5))))
@@ -726,6 +753,42 @@
                              (or (begin (set counter (+ counter 1)) counter) 99)
                              counter))
            1))))
+
+(deftest test-string-ops
+  (testing "string-length"
+    (ok (= (evaluate '(string-length "hello")) 5))
+    (ok (= (evaluate '(string-length "")) 0)))
+
+  (testing "string-ref"
+    (ok (char= (evaluate '(string-ref "hello" 0)) #\h))
+    (ok (char= (evaluate '(string-ref "hello" 4)) #\o)))
+
+  (testing "string-append"
+    (ok (equal (evaluate '(string-append "hello" " world")) "hello world"))
+    (ok (equal (evaluate '(string-append "a" "b" "c")) "abc"))
+    (ok (equal (evaluate '(string-append "" "hello")) "hello")))
+
+  (testing "substring"
+    (ok (equal (evaluate '(substring "hello world" 0 5)) "hello"))
+    (ok (equal (evaluate '(substring "hello world" 6 11)) "world")))
+
+  (testing "string->number"
+    (ok (= (evaluate '(string->number "42")) 42))
+    (ok (= (evaluate '(string->number "-7")) -7))
+    (ok (null (evaluate '(string->number "abc")))))
+
+  (testing "number->string"
+    (ok (equal (evaluate '(number->string 42)) "42"))
+    (ok (equal (evaluate '(number->string -7)) "-7")))
+
+  (testing "string->symbol"
+    (ok (eq (evaluate '(string->symbol "hello")) 'hello)))
+
+  (testing "symbol->string"
+    (ok (equal (evaluate '(symbol->string (quote hello))) "hello")))
+
+  (testing "symbol round-trip"
+    (ok (evaluate '(equal? (string->symbol (symbol->string (quote foo))) (quote foo))))))
 
 (deftest test-unknown-expression-error
   (testing "unrecognized expression types signal an error"

@@ -43,6 +43,19 @@
 	   #:reverse
 	   #:case
 	   #:do
+	   #:char?
+	   #:char=?
+	   #:char<?
+	   #:char->integer
+	   #:integer->char
+	   #:string-length
+	   #:string-ref
+	   #:string-append
+	   #:substring
+	   #:string->number
+	   #:number->string
+	   #:string->symbol
+	   #:symbol->string
 	   #:repl))
 
 (in-package :ece)
@@ -137,7 +150,9 @@
             (zero? . zerop) (even? . evenp) (odd? . oddp)
             (positive? . plusp) (negative? . minusp)
             (eq? . eq) (equal? . equal)
-            (modulo . mod) abs min max reverse)))
+            (modulo . mod) abs min max reverse
+            (char? . characterp) (char=? . char=) (char<? . char<)
+            (char->integer . char-code) (integer->char . code-char))))
 
 (defparameter *primitive-procedure-objects*
   (mapcar (lambda (proc)
@@ -148,7 +163,9 @@
             (zero? . zerop) (even? . evenp) (odd? . oddp)
             (positive? . plusp) (negative? . minusp)
             (eq? . eq) (equal? . equal)
-            (modulo . mod) abs min max reverse)))
+            (modulo . mod) abs min max reverse
+            (char? . characterp) (char=? . char=) (char<? . char<)
+            (char->integer . char-code) (integer->char . code-char))))
 
 (defparameter *global-env*
   (extend-environment *primitive-procedure-names*
@@ -213,6 +230,37 @@
       (finish-output)
       nil)))
 
+(defun ece-string-ref (s i)
+  "Return the character at index i in string s."
+  (char s i))
+
+(defun ece-string-append (&rest strings)
+  "Concatenate all string arguments."
+  (apply #'concatenate 'string strings))
+
+(defun ece-substring (s start end)
+  "Extract substring from start to end."
+  (subseq s start end))
+
+(defun ece-string->number (s)
+  "Parse a number from string s. Returns nil on failure."
+  (handler-case
+      (let ((result (read-from-string s)))
+        (if (numberp result) result nil))
+    (error () nil)))
+
+(defun ece-number->string (n)
+  "Convert number n to string."
+  (write-to-string n))
+
+(defun ece-string->symbol (s)
+  "Intern a symbol from string s."
+  (intern (string-upcase s)))
+
+(defun ece-symbol->string (s)
+  "Return the name of symbol s as a lowercase string."
+  (string-downcase (symbol-name s)))
+
 (dolist (entry (list (cons 'read (list 'primitive #'ece-read))
                      (cons 'print (list 'primitive #'print))
                      (cons 'display (list 'primitive #'ece-display))
@@ -220,12 +268,21 @@
                      (cons 'eof? (list 'primitive #'ece-eof-p))
                      (cons 'try-eval (list 'primitive #'ece-try-eval))
                      (cons 'boolean? (list 'primitive #'ece-boolean-p))
-                     (cons 'gensym (list 'primitive #'gensym))))
+                     (cons 'gensym (list 'primitive #'gensym))
+                     (cons 'string-length (list 'primitive #'length))
+                     (cons 'string-ref (list 'primitive #'ece-string-ref))
+                     (cons 'string-append (list 'primitive #'ece-string-append))
+                     (cons 'substring (list 'primitive #'ece-substring))
+                     (cons 'string->number (list 'primitive #'ece-string->number))
+                     (cons 'number->string (list 'primitive #'ece-number->string))
+                     (cons 'string->symbol (list 'primitive #'ece-string->symbol))
+                     (cons 'symbol->string (list 'primitive #'ece-symbol->string))))
   (define-variable! (car entry) (cdr entry) *global-env*))
 
 (defun self-evaluating-p (expr)
   (or (numberp expr)
       (stringp expr)
+      (characterp expr)
       (null expr)
       (eq expr t)))
 
