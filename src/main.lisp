@@ -39,6 +39,7 @@
 	   #:for-each
 	   #:gensym
 	   #:letrec
+	   #:else
 	   #:repl))
 
 (in-package :ece)
@@ -845,9 +846,11 @@
  '(define-macro (cond . clauses)
     (if (null? clauses)
         (quote ())
-        `(if ,(caar clauses)
-             (begin ,@(cdr (car clauses)))
-             (cond ,@(cdr clauses))))))
+        (if (eq? (caar clauses) (quote else))
+            `(begin ,@(cdr (car clauses)))
+            `(if ,(caar clauses)
+                 (begin ,@(cdr (car clauses)))
+                 (cond ,@(cdr clauses)))))))
 
 (evaluate
  '(define-macro (let bindings . body)

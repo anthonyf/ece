@@ -404,7 +404,13 @@
     (ok (= (evaluate '(begin (define x 0)
                              (cond ((= 1 1) (set x 10) (+ x 5)))
                              x))
-           10))))
+           10)))
+
+  (testing "else clause as catch-all"
+    (ok (= (evaluate '(cond ((= 1 2) 10) (else 99))) 99)))
+
+  (testing "t clause as catch-all"
+    (ok (= (evaluate '(cond ((= 1 2) 10) (t 99))) 99))))
 
 (deftest test-let
   (testing "simple let binding"
