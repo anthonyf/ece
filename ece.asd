@@ -18,7 +18,7 @@
   :serial t
   :components ((:module "src"
 		:components
-		((:file "main"))))
+		((:file "ece"))))
   :in-order-to ((test-op (test-op "ece/tests"))))
 
 (defsystem "ece/tests"
@@ -27,5 +27,5 @@
   :depends-on ("rove")
   :description "Test system for ece"
   :components ((:module "tests"
-		:components ((:file "main"))))
+		:components ((:file "ece"))))
   :perform (test-op (op c) (symbol-call :rove :run c)))
