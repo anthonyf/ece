@@ -4,8 +4,8 @@
 (load "if-lib.scm")
 
 ;; Game state
-(define has-key ())
-(define door-unlocked ())
+(define has-key nil)
+(define door-unlocked nil)
 
 ;; --- Rooms ---
 
