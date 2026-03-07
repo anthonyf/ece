@@ -1017,6 +1017,171 @@
                 (evaluate '(print-text "You have " 5 " gold")))
               "You have 5 gold"))))
 
+(deftest test-hash-table-literals
+  (testing "curly brace reader produces hash table"
+    (let ((*readtable* ece::*ece-readtable*))
+      (ok (equal (read-from-string "{}")
+                 '(:hash-table)))))
+
+  (testing "curly brace reader with symbol keys"
+    (let* ((*readtable* ece::*ece-readtable*)
+           (*package* (find-package :ece))
+           (result (read-from-string "{name \"Alice\" age 30}")))
+      (ok (eq (car result) :hash-table))
+      (ok (= (length (cdr result)) 2))
+      (ok (equal (cdr (assoc (intern "NAME" :ece) (cdr result))) "Alice"))
+      (ok (= (cdr (assoc (intern "AGE" :ece) (cdr result))) 30))))
+
+  (testing "hash table is self-evaluating"
+    (ok (equal (evaluate '(:hash-table (name . "Alice")))
+              '(:hash-table (name . "Alice")))))
+
+  (testing "hash table stored in variable"
+    (ok (equal (evaluate '(begin
+                            (define ht (hash-table 'a 1))
+                            ht))
+              '(:hash-table (a . 1)))))
+
+  (testing "serialization round-trip"
+    (let* ((*package* (find-package :ece))
+           (ht (list :hash-table (cons (intern "NAME" :ece) "Alice") (cons (intern "AGE" :ece) 30)))
+           (str (prin1-to-string ht))
+           (result (let ((*readtable* ece::*ece-readtable*))
+                     (read-from-string str))))
+      (ok (equal result ht)))))
+
+(deftest test-hash-table-ops
+  (testing "hash-table constructor with symbol keys"
+    (ok (equal (evaluate '(hash-table 'a 1 'b 2))
+              '(:hash-table (a . 1) (b . 2)))))
+
+  (testing "hash-table constructor empty"
+    (ok (equal (evaluate '(:hash-table))
+              '(:hash-table))))
+
+  (testing "hash-table constructor with computed key"
+    (ok (equal (evaluate '(begin (define k 'name)
+                                 (hash-table k "Alice")))
+              '(:hash-table (name . "Alice")))))
+
+  (testing "hash-table? predicate true"
+    (ok (evaluate '(hash-table? (hash-table 'a 1)))))
+
+  (testing "hash-table? predicate false for list"
+    (ok (not (evaluate '(hash-table? '(1 2 3))))))
+
+  (testing "hash-table? predicate false for number"
+    (ok (not (evaluate '(hash-table? 42)))))
+
+  (testing "hash-ref key found"
+    (ok (equal (evaluate '(hash-ref (hash-table 'name "Alice" 'age 30) 'name))
+              "Alice")))
+
+  (testing "hash-ref key not found returns nil"
+    (ok (null (evaluate '(hash-ref (hash-table 'a 1) 'missing)))))
+
+  (testing "hash-ref key not found with default"
+    (ok (equal (evaluate '(hash-ref (hash-table 'a 1) 'missing "default"))
+              "default")))
+
+  (testing "hash-ref with string key"
+    (ok (equal (evaluate '(hash-ref (hash-table "first" "Alice") "first"))
+              "Alice")))
+
+  (testing "hash-has-key? true"
+    (ok (evaluate '(hash-has-key? (hash-table 'name "Alice") 'name))))
+
+  (testing "hash-has-key? false"
+    (ok (not (evaluate '(hash-has-key? (hash-table 'name "Alice") 'age)))))
+
+  (testing "hash-keys returns all keys"
+    (ok (equal (evaluate '(hash-keys (hash-table 'a 1 'b 2 'c 3)))
+              '(a b c))))
+
+  (testing "hash-keys empty"
+    (ok (null (evaluate '(hash-keys (hash-table))))))
+
+  (testing "hash-count non-empty"
+    (ok (= (evaluate '(hash-count (hash-table 'a 1 'b 2 'c 3))) 3)))
+
+  (testing "hash-count empty"
+    (ok (= (evaluate '(hash-count (hash-table))) 0))))
+
+(deftest test-hash-table-mutation
+  (testing "hash-set! updates existing key"
+    (ok (= (evaluate '(begin
+                         (define ht (hash-table 'hp 100))
+                         (hash-set! ht 'hp 80)
+                         (hash-ref ht 'hp)))
+           80)))
+
+  (testing "hash-set! adds new key"
+    (ok (= (evaluate '(begin
+                         (define ht (hash-table 'hp 100))
+                         (hash-set! ht 'mp 50)
+                         (hash-ref ht 'mp)))
+           50)))
+
+  (testing "hash-set! preserves other keys"
+    (ok (= (evaluate '(begin
+                         (define ht (hash-table 'hp 100))
+                         (hash-set! ht 'mp 50)
+                         (hash-ref ht 'hp)))
+           100)))
+
+  (testing "hash-set! preserves identity"
+    (ok (evaluate '(begin
+                     (define ht (hash-table 'a 1))
+                     (define ht2 ht)
+                     (hash-set! ht 'a 2)
+                     (= (hash-ref ht2 'a) 2)))))
+
+  (testing "hash-set returns new table"
+    (ok (= (evaluate '(begin
+                         (define ht (hash-table 'hp 100))
+                         (define ht2 (hash-set ht 'hp 80))
+                         (hash-ref ht2 'hp)))
+           80)))
+
+  (testing "hash-set does not modify original"
+    (ok (= (evaluate '(begin
+                         (define ht (hash-table 'hp 100))
+                         (hash-set ht 'hp 80)
+                         (hash-ref ht 'hp)))
+           100)))
+
+  (testing "hash-set adds new key"
+    (ok (= (evaluate '(begin
+                         (define ht (hash-table 'hp 100))
+                         (define ht2 (hash-set ht 'mp 50))
+                         (hash-ref ht2 'mp)))
+           50)))
+
+  (testing "hash-set original lacks new key"
+    (ok (not (evaluate '(begin
+                           (define ht (hash-table 'hp 100))
+                           (hash-set ht 'mp 50)
+                           (hash-has-key? ht 'mp))))))
+
+  (testing "hash-remove! removes key"
+    (ok (not (evaluate '(begin
+                           (define ht (hash-table 'a 1 'b 2))
+                           (hash-remove! ht 'a)
+                           (hash-has-key? ht 'a))))))
+
+  (testing "hash-remove! preserves other keys"
+    (ok (evaluate '(begin
+                     (define ht (hash-table 'a 1 'b 2))
+                     (hash-remove! ht 'a)
+                     (hash-has-key? ht 'b)))))
+
+  (testing "hash-remove! non-existent key is no-op"
+    (ok (= (evaluate '(begin
+                         (define ht (hash-table 'a 1))
+                         (hash-remove! ht 'z)
+                         (hash-count ht)))
+           1))))
+
 (deftest test-unknown-expression-error
   (testing "unrecognized expression types signal an error"
     (signals (evaluate (make-hash-table) nil))))

@@ -85,6 +85,15 @@
 	   #:*random-state*
 	   #:fmt
 	   #:print-text
+	   #:hash-table
+	   #:hash-table?
+	   #:hash-ref
+	   #:hash-set!
+	   #:hash-set
+	   #:hash-remove!
+	   #:hash-has-key?
+	   #:hash-keys
+	   #:hash-count
 	   #:repl))
 
 (in-package :ece)
@@ -223,6 +232,20 @@
           (progn (read-char stream)
                  (list 'unquote-splicing (read stream t nil t)))
           (list 'unquote (read stream t nil t))))
+    nil *ece-readtable*)
+
+  ;; Hash table literal: {k1 v1 k2 v2 ...} → (hash-table (k1 . v1) (k2 . v2) ...)
+  (set-macro-character #\{
+    (lambda (stream char)
+      (declare (ignore char))
+      (let* ((items (read-delimited-list #\} stream t))
+             (entries (loop for (k v) on items by #'cddr
+                            collect (cons k v))))
+        (cons :hash-table entries)))
+    nil *ece-readtable*)
+
+  (set-macro-character #\}
+    (get-macro-character #\))
     nil *ece-readtable*))
 
 ;; I/O primitives with custom wrappers
@@ -331,6 +354,59 @@
   "Convert any value to its human-readable string representation."
   (princ-to-string x))
 
+;; Hash table primitives
+(defun ece-hash-table (&rest args)
+  "Create a hash table from alternating key-value arguments."
+  (cons :hash-table
+        (loop for (k v) on args by #'cddr
+              collect (cons k v))))
+
+(defun ece-hash-table-p (x)
+  "Test if x is a hash table."
+  (and (consp x) (eq (car x) :hash-table) t))
+
+(defun ece-hash-ref (ht key &optional default)
+  "Look up key in hash table using equal. Returns default (nil) if not found."
+  (let ((pair (assoc key (cdr ht) :test #'equal)))
+    (if pair (cdr pair) default)))
+
+(defun ece-hash-has-key-p (ht key)
+  "Test if key exists in hash table."
+  (if (assoc key (cdr ht) :test #'equal) t nil))
+
+(defun ece-hash-keys (ht)
+  "Return list of all keys in hash table."
+  (mapcar #'car (cdr ht)))
+
+(defun ece-hash-count (ht)
+  "Return number of entries in hash table."
+  (length (cdr ht)))
+
+(defun ece-hash-set! (ht key val)
+  "Mutate hash table in place. Update existing key or add new entry."
+  (let ((pair (assoc key (cdr ht) :test #'equal)))
+    (if pair
+        (setf (cdr pair) val)
+        (setf (cdr ht) (cons (cons key val) (cdr ht)))))
+  ht)
+
+(defun ece-hash-set (ht key val)
+  "Return a new hash table with key set to val. Original is unchanged."
+  (let ((found nil))
+    (cons :hash-table
+          (append (mapcar (lambda (pair)
+                            (if (equal (car pair) key)
+                                (progn (setf found t)
+                                       (cons key val))
+                                (cons (car pair) (cdr pair))))
+                          (cdr ht))
+                  (unless found (list (cons key val)))))))
+
+(defun ece-hash-remove! (ht key)
+  "Remove key from hash table in place."
+  (setf (cdr ht) (remove key (cdr ht) :key #'car :test #'equal))
+  ht)
+
 (defun ece-load (filename)
   "Load and evaluate all expressions from an ECE source file."
   (with-open-file (stream filename :direction :input)
@@ -370,7 +446,16 @@
     (list->vector . ece-list->vector)
     (load . ece-load)
     (read-line . ece-read-line)
-    (write-to-string . ece-write-to-string)))
+    (write-to-string . ece-write-to-string)
+    (hash-table . ece-hash-table)
+    (hash-table? . ece-hash-table-p)
+    (hash-ref . ece-hash-ref)
+    (hash-has-key? . ece-hash-has-key-p)
+    (hash-keys . ece-hash-keys)
+    (hash-count . ece-hash-count)
+    (hash-set! . ece-hash-set!)
+    (hash-set . ece-hash-set)
+    (hash-remove! . ece-hash-remove!)))
 
 (dolist (entry *wrapper-primitives*)
   (define-variable! (car entry) (list 'primitive (cdr entry)) *global-env*))
@@ -381,7 +466,8 @@
       (characterp expr)
       (vectorp expr)
       (null expr)
-      (eq expr t)))
+      (eq expr t)
+      (and (consp expr) (eq (car expr) :hash-table))))
 
 (defun variable-p (expr)
   (symbolp expr))
