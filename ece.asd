@@ -12,7 +12,7 @@
   :version "0.1.0"
   :author "Anthony Fairchild"
   :license "MIT"
-  :description ""
+  :description "A Scheme-like language with serializable continuations and full TCO"
   :depends-on ()
   :serial t
   :components ((:module "src"
