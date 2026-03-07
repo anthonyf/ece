@@ -928,6 +928,95 @@
            (ok (null (evaluate `(load ,(namestring tmpfile)))))
         (delete-file tmpfile)))))
 
+(deftest test-write-to-string
+  (testing "number to string"
+    (ok (equal (evaluate '(write-to-string 42)) "42")))
+
+  (testing "symbol to string"
+    (ok (equal (evaluate '(write-to-string (quote hello))) "HELLO")))
+
+  (testing "string passes through"
+    (ok (equal (evaluate '(write-to-string "hello")) "hello")))
+
+  (testing "boolean to string"
+    (ok (equal (evaluate '(write-to-string t)) "T")))
+
+  (testing "list to string"
+    (ok (equal (evaluate '(write-to-string (quote (1 2 3)))) "(1 2 3)")))
+
+  (testing "empty list to string"
+    (ok (equal (evaluate '(write-to-string (quote ()))) "NIL"))))
+
+(deftest test-bitwise-ops
+  (testing "bitwise-and"
+    (ok (= (evaluate '(bitwise-and 12 10)) 8))
+    (ok (= (evaluate '(bitwise-and 255 0)) 0)))
+
+  (testing "bitwise-or"
+    (ok (= (evaluate '(bitwise-or 12 10)) 14))
+    (ok (= (evaluate '(bitwise-or 0 5)) 5)))
+
+  (testing "bitwise-xor"
+    (ok (= (evaluate '(bitwise-xor 12 10)) 6))
+    (ok (= (evaluate '(bitwise-xor 42 42)) 0)))
+
+  (testing "bitwise-not"
+    (ok (= (evaluate '(bitwise-not 0)) -1))
+    (ok (= (evaluate '(bitwise-not 255)) -256)))
+
+  (testing "arithmetic-shift left"
+    (ok (= (evaluate '(arithmetic-shift 1 8)) 256)))
+
+  (testing "arithmetic-shift right"
+    (ok (= (evaluate '(arithmetic-shift 256 -4)) 16)))
+
+  (testing "arithmetic-shift by zero"
+    (ok (= (evaluate '(arithmetic-shift 42 0)) 42))))
+
+(deftest test-xorshift-random
+  (testing "random is within range"
+    (ok (let ((val (evaluate '(random 6))))
+          (and (>= val 0) (< val 6)))))
+
+  (testing "random with small range"
+    (ok (= (evaluate '(random 1)) 0)))
+
+  (testing "same seed produces same sequence"
+    (ok (equal (evaluate '(begin
+                            (random-seed! 42)
+                            (list (random 100) (random 100) (random 100))))
+              (evaluate '(begin
+                            (random-seed! 42)
+                            (list (random 100) (random 100) (random 100)))))))
+
+  (testing "random-state is a number"
+    (ok (evaluate '(number? *random-state*))))
+
+  (testing "random-state changes after random call"
+    (ok (evaluate '(begin
+                     (random-seed! 999)
+                     (let ((before *random-state*))
+                       (random 10)
+                       (not (= before *random-state*))))))))
+
+(deftest test-fmt-macro
+  (testing "concatenate strings"
+    (ok (equal (evaluate '(fmt "hello" " " "world")) "hello world")))
+
+  (testing "mix strings and numbers"
+    (ok (equal (evaluate '(fmt "You have " 5 " gold")) "You have 5 gold")))
+
+  (testing "single string argument"
+    (ok (equal (evaluate '(fmt "hello")) "hello")))
+
+  (testing "number argument"
+    (ok (equal (evaluate '(fmt 42)) "42")))
+
+  (testing "print-text displays formatted text"
+    (ok (equal (with-output-to-string (*standard-output*)
+                (evaluate '(print-text "You have " 5 " gold")))
+              "You have 5 gold"))))
+
 (deftest test-unknown-expression-error
   (testing "unrecognized expression types signal an error"
     (signals (evaluate (make-hash-table) nil))))

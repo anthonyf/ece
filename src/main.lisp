@@ -73,6 +73,18 @@
 	   #:vector->list
 	   #:list->vector
 	   #:load
+	   #:read-line
+	   #:write-to-string
+	   #:bitwise-and
+	   #:bitwise-or
+	   #:bitwise-xor
+	   #:bitwise-not
+	   #:arithmetic-shift
+	   #:random
+	   #:random-seed!
+	   #:*random-state*
+	   #:fmt
+	   #:print-text
 	   #:repl))
 
 (in-package :ece)
@@ -173,7 +185,9 @@
             (error . error)
             (assoc . assoc) (member . member)
             (string=? . string=) (string<? . string<) (string>? . string>)
-            (vector-length . length) (vector-ref . aref))))
+            (vector-length . length) (vector-ref . aref)
+            (bitwise-and . logand) (bitwise-or . logior) (bitwise-xor . logxor)
+            (bitwise-not . lognot) (arithmetic-shift . ash))))
 
 (defparameter *primitive-procedure-objects*
   (mapcar (lambda (proc)
@@ -190,7 +204,9 @@
             (error . error)
             (assoc . assoc) (member . member)
             (string=? . string=) (string<? . string<) (string>? . string>)
-            (vector-length . length) (vector-ref . aref))))
+            (vector-length . length) (vector-ref . aref)
+            (bitwise-and . logand) (bitwise-or . logior) (bitwise-xor . logxor)
+            (bitwise-not . lognot) (arithmetic-shift . ash))))
 
 (defparameter *global-env*
   (extend-environment *primitive-procedure-names*
@@ -319,6 +335,14 @@
   "Convert list to vector."
   (coerce lst 'vector))
 
+(defun ece-read-line ()
+  "Read a line of text from standard input and return it as a string."
+  (read-line))
+
+(defun ece-write-to-string (x)
+  "Convert any value to its human-readable string representation."
+  (princ-to-string x))
+
 (defun ece-load (filename)
   "Load and evaluate all expressions from an ECE source file."
   (with-open-file (stream filename :direction :input)
@@ -354,7 +378,9 @@
                      (cons 'vector-set! (list 'primitive 'ece-vector-set!))
                      (cons 'vector->list (list 'primitive 'ece-vector->list))
                      (cons 'list->vector (list 'primitive 'ece-list->vector))
-                     (cons 'load (list 'primitive 'ece-load))))
+                     (cons 'load (list 'primitive 'ece-load))
+                     (cons 'read-line (list 'primitive 'ece-read-line))
+                     (cons 'write-to-string (list 'primitive 'ece-write-to-string))))
   (define-variable! (car entry) (cdr entry) *global-env*))
 
 (defun self-evaluating-p (expr)
@@ -1087,6 +1113,37 @@
               (begin ,@(if (null? (result-exprs)) (list (quote ())) (result-exprs)))
               (begin ,@body (,name ,@(var-steps))))))
      (loop-name))))
+
+;; xorshift32 PRNG
+(evaluate '(define *random-state* 12345))
+
+(evaluate
+ '(define (random-seed! seed)
+    (set *random-state* seed)))
+
+(evaluate
+ '(define (xorshift32 state)
+    (let* ((s1 (bitwise-xor state (arithmetic-shift state 13)))
+           (s2 (bitwise-xor s1 (arithmetic-shift s1 -17)))
+           (s3 (bitwise-xor s2 (arithmetic-shift s2 5))))
+      (bitwise-and s3 4294967295))))
+
+(evaluate
+ '(define (random n)
+    (set *random-state* (xorshift32 *random-state*))
+    (modulo *random-state* n)))
+
+;; fmt macro: concatenate args as strings
+(evaluate
+ '(define-macro (fmt . args)
+    `(string-append ,@(map (lambda (a)
+                             `(if (string? ,a) ,a (write-to-string ,a)))
+                           args))))
+
+;; print-text macro: display formatted text
+(evaluate
+ '(define-macro (print-text . args)
+    `(display (fmt ,@args))))
 
 ;; Restore standard readtable
 (eval-when (:compile-toplevel :load-toplevel :execute)
