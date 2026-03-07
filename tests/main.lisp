@@ -906,8 +906,8 @@
       (unwind-protect
            (progn
              (evaluate `(load ,(namestring tmpfile)))
-             (ok (= (evaluate 'load-test-x) 42))
-             (ok (= (evaluate 'load-test-y) 43)))
+             (ok (= (evaluate (intern "LOAD-TEST-X" :ece)) 42))
+             (ok (= (evaluate (intern "LOAD-TEST-Y" :ece)) 43)))
         (delete-file tmpfile))))
 
   (testing "load returns last value"

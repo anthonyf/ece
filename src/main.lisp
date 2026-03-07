@@ -348,6 +348,7 @@
   (with-open-file (stream filename :direction :input)
     (let ((*readtable* *ece-readtable*)
           (*read-eval* nil)
+          (*package* (find-package :ece))
           (result nil))
       (loop for expr = (read stream nil *eof-sentinel*)
             until (eq expr *eof-sentinel*)

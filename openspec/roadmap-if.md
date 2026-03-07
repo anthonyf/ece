@@ -12,7 +12,7 @@ ECE is designed as a language for choice-based interactive fiction, inspired by 
 
 ## Architecture: ECE Core + IF Library
 
-ECE stays general-purpose. The IF framework is a loadable library (`(load "if-framework.scm")`) that defines `choose`, `room`, `inventory`, etc. using macros and functions.
+ECE stays general-purpose. The IF framework is a loadable library (`(load "if-lib.scm")`) that defines `choose`, `room`, etc. using macros and functions.
 
 ## Navigation Model (already supported)
 
@@ -30,85 +30,42 @@ ECE stays general-purpose. The IF framework is a loadable library (`(load "if-fr
 | Gosub (returns) | Regular function calls |
 | Conditionals | `if`, `cond`, `case`, `when`, `unless` |
 | Variables/flags | `define`, `set` |
-| Inventory (basic) | Lists + `assoc`, `member` |
-| Text output | `display`, `newline` |
-| Input (s-expr) | `read` |
+| Lists + search | `assoc`, `member`, `list-ref`, `list-tail` |
+| Text output | `display`, `newline`, `print-text`, `fmt` |
+| Raw text input | `read-line` |
+| S-expression input | `read` |
+| Value to string | `write-to-string` |
+| String operations | `string-append`, `substring`, `string->number`, etc. |
+| Randomness | `random`, `random-seed!` (xorshift32 PRNG) |
 | Save state (in-memory) | `call/cc` |
 | Load game files | `load` |
 | Macros | `define-macro` + quasiquote |
 | Loops | `do`, named `let` |
 | Error handling | `error` + `try-eval` |
+| Vectors | `vector`, `make-vector`, `vector-ref`, `vector-set!` |
+| Bitwise ops | `bitwise-and`, `bitwise-or`, `bitwise-xor`, `bitwise-not`, `arithmetic-shift` |
 
-## Gaps: Language-Level Primitives Needed
+## Implementation Progress
 
-### Must Have
+### Priority 1: IF Library + Sample Game ← CURRENT
+- [x] Add `read-line`, `random`, `fmt`/`print-text`, `write-to-string`, bitwise primitives
+- [ ] Build `room` and `choose` macros in `if-lib.scm`
+- [ ] Write a sample game (`simple-game.scm`) to validate the design
 
-| Primitive | Purpose | Implementation |
-|-----------|---------|---------------|
-| `read-line` | Read raw text input as string | CL `read-line` wrapper |
-| `format` / `string-format` | String interpolation/formatting | CL `format` wrapper or ECE-level template |
-| `random` | Dice rolls, random events | CL `random` wrapper |
+### Priority 2: Quality-of-Life Core Additions
+- [ ] Hash tables (game state gets unwieldy with alists)
+- [ ] `sleep` (dramatic pacing)
+- [ ] `clear-screen` (room transitions)
+- [ ] `string-downcase` / `string-split` (input handling)
 
-### Nice to Have
+### Priority 3: Save/Load
+- [ ] Continuation serialization to disk (`write`/`read` with `*print-circle*`)
 
-| Primitive | Purpose | Implementation |
-|-----------|---------|---------------|
-| Hash tables | Efficient world state | CL hash-table wrappers |
-| `sleep` | Pacing, dramatic pauses | CL `sleep` wrapper |
-| `clear-screen` | Fresh display between rooms | ANSI escape or CL equivalent |
-| Continuation serialization | Save/load to disk | `write`/`read` with `*print-circle*` |
+### Priority 4: Polish & Game State
+- [ ] ANSI text styling helpers (bold, color)
+- [ ] `visited?` room tracking
+- [ ] Inventory helpers (`has-item?`, `add-item!`, `remove-item!`)
+- [ ] More string utilities
 
-## Gaps: IF Library (built in ECE, loaded via `load`)
-
-### `choose` macro — the core interaction
-
-```scheme
-(choose
-  ("Talk to bartender"  (bartender-talk))
-  ("Check inventory"    (show-inventory) => current-room)
-  ("Leave"              (town-square))
-  (when (> strength 15)
-    ("Arm wrestle"      (arm-wrestle))))
-```
-
-Needs to:
-1. Filter choices by guards (conditional choices)
-2. Display numbered menu
-3. Read player's number selection
-4. Dispatch to selected action
-5. Support both goto (tail) and gosub (=> return) choices
-
-### `room` macro — syntactic sugar
-
-```scheme
-(room tavern
-  "You enter a dimly lit tavern."
-  (choose ...))
-```
-
-Sugar for `(define (tavern) ...)` plus optional metadata (tags, visited tracking).
-
-### Game state utilities
-
-- `has-item?`, `add-item!`, `remove-item!` — inventory management
-- `visited?` — track which rooms the player has seen
-- `save-game`, `load-game` — serialize/deserialize continuations to file
-
-## IF Author's Core Loop
-
-```
-DESCRIBE  →  Show text to the player
-PRESENT   →  Offer choices (possibly conditional)
-RECEIVE   →  Get the player's selection
-UPDATE    →  Change world state
-NAVIGATE  →  Go to next room (goto or gosub)
-```
-
-## Suggested Implementation Order
-
-1. Add `read-line`, `random`, basic `format` primitives
-2. Build minimal IF library: `choose` macro, input loop
-3. Write a sample game to validate the design
-4. Add save/load (continuation serialization)
-5. Add polish: `visited?`, inventory helpers, `clear-screen`
-6. Port to HTML/JSCL
+### Priority 5: HTML Target
+- [ ] Port to HTML/JSCL
