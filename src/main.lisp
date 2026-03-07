@@ -64,6 +64,14 @@
 	   #:member
 	   #:list-ref
 	   #:list-tail
+	   #:vector?
+	   #:make-vector
+	   #:vector
+	   #:vector-length
+	   #:vector-ref
+	   #:vector-set!
+	   #:vector->list
+	   #:list->vector
 	   #:repl))
 
 (in-package :ece)
@@ -163,7 +171,8 @@
             (char->integer . char-code) (integer->char . code-char)
             (error . error)
             (assoc . assoc) (member . member)
-            (string=? . string=) (string<? . string<) (string>? . string>))))
+            (string=? . string=) (string<? . string<) (string>? . string>)
+            (vector-length . length) (vector-ref . aref))))
 
 (defparameter *primitive-procedure-objects*
   (mapcar (lambda (proc)
@@ -179,7 +188,8 @@
             (char->integer . char-code) (integer->char . code-char)
             (error . error)
             (assoc . assoc) (member . member)
-            (string=? . string=) (string<? . string<) (string>? . string>))))
+            (string=? . string=) (string<? . string<) (string>? . string>)
+            (vector-length . length) (vector-ref . aref))))
 
 (defparameter *global-env*
   (extend-environment *primitive-procedure-names*
@@ -283,6 +293,31 @@
   "Return sublist from index n. Scheme arg order: (list-tail list index)."
   (nthcdr n lst))
 
+(defun ece-vector-p (x)
+  "Test if x is a vector (but not a string)."
+  (and (vectorp x) (not (stringp x))))
+
+(defun ece-make-vector (n &optional (fill 0))
+  "Create a vector of n elements filled with fill (default 0)."
+  (make-array n :initial-element fill))
+
+(defun ece-vector (&rest args)
+  "Create a vector from arguments."
+  (apply #'vector args))
+
+(defun ece-vector-set! (vec idx val)
+  "Set element at idx in vec to val."
+  (setf (aref vec idx) val)
+  val)
+
+(defun ece-vector->list (vec)
+  "Convert vector to list."
+  (coerce vec 'list))
+
+(defun ece-list->vector (lst)
+  "Convert list to vector."
+  (coerce lst 'vector))
+
 (dolist (entry (list (cons 'read (list 'primitive #'ece-read))
                      (cons 'print (list 'primitive #'print))
                      (cons 'display (list 'primitive #'ece-display))
@@ -300,13 +335,20 @@
                      (cons 'string->symbol (list 'primitive #'ece-string->symbol))
                      (cons 'symbol->string (list 'primitive #'ece-symbol->string))
                      (cons 'list-ref (list 'primitive #'ece-list-ref))
-                     (cons 'list-tail (list 'primitive #'ece-list-tail))))
+                     (cons 'list-tail (list 'primitive #'ece-list-tail))
+                     (cons 'vector? (list 'primitive #'ece-vector-p))
+                     (cons 'make-vector (list 'primitive #'ece-make-vector))
+                     (cons 'vector (list 'primitive #'ece-vector))
+                     (cons 'vector-set! (list 'primitive #'ece-vector-set!))
+                     (cons 'vector->list (list 'primitive #'ece-vector->list))
+                     (cons 'list->vector (list 'primitive #'ece-list->vector))))
   (define-variable! (car entry) (cdr entry) *global-env*))
 
 (defun self-evaluating-p (expr)
   (or (numberp expr)
       (stringp expr)
       (characterp expr)
+      (vectorp expr)
       (null expr)
       (eq expr t)))
 

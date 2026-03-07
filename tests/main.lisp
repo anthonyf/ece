@@ -855,6 +855,46 @@
   (testing "string>? not greater than"
     (ok (not (evaluate '(string>? "abc" "abd"))))))
 
+(deftest test-vector-ops
+  (testing "vector literal self-evaluates"
+    (ok (equalp (evaluate #(1 2 3)) #(1 2 3))))
+
+  (testing "vector? predicate"
+    (ok (evaluate '(vector? #(1 2 3))))
+    (ok (not (evaluate '(vector? (quote (1 2 3))))))
+    (ok (not (evaluate '(vector? "hello")))))
+
+  (testing "make-vector"
+    (ok (= (evaluate '(vector-length (make-vector 5))) 5))
+    (ok (= (evaluate '(vector-ref (make-vector 3 42) 0)) 42)))
+
+  (testing "vector constructor"
+    (ok (equalp (evaluate '(vector 1 2 3)) #(1 2 3))))
+
+  (testing "vector-length"
+    (ok (= (evaluate '(vector-length #(1 2 3))) 3))
+    (ok (= (evaluate '(vector-length #())) 0)))
+
+  (testing "vector-ref"
+    (ok (= (evaluate '(vector-ref #(10 20 30) 0)) 10))
+    (ok (= (evaluate '(vector-ref #(10 20 30) 2)) 30)))
+
+  (testing "vector-set!"
+    (ok (= (evaluate '(begin (define v (make-vector 3 0))
+                             (vector-set! v 1 42)
+                             (vector-ref v 1)))
+           42))
+    (ok (equalp (evaluate '(begin (define v (vector 1 2 3))
+                                  (vector-set! v 0 99)
+                                  v))
+                #(99 2 3))))
+
+  (testing "vector->list"
+    (ok (equal (evaluate '(vector->list #(1 2 3))) '(1 2 3))))
+
+  (testing "list->vector"
+    (ok (equalp (evaluate '(list->vector (quote (1 2 3)))) #(1 2 3)))))
+
 (deftest test-unknown-expression-error
   (testing "unrecognized expression types signal an error"
     (signals (evaluate (make-hash-table) nil))))
