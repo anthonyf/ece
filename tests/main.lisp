@@ -421,6 +421,22 @@
                              (my-if (= 1 1) 42)))
            42))))
 
+(deftest test-nested-quasiquote
+  (testing "inner unquote preserved at depth 2"
+    (ok (equal (evaluate '(begin (define x 1)
+                                 (quasiquote (a (quasiquote (b (unquote x)))))))
+              '(a (quasiquote (b (unquote x)))))))
+
+  (testing "outer unquote evaluated, inner preserved"
+    (ok (equal (evaluate '(begin (define x 1)
+                                 (quasiquote (a (unquote x) (quasiquote (b (unquote x)))))))
+              '(a 1 (quasiquote (b (unquote x)))))))
+
+  (testing "nested unquote-splicing preserved at depth 2"
+    (ok (equal (evaluate '(begin (define xs (quote (1 2)))
+                                 (quasiquote (a (quasiquote (b (unquote-splicing xs)))))))
+              '(a (quasiquote (b (unquote-splicing xs))))))))
+
 (deftest test-type-predicates
   (testing "number?"
     (ok (evaluate '(number? 42)))

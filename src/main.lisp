@@ -267,15 +267,30 @@
   (and (listp expr)
        (eq (car expr) 'quasiquote)))
 
-(defun qq-expand (form)
-  "Walk a quasiquote template and produce a cons/append construction expression."
+(defun qq-expand (form &optional (depth 0))
+  "Walk a quasiquote template and produce a cons/append construction expression.
+   Tracks nesting depth so inner quasiquotes preserve their unquote forms."
   (cond
     ((null form) '(quote ()))
     ((atom form) (list 'quote form))
-    ((eq (car form) 'unquote) (cadr form))
-    ((and (consp (car form)) (eq (caar form) 'unquote-splicing))
-     (list 'append (cadar form) (qq-expand (cdr form))))
-    (t (list 'cons (qq-expand (car form)) (qq-expand (cdr form))))))
+    ;; nested quasiquote: increment depth, preserve as literal structure
+    ((eq (car form) 'quasiquote)
+     (list 'list (list 'quote 'quasiquote) (qq-expand (cadr form) (1+ depth))))
+    ;; unquote at depth 0: evaluate
+    ((and (eq (car form) 'unquote) (= depth 0))
+     (cadr form))
+    ;; unquote at depth > 0: decrement depth, preserve as literal structure
+    ((and (eq (car form) 'unquote) (> depth 0))
+     (list 'list (list 'quote 'unquote) (qq-expand (cadr form) (1- depth))))
+    ;; unquote-splicing at depth 0: splice
+    ((and (consp (car form)) (eq (caar form) 'unquote-splicing) (= depth 0))
+     (list 'append (cadar form) (qq-expand (cdr form) depth)))
+    ;; unquote-splicing at depth > 0: preserve as literal structure
+    ((and (consp (car form)) (eq (caar form) 'unquote-splicing) (> depth 0))
+     (list 'cons
+           (list 'list (list 'quote 'unquote-splicing) (qq-expand (cadar form) (1- depth)))
+           (qq-expand (cdr form) depth)))
+    (t (list 'cons (qq-expand (car form) depth) (qq-expand (cdr form) depth)))))
 
 (defparameter *special-forms* '(quote if var set lambda begin call/cc define apply define-macro quasiquote))
 
