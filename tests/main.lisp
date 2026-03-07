@@ -895,6 +895,39 @@
   (testing "list->vector"
     (ok (equalp (evaluate '(list->vector (quote (1 2 3)))) #(1 2 3)))))
 
+(deftest test-load
+  (testing "load file with definitions"
+    (let ((tmpfile (uiop:with-temporary-file (:stream s :pathname p :keep t
+                                              :type "scm")
+                    (write-string "(define load-test-x 42)" s)
+                    (terpri s)
+                    (write-string "(define load-test-y (+ load-test-x 1))" s)
+                    p)))
+      (unwind-protect
+           (progn
+             (evaluate `(load ,(namestring tmpfile)))
+             (ok (= (evaluate 'load-test-x) 42))
+             (ok (= (evaluate 'load-test-y) 43)))
+        (delete-file tmpfile))))
+
+  (testing "load returns last value"
+    (let ((tmpfile (uiop:with-temporary-file (:stream s :pathname p :keep t
+                                              :type "scm")
+                    (write-string "(+ 1 2)" s)
+                    p)))
+      (unwind-protect
+           (ok (= (evaluate `(load ,(namestring tmpfile))) 3))
+        (delete-file tmpfile))))
+
+  (testing "load empty file"
+    (let ((tmpfile (uiop:with-temporary-file (:stream s :pathname p :keep t
+                                              :type "scm")
+                    (declare (ignore s))
+                    p)))
+      (unwind-protect
+           (ok (null (evaluate `(load ,(namestring tmpfile)))))
+        (delete-file tmpfile)))))
+
 (deftest test-unknown-expression-error
   (testing "unrecognized expression types signal an error"
     (signals (evaluate (make-hash-table) nil))))

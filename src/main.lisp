@@ -72,6 +72,7 @@
 	   #:vector-set!
 	   #:vector->list
 	   #:list->vector
+	   #:load
 	   #:repl))
 
 (in-package :ece)
@@ -318,6 +319,17 @@
   "Convert list to vector."
   (coerce lst 'vector))
 
+(defun ece-load (filename)
+  "Load and evaluate all expressions from an ECE source file."
+  (with-open-file (stream filename :direction :input)
+    (let ((*readtable* *ece-readtable*)
+          (*read-eval* nil)
+          (result nil))
+      (loop for expr = (read stream nil *eof-sentinel*)
+            until (eq expr *eof-sentinel*)
+            do (setf result (evaluate expr)))
+      result)))
+
 (dolist (entry (list (cons 'read (list 'primitive #'ece-read))
                      (cons 'print (list 'primitive #'print))
                      (cons 'display (list 'primitive #'ece-display))
@@ -341,7 +353,8 @@
                      (cons 'vector (list 'primitive #'ece-vector))
                      (cons 'vector-set! (list 'primitive #'ece-vector-set!))
                      (cons 'vector->list (list 'primitive #'ece-vector->list))
-                     (cons 'list->vector (list 'primitive #'ece-list->vector))))
+                     (cons 'list->vector (list 'primitive #'ece-list->vector))
+                     (cons 'load (list 'primitive #'ece-load))))
   (define-variable! (car entry) (cdr entry) *global-env*))
 
 (defun self-evaluating-p (expr)
