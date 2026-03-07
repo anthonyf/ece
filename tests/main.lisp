@@ -790,6 +790,71 @@
   (testing "symbol round-trip"
     (ok (evaluate '(equal? (string->symbol (symbol->string (quote foo))) (quote foo))))))
 
+(deftest test-error-signaling
+  (testing "error signals a condition"
+    (signals (evaluate '(error "something went wrong"))))
+
+  (testing "error is catchable"
+    (ok (null (handler-case (evaluate '(error "oops"))
+               (error () nil))))))
+
+(deftest test-assoc-member
+  (testing "assoc finds key"
+    (ok (equal (evaluate '(assoc (quote b) (quote ((a 1) (b 2) (c 3))))) '(b 2))))
+
+  (testing "assoc key not found"
+    (ok (null (evaluate '(assoc (quote d) (quote ((a 1) (b 2) (c 3))))))))
+
+  (testing "assoc with numeric key"
+    (ok (equal (evaluate '(assoc 2 (quote ((1 a) (2 b) (3 c))))) '(2 b))))
+
+  (testing "member element found"
+    (ok (equal (evaluate '(member 3 (quote (1 2 3 4 5)))) '(3 4 5))))
+
+  (testing "member element not found"
+    (ok (null (evaluate '(member 6 (quote (1 2 3 4 5)))))))
+
+  (testing "member with symbol"
+    (ok (equal (evaluate '(member (quote c) (quote (a b c d)))) '(c d)))))
+
+(deftest test-list-indexing
+  (testing "list-ref first element"
+    (ok (eq (evaluate '(list-ref (quote (a b c d)) 0)) 'a)))
+
+  (testing "list-ref third element"
+    (ok (eq (evaluate '(list-ref (quote (a b c d)) 2)) 'c)))
+
+  (testing "list-ref last element"
+    (ok (eq (evaluate '(list-ref (quote (a b c d)) 3)) 'd)))
+
+  (testing "list-tail from index 0"
+    (ok (equal (evaluate '(list-tail (quote (a b c d)) 0)) '(a b c d))))
+
+  (testing "list-tail from index 2"
+    (ok (equal (evaluate '(list-tail (quote (a b c d)) 2)) '(c d))))
+
+  (testing "list-tail at end"
+    (ok (null (evaluate '(list-tail (quote (a b c d)) 4))))))
+
+(deftest test-string-comparisons
+  (testing "string=? equal"
+    (ok (evaluate '(string=? "hello" "hello"))))
+
+  (testing "string=? unequal"
+    (ok (not (evaluate '(string=? "hello" "world")))))
+
+  (testing "string<? less than"
+    (ok (evaluate '(string<? "abc" "abd"))))
+
+  (testing "string<? not less than"
+    (ok (not (evaluate '(string<? "abd" "abc")))))
+
+  (testing "string>? greater than"
+    (ok (evaluate '(string>? "abd" "abc"))))
+
+  (testing "string>? not greater than"
+    (ok (not (evaluate '(string>? "abc" "abd"))))))
+
 (deftest test-unknown-expression-error
   (testing "unrecognized expression types signal an error"
     (signals (evaluate (make-hash-table) nil))))

@@ -56,6 +56,14 @@
 	   #:number->string
 	   #:string->symbol
 	   #:symbol->string
+	   #:string=?
+	   #:string<?
+	   #:string>?
+	   #:error
+	   #:assoc
+	   #:member
+	   #:list-ref
+	   #:list-tail
 	   #:repl))
 
 (in-package :ece)
@@ -152,7 +160,10 @@
             (eq? . eq) (equal? . equal)
             (modulo . mod) abs min max reverse
             (char? . characterp) (char=? . char=) (char<? . char<)
-            (char->integer . char-code) (integer->char . code-char))))
+            (char->integer . char-code) (integer->char . code-char)
+            (error . error)
+            (assoc . assoc) (member . member)
+            (string=? . string=) (string<? . string<) (string>? . string>))))
 
 (defparameter *primitive-procedure-objects*
   (mapcar (lambda (proc)
@@ -165,7 +176,10 @@
             (eq? . eq) (equal? . equal)
             (modulo . mod) abs min max reverse
             (char? . characterp) (char=? . char=) (char<? . char<)
-            (char->integer . char-code) (integer->char . code-char))))
+            (char->integer . char-code) (integer->char . code-char)
+            (error . error)
+            (assoc . assoc) (member . member)
+            (string=? . string=) (string<? . string<) (string>? . string>))))
 
 (defparameter *global-env*
   (extend-environment *primitive-procedure-names*
@@ -261,6 +275,14 @@
   "Return the name of symbol s as a lowercase string."
   (string-downcase (symbol-name s)))
 
+(defun ece-list-ref (lst n)
+  "Return element at index n in lst. Scheme arg order: (list-ref list index)."
+  (nth n lst))
+
+(defun ece-list-tail (lst n)
+  "Return sublist from index n. Scheme arg order: (list-tail list index)."
+  (nthcdr n lst))
+
 (dolist (entry (list (cons 'read (list 'primitive #'ece-read))
                      (cons 'print (list 'primitive #'print))
                      (cons 'display (list 'primitive #'ece-display))
@@ -276,7 +298,9 @@
                      (cons 'string->number (list 'primitive #'ece-string->number))
                      (cons 'number->string (list 'primitive #'ece-number->string))
                      (cons 'string->symbol (list 'primitive #'ece-string->symbol))
-                     (cons 'symbol->string (list 'primitive #'ece-symbol->string))))
+                     (cons 'symbol->string (list 'primitive #'ece-symbol->string))
+                     (cons 'list-ref (list 'primitive #'ece-list-ref))
+                     (cons 'list-tail (list 'primitive #'ece-list-tail))))
   (define-variable! (car entry) (cdr entry) *global-env*))
 
 (defun self-evaluating-p (expr)
