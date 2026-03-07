@@ -16,7 +16,7 @@ The evaluator SHALL support `define-macro` as a special form that binds a name t
 - **THEN** the result SHALL be `30`
 
 ### Requirement: cond derived form is available
-The evaluator SHALL provide `cond` as a macro that expands to nested `if` expressions.
+The evaluator SHALL provide `cond` as a macro that expands to nested `if` expressions. Each clause SHALL support multiple body expressions, which are wrapped in `begin`.
 
 #### Scenario: First true clause
 - **WHEN** evaluating `(cond ((= 1 1) 10) ((= 2 3) 20))`
@@ -29,6 +29,10 @@ The evaluator SHALL provide `cond` as a macro that expands to nested `if` expres
 #### Scenario: No clause matches returns nil
 - **WHEN** evaluating `(cond ((= 1 2) 10) ((= 3 4) 20))`
 - **THEN** the result SHALL be `nil`
+
+#### Scenario: Multi-expression clause body
+- **WHEN** evaluating `(begin (define x 0) (cond ((= 1 1) (set x 10) (+ x 5))) x)`
+- **THEN** the result SHALL be `10`
 
 ### Requirement: let derived form is available
 The evaluator SHALL provide `let` as a macro that expands to a lambda application.

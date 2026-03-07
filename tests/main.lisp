@@ -333,7 +333,13 @@
     (ok (= (evaluate '(cond ((= 1 2) 10) ((= 2 2) 20))) 20)))
 
   (testing "no clause matches returns nil"
-    (ok (null (evaluate '(cond ((= 1 2) 10) ((= 3 4) 20)))))))
+    (ok (null (evaluate '(cond ((= 1 2) 10) ((= 3 4) 20))))))
+
+  (testing "multi-expression clause body"
+    (ok (= (evaluate '(begin (define x 0)
+                             (cond ((= 1 1) (set x 10) (+ x 5)))
+                             x))
+           10))))
 
 (deftest test-let
   (testing "simple let binding"

@@ -154,22 +154,25 @@
 (defvar *eof-sentinel* (gensym "EOF"))
 
 ;; Custom readtable for ECE: ` → quasiquote, , → unquote, ,@ → unquote-splicing
-(defvar *ece-readtable* (copy-readtable))
+;; Wrapped in eval-when so it's available at compile time (needed for backtick
+;; syntax in macro definitions below).
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defvar *ece-readtable* (copy-readtable))
 
-(set-macro-character #\`
-  (lambda (stream char)
-    (declare (ignore char))
-    (list 'quasiquote (read stream t nil t)))
-  nil *ece-readtable*)
+  (set-macro-character #\`
+    (lambda (stream char)
+      (declare (ignore char))
+      (list 'quasiquote (read stream t nil t)))
+    nil *ece-readtable*)
 
-(set-macro-character #\,
-  (lambda (stream char)
-    (declare (ignore char))
-    (if (eql (peek-char nil stream nil nil) #\@)
-        (progn (read-char stream)
-               (list 'unquote-splicing (read stream t nil t)))
-        (list 'unquote (read stream t nil t))))
-  nil *ece-readtable*)
+  (set-macro-character #\,
+    (lambda (stream char)
+      (declare (ignore char))
+      (if (eql (peek-char nil stream nil nil) #\@)
+          (progn (read-char stream)
+                 (list 'unquote-splicing (read stream t nil t)))
+          (list 'unquote (read stream t nil t))))
+    nil *ece-readtable*))
 
 ;; I/O primitives with custom wrappers
 (defun ece-read ()
@@ -833,28 +836,30 @@
             (filter pred (cdr lst))))))
 
 ;; Standard derived forms (defined as macros)
+;; Switch to ECE readtable so ` , ,@ produce ECE quasiquote forms
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (setf *readtable* *ece-readtable*))
+
 (evaluate
  '(define-macro (cond . clauses)
     (if (null? clauses)
         (quote ())
-        (list (quote if)
-              (caar clauses)
-              (cadr (car clauses))
-              (cons (quote cond) (cdr clauses))))))
+        `(if ,(caar clauses)
+             (begin ,@(cdr (car clauses)))
+             (cond ,@(cdr clauses))))))
 
 (evaluate
  '(define-macro (let bindings . body)
-    (cons (cons (quote lambda)
-                (cons (map car bindings)
-                      body))
+    (cons `(lambda ,(map car bindings)
+             ,@body)
           (map cadr bindings))))
 
 (evaluate
  '(define-macro (let* bindings . body)
     (if (null? bindings)
-        (cons (quote begin) body)
-        (list (quote let) (list (car bindings))
-              (cons (quote let*) (cons (cdr bindings) body))))))
+        `(begin ,@body)
+        `(let (,(car bindings))
+           (let* ,(cdr bindings) ,@body)))))
 
 (evaluate
  '(define-macro (and . args)
@@ -862,9 +867,9 @@
         (quote t)
         (if (null? (cdr args))
             (car args)
-            (list (quote if) (car args)
-                  (cons (quote and) (cdr args))
-                  (quote ()))))))
+            `(if ,(car args)
+                 (and ,@(cdr args))
+                 ())))))
 
 (evaluate
  '(define-macro (or . args)
@@ -873,17 +878,22 @@
         (if (null? (cdr args))
             (car args)
             (let ((temp (gensym)))
-              (list (quote let) (list (list temp (car args)))
-                    (list (quote if) temp temp
-                          (cons (quote or) (cdr args)))))))))
+              `(let ((,temp ,(car args)))
+                 (if ,temp
+                     ,temp
+                     (or ,@(cdr args)))))))))
 
 (evaluate
  '(define-macro (when test . body)
-    (list (quote if) test (cons (quote begin) body) (quote ()))))
+    `(if ,test (begin ,@body) ())))
 
 (evaluate
  '(define-macro (unless test . body)
-    (list (quote if) test (quote ()) (cons (quote begin) body))))
+    `(if ,test () (begin ,@body))))
+
+;; Restore standard readtable
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (setf *readtable* (copy-readtable nil)))
 
 (defun repl ()
   "Bootstrap and run the ECE REPL as a tail-recursive ECE function."
