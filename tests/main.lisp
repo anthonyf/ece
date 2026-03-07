@@ -486,6 +486,33 @@
   (testing "negative?"
     (ok (evaluate '(negative? -1)))))
 
+(deftest test-filter
+  (testing "filter even numbers"
+    (ok (equal (evaluate '(filter even? (quote (1 2 3 4 5 6)))) '(2 4 6))))
+
+  (testing "filter with no matches"
+    (ok (equal (evaluate '(filter even? (quote (1 3 5)))) '())))
+
+  (testing "filter empty list"
+    (ok (equal (evaluate '(filter even? (quote ()))) '())))
+
+  (testing "filter with lambda"
+    (ok (equal (evaluate '(filter (lambda (x) (> x 3)) (quote (1 2 3 4 5)))) '(4 5)))))
+
+(deftest test-reduce
+  (testing "reduce sum"
+    (ok (= (evaluate '(reduce + 0 (quote (1 2 3 4 5)))) 15)))
+
+  (testing "reduce with empty list"
+    (ok (= (evaluate '(reduce + 0 (quote ()))) 0)))
+
+  (testing "reduce building a reversed list"
+    (ok (equal (evaluate '(reduce (lambda (acc x) (cons x acc)) (quote ()) (quote (1 2 3)))) '(3 2 1)))))
+
+(deftest test-for-each
+  (testing "for-each returns nil"
+    (ok (equal (evaluate '(for-each (lambda (x) x) (quote (1 2 3)))) '()))))
+
 (deftest test-unknown-expression-error
   (testing "unrecognized expression types signal an error"
     (signals (evaluate (make-hash-table) nil))))

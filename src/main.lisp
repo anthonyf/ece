@@ -34,6 +34,9 @@
 	   #:odd?
 	   #:positive?
 	   #:negative?
+	   #:filter
+	   #:reduce
+	   #:for-each
 	   #:repl))
 
 (in-package :ece)
@@ -790,6 +793,27 @@
         (quote ())
         (cons (f (car lst))
               (map f (cdr lst))))))
+
+(evaluate
+ '(define (reduce f init lst)
+    (if (null? lst)
+        init
+        (reduce f (f init (car lst)) (cdr lst)))))
+
+(evaluate
+ '(define (for-each f lst)
+    (if (null? lst)
+        (quote ())
+        (begin (f (car lst))
+               (for-each f (cdr lst))))))
+
+(evaluate
+ '(define (filter pred lst)
+    (if (null? lst)
+        (quote ())
+        (if (pred (car lst))
+            (cons (car lst) (filter pred (cdr lst)))
+            (filter pred (cdr lst))))))
 
 ;; Standard derived forms (defined as macros)
 (evaluate
