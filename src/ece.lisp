@@ -1,4 +1,4 @@
-(uiop:define-package #:ece
+(defpackage #:ece
   (:use #:cl)
   (:export #:*global-env*
 	   #:evaluate

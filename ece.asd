@@ -13,8 +13,7 @@
   :author ""
   :license ""
   :description ""
-  :depends-on ("uiop"
-	       "alexandria")
+  :depends-on ()
   :serial t
   :components ((:module "src"
 		:components
