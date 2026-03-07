@@ -137,7 +137,65 @@
                           (if (= n 0)
                             0
                             (self self (- n 1))))))
-           0))))
+           0)))
+
+  (testing "tail call in if consequent/alternative"
+    (ok (eq (evaluate '(begin (define (tco-if n)
+                                (if (= n 0) (quote done) (tco-if (- n 1))))
+                              (tco-if 1000000)))
+            'done)))
+
+  (testing "tail call in begin last expression"
+    (ok (eq (evaluate '(begin (define (tco-begin n)
+                                (if (= n 0) (quote done)
+                                    (begin (quote ignore) (tco-begin (- n 1)))))
+                              (tco-begin 1000000)))
+            'done)))
+
+  (testing "tail call in cond clause body"
+    (ok (eq (evaluate '(begin (define (tco-cond n)
+                                (cond ((= n 0) (quote done))
+                                      ((quote t) (tco-cond (- n 1)))))
+                              (tco-cond 1000000)))
+            'done)))
+
+  (testing "tail call as last argument of and"
+    (ok (eq (evaluate '(begin (define (tco-and n)
+                                (if (= n 0) (quote done)
+                                    (and (quote t) (tco-and (- n 1)))))
+                              (tco-and 1000000)))
+            'done)))
+
+  (testing "tail call as last argument of or"
+    (ok (eq (evaluate '(begin (define (tco-or n)
+                                (if (= n 0) (quote done)
+                                    (or (quote ()) (tco-or (- n 1)))))
+                              (tco-or 1000000)))
+            'done)))
+
+  (testing "tail call in when body"
+    (ok (null (evaluate '(begin (define (tco-when n)
+                                  (when (> n 0) (tco-when (- n 1))))
+                                (tco-when 1000000))))))
+
+  (testing "tail call in unless body"
+    (ok (null (evaluate '(begin (define (tco-unless n)
+                                  (unless (= n 0) (tco-unless (- n 1))))
+                                (tco-unless 1000000))))))
+
+  (testing "tail call in let body"
+    (ok (eq (evaluate '(begin (define (tco-let n)
+                                (let ((m (- n 1)))
+                                  (if (= m 0) (quote done) (tco-let m))))
+                              (tco-let 1000000)))
+            'done)))
+
+  (testing "tail call in let* body"
+    (ok (eq (evaluate '(begin (define (tco-let* n)
+                                (let* ((m (- n 1)) (k m))
+                                  (if (= k 0) (quote done) (tco-let* k))))
+                              (tco-let* 1000000)))
+            'done))))
 
 (deftest test-define-eval
   (testing "simple value binding"
@@ -347,6 +405,25 @@
 
   (testing "let bindings do not see each other"
     (ok (= (evaluate '(begin (define x 1) (let ((x 10) (y x)) y))) 1))))
+
+(deftest test-named-let
+  (testing "simple counting loop"
+    (ok (= (evaluate '(let loop ((i 0) (sum 0))
+                        (if (= i 5) sum (loop (+ i 1) (+ sum i)))))
+           10)))
+
+  (testing "named let with tail recursion"
+    (ok (eq (evaluate '(let loop ((n 1000000))
+                         (if (= n 0) (quote done) (loop (- n 1)))))
+            'done)))
+
+  (testing "building a list with named let"
+    (ok (equal (evaluate '(let loop ((i 3) (acc (quote ())))
+                            (if (= i 0) acc (loop (- i 1) (cons i acc)))))
+              '(1 2 3))))
+
+  (testing "regular let still works"
+    (ok (= (evaluate '(let ((x 10) (y 20)) (+ x y))) 30))))
 
 (deftest test-let*
   (testing "sequential bindings"

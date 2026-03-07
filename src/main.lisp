@@ -850,9 +850,15 @@
 
 (evaluate
  '(define-macro (let bindings . body)
-    (cons `(lambda ,(map car bindings)
-             ,@body)
-          (map cadr bindings))))
+    (if (symbol? bindings)
+        ;; Named let: (let name ((var init) ...) body...)
+        ;; bindings is the name, (car body) is the actual bindings, (cdr body) is the real body
+        `(begin (define (,bindings ,@(map car (car body))) ,@(cdr body))
+                (,bindings ,@(map cadr (car body))))
+        ;; Regular let: (let ((var init) ...) body...)
+        (cons `(lambda ,(map car bindings)
+                 ,@body)
+              (map cadr bindings)))))
 
 (evaluate
  '(define-macro (let* bindings . body)
