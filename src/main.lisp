@@ -41,6 +41,8 @@
 	   #:letrec
 	   #:else
 	   #:reverse
+	   #:case
+	   #:do
 	   #:repl))
 
 (in-package :ece)
@@ -912,6 +914,43 @@
     `(let ,(map (lambda (b) (list (car b) (quote ()))) bindings)
        ,@(map (lambda (b) `(set ,(car b) ,(cadr b))) bindings)
        ,@body)))
+
+(evaluate
+ '(define-macro (case key . clauses)
+    (define (expand-clauses k clauses)
+      (if (null? clauses)
+          (quote ())
+          (if (eq? (caar clauses) (quote else))
+              `(begin ,@(cdr (car clauses)))
+              `(if ,(if (null? (cdr (caar clauses)))
+                        `(equal? ,k (quote ,(caar (car clauses))))
+                        `(or ,@(map (lambda (d) `(equal? ,k (quote ,d)))
+                                    (caar clauses))))
+                   (begin ,@(cdr (car clauses)))
+                   ,(expand-clauses k (cdr clauses))))))
+    (define (temp) (gensym))
+    ((lambda (g)
+       `((lambda (,g) ,(expand-clauses g clauses)) ,key))
+     (temp))))
+
+(evaluate
+ '(define-macro (do bindings test-and-result . body)
+    (define (var-inits) (map (lambda (b) (list (car b) (cadr b))) bindings))
+    (define (var-steps)
+      (map (lambda (b)
+             (if (null? (cddr b))
+                 (car b)
+                 (caddr b)))
+           bindings))
+    (define (test-expr) (car test-and-result))
+    (define (result-exprs) (cdr test-and-result))
+    (define (loop-name) (gensym))
+    ((lambda (name)
+       `(let ,name ,(var-inits)
+          (if ,(test-expr)
+              (begin ,@(if (null? (result-exprs)) (list (quote ())) (result-exprs)))
+              (begin ,@body (,name ,@(var-steps))))))
+     (loop-name))))
 
 ;; Restore standard readtable
 (eval-when (:compile-toplevel :load-toplevel :execute)

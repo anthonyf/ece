@@ -425,6 +425,50 @@
   (testing "t clause as catch-all"
     (ok (= (evaluate '(cond ((= 1 2) 10) (t 99))) 99))))
 
+(deftest test-case
+  (testing "match single datum"
+    (ok (= (evaluate '(case (+ 1 1) ((1) 10) ((2) 20) ((3) 30))) 20)))
+
+  (testing "match in datum list"
+    (ok (eq (evaluate '(case 3 ((1 2) (quote low)) ((3 4) (quote high)))) 'high)))
+
+  (testing "else clause"
+    (ok (eq (evaluate '(case 99 ((1) (quote one)) (else (quote other)))) 'other)))
+
+  (testing "no match returns nil"
+    (ok (null (evaluate '(case 5 ((1) (quote one)) ((2) (quote two)))))))
+
+  (testing "key expression evaluated once"
+    (ok (= (evaluate '(begin (define counter 0)
+                             (case (begin (set counter (+ counter 1)) counter)
+                               ((1) (quote one))
+                               ((2) (quote two)))
+                             counter))
+           1)))
+
+  (testing "match symbol datums"
+    (ok (= (evaluate '(case (quote b) ((a) 1) ((b) 2) ((c) 3))) 2))))
+
+(deftest test-do
+  (testing "simple counting loop"
+    (ok (= (evaluate '(do ((i 0 (+ i 1))) ((= i 5) i))) 5)))
+
+  (testing "accumulating loop"
+    (ok (= (evaluate '(do ((i 0 (+ i 1)) (sum 0 (+ sum i))) ((= i 5) sum))) 10)))
+
+  (testing "loop with body for side effects"
+    (ok (equal (evaluate '(begin (define result (quote ()))
+                                 (do ((i 0 (+ i 1)))
+                                     ((= i 3) result)
+                                   (set result (cons i result)))))
+              '(2 1 0))))
+
+  (testing "variable without step expression stays constant"
+    (ok (= (evaluate '(do ((x 10) (i 0 (+ i 1))) ((= i 3) x))) 10)))
+
+  (testing "immediate termination"
+    (ok (eq (evaluate '(do ((i 0 (+ i 1))) ((= i 0) (quote done)))) 'done))))
+
 (deftest test-let
   (testing "simple let binding"
     (ok (= (evaluate '(let ((x 10) (y 20)) (+ x y))) 30)))
