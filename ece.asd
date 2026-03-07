@@ -18,7 +18,8 @@
   :serial t
   :components ((:module "src"
 		:components
-		((:file "ece"))))
+		((:file "ece")
+		 (:static-file "prelude.scm"))))
   :in-order-to ((test-op (test-op "ece/tests"))))
 
 (defsystem "ece/tests"

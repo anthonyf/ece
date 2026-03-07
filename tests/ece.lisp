@@ -4,6 +4,10 @@
         :rove))
 (in-package :ece/tests/main)
 
+;; Limit print depth to prevent stack overflow when rove tries to print
+;; test results containing deeply nested captured environments/continuations.
+(setf *print-circle* t *print-level* 10 *print-length* 10)
+
 ;; NOTE: To run this test file, execute `(asdf:test-system :ece)' in your Lisp.
 
 (deftest test-self-eval
@@ -1248,9 +1252,10 @@
                           (define k nil)
                           (call/cc (lambda (cont) (set k cont)))
                           (save-continuation! ,(namestring tmpfile) k)))
-             ;; Load it back and verify it's a continuation
-             (let ((loaded (evaluate `(load-continuation ,(namestring tmpfile)))))
-               (ok (and (listp loaded) (eq (car loaded) (intern "CONTINUATION" :ece))))))
+             ;; Verify entirely within ECE to avoid circular data in CL test output
+             (ok (eq t (evaluate `(begin
+                                    (define loaded (load-continuation ,(namestring tmpfile)))
+                                    (eq? (car loaded) ',(intern "CONTINUATION" :ece)))))))
         (delete-file tmpfile))))
 
   (testing "save-continuation! returns t"
@@ -1274,6 +1279,76 @@
              (ok (equal (evaluate `(load-continuation ,(namestring tmpfile)))
                         "new")))
         (delete-file tmpfile)))))
+
+(deftest test-define-record
+  (testing "constructor creates typed hash table"
+    (ok (equal (evaluate '(begin (define-record point x y)
+                                 (point-x (make-point 10 20))))
+               10))
+    (ok (equal (evaluate '(begin (define-record point x y)
+                                 (point-y (make-point 10 20))))
+               20))
+    (ok (equal (evaluate '(begin (define-record point x y)
+                                 (hash-ref (make-point 10 20) 'type)))
+               'point)))
+
+  (testing "constructor with no fields"
+    (ok (equal (evaluate '(begin (define-record empty)
+                                 (hash-count (make-empty))))
+               1))
+    (ok (equal (evaluate '(begin (define-record empty)
+                                 (hash-ref (make-empty) 'type)))
+               'empty)))
+
+  (testing "predicate returns true for matching record"
+    (ok (equal (evaluate '(begin (define-record point x y)
+                                 (point? (make-point 1 2))))
+               t)))
+
+  (testing "predicate returns false for non-matching value"
+    (ok (equal (evaluate '(begin (define-record point x y)
+                                 (point? 42)))
+               nil)))
+
+  (testing "predicate returns false for different record type"
+    (ok (equal (evaluate '(begin (define-record point x y)
+                                 (define-record vec x y)
+                                 (point? (make-vec 1 2))))
+               nil)))
+
+  (testing "mutator updates field in place"
+    (ok (equal (evaluate '(begin (define-record point x y)
+                                 (define p (make-point 1 2))
+                                 (set-point-x! p 99)
+                                 (point-x p)))
+               99)))
+
+  (testing "functional update returns new record, original unchanged"
+    (ok (equal (evaluate '(begin (define-record point x y)
+                                 (define p (make-point 1 2))
+                                 (define p2 (point-with-x p 99))
+                                 (list (point-x p) (point-x p2))))
+               '(1 99))))
+
+  (testing "copy creates independent record"
+    (ok (equal (evaluate '(begin (define-record point x y)
+                                 (define p (make-point 1 2))
+                                 (define p2 (copy-point p))
+                                 (set-point-x! p2 99)
+                                 (list (point-x p) (point-x p2))))
+               '(1 99))))
+
+  (testing "records are standard hash tables"
+    (ok (equal (evaluate '(begin (define-record point x y)
+                                 (hash-table? (make-point 10 20))))
+               t)))
+
+  (testing "multiple record types coexist"
+    (ok (equal (evaluate '(begin (define-record point x y)
+                                 (define-record person name age)
+                                 (list (point-x (make-point 3 4))
+                                       (person-name (make-person "Alice" 30)))))
+               (list 3 "Alice")))))
 
 (deftest test-unknown-expression-error
   (testing "unrecognized expression types signal an error"
