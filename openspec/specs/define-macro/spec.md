@@ -68,7 +68,7 @@ The evaluator SHALL provide `and` as a macro. `and` SHALL return the last truthy
 - **THEN** the result SHALL be truthy
 
 ### Requirement: or derived form is available
-The evaluator SHALL provide `or` as a macro. `or` SHALL return the first truthy value, or the last value if none are truthy.
+The evaluator SHALL provide `or` as a macro. `or` SHALL return the first truthy value, or the last value if none are truthy. Each argument SHALL be evaluated at most once.
 
 #### Scenario: First truthy
 - **WHEN** evaluating `(or (quote ()) 2 3)`
@@ -81,6 +81,10 @@ The evaluator SHALL provide `or` as a macro. `or` SHALL return the first truthy 
 #### Scenario: Empty or
 - **WHEN** evaluating `(or)`
 - **THEN** the result SHALL be `nil`
+
+#### Scenario: No double evaluation of truthy argument
+- **WHEN** evaluating `(begin (define counter 0) (or (begin (set counter (+ counter 1)) counter) 99) counter)`
+- **THEN** the result SHALL be `1`
 
 ### Requirement: when derived form is available
 The evaluator SHALL provide `when` as a macro. `when` SHALL evaluate the body only if the test is truthy.

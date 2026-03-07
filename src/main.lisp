@@ -37,6 +37,7 @@
 	   #:filter
 	   #:reduce
 	   #:for-each
+	   #:gensym
 	   #:repl))
 
 (in-package :ece)
@@ -210,7 +211,8 @@
                      (cons 'newline (list 'primitive #'ece-newline))
                      (cons 'eof? (list 'primitive #'ece-eof-p))
                      (cons 'try-eval (list 'primitive #'ece-try-eval))
-                     (cons 'boolean? (list 'primitive #'ece-boolean-p))))
+                     (cons 'boolean? (list 'primitive #'ece-boolean-p))
+                     (cons 'gensym (list 'primitive #'gensym))))
   (define-variable! (car entry) (cdr entry) *global-env*))
 
 (defun self-evaluating-p (expr)
@@ -855,9 +857,10 @@
         (quote ())
         (if (null? (cdr args))
             (car args)
-            (list (quote if) (car args)
-                  (car args)
-                  (cons (quote or) (cdr args)))))))
+            (let ((temp (gensym)))
+              (list (quote let) (list (list temp (car args)))
+                    (list (quote if) temp temp
+                          (cons (quote or) (cdr args)))))))))
 
 (evaluate
  '(define-macro (when test . body)

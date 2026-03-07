@@ -513,6 +513,20 @@
   (testing "for-each returns nil"
     (ok (equal (evaluate '(for-each (lambda (x) x) (quote (1 2 3)))) '()))))
 
+(deftest test-gensym
+  (testing "gensym returns a symbol"
+    (ok (evaluate '(symbol? (gensym)))))
+
+  (testing "gensym returns unique symbols"
+    (ok (not (evaluate '(eq? (gensym) (gensym)))))))
+
+(deftest test-or-no-double-eval
+  (testing "or does not double-evaluate truthy argument"
+    (ok (= (evaluate '(begin (define counter 0)
+                             (or (begin (set counter (+ counter 1)) counter) 99)
+                             counter))
+           1))))
+
 (deftest test-unknown-expression-error
   (testing "unrecognized expression types signal an error"
     (signals (evaluate (make-hash-table) nil))))
