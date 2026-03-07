@@ -1182,6 +1182,34 @@
                          (hash-count ht)))
            1))))
 
+(deftest test-utility-primitives
+  (testing "string-downcase"
+    (ok (equal (evaluate '(string-downcase "Hello World")) "hello world"))
+    (ok (equal (evaluate '(string-downcase "hello")) "hello")))
+
+  (testing "string-upcase"
+    (ok (equal (evaluate '(string-upcase "Hello World")) "HELLO WORLD"))
+    (ok (equal (evaluate '(string-upcase "HELLO")) "HELLO")))
+
+  (testing "string-split by default (space)"
+    (ok (equal (evaluate '(string-split "hello world")) '("hello" "world"))))
+
+  (testing "string-split by explicit delimiter"
+    (ok (equal (evaluate '(string-split "a,b,c" #\,)) '("a" "b" "c"))))
+
+  (testing "string-split no delimiter found"
+    (ok (equal (evaluate '(string-split "hello" #\,)) '("hello"))))
+
+  (testing "string-split empty string"
+    (ok (equal (evaluate '(string-split "" #\,)) '(""))))
+
+  (testing "sleep returns nil"
+    (ok (null (evaluate '(sleep 0)))))
+
+  (testing "clear-screen returns nil"
+    (ok (null (let ((*standard-output* (make-string-output-stream)))
+                (evaluate '(clear-screen)))))))
+
 (deftest test-unknown-expression-error
   (testing "unrecognized expression types signal an error"
     (signals (evaluate (make-hash-table) nil))))

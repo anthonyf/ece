@@ -94,6 +94,11 @@
 	   #:hash-has-key?
 	   #:hash-keys
 	   #:hash-count
+	   #:sleep
+	   #:clear-screen
+	   #:string-downcase
+	   #:string-upcase
+	   #:string-split
 	   #:repl))
 
 (in-package :ece)
@@ -407,6 +412,29 @@
   (setf (cdr ht) (remove key (cdr ht) :key #'car :test #'equal))
   ht)
 
+(defun ece-sleep (seconds)
+  "Pause execution for the given number of seconds. Returns nil."
+  (cl:sleep seconds)
+  nil)
+
+(defun ece-clear-screen ()
+  "Clear the terminal screen using ANSI escape sequences."
+  (format t "~c[2J~c[H" #\Escape #\Escape)
+  (finish-output)
+  nil)
+
+(defun ece-string-split (str &optional (delimiter #\Space))
+  "Split a string by a delimiter character, returning a list of substrings."
+  (let ((result nil)
+        (start 0)
+        (len (length str)))
+    (loop for i from 0 below len
+          when (char= (char str i) delimiter)
+            do (push (subseq str start i) result)
+               (setf start (1+ i)))
+    (push (subseq str start len) result)
+    (nreverse result)))
+
 (defun ece-load (filename)
   "Load and evaluate all expressions from an ECE source file."
   (with-open-file (stream filename :direction :input)
@@ -455,7 +483,12 @@
     (hash-count . ece-hash-count)
     (hash-set! . ece-hash-set!)
     (hash-set . ece-hash-set)
-    (hash-remove! . ece-hash-remove!)))
+    (hash-remove! . ece-hash-remove!)
+    (sleep . ece-sleep)
+    (clear-screen . ece-clear-screen)
+    (string-downcase . string-downcase)
+    (string-upcase . string-upcase)
+    (string-split . ece-string-split)))
 
 (dolist (entry *wrapper-primitives*)
   (define-variable! (car entry) (list 'primitive (cdr entry)) *global-env*))
