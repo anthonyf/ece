@@ -149,9 +149,9 @@
   (define (loop-name) (gensym))
   ((lambda (name)
      `(let ,name ,(var-inits)
-        (if ,(test-expr)
-            (begin ,@(if (null? (result-exprs)) (list (quote ())) (result-exprs)))
-            (begin ,@body (,name ,@(var-steps))))))
+           (if ,(test-expr)
+               (begin ,@(if (null? (result-exprs)) (list (quote ())) (result-exprs)))
+               (begin ,@body (,name ,@(var-steps))))))
    (loop-name)))
 
 ;; xorshift32 PRNG
@@ -173,7 +173,7 @@
 ;; fmt: concatenate args as strings
 (define (fmt . args)
   (apply string-append
-    (map (lambda (a) (if (string? a) a (write-to-string a))) args)))
+         (map (lambda (a) (if (string? a) a (write-to-string a))) args)))
 
 ;; print-text: display formatted text
 (define (print-text . args)
@@ -184,26 +184,26 @@
   (if (null? args)
       ""
       (apply string-append
-        (map (lambda (a)
-               (string-append (if (string? a) a (write-to-string a)) "\n"))
-             args))))
+             (map (lambda (a)
+                    (string-append (if (string? a) a (write-to-string a)) "\n"))
+                  args))))
 
 ;; define-record macro: generate record type definitions backed by hash tables
 (define-macro (define-record name . fields)
   (let ((make-name (string->symbol
-                     (string-append "make-" (symbol->string name))))
+                    (string-append "make-" (symbol->string name))))
         (pred-name (string->symbol
-                     (string-append (symbol->string name) "?")))
+                    (string-append (symbol->string name) "?")))
         (copy-name (string->symbol
-                     (string-append "copy-" (symbol->string name)))))
+                    (string-append "copy-" (symbol->string name)))))
     `(begin
        ;; Constructor
        (define (,make-name ,@fields)
          (hash-table ,@(apply append
-                         (cons (list (quote 'type) (list 'quote name))
-                               (map (lambda (f)
-                                      (list (list 'quote f) f))
-                                    fields)))))
+                              (cons (list (quote 'type) (list 'quote name))
+                                    (map (lambda (f)
+                                           (list (list 'quote f) f))
+                                         fields)))))
        ;; Predicate
        (define (,pred-name obj)
          (and (hash-table? obj)
@@ -211,44 +211,44 @@
        ;; Accessors
        ,@(map (lambda (f)
                 (let ((acc-name (string->symbol
-                                  (string-append (symbol->string name)
-                                                 "-"
-                                                 (symbol->string f)))))
+                                 (string-append (symbol->string name)
+                                                "-"
+                                                (symbol->string f)))))
                   `(define (,acc-name obj)
                      (hash-ref obj ',f))))
               fields)
        ;; Mutators
        ,@(map (lambda (f)
                 (let ((mut-name (string->symbol
-                                  (string-append "set-"
-                                                 (symbol->string name)
-                                                 "-"
-                                                 (symbol->string f)
-                                                 "!"))))
+                                 (string-append "set-"
+                                                (symbol->string name)
+                                                "-"
+                                                (symbol->string f)
+                                                "!"))))
                   `(define (,mut-name obj val)
                      (hash-set! obj ',f val))))
               fields)
        ;; Functional update accessors
        ,@(map (lambda (f)
                 (let ((with-name (string->symbol
-                                   (string-append (symbol->string name)
-                                                  "-with-"
-                                                  (symbol->string f)))))
+                                  (string-append (symbol->string name)
+                                                 "-with-"
+                                                 (symbol->string f)))))
                   `(define (,with-name obj val)
                      (hash-set obj ',f val))))
               fields)
        ;; Copy function
        (define (,copy-name obj)
          (hash-table ,@(apply append
-                         (cons (list (quote 'type) (list 'quote name))
-                               (map (lambda (f)
-                                      (list (list 'quote f)
-                                            (list (string->symbol
-                                                    (string-append (symbol->string name)
-                                                                   "-"
-                                                                   (symbol->string f)))
-                                                  'obj)))
-                                    fields))))))))
+                              (cons (list (quote 'type) (list 'quote name))
+                                    (map (lambda (f)
+                                           (list (list 'quote f)
+                                                 (list (string->symbol
+                                                        (string-append (symbol->string name)
+                                                                       "-"
+                                                                       (symbol->string f)))
+                                                       'obj)))
+                                         fields))))))))
 
 ;; assert macro: signal error if condition is falsy
 (define-macro (assert expr . rest)

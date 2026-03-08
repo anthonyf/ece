@@ -1,114 +1,114 @@
 (defpackage #:ece
   (:use #:cl)
   (:export #:*global-env*
-	   #:evaluate
-	   #:lambda
-	   #:var
-	   #:set
-	   #:if
-	   #:begin
-	   #:quote
-	   #:call/cc
-	   #:define
-	   #:display
-	   #:newline
-	   #:null?
-	   #:eof?
-	   #:primitive
-	   #:pair?
-	   #:map
-	   #:apply
-	   #:define-macro
-	   #:quasiquote
-	   #:unquote
-	   #:unquote-splicing
-	   #:number?
-	   #:string?
-	   #:symbol?
-	   #:boolean?
-	   #:zero?
-	   #:eq?
-	   #:equal?
-	   #:modulo
-	   #:even?
-	   #:odd?
-	   #:positive?
-	   #:negative?
-	   #:filter
-	   #:reduce
-	   #:for-each
-	   #:gensym
-	   #:letrec
-	   #:else
-	   #:reverse
-	   #:case
-	   #:do
-	   #:char?
-	   #:char=?
-	   #:char<?
-	   #:char->integer
-	   #:integer->char
-	   #:string-length
-	   #:string-ref
-	   #:string-append
-	   #:substring
-	   #:string->number
-	   #:number->string
-	   #:string->symbol
-	   #:symbol->string
-	   #:string=?
-	   #:string<?
-	   #:string>?
-	   #:error
-	   #:assoc
-	   #:member
-	   #:list-ref
-	   #:list-tail
-	   #:vector?
-	   #:make-vector
-	   #:vector
-	   #:vector-length
-	   #:vector-ref
-	   #:vector-set!
-	   #:vector->list
-	   #:list->vector
-	   #:load
-	   #:read-line
-	   #:write-to-string
-	   #:bitwise-and
-	   #:bitwise-or
-	   #:bitwise-xor
-	   #:bitwise-not
-	   #:arithmetic-shift
-	   #:random
-	   #:random-seed!
-	   #:*random-state*
-	   #:fmt
-	   #:print-text
-	   #:hash-table
-	   #:hash-table?
-	   #:hash-ref
-	   #:hash-set!
-	   #:hash-set
-	   #:hash-remove!
-	   #:hash-has-key?
-	   #:hash-keys
-	   #:hash-count
-	   #:sleep
-	   #:clear-screen
-	   #:string-downcase
-	   #:string-upcase
-	   #:string-split
-	   #:save-continuation!
-	   #:load-continuation
-	   #:define-record
-	   #:any
-	   #:every
-	   #:compose
-	   #:identity
-	   #:range
-	   #:lines
-	   #:repl))
+           #:evaluate
+           #:lambda
+           #:var
+           #:set
+           #:if
+           #:begin
+           #:quote
+           #:call/cc
+           #:define
+           #:display
+           #:newline
+           #:null?
+           #:eof?
+           #:primitive
+           #:pair?
+           #:map
+           #:apply
+           #:define-macro
+           #:quasiquote
+           #:unquote
+           #:unquote-splicing
+           #:number?
+           #:string?
+           #:symbol?
+           #:boolean?
+           #:zero?
+           #:eq?
+           #:equal?
+           #:modulo
+           #:even?
+           #:odd?
+           #:positive?
+           #:negative?
+           #:filter
+           #:reduce
+           #:for-each
+           #:gensym
+           #:letrec
+           #:else
+           #:reverse
+           #:case
+           #:do
+           #:char?
+           #:char=?
+           #:char<?
+           #:char->integer
+           #:integer->char
+           #:string-length
+           #:string-ref
+           #:string-append
+           #:substring
+           #:string->number
+           #:number->string
+           #:string->symbol
+           #:symbol->string
+           #:string=?
+           #:string<?
+           #:string>?
+           #:error
+           #:assoc
+           #:member
+           #:list-ref
+           #:list-tail
+           #:vector?
+           #:make-vector
+           #:vector
+           #:vector-length
+           #:vector-ref
+           #:vector-set!
+           #:vector->list
+           #:list->vector
+           #:load
+           #:read-line
+           #:write-to-string
+           #:bitwise-and
+           #:bitwise-or
+           #:bitwise-xor
+           #:bitwise-not
+           #:arithmetic-shift
+           #:random
+           #:random-seed!
+           #:*random-state*
+           #:fmt
+           #:print-text
+           #:hash-table
+           #:hash-table?
+           #:hash-ref
+           #:hash-set!
+           #:hash-set
+           #:hash-remove!
+           #:hash-has-key?
+           #:hash-keys
+           #:hash-count
+           #:sleep
+           #:clear-screen
+           #:string-downcase
+           #:string-upcase
+           #:string-split
+           #:save-continuation!
+           #:load-continuation
+           #:define-record
+           #:any
+           #:every
+           #:compose
+           #:identity
+           #:range
+           #:lines
+           #:repl))
 
 (in-package :ece)
 
@@ -134,9 +134,9 @@
             (a vals))
         (loop while (consp v)
               do (push (car v) var-list)
-                 (push (car a) val-list)
-                 (setf v (cdr v))
-                 (setf a (cdr a)))
+              (push (car a) val-list)
+              (setf v (cdr v))
+              (setf a (cdr a)))
         ;; If v is non-nil atom, it's the rest parameter
         (when v
           (push v var-list)
@@ -221,8 +221,8 @@
 
 (defparameter *global-env*
   (extend-environment *primitive-procedure-names*
-                       *primitive-procedure-objects*
-                       nil))
+                      *primitive-procedure-objects*
+                      nil))
 
 ;; EOF sentinel for safe read
 (defvar *eof-sentinel* (gensym "EOF"))
@@ -234,33 +234,33 @@
   (defvar *ece-readtable* (copy-readtable))
 
   (set-macro-character #\`
-    (lambda (stream char)
-      (declare (ignore char))
-      (list 'quasiquote (read stream t nil t)))
-    nil *ece-readtable*)
+                       (lambda (stream char)
+                         (declare (ignore char))
+                         (list 'quasiquote (read stream t nil t)))
+                       nil *ece-readtable*)
 
   (set-macro-character #\,
-    (lambda (stream char)
-      (declare (ignore char))
-      (if (eql (peek-char nil stream nil nil) #\@)
-          (progn (read-char stream)
-                 (list 'unquote-splicing (read stream t nil t)))
-          (list 'unquote (read stream t nil t))))
-    nil *ece-readtable*)
+                       (lambda (stream char)
+                         (declare (ignore char))
+                         (if (eql (peek-char nil stream nil nil) #\@)
+                             (progn (read-char stream)
+                                    (list 'unquote-splicing (read stream t nil t)))
+                             (list 'unquote (read stream t nil t))))
+                       nil *ece-readtable*)
 
   ;; Hash table literal: {k1 v1 k2 v2 ...} → (hash-table (k1 . v1) (k2 . v2) ...)
   (set-macro-character #\{
-    (lambda (stream char)
-      (declare (ignore char))
-      (let* ((items (read-delimited-list #\} stream t))
-             (entries (loop for (k v) on items by #'cddr
-                            collect (cons k v))))
-        (cons :hash-table entries)))
-    nil *ece-readtable*)
+                       (lambda (stream char)
+                         (declare (ignore char))
+                         (let* ((items (read-delimited-list #\} stream t))
+                                (entries (loop for (k v) on items by #'cddr
+                                               collect (cons k v))))
+                           (cons :hash-table entries)))
+                       nil *ece-readtable*)
 
   (set-macro-character #\}
-    (get-macro-character #\))
-    nil *ece-readtable*)
+                       (get-macro-character #\))
+                       nil *ece-readtable*)
 
   ;; String interpolation: "Hello $name, $(+ 1 2)" → (fmt "Hello " name ", " (+ 1 2))
   ;; $var interpolates a variable, $(expr) interpolates an expression, $$ is literal $
@@ -268,63 +268,63 @@
   (defun ece-identifier-char-p (c)
     "Return T if C is a valid identifier character after $."
     (and c (or (alphanumericp c)
-              (member c '(#\- #\? #\! #\* #\> #\< #\_ #\/)))))
+               (member c '(#\- #\? #\! #\* #\> #\< #\_ #\/)))))
 
   (set-macro-character #\"
-    (lambda (stream char)
-      (declare (ignore char))
-      (let ((segments '())
-            (buf (make-array 0 :element-type 'character :adjustable t :fill-pointer 0)))
-        (flet ((flush-buf ()
-                 (when (> (length buf) 0)
-                   (push (copy-seq buf) segments)
-                   (setf (fill-pointer buf) 0))))
-          (loop
-            (let ((c (read-char stream t nil t)))
-              (cond
-                ;; End of string
-                ((eql c #\")
-                 (flush-buf)
-                 (let ((segs (nreverse segments)))
-                   (return
-                     (if (and (= (length segs) 1) (stringp (first segs)))
-                         (first segs)
-                         (cons 'fmt segs)))))
-                ;; Backslash escape
-                ((eql c #\\)
-                 (let ((next (read-char stream t nil t)))
-                   (case next
-                     (#\n (vector-push-extend #\Newline buf))
-                     (#\t (vector-push-extend #\Tab buf))
-                     (#\" (vector-push-extend #\" buf))
-                     (#\\ (vector-push-extend #\\ buf))
-                     (t (vector-push-extend next buf)))))
-                ;; Dollar interpolation
-                ((eql c #\$)
-                 (let ((next (peek-char nil stream t nil t)))
-                   (cond
-                     ;; $$ → literal $
-                     ((eql next #\$)
-                      (read-char stream t nil t)
-                      (vector-push-extend #\$ buf))
-                     ;; $(expr) → read s-expression
-                     ((eql next #\()
-                      (flush-buf)
-                      (push (read stream t nil t) segments))
-                     ;; $identifier → read symbol name
-                     ((ece-identifier-char-p next)
-                      (flush-buf)
-                      (let ((sym-buf (make-array 0 :element-type 'character
-                                                   :adjustable t :fill-pointer 0)))
-                        (loop for sc = (peek-char nil stream nil nil t)
-                              while (ece-identifier-char-p sc)
-                              do (vector-push-extend (read-char stream t nil t) sym-buf))
-                        (push (intern (string-upcase sym-buf) :ece) segments)))
-                     ;; $ followed by non-identifier → literal $
-                     (t (vector-push-extend #\$ buf)))))
-                ;; Regular character
-                (t (vector-push-extend c buf))))))))
-    nil *ece-readtable*))
+                       (lambda (stream char)
+                         (declare (ignore char))
+                         (let ((segments '())
+                               (buf (make-array 0 :element-type 'character :adjustable t :fill-pointer 0)))
+                           (flet ((flush-buf ()
+                                    (when (> (length buf) 0)
+                                      (push (copy-seq buf) segments)
+                                      (setf (fill-pointer buf) 0))))
+                             (loop
+                              (let ((c (read-char stream t nil t)))
+                                (cond
+                                  ;; End of string
+                                  ((eql c #\")
+                                   (flush-buf)
+                                   (let ((segs (nreverse segments)))
+                                     (return
+                                       (if (and (= (length segs) 1) (stringp (first segs)))
+                                           (first segs)
+                                           (cons 'fmt segs)))))
+                                  ;; Backslash escape
+                                  ((eql c #\\)
+                                   (let ((next (read-char stream t nil t)))
+                                     (case next
+                                       (#\n (vector-push-extend #\Newline buf))
+                                       (#\t (vector-push-extend #\Tab buf))
+                                       (#\" (vector-push-extend #\" buf))
+                                       (#\\ (vector-push-extend #\\ buf))
+                                       (t (vector-push-extend next buf)))))
+                                  ;; Dollar interpolation
+                                  ((eql c #\$)
+                                   (let ((next (peek-char nil stream t nil t)))
+                                     (cond
+                                       ;; $$ → literal $
+                                       ((eql next #\$)
+                                        (read-char stream t nil t)
+                                        (vector-push-extend #\$ buf))
+                                       ;; $(expr) → read s-expression
+                                       ((eql next #\()
+                                        (flush-buf)
+                                        (push (read stream t nil t) segments))
+                                       ;; $identifier → read symbol name
+                                       ((ece-identifier-char-p next)
+                                        (flush-buf)
+                                        (let ((sym-buf (make-array 0 :element-type 'character
+                                                                   :adjustable t :fill-pointer 0)))
+                                          (loop for sc = (peek-char nil stream nil nil t)
+                                                while (ece-identifier-char-p sc)
+                                                do (vector-push-extend (read-char stream t nil t) sym-buf))
+                                          (push (intern (string-upcase sym-buf) :ece) segments)))
+                                       ;; $ followed by non-identifier → literal $
+                                       (t (vector-push-extend #\$ buf)))))
+                                  ;; Regular character
+                                  (t (vector-push-extend c buf))))))))
+                       nil *ece-readtable*))
 
 ;; I/O primitives with custom wrappers
 (defun ece-read ()
@@ -503,16 +503,16 @@
         (len (length str)))
     (loop for i from 0 below len
           when (char= (char str i) delimiter)
-            do (push (subseq str start i) result)
-               (setf start (1+ i)))
+          do (push (subseq str start i) result)
+          (setf start (1+ i)))
     (push (subseq str start len) result)
     (nreverse result)))
 
 (defun ece-save-continuation! (filename value)
   "Write a value to a file as a readable s-expression with circular structure support."
   (with-open-file (stream filename :direction :output
-                                    :if-exists :supersede
-                                    :if-does-not-exist :create)
+                          :if-exists :supersede
+                          :if-does-not-exist :create)
     (let ((*print-circle* t)
           (*print-readably* t)
           (*package* (find-package :ece)))
@@ -654,504 +654,504 @@
 (defun evaluate (expr &optional (env *global-env*))
   ;; registers
   (let ((stack nil)
-	(conts nil) ;; continuation stack
-	(val nil)   ;; result value
-	(unev nil)  ;; unevaluated operands
-	(argl nil)  ;; argument list
-	(proc nil)  ;; procedure to apply
-	)
+        (conts nil) ;; continuation stack
+        (val nil)   ;; result value
+        (unev nil)  ;; unevaluated operands
+        (argl nil)  ;; argument list
+        (proc nil)  ;; procedure to apply
+        )
     (push :ev-dispatch conts)
     (flet ((dbg (section label)
-	     (format t "~A: ~A expr=~A env=~A stack=~A conts=~A val=~A unev=~A argl=~A proc=~A ~%" section label expr env stack conts val unev argl proc)))
+             (format t "~A: ~A expr=~A env=~A stack=~A conts=~A val=~A unev=~A argl=~A proc=~A ~%" section label expr env stack conts val unev argl proc)))
       (loop while conts
-	    for cont = (pop conts)
-	    do (case cont
-		 (:ev-dispatch
-		  #+nil (dbg :ev-dispatch :start)
-		  (cond
-		    ((self-evaluating-p expr) (push :ev-self-eval conts))
-		    ((variable-p expr)        (push :ev-variable conts))
-		    ((quoted-p expr)          (push :ev-quoted conts))
-		    ((quasiquote-p expr)     (push :ev-quasiquote conts))
-		    ((lambda-p expr)          (push :ev-lambda conts))
-		    ((application-p expr)     (push :ev-application conts))
-		    ((if-p expr)              (push :ev-if conts))
-		    ((callcc-p expr)          (push :ev-callcc conts))
-		    ((assignment-p expr)      (push :ev-assignment conts))
-		    ((apply-form-p expr)     (push :ev-apply conts))
-		    ((define-macro-p expr)   (push :ev-define-macro conts))
-		    ((define-p expr)          (push :ev-define conts))
-		    ((begin-p expr)           (push :ev-begin conts))
-		    (t (error "Unknown expression type: ~A" expr)))
-		  #+nil (dbg :ev-dispatch :end))
+            for cont = (pop conts)
+            do (case cont
+                 (:ev-dispatch
+                  #+nil (dbg :ev-dispatch :start)
+                  (cond
+                    ((self-evaluating-p expr) (push :ev-self-eval conts))
+                    ((variable-p expr)        (push :ev-variable conts))
+                    ((quoted-p expr)          (push :ev-quoted conts))
+                    ((quasiquote-p expr)     (push :ev-quasiquote conts))
+                    ((lambda-p expr)          (push :ev-lambda conts))
+                    ((application-p expr)     (push :ev-application conts))
+                    ((if-p expr)              (push :ev-if conts))
+                    ((callcc-p expr)          (push :ev-callcc conts))
+                    ((assignment-p expr)      (push :ev-assignment conts))
+                    ((apply-form-p expr)     (push :ev-apply conts))
+                    ((define-macro-p expr)   (push :ev-define-macro conts))
+                    ((define-p expr)          (push :ev-define conts))
+                    ((begin-p expr)           (push :ev-begin conts))
+                    (t (error "Unknown expression type: ~A" expr)))
+                  #+nil (dbg :ev-dispatch :end))
 
-		 (:ev-self-eval
-		  #+nil (dbg :ev-self-eval :start)
-		  (setf val expr)
-		  #+nil (dbg :ev-self-eval :end))
+                 (:ev-self-eval
+                  #+nil (dbg :ev-self-eval :start)
+                  (setf val expr)
+                  #+nil (dbg :ev-self-eval :end))
 
-		 (:ev-variable
-		  #+nil (dbg :ev-variable :start)
-		  (setf val (lookup-variable-value expr env))
-		  #+nil (dbg :ev-variable :end))
+                 (:ev-variable
+                  #+nil (dbg :ev-variable :start)
+                  (setf val (lookup-variable-value expr env))
+                  #+nil (dbg :ev-variable :end))
 
-		 (:ev-quoted
-		  #+nil (dbg :ev-quoted :start)
-		  (setf val (cadr expr))
-		  #+nil (dbg :ev-quoted :end))
+                 (:ev-quoted
+                  #+nil (dbg :ev-quoted :start)
+                  (setf val (cadr expr))
+                  #+nil (dbg :ev-quoted :end))
 
-		 (:ev-quasiquote
-		  ;; Transform quasiquote template into cons/append expression, re-dispatch
-		  #+nil (dbg :ev-quasiquote :start)
-		  (setf expr (qq-expand (cadr expr)))
-		  (push :ev-dispatch conts)
-		  #+nil (dbg :ev-quasiquote :end))
+                 (:ev-quasiquote
+                  ;; Transform quasiquote template into cons/append expression, re-dispatch
+                  #+nil (dbg :ev-quasiquote :start)
+                  (setf expr (qq-expand (cadr expr)))
+                  (push :ev-dispatch conts)
+                  #+nil (dbg :ev-quasiquote :end))
 
-		 (:ev-lambda
-		  ;; ev-lambda
-		  ;; (assign unev
-		  ;; 	(op lambda-parameters)
-		  ;; 	(reg exp))
-		  ;; (assign exp 
-		  ;; 	(op lambda-body)
-		  ;; 	(reg exp))
-		  ;; (assign val 
-		  ;; 	(op make-procedure)
-		  ;; 	(reg unev)
-		  ;; 	(reg exp)
-		  ;; 	(reg env))
-		  ;; (goto (reg continue))
-		  #+nil (dbg :ev-lambda :start)
-		  (setf unev (cadr expr)) ;; parameters
-		  (setf expr (cddr expr)) ;; body
-		  (setf val (make-procedure unev expr env))
-		  #+nil (dbg :ev-lambda :end))
-		 (:ev-application
-		  ;; ev-application
-		  ;; (save continue)
-		  ;; (save env)
-		  ;; (assign unev (op operands) (reg exp))
-		  ;; (save unev)
-		  ;; (assign exp (op operator) (reg exp))
-		  ;; (assign
-		  ;;  continue (label ev-appl-did-operator))
-		  ;; (goto (label eval-dispatch))
-		  #+nil (dbg :ev-application :start)
-		  (push conts stack)
-		  (push env stack)
-		  (setf unev (cdr expr))
-		  (push unev stack)
-		  (setf expr (car expr))
-		  (push :ev-appl-did-operator conts)
-		  (push :ev-dispatch conts)
-		  #+nil (dbg :ev-application :end))
-		 (:ev-appl-did-operator
-		  ;; ev-appl-did-operator
-		  ;; (restore unev)		; the operands
-		  ;; (restore env)
-		  ;; (assign argl (op empty-arglist))
-		  ;; (assign proc (reg val))	; the operator
-		  ;; (test (op no-operands?) (reg unev))
-		  ;; (branch (label apply-dispatch))
-		  ;; (save proc)
-		  #+nil (dbg :ev-appl-did-operator :start)
-		  (setf unev (pop stack))
-		  (setf env (pop stack))
-		  (setf argl nil)
-		  (setf proc val)
-		  (if (and (listp proc) (eq (car proc) 'macro))
-		      ;; Macro: don't evaluate operands, expand and re-dispatch
-		      (push :macro-apply conts)
-		      (if (null unev)
-			  (push :apply-dispatch conts)
-			  (progn (push proc stack)
-				 (push :ev-appl-operand-loop conts))))
-		  #+nil (dbg :ev-appl-did-operator :end))
-		 (:ev-appl-operand-loop
-		  ;; ev-appl-operand-loop
-		  ;; (save argl)
-		  ;; (assign exp
-		  ;; 	(op first-operand)
-		  ;; 	(reg unev))
-		  ;; (test (op last-operand?) (reg unev))
-		  ;; (branch (label ev-appl-last-arg))
-		  ;; (save env)
-		  ;; (save unev)
-		  ;; (assign continue 
-		  ;; 	(label ev-appl-accumulate-arg))
-		  ;; (goto (label eval-dispatch))
-		  #+nil (dbg :ev-appl-operand-loop :start)
-		  (push argl stack)
-		  (setf expr (car unev))
-		  (if (null (cdr unev)) ;; last operand?
-		      (push :ev-appl-last-arg conts)
-		      (progn (push :ev-appl-accumulate-arg conts)
-			     (push env stack)
-			     (push unev stack)
-			     (push :ev-appl-accumulate-arg conts)
-			     (push :ev-dispatch conts)))
-		  #+nil (dbg :ev-appl-operand-loop :end))
-		 (:ev-appl-accumulate-arg
-		  ;; ev-appl-accumulate-arg
-		  ;; (restore unev)
-		  ;; (restore env)
-		  ;; (restore argl)
-		  ;; (assign argl 
-		  ;; 	(op adjoin-arg)
-		  ;; 	(reg val)
-		  ;; 	(reg argl))
-		  ;; (assign unev
-		  ;; 	(op rest-operands)
-		  ;; 	(reg unev))
-		  ;; (goto (label ev-appl-operand-loop))
-		  #+nil (dbg :ev-appl-accumulate-arg :start)
-		  (setf unev (pop stack))
-		  (setf env (pop stack))
-		  (setf argl (pop stack))
-		  (setf argl (cons val argl))
-		  (setf unev (cdr unev))
-		  (push :ev-appl-operand-loop conts)
-		  #+nil (dbg :ev-appl-accumulate-arg :end)
-		  )
-		 (:ev-appl-last-arg
-		  ;; ev-appl-last-arg
-		  ;; (assign continue 
-		  ;; 	(label ev-appl-accum-last-arg))
-		  ;; (goto (label eval-dispatch))
-		  #+nil (dbg :ev-appl-last-arg :start)
-		  (push :ev-appl-accum-last-arg conts)
-		  (push :ev-dispatch conts)
-		  #+nil (dbg :ev-appl-last-arg :end)
-		  )
-		 (:ev-appl-accum-last-arg
-		  ;; ev-appl-accum-last-arg
-		  ;; (restore argl)
-		  ;; (assign argl 
-		  ;; 	(op adjoin-arg)
-		  ;; 	(reg val)
-		  ;; 	(reg argl))
-		  ;; (restore proc)
-		  ;; (goto (label apply-dispatch))
-		  #+nil (dbg :ev-appl-accum-last-arg :start)
-		  (setf argl (pop stack))
-		  (setf argl (cons val argl))
-		  (setf proc (pop stack))
-		  (push :apply-dispatch conts)
-		  #+nil (dbg :ev-appl-accum-last-arg :end)
-		  )
-		 (:apply-dispatch
-		  ;; apply-dispatch
-		  ;; (test (op primitive-procedure?) (reg proc))
-		  ;; (branch (label primitive-apply))
-		  ;; (test (op compound-procedure?) (reg proc))
-		  ;; (branch (label compound-apply))
-		  ;; (goto (label unknown-procedure-type))
-		  #+nil (dbg :apply-dispatch :start)
-		  (cond
-		    ((eq (car proc) 'primitive)     (push :primitive-apply conts))
-		    ((eq (car proc) 'procedure)     (push :compound-apply conts))
-		    ((eq (car proc) 'continuation)  (push :continuation-apply conts))
-		    (t                              (push :unknown-procedure-type conts)))
-		  #+nil (dbg :apply-dispatch :end)
-		  )
-		 (:primitive-apply
-		  ;; primitive-apply
-		  ;; (assign val (op apply-primitive-procedure)
-		  ;; 	(reg proc)
-		  ;; 	(reg argl))
-		  ;; (restore continue)
-		  ;; (goto (reg continue))
-		  #+nil (dbg :primitive-apply :start)
-		  (setf val (apply (symbol-function (cadr proc)) (nreverse argl)))
-		  (setf conts (pop stack))
-		  #+nil (dbg :primitive-apply :end)
-		  )
-		 (:compound-apply
-		  ;; compound-apply
-		  ;; (assign unev 
-		  ;; 	(op procedure-parameters)
-		  ;; 	(reg proc))
-		  ;; (assign env
-		  ;; 	(op procedure-environment)
-		  ;; 	(reg proc))
-		  ;; (assign env
-		  ;; 	(op extend-environment)
-		  ;; 	(reg unev)
-		  ;; 	(reg argl)
-		  ;; 	(reg env))
-		  ;; (assign unev
-		  ;; 	(op procedure-body)
-		  ;; 	(reg proc))
-		  ;; (goto (label ev-sequence))
-		  #+nil (dbg :compound-apply :start)
-		  (setf unev (cadr proc))  ;; parameters
-		  (setf env (cadddr proc)) ;; environment
-		  (setf env (extend-environment unev (nreverse argl) env)) ;; extend env
-		  (setf unev (caddr proc)) ;; body
-		  (push :ev-sequence conts)
-		  #+nil (dbg :compound-apply :end)
-		  )
-		 (:continuation-apply
-		  ;; Restore captured continuation state, set val to argument
-		  #+nil (dbg :continuation-apply :start)
-		  (setf stack (copy-list (cadr proc)))
-		  (setf conts (copy-list (caddr proc)))
-		  (setf val (car argl))
-		  #+nil (dbg :continuation-apply :end)
-		  )
-		 (:unknown-procedure-type
-		  #+nil (dbg :unknown-procedure-type :start)
-		  (error "Unknown procedure type: ~A" proc))
-		 (:macro-apply
-		  ;; Macro expansion: extend macro env with unevaluated operands, evaluate body
-		  ;; Stack: [caller-conts, ...]
-		  #+nil (dbg :macro-apply :start)
-		  (push env stack)
-		  (push (list :macro-apply-result) stack)
-		  (setf env (extend-environment (cadr proc) unev (cadddr proc)))
-		  (setf unev (caddr proc))
-		  (push :ev-sequence conts)
-		  #+nil (dbg :macro-apply :end))
-		 (:macro-apply-result
-		  ;; val is the expanded form — re-dispatch it in the caller's context
-		  #+nil (dbg :macro-apply-result :start)
-		  (setf env (pop stack))
-		  (setf conts (pop stack))
-		  (setf expr val)
-		  (push :ev-dispatch conts)
-		  #+nil (dbg :macro-apply-result :end))
-		 (:ev-begin
-		  ;; ev-begin
-		  ;; (assign unev
-		  ;; 	(op begin-actions)
-		  ;; 	(reg exp))
-		  ;; (save continue)
-		  ;; (goto (label ev-sequence))
-		  #+nil (dbg :ev-begin :start)
-		  (setf unev (cdr expr))
-		  (push conts stack)
-		  (push :ev-sequence conts)
-		  #+nil (dbg :ev-begin :end)
-		  )
-		 (:ev-sequence
-		  ;; ev-sequence
-		  ;; (assign exp (op first-exp) (reg unev))
-		  ;; (test (op last-exp?) (reg unev))
-		  ;; (branch (label ev-sequence-last-exp))
-		  ;; (save unev)
-		  ;; (save env)
-		  ;; (assign continue
-		  ;; 	(label ev-sequence-continue))
-		  ;; (goto (label eval-dispatch))
-		  #+nil (dbg :ev-sequence :start)
-		  (setf expr (car unev))
-		  (if (null (cdr unev)) ;; last exp?
-		      (push :ev-sequence-last-exp conts)
-		      (progn (push unev stack)
-			     (push env stack)
-			     (push :ev-sequence-continue conts)
-			     (push :ev-dispatch conts)))
-		  #+nil (dbg :ev-sequence :end)
-		  )
-		 (:ev-sequence-continue
-		  ;; ev-sequence-continue
-		  ;; (restore env)
-		  ;; (restore unev)
-		  ;; (assign unev
-		  ;; 	(op rest-exps)
-		  ;; 	(reg unev))
-		  ;; (goto (label ev-sequence))
-		  #+nil (dbg :ev-sequence-continue :start)
-		  (setf env (pop stack))
-		  (setf unev (pop stack))
-		  (setf unev (cdr unev))
-		  (push :ev-sequence conts)
-		  #+nil (dbg :ev-sequence-continue :end)
-		  )
-		 (:ev-sequence-last-exp
-		  ;; ev-sequence-last-exp
-		  ;; (restore continue)
-		  ;; (goto (label eval-dispatch))
-		  #+nil (dbg :ev-sequence-last-exp :start)
-		  (setf conts (pop stack))
-		  (push :ev-dispatch conts)
-		  #+nil (dbg :ev-sequence-last-exp :end)
-		  )
-		 (:ev-callcc
-		  ;; ev-callcc
-		  ;; Capture current continuation, then evaluate receiver
-		  #+nil (dbg :ev-callcc :start)
-		  (let ((captured (list 'continuation
-					(copy-list stack)
-					(copy-list conts))))
-		    (push captured stack))
-		  (setf expr (cadr expr)) ;; receiver expression
-		  (push :ev-callcc-apply conts)
-		  (push :ev-dispatch conts)
-		  #+nil (dbg :ev-callcc :end)
-		  )
-		 (:ev-callcc-apply
-		  ;; Apply evaluated receiver (in val) to captured continuation
-		  #+nil (dbg :ev-callcc-apply :start)
-		  (let ((captured (pop stack)))
-		    (setf proc val)
-		    (setf argl (list captured))
-		    (push conts stack) ;; save return continuation for compound-apply's ev-sequence
-		    (push :apply-dispatch conts))
-		  #+nil (dbg :ev-callcc-apply :end)
-		  )
-		 (:ev-apply
-		  ;; (apply proc-expr args-expr)
-		  ;; Save env and conts, evaluate proc-expr
-		  #+nil (dbg :ev-apply :start)
-		  (push env stack)
-		  (push conts stack)
-		  (push (caddr expr) stack)  ;; save args-expr for later
-		  (setf expr (cadr expr))    ;; proc-expr
-		  (push :ev-apply-did-proc conts)
-		  (push :ev-dispatch conts)
-		  #+nil (dbg :ev-apply :end))
-		 (:ev-apply-did-proc
-		  ;; proc is in val, now evaluate args-expr
-		  #+nil (dbg :ev-apply-did-proc :start)
-		  (setf expr (pop stack))    ;; restore args-expr
-		  (push val stack)           ;; save proc
-		  (push :ev-apply-dispatch conts)
-		  (push :ev-dispatch conts)
-		  #+nil (dbg :ev-apply-did-proc :end))
-		 (:ev-apply-dispatch
-		  ;; args list is in val, proc is on stack
-		  ;; Set up argl/proc and jump to apply-dispatch
-		  #+nil (dbg :ev-apply-dispatch :start)
-		  (setf proc (pop stack))
-		  (setf argl (reverse val))  ;; reverse so nreverse in apply handlers produces correct order
-		  (setf conts (pop stack))   ;; restore caller's conts
-		  (setf env (pop stack))     ;; restore caller's env
-		  (push conts stack)         ;; apply-dispatch expects conts on stack
-		  (push :apply-dispatch conts)
-		  #+nil (dbg :ev-apply-dispatch :end))
-		 (:ev-assignment
-		  ;; ev-assignment (SICP)
-		  ;; Save variable name, env, conts; evaluate value expression
-		  #+nil (dbg :ev-assignment :start)
-		  (push (cadr expr) stack)     ;; variable name
-		  (setf expr (caddr expr))     ;; value expression
-		  (push env stack)
-		  (push conts stack)
-		  (push :ev-assignment-assign conts)
-		  (push :ev-dispatch conts)
-		  #+nil (dbg :ev-assignment :end))
-		 (:ev-assignment-assign
-		  ;; Restore state, call set-variable-value!, set val
-		  #+nil (dbg :ev-assignment-assign :start)
-		  (setf conts (pop stack))
-		  (setf env (pop stack))
-		  (let ((variable (pop stack)))
-		    (set-variable-value! variable val env))
-		  #+nil (dbg :ev-assignment-assign :end))
-		 (:ev-define
-		  ;; ev-definition (SICP)
-		  ;; (assign unev (op definition-variable) (reg exp))
-		  ;; (save unev)
-		  ;; (assign exp (op definition-value) (reg exp))
-		  ;; (save env)
-		  ;; (save continue)
-		  ;; (assign continue (label ev-definition-1))
-		  ;; (goto (label eval-dispatch))
-		  #+nil (dbg :ev-define :start)
-		  (let ((variable (if (listp (cadr expr))
-				      (caadr expr)                ;; (define (f x) body...) → f
-				      (cadr expr))))               ;; (define x val) → x
-		    (push variable stack))
-		  (setf expr (if (listp (cadr expr))
-				 ;; function shorthand: build lambda
-				 (cons 'lambda (cons (cdadr expr) (cddr expr)))
-				 ;; value form
-				 (caddr expr)))
-		  (push env stack)
-		  (push conts stack)
-		  (push :ev-define-assign conts)
-		  (push :ev-dispatch conts)
-		  #+nil (dbg :ev-define :end))
-		 (:ev-define-macro
-		  ;; (define-macro (name params...) body...)
-		  ;; Create macro value directly (no evaluation needed) and store it
-		  #+nil (dbg :ev-define-macro :start)
-		  (let* ((variable (caadr expr))
-			 (params (cdadr expr))
-			 (body (cddr expr)))
-		    (define-variable! variable (list 'macro params body env) env)
-		    (setf val variable))
-		  #+nil (dbg :ev-define-macro :end))
-		 (:ev-define-assign
-		  ;; ev-definition-1 (SICP)
-		  ;; (restore continue)
-		  ;; (restore env)
-		  ;; (restore unev)
-		  ;; (perform (op define-variable!) (reg unev) (reg val) (reg env))
-		  ;; (assign val (const ok))
-		  ;; (goto (reg continue))
-		  #+nil (dbg :ev-define-assign :start)
-		  (setf conts (pop stack))
-		  (setf env (pop stack))
-		  (let ((variable (pop stack)))
-		    (define-variable! variable val env))
-		  #+nil (dbg :ev-define-assign :end))
-		 (:ev-if
-		  ;; ev-if
-		  ;; (save exp)   ; save expression for later
-		  ;; (save env)
-		  ;; (save continue)
-		  ;; (assign continue (label ev-if-decide))
-		  ;; (assign exp (op if-predicate) (reg exp))
-		  ;; (goto (label eval-dispatch))
-		  #+nil (dbg :ev-if :start)
-		  (push expr stack)
-		  (push env stack)
-		  (push conts stack)
-		  (setf expr (cadr expr)) ;; if-predicate
-		  (push :ev-if-decide conts)
-		  (push :ev-dispatch conts)
-		  #+nil (dbg :ev-if :end)
-		  )
-		 (:ev-if-decide
-		  ;; ev-if-decide
-		  ;; (restore continue)
-		  ;; (restore env)
-		  ;; (restore exp)
-		  ;; (test (op true?) (reg val))
-		  ;; (branch (label ev-if-consequent))
-		  #+nil (dbg :ev-if-decide :start)
-		  (setf conts (pop stack))
-		  (setf env (pop stack))
-		  (setf expr (pop stack))
-		  (if val
-		      (push :ev-if-consequent conts)
-		      (push :ev-if-alternative conts))
-		  #+nil (dbg :ev-if-decide :end)
-		  )
-		 (:ev-if-alternative
-		  ;; ev-if-alternative
-		  ;; (assign exp (op if-alternative) (reg exp))
-		  ;; (goto (label eval-dispatch))
-		  #+nil (dbg :ev-if-alternative :start)
-		  (setf expr (cadddr expr)) ;; if-alternative (nil if absent)
-		  (if expr
-		      (progn (push :ev-dispatch conts))
-		      (setf val nil))
-		  #+nil (dbg :ev-if-alternative :end)
-		  )
-		 (:ev-if-consequent
-		  ;; ev-if-consequent
-		  ;; (assign exp (op if-consequent) (reg exp))
-		  ;; (goto (label eval-dispatch))
-		  #+nil (dbg :ev-if-consequent :start)
-		  (setf expr (caddr expr)) ;; if-consequent
-		  (push :ev-dispatch conts)
-		  #+nil (dbg :ev-if-consequent :end)
-		  )
-		
-		 (t (error "Unknown cont: ~A" cont)))))
+                 (:ev-lambda
+                  ;; ev-lambda
+                  ;; (assign unev
+                  ;;    (op lambda-parameters)
+                  ;;    (reg exp))
+                  ;; (assign exp 
+                  ;;    (op lambda-body)
+                  ;;    (reg exp))
+                  ;; (assign val 
+                  ;;    (op make-procedure)
+                  ;;    (reg unev)
+                  ;;    (reg exp)
+                  ;;    (reg env))
+                  ;; (goto (reg continue))
+                  #+nil (dbg :ev-lambda :start)
+                  (setf unev (cadr expr)) ;; parameters
+                  (setf expr (cddr expr)) ;; body
+                  (setf val (make-procedure unev expr env))
+                  #+nil (dbg :ev-lambda :end))
+                 (:ev-application
+                  ;; ev-application
+                  ;; (save continue)
+                  ;; (save env)
+                  ;; (assign unev (op operands) (reg exp))
+                  ;; (save unev)
+                  ;; (assign exp (op operator) (reg exp))
+                  ;; (assign
+                  ;;  continue (label ev-appl-did-operator))
+                  ;; (goto (label eval-dispatch))
+                  #+nil (dbg :ev-application :start)
+                  (push conts stack)
+                  (push env stack)
+                  (setf unev (cdr expr))
+                  (push unev stack)
+                  (setf expr (car expr))
+                  (push :ev-appl-did-operator conts)
+                  (push :ev-dispatch conts)
+                  #+nil (dbg :ev-application :end))
+                 (:ev-appl-did-operator
+                  ;; ev-appl-did-operator
+                  ;; (restore unev)             ; the operands
+                  ;; (restore env)
+                  ;; (assign argl (op empty-arglist))
+                  ;; (assign proc (reg val))    ; the operator
+                  ;; (test (op no-operands?) (reg unev))
+                  ;; (branch (label apply-dispatch))
+                  ;; (save proc)
+                  #+nil (dbg :ev-appl-did-operator :start)
+                  (setf unev (pop stack))
+                  (setf env (pop stack))
+                  (setf argl nil)
+                  (setf proc val)
+                  (if (and (listp proc) (eq (car proc) 'macro))
+                      ;; Macro: don't evaluate operands, expand and re-dispatch
+                      (push :macro-apply conts)
+                      (if (null unev)
+                          (push :apply-dispatch conts)
+                          (progn (push proc stack)
+                                 (push :ev-appl-operand-loop conts))))
+                  #+nil (dbg :ev-appl-did-operator :end))
+                 (:ev-appl-operand-loop
+                  ;; ev-appl-operand-loop
+                  ;; (save argl)
+                  ;; (assign exp
+                  ;;    (op first-operand)
+                  ;;    (reg unev))
+                  ;; (test (op last-operand?) (reg unev))
+                  ;; (branch (label ev-appl-last-arg))
+                  ;; (save env)
+                  ;; (save unev)
+                  ;; (assign continue 
+                  ;;    (label ev-appl-accumulate-arg))
+                  ;; (goto (label eval-dispatch))
+                  #+nil (dbg :ev-appl-operand-loop :start)
+                  (push argl stack)
+                  (setf expr (car unev))
+                  (if (null (cdr unev)) ;; last operand?
+                      (push :ev-appl-last-arg conts)
+                      (progn (push :ev-appl-accumulate-arg conts)
+                             (push env stack)
+                             (push unev stack)
+                             (push :ev-appl-accumulate-arg conts)
+                             (push :ev-dispatch conts)))
+                  #+nil (dbg :ev-appl-operand-loop :end))
+                 (:ev-appl-accumulate-arg
+                  ;; ev-appl-accumulate-arg
+                  ;; (restore unev)
+                  ;; (restore env)
+                  ;; (restore argl)
+                  ;; (assign argl 
+                  ;;    (op adjoin-arg)
+                  ;;    (reg val)
+                  ;;    (reg argl))
+                  ;; (assign unev
+                  ;;    (op rest-operands)
+                  ;;    (reg unev))
+                  ;; (goto (label ev-appl-operand-loop))
+                  #+nil (dbg :ev-appl-accumulate-arg :start)
+                  (setf unev (pop stack))
+                  (setf env (pop stack))
+                  (setf argl (pop stack))
+                  (setf argl (cons val argl))
+                  (setf unev (cdr unev))
+                  (push :ev-appl-operand-loop conts)
+                  #+nil (dbg :ev-appl-accumulate-arg :end)
+                  )
+                 (:ev-appl-last-arg
+                  ;; ev-appl-last-arg
+                  ;; (assign continue 
+                  ;;    (label ev-appl-accum-last-arg))
+                  ;; (goto (label eval-dispatch))
+                  #+nil (dbg :ev-appl-last-arg :start)
+                  (push :ev-appl-accum-last-arg conts)
+                  (push :ev-dispatch conts)
+                  #+nil (dbg :ev-appl-last-arg :end)
+                  )
+                 (:ev-appl-accum-last-arg
+                  ;; ev-appl-accum-last-arg
+                  ;; (restore argl)
+                  ;; (assign argl 
+                  ;;    (op adjoin-arg)
+                  ;;    (reg val)
+                  ;;    (reg argl))
+                  ;; (restore proc)
+                  ;; (goto (label apply-dispatch))
+                  #+nil (dbg :ev-appl-accum-last-arg :start)
+                  (setf argl (pop stack))
+                  (setf argl (cons val argl))
+                  (setf proc (pop stack))
+                  (push :apply-dispatch conts)
+                  #+nil (dbg :ev-appl-accum-last-arg :end)
+                  )
+                 (:apply-dispatch
+                  ;; apply-dispatch
+                  ;; (test (op primitive-procedure?) (reg proc))
+                  ;; (branch (label primitive-apply))
+                  ;; (test (op compound-procedure?) (reg proc))
+                  ;; (branch (label compound-apply))
+                  ;; (goto (label unknown-procedure-type))
+                  #+nil (dbg :apply-dispatch :start)
+                  (cond
+                    ((eq (car proc) 'primitive)     (push :primitive-apply conts))
+                    ((eq (car proc) 'procedure)     (push :compound-apply conts))
+                    ((eq (car proc) 'continuation)  (push :continuation-apply conts))
+                    (t                              (push :unknown-procedure-type conts)))
+                  #+nil (dbg :apply-dispatch :end)
+                  )
+                 (:primitive-apply
+                  ;; primitive-apply
+                  ;; (assign val (op apply-primitive-procedure)
+                  ;;    (reg proc)
+                  ;;    (reg argl))
+                  ;; (restore continue)
+                  ;; (goto (reg continue))
+                  #+nil (dbg :primitive-apply :start)
+                  (setf val (apply (symbol-function (cadr proc)) (nreverse argl)))
+                  (setf conts (pop stack))
+                  #+nil (dbg :primitive-apply :end)
+                  )
+                 (:compound-apply
+                  ;; compound-apply
+                  ;; (assign unev 
+                  ;;    (op procedure-parameters)
+                  ;;    (reg proc))
+                  ;; (assign env
+                  ;;    (op procedure-environment)
+                  ;;    (reg proc))
+                  ;; (assign env
+                  ;;    (op extend-environment)
+                  ;;    (reg unev)
+                  ;;    (reg argl)
+                  ;;    (reg env))
+                  ;; (assign unev
+                  ;;    (op procedure-body)
+                  ;;    (reg proc))
+                  ;; (goto (label ev-sequence))
+                  #+nil (dbg :compound-apply :start)
+                  (setf unev (cadr proc))  ;; parameters
+                  (setf env (cadddr proc)) ;; environment
+                  (setf env (extend-environment unev (nreverse argl) env)) ;; extend env
+                  (setf unev (caddr proc)) ;; body
+                  (push :ev-sequence conts)
+                  #+nil (dbg :compound-apply :end)
+                  )
+                 (:continuation-apply
+                  ;; Restore captured continuation state, set val to argument
+                  #+nil (dbg :continuation-apply :start)
+                  (setf stack (copy-list (cadr proc)))
+                  (setf conts (copy-list (caddr proc)))
+                  (setf val (car argl))
+                  #+nil (dbg :continuation-apply :end)
+                  )
+                 (:unknown-procedure-type
+                  #+nil (dbg :unknown-procedure-type :start)
+                  (error "Unknown procedure type: ~A" proc))
+                 (:macro-apply
+                  ;; Macro expansion: extend macro env with unevaluated operands, evaluate body
+                  ;; Stack: [caller-conts, ...]
+                  #+nil (dbg :macro-apply :start)
+                  (push env stack)
+                  (push (list :macro-apply-result) stack)
+                  (setf env (extend-environment (cadr proc) unev (cadddr proc)))
+                  (setf unev (caddr proc))
+                  (push :ev-sequence conts)
+                  #+nil (dbg :macro-apply :end))
+                 (:macro-apply-result
+                  ;; val is the expanded form — re-dispatch it in the caller's context
+                  #+nil (dbg :macro-apply-result :start)
+                  (setf env (pop stack))
+                  (setf conts (pop stack))
+                  (setf expr val)
+                  (push :ev-dispatch conts)
+                  #+nil (dbg :macro-apply-result :end))
+                 (:ev-begin
+                  ;; ev-begin
+                  ;; (assign unev
+                  ;;    (op begin-actions)
+                  ;;    (reg exp))
+                  ;; (save continue)
+                  ;; (goto (label ev-sequence))
+                  #+nil (dbg :ev-begin :start)
+                  (setf unev (cdr expr))
+                  (push conts stack)
+                  (push :ev-sequence conts)
+                  #+nil (dbg :ev-begin :end)
+                  )
+                 (:ev-sequence
+                  ;; ev-sequence
+                  ;; (assign exp (op first-exp) (reg unev))
+                  ;; (test (op last-exp?) (reg unev))
+                  ;; (branch (label ev-sequence-last-exp))
+                  ;; (save unev)
+                  ;; (save env)
+                  ;; (assign continue
+                  ;;    (label ev-sequence-continue))
+                  ;; (goto (label eval-dispatch))
+                  #+nil (dbg :ev-sequence :start)
+                  (setf expr (car unev))
+                  (if (null (cdr unev)) ;; last exp?
+                      (push :ev-sequence-last-exp conts)
+                      (progn (push unev stack)
+                             (push env stack)
+                             (push :ev-sequence-continue conts)
+                             (push :ev-dispatch conts)))
+                  #+nil (dbg :ev-sequence :end)
+                  )
+                 (:ev-sequence-continue
+                  ;; ev-sequence-continue
+                  ;; (restore env)
+                  ;; (restore unev)
+                  ;; (assign unev
+                  ;;    (op rest-exps)
+                  ;;    (reg unev))
+                  ;; (goto (label ev-sequence))
+                  #+nil (dbg :ev-sequence-continue :start)
+                  (setf env (pop stack))
+                  (setf unev (pop stack))
+                  (setf unev (cdr unev))
+                  (push :ev-sequence conts)
+                  #+nil (dbg :ev-sequence-continue :end)
+                  )
+                 (:ev-sequence-last-exp
+                  ;; ev-sequence-last-exp
+                  ;; (restore continue)
+                  ;; (goto (label eval-dispatch))
+                  #+nil (dbg :ev-sequence-last-exp :start)
+                  (setf conts (pop stack))
+                  (push :ev-dispatch conts)
+                  #+nil (dbg :ev-sequence-last-exp :end)
+                  )
+                 (:ev-callcc
+                  ;; ev-callcc
+                  ;; Capture current continuation, then evaluate receiver
+                  #+nil (dbg :ev-callcc :start)
+                  (let ((captured (list 'continuation
+                                        (copy-list stack)
+                                        (copy-list conts))))
+                    (push captured stack))
+                  (setf expr (cadr expr)) ;; receiver expression
+                  (push :ev-callcc-apply conts)
+                  (push :ev-dispatch conts)
+                  #+nil (dbg :ev-callcc :end)
+                  )
+                 (:ev-callcc-apply
+                  ;; Apply evaluated receiver (in val) to captured continuation
+                  #+nil (dbg :ev-callcc-apply :start)
+                  (let ((captured (pop stack)))
+                    (setf proc val)
+                    (setf argl (list captured))
+                    (push conts stack) ;; save return continuation for compound-apply's ev-sequence
+                    (push :apply-dispatch conts))
+                  #+nil (dbg :ev-callcc-apply :end)
+                  )
+                 (:ev-apply
+                  ;; (apply proc-expr args-expr)
+                  ;; Save env and conts, evaluate proc-expr
+                  #+nil (dbg :ev-apply :start)
+                  (push env stack)
+                  (push conts stack)
+                  (push (caddr expr) stack)  ;; save args-expr for later
+                  (setf expr (cadr expr))    ;; proc-expr
+                  (push :ev-apply-did-proc conts)
+                  (push :ev-dispatch conts)
+                  #+nil (dbg :ev-apply :end))
+                 (:ev-apply-did-proc
+                  ;; proc is in val, now evaluate args-expr
+                  #+nil (dbg :ev-apply-did-proc :start)
+                  (setf expr (pop stack))    ;; restore args-expr
+                  (push val stack)           ;; save proc
+                  (push :ev-apply-dispatch conts)
+                  (push :ev-dispatch conts)
+                  #+nil (dbg :ev-apply-did-proc :end))
+                 (:ev-apply-dispatch
+                  ;; args list is in val, proc is on stack
+                  ;; Set up argl/proc and jump to apply-dispatch
+                  #+nil (dbg :ev-apply-dispatch :start)
+                  (setf proc (pop stack))
+                  (setf argl (reverse val))  ;; reverse so nreverse in apply handlers produces correct order
+                  (setf conts (pop stack))   ;; restore caller's conts
+                  (setf env (pop stack))     ;; restore caller's env
+                  (push conts stack)         ;; apply-dispatch expects conts on stack
+                  (push :apply-dispatch conts)
+                  #+nil (dbg :ev-apply-dispatch :end))
+                 (:ev-assignment
+                  ;; ev-assignment (SICP)
+                  ;; Save variable name, env, conts; evaluate value expression
+                  #+nil (dbg :ev-assignment :start)
+                  (push (cadr expr) stack)     ;; variable name
+                  (setf expr (caddr expr))     ;; value expression
+                  (push env stack)
+                  (push conts stack)
+                  (push :ev-assignment-assign conts)
+                  (push :ev-dispatch conts)
+                  #+nil (dbg :ev-assignment :end))
+                 (:ev-assignment-assign
+                  ;; Restore state, call set-variable-value!, set val
+                  #+nil (dbg :ev-assignment-assign :start)
+                  (setf conts (pop stack))
+                  (setf env (pop stack))
+                  (let ((variable (pop stack)))
+                    (set-variable-value! variable val env))
+                  #+nil (dbg :ev-assignment-assign :end))
+                 (:ev-define
+                  ;; ev-definition (SICP)
+                  ;; (assign unev (op definition-variable) (reg exp))
+                  ;; (save unev)
+                  ;; (assign exp (op definition-value) (reg exp))
+                  ;; (save env)
+                  ;; (save continue)
+                  ;; (assign continue (label ev-definition-1))
+                  ;; (goto (label eval-dispatch))
+                  #+nil (dbg :ev-define :start)
+                  (let ((variable (if (listp (cadr expr))
+                                      (caadr expr)                ;; (define (f x) body...) → f
+                                      (cadr expr))))               ;; (define x val) → x
+                    (push variable stack))
+                  (setf expr (if (listp (cadr expr))
+                                 ;; function shorthand: build lambda
+                                 (cons 'lambda (cons (cdadr expr) (cddr expr)))
+                                 ;; value form
+                                 (caddr expr)))
+                  (push env stack)
+                  (push conts stack)
+                  (push :ev-define-assign conts)
+                  (push :ev-dispatch conts)
+                  #+nil (dbg :ev-define :end))
+                 (:ev-define-macro
+                  ;; (define-macro (name params...) body...)
+                  ;; Create macro value directly (no evaluation needed) and store it
+                  #+nil (dbg :ev-define-macro :start)
+                  (let* ((variable (caadr expr))
+                         (params (cdadr expr))
+                         (body (cddr expr)))
+                    (define-variable! variable (list 'macro params body env) env)
+                    (setf val variable))
+                  #+nil (dbg :ev-define-macro :end))
+                 (:ev-define-assign
+                  ;; ev-definition-1 (SICP)
+                  ;; (restore continue)
+                  ;; (restore env)
+                  ;; (restore unev)
+                  ;; (perform (op define-variable!) (reg unev) (reg val) (reg env))
+                  ;; (assign val (const ok))
+                  ;; (goto (reg continue))
+                  #+nil (dbg :ev-define-assign :start)
+                  (setf conts (pop stack))
+                  (setf env (pop stack))
+                  (let ((variable (pop stack)))
+                    (define-variable! variable val env))
+                  #+nil (dbg :ev-define-assign :end))
+                 (:ev-if
+                  ;; ev-if
+                  ;; (save exp)   ; save expression for later
+                  ;; (save env)
+                  ;; (save continue)
+                  ;; (assign continue (label ev-if-decide))
+                  ;; (assign exp (op if-predicate) (reg exp))
+                  ;; (goto (label eval-dispatch))
+                  #+nil (dbg :ev-if :start)
+                  (push expr stack)
+                  (push env stack)
+                  (push conts stack)
+                  (setf expr (cadr expr)) ;; if-predicate
+                  (push :ev-if-decide conts)
+                  (push :ev-dispatch conts)
+                  #+nil (dbg :ev-if :end)
+                  )
+                 (:ev-if-decide
+                  ;; ev-if-decide
+                  ;; (restore continue)
+                  ;; (restore env)
+                  ;; (restore exp)
+                  ;; (test (op true?) (reg val))
+                  ;; (branch (label ev-if-consequent))
+                  #+nil (dbg :ev-if-decide :start)
+                  (setf conts (pop stack))
+                  (setf env (pop stack))
+                  (setf expr (pop stack))
+                  (if val
+                      (push :ev-if-consequent conts)
+                      (push :ev-if-alternative conts))
+                  #+nil (dbg :ev-if-decide :end)
+                  )
+                 (:ev-if-alternative
+                  ;; ev-if-alternative
+                  ;; (assign exp (op if-alternative) (reg exp))
+                  ;; (goto (label eval-dispatch))
+                  #+nil (dbg :ev-if-alternative :start)
+                  (setf expr (cadddr expr)) ;; if-alternative (nil if absent)
+                  (if expr
+                      (progn (push :ev-dispatch conts))
+                      (setf val nil))
+                  #+nil (dbg :ev-if-alternative :end)
+                  )
+                 (:ev-if-consequent
+                  ;; ev-if-consequent
+                  ;; (assign exp (op if-consequent) (reg exp))
+                  ;; (goto (label eval-dispatch))
+                  #+nil (dbg :ev-if-consequent :start)
+                  (setf expr (caddr expr)) ;; if-consequent
+                  (push :ev-dispatch conts)
+                  #+nil (dbg :ev-if-consequent :end)
+                  )
+                 
+                 (t (error "Unknown cont: ~A" cont)))))
     val))
 
 ;; Load the standard prelude (pure ECE stdlib definitions)
@@ -1162,13 +1162,13 @@
   (evaluate
    '(begin
      (define (repl-loop)
-       (display "ece> ")
-       (define input (read))
-       (if (eof? input)
-           (begin (newline) (display "Bye!") (newline))
-           (begin
-             (define result (try-eval input))
-             (if result (print result) (quote ()))
-             (repl-loop))))
+      (display "ece> ")
+      (define input (read))
+      (if (eof? input)
+          (begin (newline) (display "Bye!") (newline))
+          (begin
+           (define result (try-eval input))
+           (if result (print result) (quote ()))
+           (repl-loop))))
      (repl-loop))))
 

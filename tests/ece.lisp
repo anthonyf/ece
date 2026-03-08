@@ -18,1422 +18,1422 @@
 ;; NOTE: To run this test file, execute `(asdf:test-system :ece)' in your Lisp.
 
 (deftest test-self-eval
-  (testing "integers evaluate to themselves"
-    (ok (= (evaluate 4 nil) 4))
-    (ok (= (evaluate -10 nil) -10))
-    (ok (= (evaluate .4 nil) .4))))
+    (testing "integers evaluate to themselves"
+             (ok (= (evaluate 4 nil) 4))
+             (ok (= (evaluate -10 nil) -10))
+             (ok (= (evaluate .4 nil) .4))))
 
 (deftest test-variable-eval
-  (testing "variables evaluate to their bound values"
-    (ok (= (evaluate 'x (list (cons '(x y) '(5 10)))) 5))
-    (ok (= (evaluate 'y (list (cons '(x y) '(5 10)))) 10))
-    (ok (= (evaluate 'z (list (cons '(x y z) '(5 10 -3)))) -3)))
+    (testing "variables evaluate to their bound values"
+             (ok (= (evaluate 'x (list (cons '(x y) '(5 10)))) 5))
+             (ok (= (evaluate 'y (list (cons '(x y) '(5 10)))) 10))
+             (ok (= (evaluate 'z (list (cons '(x y z) '(5 10 -3)))) -3)))
 
   (testing "unbound variables signal an error"
-    (signals (evaluate 'a (list (cons '(b c) '(2 3)))))
-    (signals (evaluate 'foo nil))))
+           (signals (evaluate 'a (list (cons '(b c) '(2 3)))))
+           (signals (evaluate 'foo nil))))
 
 
 (deftest test-quote-eval
-  (testing "quote special form returns the quoted expression without evaluating it"
-    (ok (equal (evaluate '(quote a) nil) 'a))
-    (ok (equal (evaluate '(quote (1 2 3)) nil) '(1 2 3)))
-    (ok (equal (evaluate '(quote (x y z)) (list (cons '(x y z) '(10 20 30)))) '(x y z)))))
+    (testing "quote special form returns the quoted expression without evaluating it"
+             (ok (equal (evaluate '(quote a) nil) 'a))
+             (ok (equal (evaluate '(quote (1 2 3)) nil) '(1 2 3)))
+             (ok (equal (evaluate '(quote (x y z)) (list (cons '(x y z) '(10 20 30)))) '(x y z)))))
 
 
 (deftest test-lambda-eval
-  (testing "lambda expressions evaluate correctly with given arguments"
-    (ok (= (evaluate '((lambda (x) (+ x 1)) 5)) 6))
-    (ok (= (evaluate '((lambda (x y) (* x y)) 3 4)) 12))
-    (ok (= (evaluate '((lambda (a b c) (- a b c)) 10 3 2)) 5)))
+    (testing "lambda expressions evaluate correctly with given arguments"
+             (ok (= (evaluate '((lambda (x) (+ x 1)) 5)) 6))
+             (ok (= (evaluate '((lambda (x y) (* x y)) 3 4)) 12))
+             (ok (= (evaluate '((lambda (a b c) (- a b c)) 10 3 2)) 5)))
 
   (testing "lambda expressions with variable bindings"
-    (ok (= (evaluate '((lambda (x) (+ x y)) 5) (cons (cons '(y) '(10))
-                                                      *global-env*)) 15))
-    (ok (= (evaluate '((lambda (a b) (+ a b)) b 2) (cons (cons '(b) '(8))
-                                                          *global-env*)) 10))))
+           (ok (= (evaluate '((lambda (x) (+ x y)) 5) (cons (cons '(y) '(10))
+                                                            *global-env*)) 15))
+           (ok (= (evaluate '((lambda (a b) (+ a b)) b 2) (cons (cons '(b) '(8))
+                                                                *global-env*)) 10))))
 
 (deftest test-begin-eval
-  (testing "begin evaluates sequence and returns last value"
-    (ok (= (evaluate '(begin 42)) 42))
-    (ok (= (evaluate '(begin 1 2 3)) 3))
-    (ok (= (evaluate '(begin (+ 1 2) (* 3 4))) 12))))
+    (testing "begin evaluates sequence and returns last value"
+             (ok (= (evaluate '(begin 42)) 42))
+             (ok (= (evaluate '(begin 1 2 3)) 3))
+             (ok (= (evaluate '(begin (+ 1 2) (* 3 4))) 12))))
 
 (deftest test-string-self-eval
-  (testing "strings evaluate to themselves"
-    (ok (equal (evaluate "hello" nil) "hello"))
-    (ok (equal (evaluate "" nil) ""))))
+    (testing "strings evaluate to themselves"
+             (ok (equal (evaluate "hello" nil) "hello"))
+             (ok (equal (evaluate "" nil) ""))))
 
 (deftest test-char-ops
-  (testing "character literal self-evaluates"
-    (ok (char= (evaluate #\a) #\a))
-    (ok (char= (evaluate #\space) #\space)))
+    (testing "character literal self-evaluates"
+             (ok (char= (evaluate #\a) #\a))
+             (ok (char= (evaluate #\space) #\space)))
 
   (testing "char? predicate"
-    (ok (evaluate '(char? #\a)))
-    (ok (not (evaluate '(char? 42))))
-    (ok (not (evaluate '(char? "a")))))
+           (ok (evaluate '(char? #\a)))
+           (ok (not (evaluate '(char? 42))))
+           (ok (not (evaluate '(char? "a")))))
 
   (testing "char=? equality"
-    (ok (evaluate '(char=? #\a #\a)))
-    (ok (not (evaluate '(char=? #\a #\b)))))
+           (ok (evaluate '(char=? #\a #\a)))
+           (ok (not (evaluate '(char=? #\a #\b)))))
 
   (testing "char<? ordering"
-    (ok (evaluate '(char<? #\a #\b)))
-    (ok (not (evaluate '(char<? #\b #\a)))))
+           (ok (evaluate '(char<? #\a #\b)))
+           (ok (not (evaluate '(char<? #\b #\a)))))
 
   (testing "char->integer"
-    (ok (= (evaluate '(char->integer #\a)) 97)))
+           (ok (= (evaluate '(char->integer #\a)) 97)))
 
   (testing "integer->char"
-    (ok (char= (evaluate '(integer->char 97)) #\a)))
+           (ok (char= (evaluate '(integer->char 97)) #\a)))
 
   (testing "round-trip conversion"
-    (ok (evaluate '(char=? (integer->char (char->integer #\z)) #\z)))))
+           (ok (evaluate '(char=? (integer->char (char->integer #\z)) #\z)))))
 
 (deftest test-division
-  (testing "division primitive"
-    (ok (= (evaluate '(/ 10 2)) 5))))
+    (testing "division primitive"
+             (ok (= (evaluate '(/ 10 2)) 5))))
 
 (deftest test-comparison-primitives
-  (testing "comparison operators"
-    (ok (evaluate '(= 3 3)))
-    (ok (evaluate '(< 1 2)))
-    (ok (evaluate '(> 5 3)))
-    (ok (evaluate '(<= 3 3)))
-    (ok (evaluate '(>= 4 3)))))
+    (testing "comparison operators"
+             (ok (evaluate '(= 3 3)))
+             (ok (evaluate '(< 1 2)))
+             (ok (evaluate '(> 5 3)))
+             (ok (evaluate '(<= 3 3)))
+             (ok (evaluate '(>= 4 3)))))
 
 (deftest test-list-primitives
-  (testing "cons, car, cdr"
-    (ok (equal (evaluate '(cons 1 2)) '(1 . 2)))
-    (ok (= (evaluate '(car (cons 1 2))) 1))
-    (ok (= (evaluate '(cdr (cons 1 2))) 2)))
+    (testing "cons, car, cdr"
+             (ok (equal (evaluate '(cons 1 2)) '(1 . 2)))
+             (ok (= (evaluate '(car (cons 1 2))) 1))
+             (ok (= (evaluate '(cdr (cons 1 2))) 2)))
 
   (testing "list"
-    (ok (equal (evaluate '(list 1 2 3)) '(1 2 3))))
+           (ok (equal (evaluate '(list 1 2 3)) '(1 2 3))))
 
   (testing "null? and not"
-    (ok (evaluate '(null? (quote ()))))
-    (ok (not (evaluate '(null? (quote (1))))))
-    (ok (evaluate '(not (quote ())))))
+           (ok (evaluate '(null? (quote ()))))
+           (ok (not (evaluate '(null? (quote (1))))))
+           (ok (evaluate '(not (quote ())))))
 
   (testing "reverse"
-    (ok (equal (evaluate '(reverse (quote (1 2 3)))) '(3 2 1)))
-    (ok (equal (evaluate '(reverse (quote ()))) '()))
-    (ok (equal (evaluate '(reverse (quote (42)))) '(42)))))
+           (ok (equal (evaluate '(reverse (quote (1 2 3)))) '(3 2 1)))
+           (ok (equal (evaluate '(reverse (quote ()))) '()))
+           (ok (equal (evaluate '(reverse (quote (42)))) '(42)))))
 
 (deftest test-multi-body-lambda
-  (testing "lambda with multiple body expressions returns last value"
-    (ok (= (evaluate '((lambda (x) (+ x 1) (+ x 2)) 10)) 12))))
+    (testing "lambda with multiple body expressions returns last value"
+             (ok (= (evaluate '((lambda (x) (+ x 1) (+ x 2)) 10)) 12))))
 
 (deftest test-nested-application
-  (testing "nested function calls"
-    (ok (= (evaluate '(+ (* 2 3) (- 10 4))) 12))
-    (ok (= (evaluate '(+ (+ 1 2) (+ 3 (+ 4 5)))) 15))))
+    (testing "nested function calls"
+             (ok (= (evaluate '(+ (* 2 3) (- 10 4))) 12))
+             (ok (= (evaluate '(+ (+ 1 2) (+ 3 (+ 4 5)))) 15))))
 
 (deftest test-zero-arg-application
-  (testing "zero-argument function application"
-    (ok (equal (evaluate '(list)) nil))))
+    (testing "zero-argument function application"
+             (ok (equal (evaluate '(list)) nil))))
 
 (deftest test-if-eval
-  (testing "truthy predicate takes consequent"
-    (ok (= (evaluate '(if 1 42 0)) 42))
-    (ok (= (evaluate '(if (< 1 2) 10 20)) 10))
-    (ok (= (evaluate '(if (quote t) 1 2)) 1)))
+    (testing "truthy predicate takes consequent"
+             (ok (= (evaluate '(if 1 42 0)) 42))
+             (ok (= (evaluate '(if (< 1 2) 10 20)) 10))
+             (ok (= (evaluate '(if (quote t) 1 2)) 1)))
 
   (testing "nil predicate takes alternative"
-    (ok (= (evaluate '(if (quote ()) 10 20)) 20))
-    (ok (= (evaluate '(if (> 1 2) 10 20)) 20)))
+           (ok (= (evaluate '(if (quote ()) 10 20)) 20))
+           (ok (= (evaluate '(if (> 1 2) 10 20)) 20)))
 
   (testing "omitted alternative returns nil"
-    (ok (equal (evaluate '(if (quote ()) 42)) nil))
-    (ok (= (evaluate '(if 1 42)) 42)))
+           (ok (equal (evaluate '(if (quote ()) 42)) nil))
+           (ok (= (evaluate '(if 1 42)) 42)))
 
   (testing "computed subexpressions and nested if"
-    (ok (= (evaluate '(if (= (+ 1 1) 2) (* 3 4) (- 5 1))) 12))
-    (ok (= (evaluate '(if (< 1 2) (if (< 2 3) 100 200) 300)) 100))))
+           (ok (= (evaluate '(if (= (+ 1 1) 2) (* 3 4) (- 5 1))) 12))
+           (ok (= (evaluate '(if (< 1 2) (if (< 2 3) 100 200) 300)) 100))))
 
 (deftest test-callcc-eval
-  (testing "simple call/cc returns receiver's value"
-    (ok (= (evaluate '(call/cc (lambda (k) 42))) 42)))
+    (testing "simple call/cc returns receiver's value"
+             (ok (= (evaluate '(call/cc (lambda (k) 42))) 42)))
 
   (testing "continuation used for non-local exit"
-    (ok (= (evaluate '(call/cc (lambda (k) (k 10) 20))) 10)))
+           (ok (= (evaluate '(call/cc (lambda (k) (k 10) 20))) 10)))
 
   (testing "call/cc in arithmetic expression"
-    (ok (= (evaluate '(+ 1 (call/cc (lambda (k) (k 10))))) 11)))
+           (ok (= (evaluate '(+ 1 (call/cc (lambda (k) (k 10))))) 11)))
 
   (testing "nested non-local exit abandons inner computation"
-    (ok (= (evaluate '(+ 1 (call/cc (lambda (k) (+ 2 (k 10)))))) 11)))
+           (ok (= (evaluate '(+ 1 (call/cc (lambda (k) (+ 2 (k 10)))))) 11)))
 
   (testing "variable as receiver"
-    (ok (= (evaluate '((lambda (f) (call/cc f)) (lambda (k) (k 99)))) 99)))
+           (ok (= (evaluate '((lambda (f) (call/cc f)) (lambda (k) (k 99)))) 99)))
 
   (testing "continuation ignored returns receiver result"
-    (ok (= (evaluate '(+ 1 (call/cc (lambda (k) 5)))) 6))))
+           (ok (= (evaluate '(+ 1 (call/cc (lambda (k) 5)))) 6))))
 
 (deftest test-tail-call-optimization
-  (testing "deep tail recursion does not blow the stack"
-    (ok (= (evaluate '((lambda (loop)
-                          (loop loop 1000000))
-                        (lambda (self n)
-                          (if (= n 0)
-                            0
-                            (self self (- n 1))))))
-           0)))
+    (testing "deep tail recursion does not blow the stack"
+             (ok (= (evaluate '((lambda (loop)
+                                  (loop loop 1000000))
+                                (lambda (self n)
+                                  (if (= n 0)
+                                      0
+                                      (self self (- n 1))))))
+                    0)))
 
   (testing "tail call in if consequent/alternative"
-    (ok (eq (evaluate '(begin (define (tco-if n)
-                                (if (= n 0) (quote done) (tco-if (- n 1))))
-                              (tco-if 1000000)))
-            'done)))
+           (ok (eq (evaluate '(begin (define (tco-if n)
+                                      (if (= n 0) (quote done) (tco-if (- n 1))))
+                               (tco-if 1000000)))
+                   'done)))
 
   (testing "tail call in begin last expression"
-    (ok (eq (evaluate '(begin (define (tco-begin n)
-                                (if (= n 0) (quote done)
-                                    (begin (quote ignore) (tco-begin (- n 1)))))
-                              (tco-begin 1000000)))
-            'done)))
+           (ok (eq (evaluate '(begin (define (tco-begin n)
+                                      (if (= n 0) (quote done)
+                                          (begin (quote ignore) (tco-begin (- n 1)))))
+                               (tco-begin 1000000)))
+                   'done)))
 
   (testing "tail call in cond clause body"
-    (ok (eq (evaluate '(begin (define (tco-cond n)
-                                (cond ((= n 0) (quote done))
-                                      ((quote t) (tco-cond (- n 1)))))
-                              (tco-cond 1000000)))
-            'done)))
+           (ok (eq (evaluate '(begin (define (tco-cond n)
+                                      (cond ((= n 0) (quote done))
+                                            ((quote t) (tco-cond (- n 1)))))
+                               (tco-cond 1000000)))
+                   'done)))
 
   (testing "tail call as last argument of and"
-    (ok (eq (evaluate '(begin (define (tco-and n)
-                                (if (= n 0) (quote done)
-                                    (and (quote t) (tco-and (- n 1)))))
-                              (tco-and 1000000)))
-            'done)))
+           (ok (eq (evaluate '(begin (define (tco-and n)
+                                      (if (= n 0) (quote done)
+                                          (and (quote t) (tco-and (- n 1)))))
+                               (tco-and 1000000)))
+                   'done)))
 
   (testing "tail call as last argument of or"
-    (ok (eq (evaluate '(begin (define (tco-or n)
-                                (if (= n 0) (quote done)
-                                    (or (quote ()) (tco-or (- n 1)))))
-                              (tco-or 1000000)))
-            'done)))
+           (ok (eq (evaluate '(begin (define (tco-or n)
+                                      (if (= n 0) (quote done)
+                                          (or (quote ()) (tco-or (- n 1)))))
+                               (tco-or 1000000)))
+                   'done)))
 
   (testing "tail call in when body"
-    (ok (null (evaluate '(begin (define (tco-when n)
-                                  (when (> n 0) (tco-when (- n 1))))
-                                (tco-when 1000000))))))
+           (ok (null (evaluate '(begin (define (tco-when n)
+                                        (when (> n 0) (tco-when (- n 1))))
+                                 (tco-when 1000000))))))
 
   (testing "tail call in unless body"
-    (ok (null (evaluate '(begin (define (tco-unless n)
-                                  (unless (= n 0) (tco-unless (- n 1))))
-                                (tco-unless 1000000))))))
+           (ok (null (evaluate '(begin (define (tco-unless n)
+                                        (unless (= n 0) (tco-unless (- n 1))))
+                                 (tco-unless 1000000))))))
 
   (testing "tail call in let body"
-    (ok (eq (evaluate '(begin (define (tco-let n)
-                                (let ((m (- n 1)))
-                                  (if (= m 0) (quote done) (tco-let m))))
-                              (tco-let 1000000)))
-            'done)))
+           (ok (eq (evaluate '(begin (define (tco-let n)
+                                      (let ((m (- n 1)))
+                                        (if (= m 0) (quote done) (tco-let m))))
+                               (tco-let 1000000)))
+                   'done)))
 
   (testing "tail call in let* body"
-    (ok (eq (evaluate '(begin (define (tco-let* n)
-                                (let* ((m (- n 1)) (k m))
-                                  (if (= k 0) (quote done) (tco-let* k))))
-                              (tco-let* 1000000)))
-            'done)))
+           (ok (eq (evaluate '(begin (define (tco-let* n)
+                                      (let* ((m (- n 1)) (k m))
+                                        (if (= k 0) (quote done) (tco-let* k))))
+                               (tco-let* 1000000)))
+                   'done)))
 
   (testing "tail call via apply"
-    (ok (eq (evaluate '(begin (define (tco-apply n)
-                                (if (= n 0) (quote done)
-                                    (apply tco-apply (list (- n 1)))))
-                              (tco-apply 1000000)))
-            'done))))
+           (ok (eq (evaluate '(begin (define (tco-apply n)
+                                      (if (= n 0) (quote done)
+                                          (apply tco-apply (list (- n 1)))))
+                               (tco-apply 1000000)))
+                   'done))))
 
 (deftest test-define-eval
-  (testing "simple value binding"
-    (ok (= (evaluate '(begin (define x 42) x)) 42)))
+    (testing "simple value binding"
+             (ok (= (evaluate '(begin (define x 42) x)) 42)))
 
   (testing "expression value binding"
-    (ok (= (evaluate '(begin (define y (+ 1 2)) y)) 3)))
+           (ok (= (evaluate '(begin (define y (+ 1 2)) y)) 3)))
 
   (testing "define returns the value"
-    (ok (= (evaluate '(define z 10)) 10)))
+           (ok (= (evaluate '(define z 10)) 10)))
 
   (testing "function shorthand"
-    (ok (= (evaluate '(begin (define (square x) (* x x))
-                             (square 5))) 25)))
+           (ok (= (evaluate '(begin (define (square x) (* x x))
+                              (square 5))) 25)))
 
   (testing "function shorthand with multiple parameters"
-    (ok (= (evaluate '(begin (define (add a b) (+ a b))
-                             (add 3 4))) 7)))
+           (ok (= (evaluate '(begin (define (add a b) (+ a b))
+                              (add 3 4))) 7)))
 
   (testing "function shorthand with multi-body"
-    (ok (= (evaluate '(begin (define (f x) (+ x 1) (+ x 2))
-                             (f 10))) 12)))
+           (ok (= (evaluate '(begin (define (f x) (+ x 1) (+ x 2))
+                              (f 10))) 12)))
 
   (testing "redefine a variable"
-    (ok (= (evaluate '(begin (define a 1)
-                             (define a 2)
-                             a)) 2)))
+           (ok (= (evaluate '(begin (define a 1)
+                              (define a 2)
+                              a)) 2)))
 
   (testing "named recursion"
-    (ok (= (evaluate '(begin (define (countdown n)
-                               (if (= n 0) 0 (countdown (- n 1))))
-                             (countdown 10))) 0)))
+           (ok (= (evaluate '(begin (define (countdown n)
+                                     (if (= n 0) 0 (countdown (- n 1))))
+                              (countdown 10))) 0)))
 
   (testing "tail-recursive define does not blow the stack"
-    (ok (= (evaluate '(begin (define (countdown n)
-                               (if (= n 0) 0 (countdown (- n 1))))
-                             (countdown 100000))) 0))))
+           (ok (= (evaluate '(begin (define (countdown n)
+                                     (if (= n 0) 0 (countdown (- n 1))))
+                              (countdown 100000))) 0))))
 
 (deftest test-set-eval
-  (testing "update a defined variable"
-    (ok (= (evaluate '(begin (define x 1) (set x 2) x)) 2)))
+    (testing "update a defined variable"
+             (ok (= (evaluate '(begin (define x 1) (set x 2) x)) 2)))
 
   (testing "update with a computed value"
-    (ok (= (evaluate '(begin (define x 1) (set x (+ x 10)) x)) 11)))
+           (ok (= (evaluate '(begin (define x 1) (set x (+ x 10)) x)) 11)))
 
   (testing "set returns the new value"
-    (ok (= (evaluate '(begin (define x 1) (set x 42))) 42)))
+           (ok (= (evaluate '(begin (define x 1) (set x 42))) 42)))
 
   (testing "unbound variable signals error"
-    (signals (evaluate '(set nonexistent 10))))
+           (signals (evaluate '(set nonexistent 10))))
 
   (testing "update variable in enclosing scope"
-    (ok (= (evaluate '(begin (define x 1)
-                             (define (f) (set x 99))
-                             (f)
-                             x)) 99)))
+           (ok (= (evaluate '(begin (define x 1)
+                              (define (f) (set x 99))
+                              (f)
+                              x)) 99)))
 
   (testing "closure mutation counter pattern"
-    (ok (= (evaluate '(begin
-                        (define counter 0)
-                        (define (inc) (set counter (+ counter 1)))
-                        (inc)
-                        (inc)
-                        (inc)
-                        counter)) 3))))
+           (ok (= (evaluate '(begin
+                              (define counter 0)
+                              (define (inc) (set counter (+ counter 1)))
+                              (inc)
+                              (inc)
+                              (inc)
+                              counter)) 3))))
 
 (deftest test-rest-params
-  (testing "rest parameter captures extra arguments"
-    (ok (equal (evaluate '((lambda (x . rest) rest) 1 2 3)) '(2 3))))
+    (testing "rest parameter captures extra arguments"
+             (ok (equal (evaluate '((lambda (x . rest) rest) 1 2 3)) '(2 3))))
 
   (testing "rest parameter with no extra arguments"
-    (ok (equal (evaluate '((lambda (x . rest) rest) 1)) nil)))
+           (ok (equal (evaluate '((lambda (x . rest) rest) 1)) nil)))
 
   (testing "rest parameter with fixed and rest args"
-    (ok (equal (evaluate '((lambda (x y . rest) (list x y rest)) 1 2 3 4))
-              '(1 2 (3 4)))))
+           (ok (equal (evaluate '((lambda (x y . rest) (list x y rest)) 1 2 3 4))
+                      '(1 2 (3 4)))))
 
   (testing "rest-only parameter (symbol instead of list)"
-    (ok (equal (evaluate '((lambda args args) 1 2 3)) '(1 2 3)))))
+           (ok (equal (evaluate '((lambda args args) 1 2 3)) '(1 2 3)))))
 
 (deftest test-rest-params-define
-  (testing "define with rest parameter"
-    (ok (equal (evaluate '(begin (define (f x . rest) rest) (f 1 2 3)))
-              '(2 3))))
+    (testing "define with rest parameter"
+             (ok (equal (evaluate '(begin (define (f x . rest) rest) (f 1 2 3)))
+                        '(2 3))))
 
   (testing "define rest-only"
-    (ok (equal (evaluate '(begin (define (f . args) args) (f 1 2 3)))
-              '(1 2 3)))))
+           (ok (equal (evaluate '(begin (define (f . args) args) (f 1 2 3)))
+                      '(1 2 3)))))
 
 (deftest test-list-access-primitives
-  (testing "cadr returns second element"
-    (ok (= (evaluate '(cadr (quote (1 2 3)))) 2)))
+    (testing "cadr returns second element"
+             (ok (= (evaluate '(cadr (quote (1 2 3)))) 2)))
 
   (testing "caddr returns third element"
-    (ok (= (evaluate '(caddr (quote (1 2 3)))) 3)))
+           (ok (= (evaluate '(caddr (quote (1 2 3)))) 3)))
 
   (testing "caar returns car of car"
-    (ok (eq (evaluate '(caar (quote ((a b) c)))) 'a)))
+           (ok (eq (evaluate '(caar (quote ((a b) c)))) 'a)))
 
   (testing "cddr returns cdr of cdr"
-    (ok (equal (evaluate '(cddr (quote (1 2 3)))) '(3)))))
+           (ok (equal (evaluate '(cddr (quote (1 2 3)))) '(3)))))
 
 (deftest test-append-length-pair
-  (testing "append two lists"
-    (ok (equal (evaluate '(append (quote (1 2)) (quote (3 4)))) '(1 2 3 4))))
+    (testing "append two lists"
+             (ok (equal (evaluate '(append (quote (1 2)) (quote (3 4)))) '(1 2 3 4))))
 
   (testing "append empty list"
-    (ok (equal (evaluate '(append (quote ()) (quote (1 2)))) '(1 2))))
+           (ok (equal (evaluate '(append (quote ()) (quote (1 2)))) '(1 2))))
 
   (testing "length of a list"
-    (ok (= (evaluate '(length (quote (a b c)))) 3)))
+           (ok (= (evaluate '(length (quote (a b c)))) 3)))
 
   (testing "length of empty list"
-    (ok (= (evaluate '(length (quote ()))) 0)))
+           (ok (= (evaluate '(length (quote ()))) 0)))
 
   (testing "pair? on cons cell"
-    (ok (evaluate '(pair? (cons 1 2)))))
+           (ok (evaluate '(pair? (cons 1 2)))))
 
   (testing "pair? on number"
-    (ok (not (evaluate '(pair? 42)))))
+           (ok (not (evaluate '(pair? 42)))))
 
   (testing "pair? on empty list"
-    (ok (not (evaluate '(pair? (quote ())))))))
+           (ok (not (evaluate '(pair? (quote ())))))))
 
 (deftest test-map
-  (testing "map with lambda"
-    (ok (equal (evaluate '(map (lambda (x) (+ x 1)) (quote (1 2 3)))) '(2 3 4))))
+    (testing "map with lambda"
+             (ok (equal (evaluate '(map (lambda (x) (+ x 1)) (quote (1 2 3)))) '(2 3 4))))
 
   (testing "map with primitive"
-    (ok (equal (evaluate '(map car (quote ((1 2) (3 4) (5 6))))) '(1 3 5))))
+           (ok (equal (evaluate '(map car (quote ((1 2) (3 4) (5 6))))) '(1 3 5))))
 
   (testing "map over empty list"
-    (ok (equal (evaluate '(map (lambda (x) x) (quote ()))) nil)))
+           (ok (equal (evaluate '(map (lambda (x) x) (quote ()))) nil)))
 
   (testing "map large list without stack overflow"
-    (ok (= (evaluate '(begin
-                        (define (make-list n)
-                          (let loop ((i 0) (acc (quote ())))
-                            (if (= i n) acc (loop (+ i 1) (cons i acc)))))
-                        (car (map (lambda (x) (+ x 1)) (make-list 10000)))))
-           10000))))
+           (ok (= (evaluate '(begin
+                              (define (make-list n)
+                               (let loop ((i 0) (acc (quote ())))
+                                    (if (= i n) acc (loop (+ i 1) (cons i acc)))))
+                              (car (map (lambda (x) (+ x 1)) (make-list 10000)))))
+                  10000))))
 
 (deftest test-apply-special-form
-  (testing "apply primitive with argument list"
-    (ok (= (evaluate '(apply + (quote (1 2 3)))) 6)))
+    (testing "apply primitive with argument list"
+             (ok (= (evaluate '(apply + (quote (1 2 3)))) 6)))
 
   (testing "apply lambda with argument list"
-    (ok (= (evaluate '(apply (lambda (x y) (+ x y)) (quote (3 4)))) 7)))
+           (ok (= (evaluate '(apply (lambda (x y) (+ x y)) (quote (3 4)))) 7)))
 
   (testing "apply named ECE function"
-    (ok (= (evaluate '(begin (define (add a b) (+ a b))
-                             (apply add (quote (10 20))))) 30))))
+           (ok (= (evaluate '(begin (define (add a b) (+ a b))
+                              (apply add (quote (10 20))))) 30))))
 
 (deftest test-io-primitives
-  (testing "print is bound"
-    (ok (eq (car (evaluate 'print)) 'primitive)))
+    (testing "print is bound"
+             (ok (eq (car (evaluate 'print)) 'primitive)))
 
   (testing "read is bound"
-    (ok (eq (car (evaluate 'read)) 'primitive)))
+           (ok (eq (car (evaluate 'read)) 'primitive)))
 
   (testing "display is bound"
-    (ok (eq (car (evaluate 'display)) 'primitive)))
+           (ok (eq (car (evaluate 'display)) 'primitive)))
 
   (testing "newline is bound"
-    (ok (eq (car (evaluate 'newline)) 'primitive)))
+           (ok (eq (car (evaluate 'newline)) 'primitive)))
 
   (testing "eof? is bound"
-    (ok (eq (car (evaluate 'eof?)) 'primitive)))
+           (ok (eq (car (evaluate 'eof?)) 'primitive)))
 
   (testing "display outputs without leading newline"
-    (ok (equal (with-output-to-string (*standard-output*)
-                (evaluate '(display "hello")))
-              "hello")))
+           (ok (equal (with-output-to-string (*standard-output*)
+                        (evaluate '(display "hello")))
+                      "hello")))
 
   (testing "print outputs value"
-    (let ((output (with-output-to-string (*standard-output*)
-                    (evaluate '(print 42)))))
-      (ok (search "42" output)))))
+           (let ((output (with-output-to-string (*standard-output*)
+                           (evaluate '(print 42)))))
+             (ok (search "42" output)))))
 
 (deftest test-define-macro
-  (testing "simple macro definition and expansion"
-    (ok (eq (evaluate '(begin (define-macro (my-const name) (list (quote quote) name))
-                              (my-const hello)))
-            'hello)))
+    (testing "simple macro definition and expansion"
+             (ok (eq (evaluate '(begin (define-macro (my-const name) (list (quote quote) name))
+                                 (my-const hello)))
+                     'hello)))
 
   (testing "macro receives unevaluated operands"
-    (ok (= (evaluate '(begin (define-macro (identity-macro expr) expr)
-                             (identity-macro (+ 1 2))))
-           3)))
+           (ok (= (evaluate '(begin (define-macro (identity-macro expr) expr)
+                              (identity-macro (+ 1 2))))
+                  3)))
 
   (testing "macro with multiple body expressions"
-    (ok (= (evaluate '(begin (define-macro (last-of a b) b)
-                             (last-of (error "never") (+ 10 20))))
-           30))))
+           (ok (= (evaluate '(begin (define-macro (last-of a b) b)
+                              (last-of (error "never") (+ 10 20))))
+                  30))))
 
 (deftest test-cond
-  (testing "first true clause"
-    (ok (= (evaluate '(cond ((= 1 1) 10) ((= 2 3) 20))) 10)))
+    (testing "first true clause"
+             (ok (= (evaluate '(cond ((= 1 1) 10) ((= 2 3) 20))) 10)))
 
   (testing "second clause matches"
-    (ok (= (evaluate '(cond ((= 1 2) 10) ((= 2 2) 20))) 20)))
+           (ok (= (evaluate '(cond ((= 1 2) 10) ((= 2 2) 20))) 20)))
 
   (testing "no clause matches returns nil"
-    (ok (null (evaluate '(cond ((= 1 2) 10) ((= 3 4) 20))))))
+           (ok (null (evaluate '(cond ((= 1 2) 10) ((= 3 4) 20))))))
 
   (testing "multi-expression clause body"
-    (ok (= (evaluate '(begin (define x 0)
-                             (cond ((= 1 1) (set x 10) (+ x 5)))
-                             x))
-           10)))
+           (ok (= (evaluate '(begin (define x 0)
+                              (cond ((= 1 1) (set x 10) (+ x 5)))
+                              x))
+                  10)))
 
   (testing "else clause as catch-all"
-    (ok (= (evaluate '(cond ((= 1 2) 10) (else 99))) 99)))
+           (ok (= (evaluate '(cond ((= 1 2) 10) (else 99))) 99)))
 
   (testing "t clause as catch-all"
-    (ok (= (evaluate '(cond ((= 1 2) 10) (t 99))) 99))))
+           (ok (= (evaluate '(cond ((= 1 2) 10) (t 99))) 99))))
 
 (deftest test-case
-  (testing "match single datum"
-    (ok (= (evaluate '(case (+ 1 1) ((1) 10) ((2) 20) ((3) 30))) 20)))
+    (testing "match single datum"
+             (ok (= (evaluate '(case (+ 1 1) ((1) 10) ((2) 20) ((3) 30))) 20)))
 
   (testing "match in datum list"
-    (ok (eq (evaluate '(case 3 ((1 2) (quote low)) ((3 4) (quote high)))) 'high)))
+           (ok (eq (evaluate '(case 3 ((1 2) (quote low)) ((3 4) (quote high)))) 'high)))
 
   (testing "else clause"
-    (ok (eq (evaluate '(case 99 ((1) (quote one)) (else (quote other)))) 'other)))
+           (ok (eq (evaluate '(case 99 ((1) (quote one)) (else (quote other)))) 'other)))
 
   (testing "no match returns nil"
-    (ok (null (evaluate '(case 5 ((1) (quote one)) ((2) (quote two)))))))
+           (ok (null (evaluate '(case 5 ((1) (quote one)) ((2) (quote two)))))))
 
   (testing "key expression evaluated once"
-    (ok (= (evaluate '(begin (define counter 0)
-                             (case (begin (set counter (+ counter 1)) counter)
-                               ((1) (quote one))
-                               ((2) (quote two)))
-                             counter))
-           1)))
+           (ok (= (evaluate '(begin (define counter 0)
+                              (case (begin (set counter (+ counter 1)) counter)
+                                ((1) (quote one))
+                                ((2) (quote two)))
+                              counter))
+                  1)))
 
   (testing "match symbol datums"
-    (ok (= (evaluate '(case (quote b) ((a) 1) ((b) 2) ((c) 3))) 2))))
+           (ok (= (evaluate '(case (quote b) ((a) 1) ((b) 2) ((c) 3))) 2))))
 
 (deftest test-do
-  (testing "simple counting loop"
-    (ok (= (evaluate '(do ((i 0 (+ i 1))) ((= i 5) i))) 5)))
+    (testing "simple counting loop"
+             (ok (= (evaluate '(do ((i 0 (+ i 1))) ((= i 5) i))) 5)))
 
   (testing "accumulating loop"
-    (ok (= (evaluate '(do ((i 0 (+ i 1)) (sum 0 (+ sum i))) ((= i 5) sum))) 10)))
+           (ok (= (evaluate '(do ((i 0 (+ i 1)) (sum 0 (+ sum i))) ((= i 5) sum))) 10)))
 
   (testing "loop with body for side effects"
-    (ok (equal (evaluate '(begin (define result (quote ()))
-                                 (do ((i 0 (+ i 1)))
-                                     ((= i 3) result)
-                                   (set result (cons i result)))))
-              '(2 1 0))))
+           (ok (equal (evaluate '(begin (define result (quote ()))
+                                  (do ((i 0 (+ i 1)))
+                                      ((= i 3) result)
+                                    (set result (cons i result)))))
+                      '(2 1 0))))
 
   (testing "variable without step expression stays constant"
-    (ok (= (evaluate '(do ((x 10) (i 0 (+ i 1))) ((= i 3) x))) 10)))
+           (ok (= (evaluate '(do ((x 10) (i 0 (+ i 1))) ((= i 3) x))) 10)))
 
   (testing "immediate termination"
-    (ok (eq (evaluate '(do ((i 0 (+ i 1))) ((= i 0) (quote done)))) 'done))))
+           (ok (eq (evaluate '(do ((i 0 (+ i 1))) ((= i 0) (quote done)))) 'done))))
 
 (deftest test-let
-  (testing "simple let binding"
-    (ok (= (evaluate '(let ((x 10) (y 20)) (+ x y))) 30)))
+    (testing "simple let binding"
+             (ok (= (evaluate '(let ((x 10) (y 20)) (+ x y))) 30)))
 
   (testing "let bindings do not see each other"
-    (ok (= (evaluate '(begin (define x 1) (let ((x 10) (y x)) y))) 1))))
+           (ok (= (evaluate '(begin (define x 1) (let ((x 10) (y x)) y))) 1))))
 
 (deftest test-named-let
-  (testing "simple counting loop"
-    (ok (= (evaluate '(let loop ((i 0) (sum 0))
-                        (if (= i 5) sum (loop (+ i 1) (+ sum i)))))
-           10)))
+    (testing "simple counting loop"
+             (ok (= (evaluate '(let loop ((i 0) (sum 0))
+                                (if (= i 5) sum (loop (+ i 1) (+ sum i)))))
+                    10)))
 
   (testing "named let with tail recursion"
-    (ok (eq (evaluate '(let loop ((n 1000000))
-                         (if (= n 0) (quote done) (loop (- n 1)))))
-            'done)))
+           (ok (eq (evaluate '(let loop ((n 1000000))
+                               (if (= n 0) (quote done) (loop (- n 1)))))
+                   'done)))
 
   (testing "building a list with named let"
-    (ok (equal (evaluate '(let loop ((i 3) (acc (quote ())))
-                            (if (= i 0) acc (loop (- i 1) (cons i acc)))))
-              '(1 2 3))))
+           (ok (equal (evaluate '(let loop ((i 3) (acc (quote ())))
+                                  (if (= i 0) acc (loop (- i 1) (cons i acc)))))
+                      '(1 2 3))))
 
   (testing "regular let still works"
-    (ok (= (evaluate '(let ((x 10) (y 20)) (+ x y))) 30))))
+           (ok (= (evaluate '(let ((x 10) (y 20)) (+ x y))) 30))))
 
 (deftest test-let*
-  (testing "sequential bindings"
-    (ok (= (evaluate '(let* ((x 10) (y (+ x 5))) y)) 15)))
+    (testing "sequential bindings"
+             (ok (= (evaluate '(let* ((x 10) (y (+ x 5))) y)) 15)))
 
   (testing "single binding"
-    (ok (= (evaluate '(let* ((x 42)) x)) 42))))
+           (ok (= (evaluate '(let* ((x 42)) x)) 42))))
 
 (deftest test-letrec
-  (testing "single recursive binding"
-    (ok (= (evaluate '(letrec ((fact (lambda (n) (if (= n 0) 1 (* n (fact (- n 1)))))))
-                        (fact 5)))
-           120)))
+    (testing "single recursive binding"
+             (ok (= (evaluate '(letrec ((fact (lambda (n) (if (= n 0) 1 (* n (fact (- n 1)))))))
+                                (fact 5)))
+                    120)))
 
   (testing "mutually recursive bindings"
-    (ok (eq (evaluate '(letrec ((even? (lambda (n) (if (= n 0) (quote t) (odd? (- n 1)))))
-                                (odd? (lambda (n) (if (= n 0) (quote ()) (even? (- n 1))))))
-                        (even? 10)))
-            't)))
+           (ok (eq (evaluate '(letrec ((even? (lambda (n) (if (= n 0) (quote t) (odd? (- n 1)))))
+                                       (odd? (lambda (n) (if (= n 0) (quote ()) (even? (- n 1))))))
+                               (even? 10)))
+                   't)))
 
   (testing "mutually recursive bindings (odd case)"
-    (ok (eq (evaluate '(letrec ((even? (lambda (n) (if (= n 0) (quote t) (odd? (- n 1)))))
-                                (odd? (lambda (n) (if (= n 0) (quote ()) (even? (- n 1))))))
-                        (odd? 7)))
-            't)))
+           (ok (eq (evaluate '(letrec ((even? (lambda (n) (if (= n 0) (quote t) (odd? (- n 1)))))
+                                       (odd? (lambda (n) (if (= n 0) (quote ()) (even? (- n 1))))))
+                               (odd? 7)))
+                   't)))
 
   (testing "body in tail position"
-    (ok (eq (evaluate '(letrec ((loop (lambda (n) (if (= n 0) (quote done) (loop (- n 1))))))
-                        (loop 1000000)))
-            'done))))
+           (ok (eq (evaluate '(letrec ((loop (lambda (n) (if (= n 0) (quote done) (loop (- n 1))))))
+                               (loop 1000000)))
+                   'done))))
 
 (deftest test-and
-  (testing "all truthy"
-    (ok (= (evaluate '(and 1 2 3)) 3)))
+    (testing "all truthy"
+             (ok (= (evaluate '(and 1 2 3)) 3)))
 
   (testing "short-circuit on false"
-    (ok (null (evaluate '(and 1 (quote ()) 3)))))
+           (ok (null (evaluate '(and 1 (quote ()) 3)))))
 
   (testing "empty and"
-    (ok (evaluate '(and)))))
+           (ok (evaluate '(and)))))
 
 (deftest test-or
-  (testing "first truthy"
-    (ok (= (evaluate '(or (quote ()) 2 3)) 2)))
+    (testing "first truthy"
+             (ok (= (evaluate '(or (quote ()) 2 3)) 2)))
 
   (testing "all falsy"
-    (ok (null (evaluate '(or (quote ()) (quote ()))))))
+           (ok (null (evaluate '(or (quote ()) (quote ()))))))
 
   (testing "empty or"
-    (ok (null (evaluate '(or))))))
+           (ok (null (evaluate '(or))))))
 
 (deftest test-when-unless
-  (testing "when with truthy test evaluates body"
-    (ok (= (evaluate '(when (= 1 1) 42)) 42)))
+    (testing "when with truthy test evaluates body"
+             (ok (= (evaluate '(when (= 1 1) 42)) 42)))
 
   (testing "when with falsy test returns nil"
-    (ok (null (evaluate '(when (= 1 2) 42)))))
+           (ok (null (evaluate '(when (= 1 2) 42)))))
 
   (testing "unless with falsy test evaluates body"
-    (ok (= (evaluate '(unless (= 1 2) 42)) 42)))
+           (ok (= (evaluate '(unless (= 1 2) 42)) 42)))
 
   (testing "unless with truthy test returns nil"
-    (ok (null (evaluate '(unless (= 1 1) 42))))))
+           (ok (null (evaluate '(unless (= 1 1) 42))))))
 
 (deftest test-quasiquote
-  (testing "all-literal template"
-    (ok (equal (evaluate '(quasiquote (a b c))) '(a b c))))
+    (testing "all-literal template"
+             (ok (equal (evaluate '(quasiquote (a b c))) '(a b c))))
 
   (testing "atomic template"
-    (ok (eq (evaluate '(quasiquote hello)) 'hello))))
+           (ok (eq (evaluate '(quasiquote hello)) 'hello))))
 
 (deftest test-unquote
-  (testing "unquote a variable"
-    (ok (equal (evaluate '(begin (define x 42) (quasiquote (a (unquote x) c))))
-              '(a 42 c))))
+    (testing "unquote a variable"
+             (ok (equal (evaluate '(begin (define x 42) (quasiquote (a (unquote x) c))))
+                        '(a 42 c))))
 
   (testing "unquote an expression"
-    (ok (equal (evaluate '(quasiquote (result (unquote (+ 1 2)))))
-              '(result 3))))
+           (ok (equal (evaluate '(quasiquote (result (unquote (+ 1 2)))))
+                      '(result 3))))
 
   (testing "unquote in tail position"
-    (ok (equal (evaluate '(begin (define xs (quote (1 2 3)))
-                                 (quasiquote (prefix (unquote xs)))))
-              '(prefix (1 2 3))))))
+           (ok (equal (evaluate '(begin (define xs (quote (1 2 3)))
+                                  (quasiquote (prefix (unquote xs)))))
+                      '(prefix (1 2 3))))))
 
 (deftest test-unquote-splicing
-  (testing "splice a list"
-    (ok (equal (evaluate '(begin (define xs (quote (1 2 3)))
-                                 (quasiquote (a (unquote-splicing xs) d))))
-              '(a 1 2 3 d))))
+    (testing "splice a list"
+             (ok (equal (evaluate '(begin (define xs (quote (1 2 3)))
+                                    (quasiquote (a (unquote-splicing xs) d))))
+                        '(a 1 2 3 d))))
 
   (testing "splice an empty list"
-    (ok (equal (evaluate '(begin (define xs (quote ()))
-                                 (quasiquote (a (unquote-splicing xs) b))))
-              '(a b)))))
+           (ok (equal (evaluate '(begin (define xs (quote ()))
+                                  (quasiquote (a (unquote-splicing xs) b))))
+                      '(a b)))))
 
 (deftest test-quasiquote-in-macro
-  (testing "macro using quasiquote"
-    (ok (= (evaluate '(begin (define-macro (my-if test then)
-                               (quasiquote (if (unquote test) (unquote then))))
-                             (my-if (= 1 1) 42)))
-           42))))
+    (testing "macro using quasiquote"
+             (ok (= (evaluate '(begin (define-macro (my-if test then)
+                                       (quasiquote (if (unquote test) (unquote then))))
+                                (my-if (= 1 1) 42)))
+                    42))))
 
 (deftest test-nested-quasiquote
-  (testing "inner unquote preserved at depth 2"
-    (ok (equal (evaluate '(begin (define x 1)
-                                 (quasiquote (a (quasiquote (b (unquote x)))))))
-              '(a (quasiquote (b (unquote x)))))))
+    (testing "inner unquote preserved at depth 2"
+             (ok (equal (evaluate '(begin (define x 1)
+                                    (quasiquote (a (quasiquote (b (unquote x)))))))
+                        '(a (quasiquote (b (unquote x)))))))
 
   (testing "outer unquote evaluated, inner preserved"
-    (ok (equal (evaluate '(begin (define x 1)
-                                 (quasiquote (a (unquote x) (quasiquote (b (unquote x)))))))
-              '(a 1 (quasiquote (b (unquote x)))))))
+           (ok (equal (evaluate '(begin (define x 1)
+                                  (quasiquote (a (unquote x) (quasiquote (b (unquote x)))))))
+                      '(a 1 (quasiquote (b (unquote x)))))))
 
   (testing "nested unquote-splicing preserved at depth 2"
-    (ok (equal (evaluate '(begin (define xs (quote (1 2)))
-                                 (quasiquote (a (quasiquote (b (unquote-splicing xs)))))))
-              '(a (quasiquote (b (unquote-splicing xs))))))))
+           (ok (equal (evaluate '(begin (define xs (quote (1 2)))
+                                  (quasiquote (a (quasiquote (b (unquote-splicing xs)))))))
+                      '(a (quasiquote (b (unquote-splicing xs))))))))
 
 (deftest test-type-predicates
-  (testing "number?"
-    (ok (evaluate '(number? 42)))
-    (ok (not (evaluate '(number? "hello")))))
+    (testing "number?"
+             (ok (evaluate '(number? 42)))
+             (ok (not (evaluate '(number? "hello")))))
 
   (testing "string?"
-    (ok (evaluate '(string? "hello")))
-    (ok (not (evaluate '(string? 42)))))
+           (ok (evaluate '(string? "hello")))
+           (ok (not (evaluate '(string? 42)))))
 
   (testing "symbol?"
-    (ok (evaluate '(symbol? (quote foo))))
-    (ok (not (evaluate '(symbol? 42)))))
+           (ok (evaluate '(symbol? (quote foo))))
+           (ok (not (evaluate '(symbol? 42)))))
 
   (testing "boolean?"
-    (ok (evaluate '(boolean? t)))
-    (ok (evaluate '(boolean? (quote ()))))
-    (ok (not (evaluate '(boolean? 42)))))
+           (ok (evaluate '(boolean? t)))
+           (ok (evaluate '(boolean? (quote ()))))
+           (ok (not (evaluate '(boolean? 42)))))
 
   (testing "zero?"
-    (ok (evaluate '(zero? 0)))
-    (ok (not (evaluate '(zero? 5))))))
+           (ok (evaluate '(zero? 0)))
+           (ok (not (evaluate '(zero? 5))))))
 
 (deftest test-equality
-  (testing "eq? on same symbol"
-    (ok (evaluate '(eq? (quote a) (quote a)))))
+    (testing "eq? on same symbol"
+             (ok (evaluate '(eq? (quote a) (quote a)))))
 
   (testing "eq? on different symbols"
-    (ok (not (evaluate '(eq? (quote a) (quote b))))))
+           (ok (not (evaluate '(eq? (quote a) (quote b))))))
 
   (testing "equal? on identical lists"
-    (ok (evaluate '(equal? (quote (1 2 3)) (quote (1 2 3))))))
+           (ok (evaluate '(equal? (quote (1 2 3)) (quote (1 2 3))))))
 
   (testing "equal? on different lists"
-    (ok (not (evaluate '(equal? (quote (1 2)) (quote (1 3)))))))
+           (ok (not (evaluate '(equal? (quote (1 2)) (quote (1 3)))))))
 
   (testing "equal? on strings"
-    (ok (evaluate '(equal? "hello" "hello")))))
+           (ok (evaluate '(equal? "hello" "hello")))))
 
 (deftest test-numeric-utilities
-  (testing "modulo"
-    (ok (= (evaluate '(modulo 10 3)) 1)))
+    (testing "modulo"
+             (ok (= (evaluate '(modulo 10 3)) 1)))
 
   (testing "abs"
-    (ok (= (evaluate '(abs -5)) 5)))
+           (ok (= (evaluate '(abs -5)) 5)))
 
   (testing "min"
-    (ok (= (evaluate '(min 3 1 4 1 5)) 1)))
+           (ok (= (evaluate '(min 3 1 4 1 5)) 1)))
 
   (testing "max"
-    (ok (= (evaluate '(max 3 1 4 1 5)) 5)))
+           (ok (= (evaluate '(max 3 1 4 1 5)) 5)))
 
   (testing "even?"
-    (ok (evaluate '(even? 4)))
-    (ok (not (evaluate '(even? 3)))))
+           (ok (evaluate '(even? 4)))
+           (ok (not (evaluate '(even? 3)))))
 
   (testing "odd?"
-    (ok (evaluate '(odd? 3))))
+           (ok (evaluate '(odd? 3))))
 
   (testing "positive?"
-    (ok (evaluate '(positive? 5)))
-    (ok (not (evaluate '(positive? -1)))))
+           (ok (evaluate '(positive? 5)))
+           (ok (not (evaluate '(positive? -1)))))
 
   (testing "negative?"
-    (ok (evaluate '(negative? -1)))))
+           (ok (evaluate '(negative? -1)))))
 
 (deftest test-filter
-  (testing "filter even numbers"
-    (ok (equal (evaluate '(filter even? (quote (1 2 3 4 5 6)))) '(2 4 6))))
+    (testing "filter even numbers"
+             (ok (equal (evaluate '(filter even? (quote (1 2 3 4 5 6)))) '(2 4 6))))
 
   (testing "filter with no matches"
-    (ok (equal (evaluate '(filter even? (quote (1 3 5)))) '())))
+           (ok (equal (evaluate '(filter even? (quote (1 3 5)))) '())))
 
   (testing "filter empty list"
-    (ok (equal (evaluate '(filter even? (quote ()))) '())))
+           (ok (equal (evaluate '(filter even? (quote ()))) '())))
 
   (testing "filter with lambda"
-    (ok (equal (evaluate '(filter (lambda (x) (> x 3)) (quote (1 2 3 4 5)))) '(4 5))))
+           (ok (equal (evaluate '(filter (lambda (x) (> x 3)) (quote (1 2 3 4 5)))) '(4 5))))
 
   (testing "filter large list without stack overflow"
-    (ok (= (evaluate '(begin
-                        (define (make-list n)
-                          (let loop ((i 0) (acc (quote ())))
-                            (if (= i n) acc (loop (+ i 1) (cons i acc)))))
-                        (length (filter even? (make-list 10000)))))
-           5000))))
+           (ok (= (evaluate '(begin
+                              (define (make-list n)
+                               (let loop ((i 0) (acc (quote ())))
+                                    (if (= i n) acc (loop (+ i 1) (cons i acc)))))
+                              (length (filter even? (make-list 10000)))))
+                  5000))))
 
 (deftest test-reduce
-  (testing "reduce sum"
-    (ok (= (evaluate '(reduce + 0 (quote (1 2 3 4 5)))) 15)))
+    (testing "reduce sum"
+             (ok (= (evaluate '(reduce + 0 (quote (1 2 3 4 5)))) 15)))
 
   (testing "reduce with empty list"
-    (ok (= (evaluate '(reduce + 0 (quote ()))) 0)))
+           (ok (= (evaluate '(reduce + 0 (quote ()))) 0)))
 
   (testing "reduce building a reversed list"
-    (ok (equal (evaluate '(reduce (lambda (acc x) (cons x acc)) (quote ()) (quote (1 2 3)))) '(3 2 1)))))
+           (ok (equal (evaluate '(reduce (lambda (acc x) (cons x acc)) (quote ()) (quote (1 2 3)))) '(3 2 1)))))
 
 (deftest test-for-each
-  (testing "for-each returns nil"
-    (ok (equal (evaluate '(for-each (lambda (x) x) (quote (1 2 3)))) '()))))
+    (testing "for-each returns nil"
+             (ok (equal (evaluate '(for-each (lambda (x) x) (quote (1 2 3)))) '()))))
 
 (deftest test-gensym
-  (testing "gensym returns a symbol"
-    (ok (evaluate '(symbol? (gensym)))))
+    (testing "gensym returns a symbol"
+             (ok (evaluate '(symbol? (gensym)))))
 
   (testing "gensym returns unique symbols"
-    (ok (not (evaluate '(eq? (gensym) (gensym)))))))
+           (ok (not (evaluate '(eq? (gensym) (gensym)))))))
 
 (deftest test-or-no-double-eval
-  (testing "or does not double-evaluate truthy argument"
-    (ok (= (evaluate '(begin (define counter 0)
-                             (or (begin (set counter (+ counter 1)) counter) 99)
-                             counter))
-           1))))
+    (testing "or does not double-evaluate truthy argument"
+             (ok (= (evaluate '(begin (define counter 0)
+                                (or (begin (set counter (+ counter 1)) counter) 99)
+                                counter))
+                    1))))
 
 (deftest test-string-ops
-  (testing "string-length"
-    (ok (= (evaluate '(string-length "hello")) 5))
-    (ok (= (evaluate '(string-length "")) 0)))
+    (testing "string-length"
+             (ok (= (evaluate '(string-length "hello")) 5))
+             (ok (= (evaluate '(string-length "")) 0)))
 
   (testing "string-ref"
-    (ok (char= (evaluate '(string-ref "hello" 0)) #\h))
-    (ok (char= (evaluate '(string-ref "hello" 4)) #\o)))
+           (ok (char= (evaluate '(string-ref "hello" 0)) #\h))
+           (ok (char= (evaluate '(string-ref "hello" 4)) #\o)))
 
   (testing "string-append"
-    (ok (equal (evaluate '(string-append "hello" " world")) "hello world"))
-    (ok (equal (evaluate '(string-append "a" "b" "c")) "abc"))
-    (ok (equal (evaluate '(string-append "" "hello")) "hello")))
+           (ok (equal (evaluate '(string-append "hello" " world")) "hello world"))
+           (ok (equal (evaluate '(string-append "a" "b" "c")) "abc"))
+           (ok (equal (evaluate '(string-append "" "hello")) "hello")))
 
   (testing "substring"
-    (ok (equal (evaluate '(substring "hello world" 0 5)) "hello"))
-    (ok (equal (evaluate '(substring "hello world" 6 11)) "world")))
+           (ok (equal (evaluate '(substring "hello world" 0 5)) "hello"))
+           (ok (equal (evaluate '(substring "hello world" 6 11)) "world")))
 
   (testing "string->number"
-    (ok (= (evaluate '(string->number "42")) 42))
-    (ok (= (evaluate '(string->number "-7")) -7))
-    (ok (null (evaluate '(string->number "abc")))))
+           (ok (= (evaluate '(string->number "42")) 42))
+           (ok (= (evaluate '(string->number "-7")) -7))
+           (ok (null (evaluate '(string->number "abc")))))
 
   (testing "number->string"
-    (ok (equal (evaluate '(number->string 42)) "42"))
-    (ok (equal (evaluate '(number->string -7)) "-7")))
+           (ok (equal (evaluate '(number->string 42)) "42"))
+           (ok (equal (evaluate '(number->string -7)) "-7")))
 
   (testing "string->symbol"
-    (ok (eq (evaluate '(string->symbol "hello")) 'hello)))
+           (ok (eq (evaluate '(string->symbol "hello")) 'hello)))
 
   (testing "symbol->string"
-    (ok (equal (evaluate '(symbol->string (quote hello))) "hello")))
+           (ok (equal (evaluate '(symbol->string (quote hello))) "hello")))
 
   (testing "symbol round-trip"
-    (ok (evaluate '(equal? (string->symbol (symbol->string (quote foo))) (quote foo))))))
+           (ok (evaluate '(equal? (string->symbol (symbol->string (quote foo))) (quote foo))))))
 
 (deftest test-error-signaling
-  (testing "error signals a condition"
-    (signals (evaluate '(error "something went wrong"))))
+    (testing "error signals a condition"
+             (signals (evaluate '(error "something went wrong"))))
 
   (testing "error is catchable"
-    (ok (null (handler-case (evaluate '(error "oops"))
-               (error () nil))))))
+           (ok (null (handler-case (evaluate '(error "oops"))
+                       (error () nil))))))
 
 (deftest test-assoc-member
-  (testing "assoc finds key"
-    (ok (equal (evaluate '(assoc (quote b) (quote ((a 1) (b 2) (c 3))))) '(b 2))))
+    (testing "assoc finds key"
+             (ok (equal (evaluate '(assoc (quote b) (quote ((a 1) (b 2) (c 3))))) '(b 2))))
 
   (testing "assoc key not found"
-    (ok (null (evaluate '(assoc (quote d) (quote ((a 1) (b 2) (c 3))))))))
+           (ok (null (evaluate '(assoc (quote d) (quote ((a 1) (b 2) (c 3))))))))
 
   (testing "assoc with numeric key"
-    (ok (equal (evaluate '(assoc 2 (quote ((1 a) (2 b) (3 c))))) '(2 b))))
+           (ok (equal (evaluate '(assoc 2 (quote ((1 a) (2 b) (3 c))))) '(2 b))))
 
   (testing "member element found"
-    (ok (equal (evaluate '(member 3 (quote (1 2 3 4 5)))) '(3 4 5))))
+           (ok (equal (evaluate '(member 3 (quote (1 2 3 4 5)))) '(3 4 5))))
 
   (testing "member element not found"
-    (ok (null (evaluate '(member 6 (quote (1 2 3 4 5)))))))
+           (ok (null (evaluate '(member 6 (quote (1 2 3 4 5)))))))
 
   (testing "member with symbol"
-    (ok (equal (evaluate '(member (quote c) (quote (a b c d)))) '(c d)))))
+           (ok (equal (evaluate '(member (quote c) (quote (a b c d)))) '(c d)))))
 
 (deftest test-list-indexing
-  (testing "list-ref first element"
-    (ok (eq (evaluate '(list-ref (quote (a b c d)) 0)) 'a)))
+    (testing "list-ref first element"
+             (ok (eq (evaluate '(list-ref (quote (a b c d)) 0)) 'a)))
 
   (testing "list-ref third element"
-    (ok (eq (evaluate '(list-ref (quote (a b c d)) 2)) 'c)))
+           (ok (eq (evaluate '(list-ref (quote (a b c d)) 2)) 'c)))
 
   (testing "list-ref last element"
-    (ok (eq (evaluate '(list-ref (quote (a b c d)) 3)) 'd)))
+           (ok (eq (evaluate '(list-ref (quote (a b c d)) 3)) 'd)))
 
   (testing "list-tail from index 0"
-    (ok (equal (evaluate '(list-tail (quote (a b c d)) 0)) '(a b c d))))
+           (ok (equal (evaluate '(list-tail (quote (a b c d)) 0)) '(a b c d))))
 
   (testing "list-tail from index 2"
-    (ok (equal (evaluate '(list-tail (quote (a b c d)) 2)) '(c d))))
+           (ok (equal (evaluate '(list-tail (quote (a b c d)) 2)) '(c d))))
 
   (testing "list-tail at end"
-    (ok (null (evaluate '(list-tail (quote (a b c d)) 4))))))
+           (ok (null (evaluate '(list-tail (quote (a b c d)) 4))))))
 
 (deftest test-string-comparisons
-  (testing "string=? equal"
-    (ok (evaluate '(string=? "hello" "hello"))))
+    (testing "string=? equal"
+             (ok (evaluate '(string=? "hello" "hello"))))
 
   (testing "string=? unequal"
-    (ok (not (evaluate '(string=? "hello" "world")))))
+           (ok (not (evaluate '(string=? "hello" "world")))))
 
   (testing "string<? less than"
-    (ok (evaluate '(string<? "abc" "abd"))))
+           (ok (evaluate '(string<? "abc" "abd"))))
 
   (testing "string<? not less than"
-    (ok (not (evaluate '(string<? "abd" "abc")))))
+           (ok (not (evaluate '(string<? "abd" "abc")))))
 
   (testing "string>? greater than"
-    (ok (evaluate '(string>? "abd" "abc"))))
+           (ok (evaluate '(string>? "abd" "abc"))))
 
   (testing "string>? not greater than"
-    (ok (not (evaluate '(string>? "abc" "abd"))))))
+           (ok (not (evaluate '(string>? "abc" "abd"))))))
 
 (deftest test-vector-ops
-  (testing "vector literal self-evaluates"
-    (ok (equalp (evaluate #(1 2 3)) #(1 2 3))))
+    (testing "vector literal self-evaluates"
+             (ok (equalp (evaluate #(1 2 3)) #(1 2 3))))
 
   (testing "vector? predicate"
-    (ok (evaluate '(vector? #(1 2 3))))
-    (ok (not (evaluate '(vector? (quote (1 2 3))))))
-    (ok (not (evaluate '(vector? "hello")))))
+           (ok (evaluate '(vector? #(1 2 3))))
+           (ok (not (evaluate '(vector? (quote (1 2 3))))))
+           (ok (not (evaluate '(vector? "hello")))))
 
   (testing "make-vector"
-    (ok (= (evaluate '(vector-length (make-vector 5))) 5))
-    (ok (= (evaluate '(vector-ref (make-vector 3 42) 0)) 42)))
+           (ok (= (evaluate '(vector-length (make-vector 5))) 5))
+           (ok (= (evaluate '(vector-ref (make-vector 3 42) 0)) 42)))
 
   (testing "vector constructor"
-    (ok (equalp (evaluate '(vector 1 2 3)) #(1 2 3))))
+           (ok (equalp (evaluate '(vector 1 2 3)) #(1 2 3))))
 
   (testing "vector-length"
-    (ok (= (evaluate '(vector-length #(1 2 3))) 3))
-    (ok (= (evaluate '(vector-length #())) 0)))
+           (ok (= (evaluate '(vector-length #(1 2 3))) 3))
+           (ok (= (evaluate '(vector-length #())) 0)))
 
   (testing "vector-ref"
-    (ok (= (evaluate '(vector-ref #(10 20 30) 0)) 10))
-    (ok (= (evaluate '(vector-ref #(10 20 30) 2)) 30)))
+           (ok (= (evaluate '(vector-ref #(10 20 30) 0)) 10))
+           (ok (= (evaluate '(vector-ref #(10 20 30) 2)) 30)))
 
   (testing "vector-set!"
-    (ok (= (evaluate '(begin (define v (make-vector 3 0))
-                             (vector-set! v 1 42)
-                             (vector-ref v 1)))
-           42))
-    (ok (equalp (evaluate '(begin (define v (vector 1 2 3))
-                                  (vector-set! v 0 99)
-                                  v))
-                #(99 2 3))))
+           (ok (= (evaluate '(begin (define v (make-vector 3 0))
+                              (vector-set! v 1 42)
+                              (vector-ref v 1)))
+                  42))
+           (ok (equalp (evaluate '(begin (define v (vector 1 2 3))
+                                   (vector-set! v 0 99)
+                                   v))
+                       #(99 2 3))))
 
   (testing "vector->list"
-    (ok (equal (evaluate '(vector->list #(1 2 3))) '(1 2 3))))
+           (ok (equal (evaluate '(vector->list #(1 2 3))) '(1 2 3))))
 
   (testing "list->vector"
-    (ok (equalp (evaluate '(list->vector (quote (1 2 3)))) #(1 2 3)))))
+           (ok (equalp (evaluate '(list->vector (quote (1 2 3)))) #(1 2 3)))))
 
 (deftest test-load
-  (testing "load file with definitions"
-    (let ((tmpfile (uiop:with-temporary-file (:stream s :pathname p :keep t
-                                              :type "scm")
-                    (write-string "(define load-test-x 42)" s)
-                    (terpri s)
-                    (write-string "(define load-test-y (+ load-test-x 1))" s)
-                    p)))
-      (unwind-protect
-           (progn
-             (evaluate `(load ,(namestring tmpfile)))
-             (ok (= (evaluate (intern "LOAD-TEST-X" :ece)) 42))
-             (ok (= (evaluate (intern "LOAD-TEST-Y" :ece)) 43)))
-        (delete-file tmpfile))))
+    (testing "load file with definitions"
+             (let ((tmpfile (uiop:with-temporary-file (:stream s :pathname p :keep t
+                                                               :type "scm")
+                              (write-string "(define load-test-x 42)" s)
+                              (terpri s)
+                              (write-string "(define load-test-y (+ load-test-x 1))" s)
+                              p)))
+               (unwind-protect
+                    (progn
+                      (evaluate `(load ,(namestring tmpfile)))
+                      (ok (= (evaluate (intern "LOAD-TEST-X" :ece)) 42))
+                      (ok (= (evaluate (intern "LOAD-TEST-Y" :ece)) 43)))
+                 (delete-file tmpfile))))
 
   (testing "load returns last value"
-    (let ((tmpfile (uiop:with-temporary-file (:stream s :pathname p :keep t
-                                              :type "scm")
-                    (write-string "(+ 1 2)" s)
-                    p)))
-      (unwind-protect
-           (ok (= (evaluate `(load ,(namestring tmpfile))) 3))
-        (delete-file tmpfile))))
+           (let ((tmpfile (uiop:with-temporary-file (:stream s :pathname p :keep t
+                                                             :type "scm")
+                            (write-string "(+ 1 2)" s)
+                            p)))
+             (unwind-protect
+                  (ok (= (evaluate `(load ,(namestring tmpfile))) 3))
+               (delete-file tmpfile))))
 
   (testing "load empty file"
-    (let ((tmpfile (uiop:with-temporary-file (:stream s :pathname p :keep t
-                                              :type "scm")
-                    (declare (ignore s))
-                    p)))
-      (unwind-protect
-           (ok (null (evaluate `(load ,(namestring tmpfile)))))
-        (delete-file tmpfile)))))
+           (let ((tmpfile (uiop:with-temporary-file (:stream s :pathname p :keep t
+                                                             :type "scm")
+                            (declare (ignore s))
+                            p)))
+             (unwind-protect
+                  (ok (null (evaluate `(load ,(namestring tmpfile)))))
+               (delete-file tmpfile)))))
 
 (deftest test-write-to-string
-  (testing "number to string"
-    (ok (equal (evaluate '(write-to-string 42)) "42")))
+    (testing "number to string"
+             (ok (equal (evaluate '(write-to-string 42)) "42")))
 
   (testing "symbol to string"
-    (ok (equal (evaluate '(write-to-string (quote hello))) "HELLO")))
+           (ok (equal (evaluate '(write-to-string (quote hello))) "HELLO")))
 
   (testing "string passes through"
-    (ok (equal (evaluate '(write-to-string "hello")) "hello")))
+           (ok (equal (evaluate '(write-to-string "hello")) "hello")))
 
   (testing "boolean to string"
-    (ok (equal (evaluate '(write-to-string t)) "T")))
+           (ok (equal (evaluate '(write-to-string t)) "T")))
 
   (testing "list to string"
-    (ok (equal (evaluate '(write-to-string (quote (1 2 3)))) "(1 2 3)")))
+           (ok (equal (evaluate '(write-to-string (quote (1 2 3)))) "(1 2 3)")))
 
   (testing "empty list to string"
-    (ok (equal (evaluate '(write-to-string (quote ()))) "NIL"))))
+           (ok (equal (evaluate '(write-to-string (quote ()))) "NIL"))))
 
 (deftest test-bitwise-ops
-  (testing "bitwise-and"
-    (ok (= (evaluate '(bitwise-and 12 10)) 8))
-    (ok (= (evaluate '(bitwise-and 255 0)) 0)))
+    (testing "bitwise-and"
+             (ok (= (evaluate '(bitwise-and 12 10)) 8))
+             (ok (= (evaluate '(bitwise-and 255 0)) 0)))
 
   (testing "bitwise-or"
-    (ok (= (evaluate '(bitwise-or 12 10)) 14))
-    (ok (= (evaluate '(bitwise-or 0 5)) 5)))
+           (ok (= (evaluate '(bitwise-or 12 10)) 14))
+           (ok (= (evaluate '(bitwise-or 0 5)) 5)))
 
   (testing "bitwise-xor"
-    (ok (= (evaluate '(bitwise-xor 12 10)) 6))
-    (ok (= (evaluate '(bitwise-xor 42 42)) 0)))
+           (ok (= (evaluate '(bitwise-xor 12 10)) 6))
+           (ok (= (evaluate '(bitwise-xor 42 42)) 0)))
 
   (testing "bitwise-not"
-    (ok (= (evaluate '(bitwise-not 0)) -1))
-    (ok (= (evaluate '(bitwise-not 255)) -256)))
+           (ok (= (evaluate '(bitwise-not 0)) -1))
+           (ok (= (evaluate '(bitwise-not 255)) -256)))
 
   (testing "arithmetic-shift left"
-    (ok (= (evaluate '(arithmetic-shift 1 8)) 256)))
+           (ok (= (evaluate '(arithmetic-shift 1 8)) 256)))
 
   (testing "arithmetic-shift right"
-    (ok (= (evaluate '(arithmetic-shift 256 -4)) 16)))
+           (ok (= (evaluate '(arithmetic-shift 256 -4)) 16)))
 
   (testing "arithmetic-shift by zero"
-    (ok (= (evaluate '(arithmetic-shift 42 0)) 42))))
+           (ok (= (evaluate '(arithmetic-shift 42 0)) 42))))
 
 (deftest test-xorshift-random
-  (testing "random is within range"
-    (ok (let ((val (evaluate '(random 6))))
-          (and (>= val 0) (< val 6)))))
+    (testing "random is within range"
+             (ok (let ((val (evaluate '(random 6))))
+                   (and (>= val 0) (< val 6)))))
 
   (testing "random with small range"
-    (ok (= (evaluate '(random 1)) 0)))
+           (ok (= (evaluate '(random 1)) 0)))
 
   (testing "same seed produces same sequence"
-    (ok (equal (evaluate '(begin
-                            (random-seed! 42)
-                            (list (random 100) (random 100) (random 100))))
-              (evaluate '(begin
-                            (random-seed! 42)
-                            (list (random 100) (random 100) (random 100)))))))
+           (ok (equal (evaluate '(begin
+                                  (random-seed! 42)
+                                  (list (random 100) (random 100) (random 100))))
+                      (evaluate '(begin
+                                  (random-seed! 42)
+                                  (list (random 100) (random 100) (random 100)))))))
 
   (testing "random-state is a number"
-    (ok (evaluate '(number? *random-state*))))
+           (ok (evaluate '(number? *random-state*))))
 
   (testing "random-state changes after random call"
-    (ok (evaluate '(begin
-                     (random-seed! 999)
-                     (let ((before *random-state*))
-                       (random 10)
-                       (not (= before *random-state*))))))))
+           (ok (evaluate '(begin
+                           (random-seed! 999)
+                           (let ((before *random-state*))
+                             (random 10)
+                             (not (= before *random-state*))))))))
 
 (deftest test-fmt-macro
-  (testing "concatenate strings"
-    (ok (equal (evaluate '(fmt "hello" " " "world")) "hello world")))
+    (testing "concatenate strings"
+             (ok (equal (evaluate '(fmt "hello" " " "world")) "hello world")))
 
   (testing "mix strings and numbers"
-    (ok (equal (evaluate '(fmt "You have " 5 " gold")) "You have 5 gold")))
+           (ok (equal (evaluate '(fmt "You have " 5 " gold")) "You have 5 gold")))
 
   (testing "single string argument"
-    (ok (equal (evaluate '(fmt "hello")) "hello")))
+           (ok (equal (evaluate '(fmt "hello")) "hello")))
 
   (testing "number argument"
-    (ok (equal (evaluate '(fmt 42)) "42")))
+           (ok (equal (evaluate '(fmt 42)) "42")))
 
   (testing "print-text displays formatted text"
-    (ok (equal (with-output-to-string (*standard-output*)
-                (evaluate '(print-text "You have " 5 " gold")))
-              "You have 5 gold"))))
+           (ok (equal (with-output-to-string (*standard-output*)
+                        (evaluate '(print-text "You have " 5 " gold")))
+                      "You have 5 gold"))))
 
 (deftest test-hash-table-literals
-  (testing "curly brace reader produces hash table"
-    (let ((*readtable* ece::*ece-readtable*))
-      (ok (equal (read-from-string "{}")
-                 '(:hash-table)))))
+    (testing "curly brace reader produces hash table"
+             (let ((*readtable* ece::*ece-readtable*))
+               (ok (equal (read-from-string "{}")
+                          '(:hash-table)))))
 
   (testing "curly brace reader with symbol keys"
-    (let* ((*readtable* ece::*ece-readtable*)
-           (*package* (find-package :ece))
-           (result (read-from-string "{name \"Alice\" age 30}")))
-      (ok (eq (car result) :hash-table))
-      (ok (= (length (cdr result)) 2))
-      (ok (equal (cdr (assoc (intern "NAME" :ece) (cdr result))) "Alice"))
-      (ok (= (cdr (assoc (intern "AGE" :ece) (cdr result))) 30))))
+           (let* ((*readtable* ece::*ece-readtable*)
+                  (*package* (find-package :ece))
+                  (result (read-from-string "{name \"Alice\" age 30}")))
+             (ok (eq (car result) :hash-table))
+             (ok (= (length (cdr result)) 2))
+             (ok (equal (cdr (assoc (intern "NAME" :ece) (cdr result))) "Alice"))
+             (ok (= (cdr (assoc (intern "AGE" :ece) (cdr result))) 30))))
 
   (testing "hash table is self-evaluating"
-    (ok (equal (evaluate '(:hash-table (name . "Alice")))
-              '(:hash-table (name . "Alice")))))
+           (ok (equal (evaluate '(:hash-table (name . "Alice")))
+                      '(:hash-table (name . "Alice")))))
 
   (testing "hash table stored in variable"
-    (ok (equal (evaluate '(begin
-                            (define ht (hash-table 'a 1))
-                            ht))
-              '(:hash-table (a . 1)))))
+           (ok (equal (evaluate '(begin
+                                  (define ht (hash-table 'a 1))
+                                  ht))
+                      '(:hash-table (a . 1)))))
 
   (testing "serialization round-trip"
-    (let* ((*package* (find-package :ece))
-           (ht (list :hash-table (cons (intern "NAME" :ece) "Alice") (cons (intern "AGE" :ece) 30)))
-           (str (prin1-to-string ht))
-           (result (let ((*readtable* ece::*ece-readtable*))
-                     (read-from-string str))))
-      (ok (equal result ht)))))
+           (let* ((*package* (find-package :ece))
+                  (ht (list :hash-table (cons (intern "NAME" :ece) "Alice") (cons (intern "AGE" :ece) 30)))
+                  (str (prin1-to-string ht))
+                  (result (let ((*readtable* ece::*ece-readtable*))
+                            (read-from-string str))))
+             (ok (equal result ht)))))
 
 (deftest test-hash-table-ops
-  (testing "hash-table constructor with symbol keys"
-    (ok (equal (evaluate '(hash-table 'a 1 'b 2))
-              '(:hash-table (a . 1) (b . 2)))))
+    (testing "hash-table constructor with symbol keys"
+             (ok (equal (evaluate '(hash-table 'a 1 'b 2))
+                        '(:hash-table (a . 1) (b . 2)))))
 
   (testing "hash-table constructor empty"
-    (ok (equal (evaluate '(:hash-table))
-              '(:hash-table))))
+           (ok (equal (evaluate '(:hash-table))
+                      '(:hash-table))))
 
   (testing "hash-table constructor with computed key"
-    (ok (equal (evaluate '(begin (define k 'name)
-                                 (hash-table k "Alice")))
-              '(:hash-table (name . "Alice")))))
+           (ok (equal (evaluate '(begin (define k 'name)
+                                  (hash-table k "Alice")))
+                      '(:hash-table (name . "Alice")))))
 
   (testing "hash-table? predicate true"
-    (ok (evaluate '(hash-table? (hash-table 'a 1)))))
+           (ok (evaluate '(hash-table? (hash-table 'a 1)))))
 
   (testing "hash-table? predicate false for list"
-    (ok (not (evaluate '(hash-table? '(1 2 3))))))
+           (ok (not (evaluate '(hash-table? '(1 2 3))))))
 
   (testing "hash-table? predicate false for number"
-    (ok (not (evaluate '(hash-table? 42)))))
+           (ok (not (evaluate '(hash-table? 42)))))
 
   (testing "hash-ref key found"
-    (ok (equal (evaluate '(hash-ref (hash-table 'name "Alice" 'age 30) 'name))
-              "Alice")))
+           (ok (equal (evaluate '(hash-ref (hash-table 'name "Alice" 'age 30) 'name))
+                      "Alice")))
 
   (testing "hash-ref key not found returns nil"
-    (ok (null (evaluate '(hash-ref (hash-table 'a 1) 'missing)))))
+           (ok (null (evaluate '(hash-ref (hash-table 'a 1) 'missing)))))
 
   (testing "hash-ref key not found with default"
-    (ok (equal (evaluate '(hash-ref (hash-table 'a 1) 'missing "default"))
-              "default")))
+           (ok (equal (evaluate '(hash-ref (hash-table 'a 1) 'missing "default"))
+                      "default")))
 
   (testing "hash-ref with string key"
-    (ok (equal (evaluate '(hash-ref (hash-table "first" "Alice") "first"))
-              "Alice")))
+           (ok (equal (evaluate '(hash-ref (hash-table "first" "Alice") "first"))
+                      "Alice")))
 
   (testing "hash-has-key? true"
-    (ok (evaluate '(hash-has-key? (hash-table 'name "Alice") 'name))))
+           (ok (evaluate '(hash-has-key? (hash-table 'name "Alice") 'name))))
 
   (testing "hash-has-key? false"
-    (ok (not (evaluate '(hash-has-key? (hash-table 'name "Alice") 'age)))))
+           (ok (not (evaluate '(hash-has-key? (hash-table 'name "Alice") 'age)))))
 
   (testing "hash-keys returns all keys"
-    (ok (equal (evaluate '(hash-keys (hash-table 'a 1 'b 2 'c 3)))
-              '(a b c))))
+           (ok (equal (evaluate '(hash-keys (hash-table 'a 1 'b 2 'c 3)))
+                      '(a b c))))
 
   (testing "hash-keys empty"
-    (ok (null (evaluate '(hash-keys (hash-table))))))
+           (ok (null (evaluate '(hash-keys (hash-table))))))
 
   (testing "hash-count non-empty"
-    (ok (= (evaluate '(hash-count (hash-table 'a 1 'b 2 'c 3))) 3)))
+           (ok (= (evaluate '(hash-count (hash-table 'a 1 'b 2 'c 3))) 3)))
 
   (testing "hash-count empty"
-    (ok (= (evaluate '(hash-count (hash-table))) 0))))
+           (ok (= (evaluate '(hash-count (hash-table))) 0))))
 
 (deftest test-hash-table-mutation
-  (testing "hash-set! updates existing key"
-    (ok (= (evaluate '(begin
-                         (define ht (hash-table 'hp 100))
-                         (hash-set! ht 'hp 80)
-                         (hash-ref ht 'hp)))
-           80)))
+    (testing "hash-set! updates existing key"
+             (ok (= (evaluate '(begin
+                                (define ht (hash-table 'hp 100))
+                                (hash-set! ht 'hp 80)
+                                (hash-ref ht 'hp)))
+                    80)))
 
   (testing "hash-set! adds new key"
-    (ok (= (evaluate '(begin
-                         (define ht (hash-table 'hp 100))
-                         (hash-set! ht 'mp 50)
-                         (hash-ref ht 'mp)))
-           50)))
+           (ok (= (evaluate '(begin
+                              (define ht (hash-table 'hp 100))
+                              (hash-set! ht 'mp 50)
+                              (hash-ref ht 'mp)))
+                  50)))
 
   (testing "hash-set! preserves other keys"
-    (ok (= (evaluate '(begin
-                         (define ht (hash-table 'hp 100))
-                         (hash-set! ht 'mp 50)
-                         (hash-ref ht 'hp)))
-           100)))
+           (ok (= (evaluate '(begin
+                              (define ht (hash-table 'hp 100))
+                              (hash-set! ht 'mp 50)
+                              (hash-ref ht 'hp)))
+                  100)))
 
   (testing "hash-set! preserves identity"
-    (ok (evaluate '(begin
-                     (define ht (hash-table 'a 1))
-                     (define ht2 ht)
-                     (hash-set! ht 'a 2)
-                     (= (hash-ref ht2 'a) 2)))))
+           (ok (evaluate '(begin
+                           (define ht (hash-table 'a 1))
+                           (define ht2 ht)
+                           (hash-set! ht 'a 2)
+                           (= (hash-ref ht2 'a) 2)))))
 
   (testing "hash-set returns new table"
-    (ok (= (evaluate '(begin
-                         (define ht (hash-table 'hp 100))
-                         (define ht2 (hash-set ht 'hp 80))
-                         (hash-ref ht2 'hp)))
-           80)))
+           (ok (= (evaluate '(begin
+                              (define ht (hash-table 'hp 100))
+                              (define ht2 (hash-set ht 'hp 80))
+                              (hash-ref ht2 'hp)))
+                  80)))
 
   (testing "hash-set does not modify original"
-    (ok (= (evaluate '(begin
-                         (define ht (hash-table 'hp 100))
-                         (hash-set ht 'hp 80)
-                         (hash-ref ht 'hp)))
-           100)))
+           (ok (= (evaluate '(begin
+                              (define ht (hash-table 'hp 100))
+                              (hash-set ht 'hp 80)
+                              (hash-ref ht 'hp)))
+                  100)))
 
   (testing "hash-set adds new key"
-    (ok (= (evaluate '(begin
-                         (define ht (hash-table 'hp 100))
-                         (define ht2 (hash-set ht 'mp 50))
-                         (hash-ref ht2 'mp)))
-           50)))
+           (ok (= (evaluate '(begin
+                              (define ht (hash-table 'hp 100))
+                              (define ht2 (hash-set ht 'mp 50))
+                              (hash-ref ht2 'mp)))
+                  50)))
 
   (testing "hash-set original lacks new key"
-    (ok (not (evaluate '(begin
-                           (define ht (hash-table 'hp 100))
-                           (hash-set ht 'mp 50)
-                           (hash-has-key? ht 'mp))))))
+           (ok (not (evaluate '(begin
+                                (define ht (hash-table 'hp 100))
+                                (hash-set ht 'mp 50)
+                                (hash-has-key? ht 'mp))))))
 
   (testing "hash-remove! removes key"
-    (ok (not (evaluate '(begin
-                           (define ht (hash-table 'a 1 'b 2))
-                           (hash-remove! ht 'a)
-                           (hash-has-key? ht 'a))))))
+           (ok (not (evaluate '(begin
+                                (define ht (hash-table 'a 1 'b 2))
+                                (hash-remove! ht 'a)
+                                (hash-has-key? ht 'a))))))
 
   (testing "hash-remove! preserves other keys"
-    (ok (evaluate '(begin
-                     (define ht (hash-table 'a 1 'b 2))
-                     (hash-remove! ht 'a)
-                     (hash-has-key? ht 'b)))))
+           (ok (evaluate '(begin
+                           (define ht (hash-table 'a 1 'b 2))
+                           (hash-remove! ht 'a)
+                           (hash-has-key? ht 'b)))))
 
   (testing "hash-remove! non-existent key is no-op"
-    (ok (= (evaluate '(begin
-                         (define ht (hash-table 'a 1))
-                         (hash-remove! ht 'z)
-                         (hash-count ht)))
-           1))))
+           (ok (= (evaluate '(begin
+                              (define ht (hash-table 'a 1))
+                              (hash-remove! ht 'z)
+                              (hash-count ht)))
+                  1))))
 
 (deftest test-utility-primitives
-  (testing "string-downcase"
-    (ok (equal (evaluate '(string-downcase "Hello World")) "hello world"))
-    (ok (equal (evaluate '(string-downcase "hello")) "hello")))
+    (testing "string-downcase"
+             (ok (equal (evaluate '(string-downcase "Hello World")) "hello world"))
+             (ok (equal (evaluate '(string-downcase "hello")) "hello")))
 
   (testing "string-upcase"
-    (ok (equal (evaluate '(string-upcase "Hello World")) "HELLO WORLD"))
-    (ok (equal (evaluate '(string-upcase "HELLO")) "HELLO")))
+           (ok (equal (evaluate '(string-upcase "Hello World")) "HELLO WORLD"))
+           (ok (equal (evaluate '(string-upcase "HELLO")) "HELLO")))
 
   (testing "string-split by default (space)"
-    (ok (equal (evaluate '(string-split "hello world")) '("hello" "world"))))
+           (ok (equal (evaluate '(string-split "hello world")) '("hello" "world"))))
 
   (testing "string-split by explicit delimiter"
-    (ok (equal (evaluate '(string-split "a,b,c" #\,)) '("a" "b" "c"))))
+           (ok (equal (evaluate '(string-split "a,b,c" #\,)) '("a" "b" "c"))))
 
   (testing "string-split no delimiter found"
-    (ok (equal (evaluate '(string-split "hello" #\,)) '("hello"))))
+           (ok (equal (evaluate '(string-split "hello" #\,)) '("hello"))))
 
   (testing "string-split empty string"
-    (ok (equal (evaluate '(string-split "" #\,)) '(""))))
+           (ok (equal (evaluate '(string-split "" #\,)) '(""))))
 
   (testing "sleep returns nil"
-    (ok (null (evaluate '(sleep 0)))))
+           (ok (null (evaluate '(sleep 0)))))
 
   (testing "clear-screen returns nil"
-    (ok (null (let ((*standard-output* (make-string-output-stream)))
-                (evaluate '(clear-screen)))))))
+           (ok (null (let ((*standard-output* (make-string-output-stream)))
+                       (evaluate '(clear-screen)))))))
 
 (deftest test-save-load-continuation
-  (testing "round-trip with plain value"
-    (let ((tmpfile (uiop:with-temporary-file (:stream s :pathname p :keep t
-                                              :type "sav")
-                    (declare (ignore s))
-                    p)))
-      (unwind-protect
-           (progn
-             (evaluate `(save-continuation! ,(namestring tmpfile) (quote (1 2 3))))
-             (ok (equal (evaluate `(load-continuation ,(namestring tmpfile)))
-                        '(1 2 3))))
-        (delete-file tmpfile))))
+    (testing "round-trip with plain value"
+             (let ((tmpfile (uiop:with-temporary-file (:stream s :pathname p :keep t
+                                                               :type "sav")
+                              (declare (ignore s))
+                              p)))
+               (unwind-protect
+                    (progn
+                      (evaluate `(save-continuation! ,(namestring tmpfile) (quote (1 2 3))))
+                      (ok (equal (evaluate `(load-continuation ,(namestring tmpfile)))
+                                 '(1 2 3))))
+                 (delete-file tmpfile))))
 
   (testing "round-trip with hash table"
-    (let ((tmpfile (uiop:with-temporary-file (:stream s :pathname p :keep t
-                                              :type "sav")
-                    (declare (ignore s))
-                    p)))
-      (unwind-protect
-           (progn
-             (evaluate `(save-continuation! ,(namestring tmpfile)
-                                            (hash-table 'name "Alice" 'age 30)))
-             (let ((loaded (evaluate `(load-continuation ,(namestring tmpfile)))))
-               (ok (equal loaded '(:hash-table (name . "Alice") (age . 30))))))
-        (delete-file tmpfile))))
+           (let ((tmpfile (uiop:with-temporary-file (:stream s :pathname p :keep t
+                                                             :type "sav")
+                            (declare (ignore s))
+                            p)))
+             (unwind-protect
+                  (progn
+                    (evaluate `(save-continuation! ,(namestring tmpfile)
+                                                   (hash-table 'name "Alice" 'age 30)))
+                    (let ((loaded (evaluate `(load-continuation ,(namestring tmpfile)))))
+                      (ok (equal loaded '(:hash-table (name . "Alice") (age . 30))))))
+               (delete-file tmpfile))))
 
   (testing "round-trip with continuation"
-    (let ((tmpfile (uiop:with-temporary-file (:stream s :pathname p :keep t
-                                              :type "sav")
-                    (declare (ignore s))
-                    p)))
-      (unwind-protect
-           (progn
-             ;; Capture a continuation and save it
-             (evaluate `(begin
-                          (define k nil)
-                          (call/cc (lambda (cont) (set k cont)))
-                          (save-continuation! ,(namestring tmpfile) k)))
-             ;; Verify entirely within ECE to avoid circular data in CL test output
-             (ok (eq t (evaluate `(begin
-                                    (define loaded (load-continuation ,(namestring tmpfile)))
-                                    (eq? (car loaded) ',(intern "CONTINUATION" :ece)))))))
-        (delete-file tmpfile))))
+           (let ((tmpfile (uiop:with-temporary-file (:stream s :pathname p :keep t
+                                                             :type "sav")
+                            (declare (ignore s))
+                            p)))
+             (unwind-protect
+                  (progn
+                    ;; Capture a continuation and save it
+                    (evaluate `(begin
+                                (define k nil)
+                                (call/cc (lambda (cont) (set k cont)))
+                                (save-continuation! ,(namestring tmpfile) k)))
+                    ;; Verify entirely within ECE to avoid circular data in CL test output
+                    (ok (eq t (evaluate `(begin
+                                          (define loaded (load-continuation ,(namestring tmpfile)))
+                                          (eq? (car loaded) ',(intern "CONTINUATION" :ece)))))))
+               (delete-file tmpfile))))
 
   (testing "save-continuation! returns t"
-    (let ((tmpfile (uiop:with-temporary-file (:stream s :pathname p :keep t
-                                              :type "sav")
-                    (declare (ignore s))
-                    p)))
-      (unwind-protect
-           (ok (eq (evaluate `(save-continuation! ,(namestring tmpfile) 42)) t))
-        (delete-file tmpfile))))
+           (let ((tmpfile (uiop:with-temporary-file (:stream s :pathname p :keep t
+                                                             :type "sav")
+                            (declare (ignore s))
+                            p)))
+             (unwind-protect
+                  (ok (eq (evaluate `(save-continuation! ,(namestring tmpfile) 42)) t))
+               (delete-file tmpfile))))
 
   (testing "save-continuation! overwrites existing file"
-    (let ((tmpfile (uiop:with-temporary-file (:stream s :pathname p :keep t
-                                              :type "sav")
-                    (declare (ignore s))
-                    p)))
-      (unwind-protect
-           (progn
-             (evaluate `(save-continuation! ,(namestring tmpfile) "old"))
-             (evaluate `(save-continuation! ,(namestring tmpfile) "new"))
-             (ok (equal (evaluate `(load-continuation ,(namestring tmpfile)))
-                        "new")))
-        (delete-file tmpfile)))))
+           (let ((tmpfile (uiop:with-temporary-file (:stream s :pathname p :keep t
+                                                             :type "sav")
+                            (declare (ignore s))
+                            p)))
+             (unwind-protect
+                  (progn
+                    (evaluate `(save-continuation! ,(namestring tmpfile) "old"))
+                    (evaluate `(save-continuation! ,(namestring tmpfile) "new"))
+                    (ok (equal (evaluate `(load-continuation ,(namestring tmpfile)))
+                               "new")))
+               (delete-file tmpfile)))))
 
 (deftest test-define-record
-  (testing "constructor creates typed hash table"
-    (ok (equal (evaluate '(begin (define-record point x y)
-                                 (point-x (make-point 10 20))))
-               10))
-    (ok (equal (evaluate '(begin (define-record point x y)
-                                 (point-y (make-point 10 20))))
-               20))
-    (ok (equal (evaluate '(begin (define-record point x y)
-                                 (hash-ref (make-point 10 20) 'type)))
-               'point)))
+    (testing "constructor creates typed hash table"
+             (ok (equal (evaluate '(begin (define-record point x y)
+                                    (point-x (make-point 10 20))))
+                        10))
+             (ok (equal (evaluate '(begin (define-record point x y)
+                                    (point-y (make-point 10 20))))
+                        20))
+             (ok (equal (evaluate '(begin (define-record point x y)
+                                    (hash-ref (make-point 10 20) 'type)))
+                        'point)))
 
   (testing "constructor with no fields"
-    (ok (equal (evaluate '(begin (define-record empty)
-                                 (hash-count (make-empty))))
-               1))
-    (ok (equal (evaluate '(begin (define-record empty)
-                                 (hash-ref (make-empty) 'type)))
-               'empty)))
+           (ok (equal (evaluate '(begin (define-record empty)
+                                  (hash-count (make-empty))))
+                      1))
+           (ok (equal (evaluate '(begin (define-record empty)
+                                  (hash-ref (make-empty) 'type)))
+                      'empty)))
 
   (testing "predicate returns true for matching record"
-    (ok (equal (evaluate '(begin (define-record point x y)
-                                 (point? (make-point 1 2))))
-               t)))
+           (ok (equal (evaluate '(begin (define-record point x y)
+                                  (point? (make-point 1 2))))
+                      t)))
 
   (testing "predicate returns false for non-matching value"
-    (ok (equal (evaluate '(begin (define-record point x y)
-                                 (point? 42)))
-               nil)))
+           (ok (equal (evaluate '(begin (define-record point x y)
+                                  (point? 42)))
+                      nil)))
 
   (testing "predicate returns false for different record type"
-    (ok (equal (evaluate '(begin (define-record point x y)
-                                 (define-record vec x y)
-                                 (point? (make-vec 1 2))))
-               nil)))
+           (ok (equal (evaluate '(begin (define-record point x y)
+                                  (define-record vec x y)
+                                  (point? (make-vec 1 2))))
+                      nil)))
 
   (testing "mutator updates field in place"
-    (ok (equal (evaluate '(begin (define-record point x y)
-                                 (define p (make-point 1 2))
-                                 (set-point-x! p 99)
-                                 (point-x p)))
-               99)))
+           (ok (equal (evaluate '(begin (define-record point x y)
+                                  (define p (make-point 1 2))
+                                  (set-point-x! p 99)
+                                  (point-x p)))
+                      99)))
 
   (testing "functional update returns new record, original unchanged"
-    (ok (equal (evaluate '(begin (define-record point x y)
-                                 (define p (make-point 1 2))
-                                 (define p2 (point-with-x p 99))
-                                 (list (point-x p) (point-x p2))))
-               '(1 99))))
+           (ok (equal (evaluate '(begin (define-record point x y)
+                                  (define p (make-point 1 2))
+                                  (define p2 (point-with-x p 99))
+                                  (list (point-x p) (point-x p2))))
+                      '(1 99))))
 
   (testing "copy creates independent record"
-    (ok (equal (evaluate '(begin (define-record point x y)
-                                 (define p (make-point 1 2))
-                                 (define p2 (copy-point p))
-                                 (set-point-x! p2 99)
-                                 (list (point-x p) (point-x p2))))
-               '(1 99))))
+           (ok (equal (evaluate '(begin (define-record point x y)
+                                  (define p (make-point 1 2))
+                                  (define p2 (copy-point p))
+                                  (set-point-x! p2 99)
+                                  (list (point-x p) (point-x p2))))
+                      '(1 99))))
 
   (testing "records are standard hash tables"
-    (ok (equal (evaluate '(begin (define-record point x y)
-                                 (hash-table? (make-point 10 20))))
-               t)))
+           (ok (equal (evaluate '(begin (define-record point x y)
+                                  (hash-table? (make-point 10 20))))
+                      t)))
 
   (testing "multiple record types coexist"
-    (ok (equal (evaluate '(begin (define-record point x y)
-                                 (define-record person name age)
-                                 (list (point-x (make-point 3 4))
-                                       (person-name (make-person "Alice" 30)))))
-               (list 3 "Alice")))))
+           (ok (equal (evaluate '(begin (define-record point x y)
+                                  (define-record person name age)
+                                  (list (point-x (make-point 3 4))
+                                   (person-name (make-person "Alice" 30)))))
+                      (list 3 "Alice")))))
 
 (deftest test-assert
-  (testing "truthy condition passes"
-    (ok (not (evaluate '(assert t))))
-    (ok (not (evaluate '(assert 42))))
-    (ok (not (evaluate '(assert "hello")))))
+    (testing "truthy condition passes"
+             (ok (not (evaluate '(assert t))))
+             (ok (not (evaluate '(assert 42))))
+             (ok (not (evaluate '(assert "hello")))))
   (testing "falsy condition signals error"
-    (ok (handler-case (progn (evaluate '(assert ())) nil)
-          (error (c) (search "Assertion failed" (format nil "~A" c))))))
+           (ok (handler-case (progn (evaluate '(assert ())) nil)
+                 (error (c) (search "Assertion failed" (format nil "~A" c))))))
   (testing "custom message on failure"
-    (ok (handler-case (progn (evaluate '(assert () "x must be positive")) nil)
-          (error (c) (search "x must be positive" (format nil "~A" c))))))
+           (ok (handler-case (progn (evaluate '(assert () "x must be positive")) nil)
+                 (error (c) (search "x must be positive" (format nil "~A" c))))))
   (testing "custom message not used on success"
-    (ok (not (evaluate '(assert t "should not see this"))))))
+           (ok (not (evaluate '(assert t "should not see this"))))))
 
 (deftest test-any
-  (testing "element found"
-    (ok (evaluate '(any odd? (list 2 3 4)))))
+    (testing "element found"
+             (ok (evaluate '(any odd? (list 2 3 4)))))
   (testing "no element found"
-    (ok (not (evaluate '(any odd? (list 2 4 6))))))
+           (ok (not (evaluate '(any odd? (list 2 4 6))))))
   (testing "empty list"
-    (ok (not (evaluate '(any odd? (list)))))))
+           (ok (not (evaluate '(any odd? (list)))))))
 
 (deftest test-every
-  (testing "all elements match"
-    (ok (evaluate '(every even? (list 2 4 6)))))
+    (testing "all elements match"
+             (ok (evaluate '(every even? (list 2 4 6)))))
   (testing "some element fails"
-    (ok (not (evaluate '(every even? (list 2 3 6))))))
+           (ok (not (evaluate '(every even? (list 2 3 6))))))
   (testing "empty list"
-    (ok (evaluate '(every even? (list))))))
+           (ok (evaluate '(every even? (list))))))
 
 (deftest test-compose
-  (testing "compose two functions"
-    (ok (equal (evaluate '((compose car cdr) (list 1 2 3))) 2))))
+    (testing "compose two functions"
+             (ok (equal (evaluate '((compose car cdr) (list 1 2 3))) 2))))
 
 (deftest test-identity
-  (testing "returns its argument"
-    (ok (equal (evaluate '(identity 42)) 42)))
+    (testing "returns its argument"
+             (ok (equal (evaluate '(identity 42)) 42)))
   (testing "as function argument"
-    (ok (equal (evaluate '(map identity (list 1 2 3))) '(1 2 3)))))
+           (ok (equal (evaluate '(map identity (list 1 2 3))) '(1 2 3)))))
 
 (deftest test-range
-  (testing "range of 5"
-    (ok (equal (evaluate '(range 5)) '(0 1 2 3 4))))
+    (testing "range of 5"
+             (ok (equal (evaluate '(range 5)) '(0 1 2 3 4))))
   (testing "range of 0"
-    (ok (equal (evaluate '(range 0)) nil)))
+           (ok (equal (evaluate '(range 0)) nil)))
   (testing "range of 1"
-    (ok (equal (evaluate '(range 1)) '(0)))))
+           (ok (equal (evaluate '(range 1)) '(0)))))
 
 (deftest test-lines
-  (testing "multiple lines"
-    (ok (equal (evaluate '(lines "hello" "world"))
-              (format nil "hello~%world~%"))))
+    (testing "multiple lines"
+             (ok (equal (evaluate '(lines "hello" "world"))
+                        (format nil "hello~%world~%"))))
   (testing "single line"
-    (ok (equal (evaluate '(lines "hello"))
-              (format nil "hello~%"))))
+           (ok (equal (evaluate '(lines "hello"))
+                      (format nil "hello~%"))))
   (testing "empty call"
-    (ok (equal (evaluate '(lines)) "")))
+           (ok (equal (evaluate '(lines)) "")))
   (testing "mixed types auto-stringified"
-    (ok (equal (evaluate '(lines "count:" 42))
-              (format nil "count:~%42~%")))))
+           (ok (equal (evaluate '(lines "count:" 42))
+                      (format nil "count:~%42~%")))))
 
 (deftest test-string-interpolation
-  (testing "plain string without $ is unchanged"
-    (ok (equal (ece-eval-string "\"hello world\"") "hello world")))
+    (testing "plain string without $ is unchanged"
+             (ok (equal (ece-eval-string "\"hello world\"") "hello world")))
   (testing "variable interpolation"
-    (ok (equal (ece-eval-string "(begin (define name \"Alice\") \"Hello $name\")") "Hello Alice")))
+           (ok (equal (ece-eval-string "(begin (define name \"Alice\") \"Hello $name\")") "Hello Alice")))
   (testing "expression interpolation"
-    (ok (equal (ece-eval-string "(begin (define x 3) \"result: $(+ x 1)\")") "result: 4")))
+           (ok (equal (ece-eval-string "(begin (define x 3) \"result: $(+ x 1)\")") "result: 4")))
   (testing "literal dollar with $$"
-    (ok (equal (ece-eval-string "\"Price: $$5.00\"") "Price: $5.00")))
+           (ok (equal (ece-eval-string "\"Price: $$5.00\"") "Price: $5.00")))
   (testing "number auto-stringified"
-    (ok (equal (ece-eval-string "(begin (define age 30) \"Age: $age\")") "Age: 30")))
+           (ok (equal (ece-eval-string "(begin (define age 30) \"Age: $age\")") "Age: 30")))
   (testing "multiple interpolations"
-    (ok (equal (ece-eval-string "(begin (define a 1) (define b 2) \"$a and $b\")") "1 and 2")))
+           (ok (equal (ece-eval-string "(begin (define a 1) (define b 2) \"$a and $b\")") "1 and 2")))
   (testing "star variable"
-    (ok (equal (ece-eval-string "(begin (define *count* 5) \"Total: $*count*\")") "Total: 5"))))
+           (ok (equal (ece-eval-string "(begin (define *count* 5) \"Total: $*count*\")") "Total: 5"))))
 
 (deftest test-unknown-expression-error
-  (testing "unrecognized expression types signal an error"
-    (signals (evaluate (make-hash-table) nil))))
+    (testing "unrecognized expression types signal an error"
+             (signals (evaluate (make-hash-table) nil))))

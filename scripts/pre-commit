@@ -1,0 +1,8 @@
+#!/bin/bash
+# Pre-commit hook: ensure Lisp and Scheme files are properly indented.
+# Install: ln -sf ../../scripts/pre-commit .git/hooks/pre-commit
+
+# Only check if .lisp, .asd, or .scm files are staged
+if git diff --cached --name-only | grep -qE '\.(lisp|asd|scm)$'; then
+    make check-fmt
+fi
