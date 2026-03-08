@@ -211,3 +211,9 @@
                                                                    (symbol->string f)))
                                                   'obj)))
                                     fields))))))))
+
+;; assert macro: signal error if condition is falsy
+(define-macro (assert expr . rest)
+  (if (null? rest)
+      `(if (not ,expr) (error "Assertion failed") ())
+      `(if (not ,expr) (error ,(car rest)) ())))

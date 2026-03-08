@@ -1350,6 +1350,20 @@
                                        (person-name (make-person "Alice" 30)))))
                (list 3 "Alice")))))
 
+(deftest test-assert
+  (testing "truthy condition passes"
+    (ok (not (evaluate '(assert t))))
+    (ok (not (evaluate '(assert 42))))
+    (ok (not (evaluate '(assert "hello")))))
+  (testing "falsy condition signals error"
+    (ok (handler-case (progn (evaluate '(assert ())) nil)
+          (error (c) (search "Assertion failed" (format nil "~A" c))))))
+  (testing "custom message on failure"
+    (ok (handler-case (progn (evaluate '(assert () "x must be positive")) nil)
+          (error (c) (search "x must be positive" (format nil "~A" c))))))
+  (testing "custom message not used on success"
+    (ok (not (evaluate '(assert t "should not see this"))))))
+
 (deftest test-unknown-expression-error
   (testing "unrecognized expression types signal an error"
     (signals (evaluate (make-hash-table) nil))))
