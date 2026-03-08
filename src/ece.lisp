@@ -93,12 +93,15 @@
            #:hash-remove!
            #:hash-has-key?
            #:hash-keys
+           #:hash-values
            #:hash-count
            #:sleep
            #:clear-screen
            #:string-downcase
            #:string-upcase
            #:string-split
+           #:string-contains?
+           #:string-join
            #:save-continuation!
            #:load-continuation
            #:define-record
@@ -456,6 +459,10 @@
   "Return list of all keys in hash table."
   (mapcar #'car (cdr ht)))
 
+(defun ece-hash-values (ht)
+  "Return list of all values in hash table."
+  (mapcar #'cdr (cdr ht)))
+
 (defun ece-hash-count (ht)
   "Return number of entries in hash table."
   (length (cdr ht)))
@@ -507,6 +514,17 @@
           (setf start (1+ i)))
     (push (subseq str start len) result)
     (nreverse result)))
+
+(defun ece-string-contains-p (haystack needle)
+  "Test if HAYSTACK contains NEEDLE as a substring."
+  (if (search needle haystack) t nil))
+
+(defun ece-string-join (lst separator)
+  "Join a list of strings with SEPARATOR between them."
+  (if (null lst)
+      ""
+      (reduce (lambda (a b) (concatenate 'string a separator b))
+              lst)))
 
 (defun ece-save-continuation! (filename value)
   "Write a value to a file as a readable s-expression with circular structure support."
@@ -572,6 +590,7 @@
     (hash-ref . ece-hash-ref)
     (hash-has-key? . ece-hash-has-key-p)
     (hash-keys . ece-hash-keys)
+    (hash-values . ece-hash-values)
     (hash-count . ece-hash-count)
     (hash-set! . ece-hash-set!)
     (hash-set . ece-hash-set)
@@ -581,6 +600,8 @@
     (string-downcase . string-downcase)
     (string-upcase . string-upcase)
     (string-split . ece-string-split)
+    (string-contains? . ece-string-contains-p)
+    (string-join . ece-string-join)
     (save-continuation! . ece-save-continuation!)
     (load-continuation . ece-load-continuation)))
 

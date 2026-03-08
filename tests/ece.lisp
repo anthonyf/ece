@@ -1434,6 +1434,33 @@
   (testing "star variable"
            (ok (equal (ece-eval-string "(begin (define *count* 5) \"Total: $*count*\")") "Total: 5"))))
 
+(deftest test-string-contains
+    (testing "substring found"
+             (ok (evaluate '(string-contains? "hello world" "world"))))
+  (testing "substring not found"
+           (ok (not (evaluate '(string-contains? "hello world" "xyz")))))
+  (testing "empty needle"
+           (ok (evaluate '(string-contains? "hello" ""))))
+  (testing "case sensitive"
+           (ok (not (evaluate '(string-contains? "Hello" "hello"))))))
+
+(deftest test-string-join
+    (testing "join with comma"
+             (ok (equal (evaluate '(string-join (list "a" "b" "c") ", ")) "a, b, c")))
+  (testing "join with empty separator"
+           (ok (equal (evaluate '(string-join (list "a" "b" "c") "")) "abc")))
+  (testing "single element"
+           (ok (equal (evaluate '(string-join (list "hello") "-")) "hello")))
+  (testing "empty list"
+           (ok (equal (evaluate '(string-join (list) ", ")) ""))))
+
+(deftest test-hash-values
+    (testing "table with entries"
+             (ok (equal (evaluate '(hash-values (hash-table (quote a) 1 (quote b) 2)))
+                        '(1 2))))
+  (testing "empty table"
+           (ok (null (evaluate '(hash-values (hash-table)))))))
+
 (deftest test-unknown-expression-error
     (testing "unrecognized expression types signal an error"
              (signals (evaluate (make-hash-table) nil))))
