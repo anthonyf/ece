@@ -140,15 +140,14 @@
   (set *random-state* (xorshift32 *random-state*))
   (modulo *random-state* n))
 
-;; fmt macro: concatenate args as strings
-(define-macro (fmt . args)
-  `(string-append ,@(map (lambda (a)
-                           `(if (string? ,a) ,a (write-to-string ,a)))
-                         args)))
+;; fmt: concatenate args as strings
+(define (fmt . args)
+  (apply string-append
+    (map (lambda (a) (if (string? a) a (write-to-string a))) args)))
 
-;; print-text macro: display formatted text
-(define-macro (print-text . args)
-  `(display (fmt ,@args)))
+;; print-text: display formatted text
+(define (print-text . args)
+  (display (apply fmt args)))
 
 ;; define-record macro: generate record type definitions backed by hash tables
 (define-macro (define-record name . fields)
