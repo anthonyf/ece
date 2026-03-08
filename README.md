@@ -31,7 +31,7 @@ Numbers, strings, characters, booleans (`#t`/`#f`), symbols, pairs/lists, vector
 
 ### Standard Library
 
-`map`, `filter`, `reduce`, `for-each`, `any`, `every`, `range`, `reverse`, `assoc`, `member`, `list-ref`, `list-tail`, `append`, `apply`, `compose`, `identity`, `fmt`, `print-text`, `random`, `define-record`
+`map`, `filter`, `reduce`, `for-each`, `any`, `every`, `range`, `reverse`, `assoc`, `member`, `list-ref`, `list-tail`, `append`, `apply`, `compose`, `identity`, `fmt`, `print-text`, `lines`, `random`, `define-record`
 
 ### I/O
 
@@ -39,7 +39,9 @@ Numbers, strings, characters, booleans (`#t`/`#f`), symbols, pairs/lists, vector
 
 ### Strings & Characters
 
-`string-append`, `substring`, `string-length`, `string-ref`, `string-split`, `string-upcase`, `string-downcase`, `string->number`, `number->string`, `string->symbol`, `symbol->string`, `string=?`, `string<?`, `string>?`, `char?`, `char=?`, `char<?`, `char->integer`, `integer->char`
+`string-append`, `substring`, `string-length`, `string-ref`, `string-split`, `string-join`, `string-contains?`, `string-upcase`, `string-downcase`, `string->number`, `number->string`, `string->symbol`, `symbol->string`, `string=?`, `string<?`, `string>?`, `char?`, `char=?`, `char<?`, `char->integer`, `integer->char`
+
+String interpolation is supported at the reader level: `"Hello $name, you are $(+ age 1) years old"`. Use `$$` for a literal `$`.
 
 ### Vectors
 
@@ -47,7 +49,7 @@ Numbers, strings, characters, booleans (`#t`/`#f`), symbols, pairs/lists, vector
 
 ### Hash Tables
 
-`hash-table`, `hash-ref`, `hash-set!`, `hash-set`, `hash-remove!`, `hash-has-key?`, `hash-keys`, `hash-count`, `hash-table?`
+`hash-table`, `hash-ref`, `hash-set!`, `hash-set`, `hash-remove!`, `hash-has-key?`, `hash-keys`, `hash-values`, `hash-count`, `hash-table?`
 
 ### Bitwise Operations
 
