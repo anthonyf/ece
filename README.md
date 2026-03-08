@@ -23,7 +23,7 @@ A Scheme-like language implemented as an **Explicit Control Evaluator** in Commo
 
 ### Derived Forms (via macros)
 
-`let`, `let*`, `letrec`, `cond`, `case`, `when`, `unless`, `and`, `or`, `do`
+`let`, `let*`, `letrec`, `cond`, `case`, `when`, `unless`, `and`, `or`, `do`, `assert`
 
 ### Data Types
 
@@ -31,7 +31,7 @@ Numbers, strings, characters, booleans (`#t`/`#f`), symbols, pairs/lists, vector
 
 ### Standard Library
 
-`map`, `filter`, `reduce`, `for-each`, `reverse`, `assoc`, `member`, `list-ref`, `list-tail`, `append`, `apply`, `fmt`, `print-text`, `random`, `define-record`
+`map`, `filter`, `reduce`, `for-each`, `any`, `every`, `range`, `reverse`, `assoc`, `member`, `list-ref`, `list-tail`, `append`, `apply`, `compose`, `identity`, `fmt`, `print-text`, `random`, `define-record`
 
 ### I/O
 
