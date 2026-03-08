@@ -4,11 +4,11 @@
 ;; Higher-order functions
 (define (map f lst)
   (begin
-    (define (loop rest acc)
+    (define (iter rest acc)
       (if (null? rest)
           (reverse acc)
-          (loop (cdr rest) (cons (f (car rest)) acc))))
-    (loop lst (quote ()))))
+          (iter (cdr rest) (cons (f (car rest)) acc))))
+    (iter lst (quote ()))))
 
 (define (reduce f init lst)
   (if (null? lst)
@@ -23,13 +23,13 @@
 
 (define (filter pred lst)
   (begin
-    (define (loop rest acc)
+    (define (iter rest acc)
       (if (null? rest)
           (reverse acc)
           (if (pred (car rest))
-              (loop (cdr rest) (cons (car rest) acc))
-              (loop (cdr rest) acc))))
-    (loop lst (quote ()))))
+              (iter (cdr rest) (cons (car rest) acc))
+              (iter (cdr rest) acc))))
+    (iter lst (quote ()))))
 
 ;; List predicates
 (define (any pred lst)
@@ -55,11 +55,11 @@
 ;; List generation
 (define (range n)
   (begin
-    (define (loop i acc)
+    (define (iter i acc)
       (if (= i 0)
           acc
-          (loop (- i 1) (cons (- i 1) acc))))
-    (loop n (quote ()))))
+          (iter (- i 1) (cons (- i 1) acc))))
+    (iter n (quote ()))))
 
 ;; Standard derived forms (macros)
 (define-macro (cond . clauses)
@@ -249,6 +249,30 @@
                                                                        (symbol->string f)))
                                                        'obj)))
                                          fields))))))))
+
+;; clamp: constrain a number to a range
+(define (clamp x low high)
+  (min (max x low) high))
+
+;; fold aliases for reduce
+(define fold reduce)
+(define fold-left reduce)
+
+;; fold-right: right-to-left fold
+(define (fold-right f init lst)
+  (if (null? lst)
+      init
+      (f (car lst) (fold-right f init (cdr lst)))))
+
+;; loop: infinite loop with break
+(define-macro (loop . body)
+  (let ((go-sym (gensym)))
+    `(call/cc (lambda (break)
+                (let ,go-sym () ,@body (,go-sym))))))
+
+;; collect: concise list comprehension
+(define-macro (collect binding . body)
+  `(map (lambda (,(car binding)) ,@body) ,(cadr binding)))
 
 ;; assert macro: signal error if condition is falsy
 (define-macro (assert expr . rest)

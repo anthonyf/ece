@@ -100,6 +100,7 @@
            #:string-downcase
            #:string-upcase
            #:string-split
+           #:string-trim
            #:string-contains?
            #:string-join
            #:save-continuation!
@@ -111,6 +112,11 @@
            #:identity
            #:range
            #:lines
+           #:clamp
+           #:fold
+           #:fold-left
+           #:fold-right
+           #:collect
            #:repl))
 
 (in-package :ece)
@@ -534,6 +540,10 @@ Supports integers and decimal floats. Returns NIL on failure."
   (finish-output)
   nil)
 
+(defun ece-string-trim (str)
+  "Trim whitespace from both ends of a string."
+  (string-trim '(#\Space #\Tab #\Newline #\Return) str))
+
 (defun ece-string-split (str &optional (delimiter #\Space))
   "Split a string by a delimiter character, returning a list of substrings."
   (let ((result nil)
@@ -631,6 +641,7 @@ Supports integers and decimal floats. Returns NIL on failure."
     (string-downcase . string-downcase)
     (string-upcase . string-upcase)
     (string-split . ece-string-split)
+    (string-trim . ece-string-trim)
     (string-contains? . ece-string-contains-p)
     (string-join . ece-string-join)
     (save-continuation! . ece-save-continuation!)
@@ -1208,6 +1219,7 @@ Supports integers and decimal floats. Returns NIL on failure."
 
 ;; Load the standard prelude (pure ECE stdlib definitions)
 (ece-load (asdf:system-relative-pathname :ece "src/prelude.scm"))
+
 
 (defun repl ()
   "Bootstrap and run the ECE REPL as a tail-recursive ECE function."

@@ -516,18 +516,18 @@
 
 (deftest test-named-let
     (testing "simple counting loop"
-             (ok (= (evaluate '(let loop ((i 0) (sum 0))
-                                (if (= i 5) sum (loop (+ i 1) (+ sum i)))))
+             (ok (= (evaluate '(let recur ((i 0) (sum 0))
+                                (if (= i 5) sum (recur (+ i 1) (+ sum i)))))
                     10)))
 
   (testing "named let with tail recursion"
-           (ok (eq (evaluate '(let loop ((n 1000000))
-                               (if (= n 0) (quote done) (loop (- n 1)))))
+           (ok (eq (evaluate '(let recur ((n 1000000))
+                               (if (= n 0) (quote done) (recur (- n 1)))))
                    'done)))
 
   (testing "building a list with named let"
-           (ok (equal (evaluate '(let loop ((i 3) (acc (quote ())))
-                                  (if (= i 0) acc (loop (- i 1) (cons i acc)))))
+           (ok (equal (evaluate '(let recur ((i 3) (acc (quote ())))
+                                  (if (= i 0) acc (recur (- i 1) (cons i acc)))))
                       '(1 2 3))))
 
   (testing "regular let still works"
@@ -1465,6 +1465,62 @@
                         '(1 2))))
   (testing "empty table"
            (ok (null (evaluate '(hash-values (hash-table)))))))
+
+(deftest test-string-trim
+    (testing "trim spaces"
+             (ok (equal (evaluate '(string-trim "  hello  ")) "hello")))
+  (testing "no whitespace"
+           (ok (equal (evaluate '(string-trim "hello")) "hello")))
+  (testing "all whitespace"
+           (ok (equal (evaluate '(string-trim "   ")) "")))
+  (testing "empty string"
+           (ok (equal (evaluate '(string-trim "")) ""))))
+
+(deftest test-clamp
+    (testing "value within range"
+             (ok (= (evaluate '(clamp 5 0 10)) 5)))
+  (testing "value below range"
+           (ok (= (evaluate '(clamp -3 0 10)) 0)))
+  (testing "value above range"
+           (ok (= (evaluate '(clamp 15 0 10)) 10)))
+  (testing "value at boundary"
+           (ok (= (evaluate '(clamp 0 0 10)) 0))))
+
+(deftest test-fold
+    (testing "fold sums a list"
+             (ok (= (evaluate '(fold + 0 (list 1 2 3 4))) 10)))
+  (testing "fold-left sums a list"
+           (ok (= (evaluate '(fold-left + 0 (list 1 2 3))) 6)))
+  (testing "fold-right cons copies list"
+           (ok (equal (evaluate '(fold-right cons (list) (list 1 2 3))) '(1 2 3))))
+  (testing "fold-right subtraction order"
+           (ok (= (evaluate '(fold-right - 0 (list 1 2 3))) 2))))
+
+(deftest test-loop
+    (testing "loop with immediate break"
+             (ok (= (evaluate '(loop (break 42))) 42)))
+  (testing "loop with counter"
+           (ok (= (evaluate '(let ((x 5))
+                              (loop
+                               (if (= x 0) (break x))
+                               (set x (- x 1)))))
+                  0)))
+  (testing "loop accumulates then breaks"
+           (ok (equal (evaluate '(let ((acc (list)) (i 0))
+                                  (loop
+                                   (if (= i 5) (break acc))
+                                   (set acc (cons i acc))
+                                   (set i (+ i 1)))))
+                      '(4 3 2 1 0)))))
+
+(deftest test-collect
+    (testing "square numbers"
+             (ok (equal (evaluate '(collect (x (range 5)) (* x x)))
+                        '(0 1 4 9 16))))
+  (testing "transform strings"
+           (ok (equal (evaluate '(collect (s (list "a" "b" "c"))
+                                  (string-append s "!")))
+                      '("a!" "b!" "c!")))))
 
 (deftest test-unknown-expression-error
     (testing "unrecognized expression types signal an error"
