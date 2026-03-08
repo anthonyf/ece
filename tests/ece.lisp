@@ -1364,6 +1364,40 @@
   (testing "custom message not used on success"
     (ok (not (evaluate '(assert t "should not see this"))))))
 
+(deftest test-any
+  (testing "element found"
+    (ok (evaluate '(any odd? (list 2 3 4)))))
+  (testing "no element found"
+    (ok (not (evaluate '(any odd? (list 2 4 6))))))
+  (testing "empty list"
+    (ok (not (evaluate '(any odd? (list)))))))
+
+(deftest test-every
+  (testing "all elements match"
+    (ok (evaluate '(every even? (list 2 4 6)))))
+  (testing "some element fails"
+    (ok (not (evaluate '(every even? (list 2 3 6))))))
+  (testing "empty list"
+    (ok (evaluate '(every even? (list))))))
+
+(deftest test-compose
+  (testing "compose two functions"
+    (ok (equal (evaluate '((compose car cdr) (list 1 2 3))) 2))))
+
+(deftest test-identity
+  (testing "returns its argument"
+    (ok (equal (evaluate '(identity 42)) 42)))
+  (testing "as function argument"
+    (ok (equal (evaluate '(map identity (list 1 2 3))) '(1 2 3)))))
+
+(deftest test-range
+  (testing "range of 5"
+    (ok (equal (evaluate '(range 5)) '(0 1 2 3 4))))
+  (testing "range of 0"
+    (ok (equal (evaluate '(range 0)) nil)))
+  (testing "range of 1"
+    (ok (equal (evaluate '(range 1)) '(0)))))
+
 (deftest test-unknown-expression-error
   (testing "unrecognized expression types signal an error"
     (signals (evaluate (make-hash-table) nil))))

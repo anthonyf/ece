@@ -31,6 +31,36 @@
               (loop (cdr rest) acc))))
     (loop lst (quote ()))))
 
+;; List predicates
+(define (any pred lst)
+  (if (null? lst)
+      ()
+      (if (pred (car lst))
+          t
+          (any pred (cdr lst)))))
+
+(define (every pred lst)
+  (if (null? lst)
+      t
+      (if (pred (car lst))
+          (every pred (cdr lst))
+          ())))
+
+;; Function composition
+(define (compose f g)
+  (lambda (x) (f (g x))))
+
+(define (identity x) x)
+
+;; List generation
+(define (range n)
+  (begin
+    (define (loop i acc)
+      (if (= i 0)
+          acc
+          (loop (- i 1) (cons (- i 1) acc))))
+    (loop n (quote ()))))
+
 ;; Standard derived forms (macros)
 (define-macro (cond . clauses)
   (if (null? clauses)

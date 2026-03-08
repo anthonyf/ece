@@ -102,6 +102,11 @@
 	   #:save-continuation!
 	   #:load-continuation
 	   #:define-record
+	   #:any
+	   #:every
+	   #:compose
+	   #:identity
+	   #:range
 	   #:repl))
 
 (in-package :ece)
