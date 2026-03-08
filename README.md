@@ -1,5 +1,7 @@
 # ECE
 
+[![Tests](https://github.com/anthonyf/ece/actions/workflows/test.yml/badge.svg)](https://github.com/anthonyf/ece/actions/workflows/test.yml)
+
 A Scheme-like language implemented as an **Explicit Control Evaluator** in Common Lisp. Inspired by the register machine evaluator from SICP, ECE uses an explicit continuation stack rather than relying on the host language's call stack. Zero external dependencies.
 
 ## Key Features
