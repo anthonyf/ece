@@ -376,11 +376,42 @@
   (subseq s start end))
 
 (defun ece-string->number (s)
-  "Parse a number from string s. Returns nil on failure."
-  (handler-case
-      (let ((result (read-from-string s)))
-        (if (numberp result) result nil))
-    (error () nil)))
+  "Parse a number from string S without invoking the CL reader.
+Supports integers and decimal floats. Returns NIL on failure."
+  (let ((trimmed (string-trim '(#\Space #\Tab) s)))
+    (when (zerop (length trimmed))
+      (return-from ece-string->number nil))
+    (let ((dot-pos (position #\. trimmed)))
+      (if dot-pos
+          ;; Try float: parse integer and fractional parts separately
+          (let* ((int-str (subseq trimmed 0 dot-pos))
+                 (frac-str (subseq trimmed (1+ dot-pos)))
+                 ;; Allow leading sign with empty integer part (e.g., "-.5" -> "-0" + "5")
+                 (sign-only (or (string= int-str "") (string= int-str "-") (string= int-str "+")))
+                 (int-part (if (string= int-str "")
+                               0
+                               (parse-integer int-str :junk-allowed t)))
+                 (frac-part (if (zerop (length frac-str))
+                                nil
+                                (parse-integer frac-str :junk-allowed t))))
+            (when (and sign-only (null frac-part))
+              (return-from ece-string->number nil))
+            (when (or (and (not sign-only) (null int-part))
+                      (and (> (length frac-str) 0) (null frac-part)))
+              (return-from ece-string->number nil))
+            (let* ((negative (and (> (length int-str) 0) (char= (char int-str 0) #\-)))
+                   (abs-int (abs (or int-part 0)))
+                   (frac-val (if frac-part
+                                 (/ (float frac-part) (expt 10.0 (length frac-str)))
+                                 0.0))
+                   (result (+ (float abs-int) frac-val)))
+              (if negative (- result) result)))
+          ;; Try integer
+          (multiple-value-bind (val pos)
+              (parse-integer trimmed :junk-allowed t)
+            (if (and val (= pos (length trimmed)))
+                val
+                nil))))))
 
 (defun ece-number->string (n)
   "Convert number n to string."

@@ -786,7 +786,12 @@
   (testing "string->number"
            (ok (= (evaluate '(string->number "42")) 42))
            (ok (= (evaluate '(string->number "-7")) -7))
-           (ok (null (evaluate '(string->number "abc")))))
+           (ok (null (evaluate '(string->number "abc"))))
+           (ok (= (evaluate '(string->number "3.14")) 3.14))
+           (ok (= (evaluate '(string->number "-0.5")) -0.5))
+           (ok (null (evaluate '(string->number "3/4"))))
+           (ok (null (evaluate '(string->number ""))))
+           (ok (null (evaluate '(string->number "  ")))))
 
   (testing "number->string"
            (ok (equal (evaluate '(number->string 42)) "42"))
