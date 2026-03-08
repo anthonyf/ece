@@ -107,6 +107,7 @@
 	   #:compose
 	   #:identity
 	   #:range
+	   #:lines
 	   #:repl))
 
 (in-package :ece)
@@ -259,6 +260,70 @@
 
   (set-macro-character #\}
     (get-macro-character #\))
+    nil *ece-readtable*)
+
+  ;; String interpolation: "Hello $name, $(+ 1 2)" → (fmt "Hello " name ", " (+ 1 2))
+  ;; $var interpolates a variable, $(expr) interpolates an expression, $$ is literal $
+  ;; Strings without $ are returned as plain strings.
+  (defun ece-identifier-char-p (c)
+    "Return T if C is a valid identifier character after $."
+    (and c (or (alphanumericp c)
+              (member c '(#\- #\? #\! #\* #\> #\< #\_ #\/)))))
+
+  (set-macro-character #\"
+    (lambda (stream char)
+      (declare (ignore char))
+      (let ((segments '())
+            (buf (make-array 0 :element-type 'character :adjustable t :fill-pointer 0)))
+        (flet ((flush-buf ()
+                 (when (> (length buf) 0)
+                   (push (copy-seq buf) segments)
+                   (setf (fill-pointer buf) 0))))
+          (loop
+            (let ((c (read-char stream t nil t)))
+              (cond
+                ;; End of string
+                ((eql c #\")
+                 (flush-buf)
+                 (let ((segs (nreverse segments)))
+                   (return
+                     (if (and (= (length segs) 1) (stringp (first segs)))
+                         (first segs)
+                         (cons 'fmt segs)))))
+                ;; Backslash escape
+                ((eql c #\\)
+                 (let ((next (read-char stream t nil t)))
+                   (case next
+                     (#\n (vector-push-extend #\Newline buf))
+                     (#\t (vector-push-extend #\Tab buf))
+                     (#\" (vector-push-extend #\" buf))
+                     (#\\ (vector-push-extend #\\ buf))
+                     (t (vector-push-extend next buf)))))
+                ;; Dollar interpolation
+                ((eql c #\$)
+                 (let ((next (peek-char nil stream t nil t)))
+                   (cond
+                     ;; $$ → literal $
+                     ((eql next #\$)
+                      (read-char stream t nil t)
+                      (vector-push-extend #\$ buf))
+                     ;; $(expr) → read s-expression
+                     ((eql next #\()
+                      (flush-buf)
+                      (push (read stream t nil t) segments))
+                     ;; $identifier → read symbol name
+                     ((ece-identifier-char-p next)
+                      (flush-buf)
+                      (let ((sym-buf (make-array 0 :element-type 'character
+                                                   :adjustable t :fill-pointer 0)))
+                        (loop for sc = (peek-char nil stream nil nil t)
+                              while (ece-identifier-char-p sc)
+                              do (vector-push-extend (read-char stream t nil t) sym-buf))
+                        (push (intern (string-upcase sym-buf) :ece) segments)))
+                     ;; $ followed by non-identifier → literal $
+                     (t (vector-push-extend #\$ buf)))))
+                ;; Regular character
+                (t (vector-push-extend c buf))))))))
     nil *ece-readtable*))
 
 ;; I/O primitives with custom wrappers

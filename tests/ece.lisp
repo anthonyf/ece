@@ -8,6 +8,13 @@
 ;; test results containing deeply nested captured environments/continuations.
 (setf *print-circle* t *print-level* 10 *print-length* 10)
 
+(defun ece-eval-string (source)
+  "Read SOURCE with the ECE readtable, then evaluate the result."
+  (let* ((*readtable* ece::*ece-readtable*)
+         (*package* (find-package :ece))
+         (expr (read-from-string source)))
+    (evaluate expr)))
+
 ;; NOTE: To run this test file, execute `(asdf:test-system :ece)' in your Lisp.
 
 (deftest test-self-eval
@@ -1397,6 +1404,35 @@
     (ok (equal (evaluate '(range 0)) nil)))
   (testing "range of 1"
     (ok (equal (evaluate '(range 1)) '(0)))))
+
+(deftest test-lines
+  (testing "multiple lines"
+    (ok (equal (evaluate '(lines "hello" "world"))
+              (format nil "hello~%world~%"))))
+  (testing "single line"
+    (ok (equal (evaluate '(lines "hello"))
+              (format nil "hello~%"))))
+  (testing "empty call"
+    (ok (equal (evaluate '(lines)) "")))
+  (testing "mixed types auto-stringified"
+    (ok (equal (evaluate '(lines "count:" 42))
+              (format nil "count:~%42~%")))))
+
+(deftest test-string-interpolation
+  (testing "plain string without $ is unchanged"
+    (ok (equal (ece-eval-string "\"hello world\"") "hello world")))
+  (testing "variable interpolation"
+    (ok (equal (ece-eval-string "(begin (define name \"Alice\") \"Hello $name\")") "Hello Alice")))
+  (testing "expression interpolation"
+    (ok (equal (ece-eval-string "(begin (define x 3) \"result: $(+ x 1)\")") "result: 4")))
+  (testing "literal dollar with $$"
+    (ok (equal (ece-eval-string "\"Price: $$5.00\"") "Price: $5.00")))
+  (testing "number auto-stringified"
+    (ok (equal (ece-eval-string "(begin (define age 30) \"Age: $age\")") "Age: 30")))
+  (testing "multiple interpolations"
+    (ok (equal (ece-eval-string "(begin (define a 1) (define b 2) \"$a and $b\")") "1 and 2")))
+  (testing "star variable"
+    (ok (equal (ece-eval-string "(begin (define *count* 5) \"Total: $*count*\")") "Total: 5"))))
 
 (deftest test-unknown-expression-error
   (testing "unrecognized expression types signal an error"

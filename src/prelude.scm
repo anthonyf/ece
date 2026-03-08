@@ -179,6 +179,15 @@
 (define (print-text . args)
   (display (apply fmt args)))
 
+;; lines: join arguments with newlines, returns a string
+(define (lines . args)
+  (if (null? args)
+      ""
+      (apply string-append
+        (map (lambda (a)
+               (string-append (if (string? a) a (write-to-string a)) "\n"))
+             args))))
+
 ;; define-record macro: generate record type definitions backed by hash tables
 (define-macro (define-record name . fields)
   (let ((make-name (string->symbol
