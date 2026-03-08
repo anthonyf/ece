@@ -57,6 +57,8 @@ Numbers, strings, characters, booleans (`#t`/`#f`), symbols, pairs/lists, vector
 
 ECE's serializable continuations make it well-suited for applications that need to capture and restore program state — such as interactive fiction engines, where save/restore and complex control flow (goto, gosub) map naturally to `call/cc`.
 
+[Dunge](https://github.com/anthonyf/dunge) is a choice-based interactive fiction game being built with ECE.
+
 ## Getting Started
 
 ### Prerequisites
