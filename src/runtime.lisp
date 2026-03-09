@@ -105,6 +105,8 @@
            #:string-join
            #:save-continuation!
            #:load-continuation
+           #:save-image!
+           #:load-image!
            #:define-record
            #:any
            #:every
@@ -584,9 +586,13 @@ Supports integers and decimal floats. Returns NIL on failure."
           (*package* (find-package :ece)))
       (read stream))))
 
+;;; Compile-time macro table (declared here so image save/load can access it;
+;;; used by compiler.lisp for macro expansion)
+(defvar *compile-time-macros* (make-hash-table :test 'eq)
+  "Hash table mapping macro names to (params body env) for compile-time expansion.")
+
 ;;; Register wrapper primitives that don't depend on the compiler.
-;;; (try-eval and load are registered in compiler.lisp since they
-;;; call evaluate/compile-file-ece.)
+;;; (try-eval, load, save-image!, and load-image! are registered in compiler.lisp.)
 
 (defparameter *wrapper-primitives*
   '((read . ece-read)
@@ -801,6 +807,11 @@ Supports integers and decimal floats. Returns NIL on failure."
 (defvar *global-instruction-vector*
   (make-array 256 :adjustable t :fill-pointer 0))
 
+(defvar *global-instruction-source*
+  (make-array 256 :adjustable t :fill-pointer 0)
+  "Parallel vector of unresolved instructions for serialization.
+Each index corresponds to the same index in *global-instruction-vector*.")
+
 (defvar *global-label-table*
   (make-hash-table :test 'eq))
 
@@ -828,6 +839,72 @@ Supports integers and decimal floats. Returns NIL on failure."
       (if (symbolp item)
           (setf (gethash item *global-label-table*)
                 (fill-pointer *global-instruction-vector*))
-          (vector-push-extend (resolve-operations item)
-                              *global-instruction-vector*)))
+          (progn
+            (vector-push-extend item *global-instruction-source*)
+            (vector-push-extend (resolve-operations item)
+                                *global-instruction-vector*))))
     start-pc))
+
+;;;; ========================================================================
+;;;; IMAGE SAVE/LOAD
+;;;; ========================================================================
+
+(defun ece-save-image (filename)
+  "Save the full ECE system state to FILENAME.
+Serializes: instruction source vector, label table, global environment,
+and compile-time macros."
+  (let ((label-alist (let ((pairs nil))
+                       (maphash (lambda (k v) (push (cons k v) pairs))
+                                *global-label-table*)
+                       pairs))
+        (macro-alist (let ((pairs nil))
+                       (maphash (lambda (k v) (push (cons k v) pairs))
+                                *compile-time-macros*)
+                       pairs)))
+    (with-open-file (stream filename :direction :output
+                            :if-exists :supersede
+                            :if-does-not-exist :create)
+      (let ((*print-circle* t)
+            (*print-readably* t)
+            (*package* (find-package :ece)))
+        (write (list (coerce *global-instruction-source* 'list)
+                     label-alist
+                     *global-env*
+                     macro-alist)
+               :stream stream))))
+  t)
+
+(defun ece-load-image (filename)
+  "Load ECE system state from FILENAME, replacing all globals.
+Rebuilds the execution vector by resolving operations on each instruction."
+  (let ((data (with-open-file (stream filename :direction :input)
+                (let ((*readtable* *ece-readtable*)
+                      (*read-eval* nil)
+                      (*package* (find-package :ece)))
+                  (read stream)))))
+    (let ((source-list (first data))
+          (label-alist (second data))
+          (env (third data))
+          (macro-alist (fourth data)))
+      ;; Rebuild instruction source vector
+      (setf *global-instruction-source*
+            (make-array (length source-list) :adjustable t :fill-pointer (length source-list)))
+      (loop for instr in source-list
+            for i from 0
+            do (setf (aref *global-instruction-source* i) instr))
+      ;; Rebuild execution vector with resolved operations
+      (setf *global-instruction-vector*
+            (make-array (length source-list) :adjustable t :fill-pointer (length source-list)))
+      (loop for instr in source-list
+            for i from 0
+            do (setf (aref *global-instruction-vector* i) (resolve-operations instr)))
+      ;; Rebuild label table
+      (setf *global-label-table* (make-hash-table :test 'eq))
+      (dolist (pair label-alist)
+        (setf (gethash (car pair) *global-label-table*) (cdr pair)))
+      ;; Restore environment and macros
+      (setf *global-env* env)
+      (setf *compile-time-macros* (make-hash-table :test 'eq))
+      (dolist (pair macro-alist)
+        (setf (gethash (car pair) *compile-time-macros*) (cdr pair)))))
+  t)

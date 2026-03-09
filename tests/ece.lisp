@@ -1550,3 +1550,277 @@
            (ok (= (evaluate '(let loop ((n 10) (acc 0))
                               (if (= n 0) acc (loop (- n 1) (+ acc n)))))
                   55))))
+
+;;;; ========================================================================
+;;;; IMAGE SAVE/LOAD TESTS
+;;;; ========================================================================
+
+(deftest test-image-save-returns-t
+    (testing "save-image! returns t and creates a file"
+             (let ((tmpfile (uiop:with-temporary-file (:stream s :pathname p :keep t
+                                                               :type "img")
+                              (declare (ignore s))
+                              p)))
+               (unwind-protect
+                    (progn
+                      (ok (eq (ece::ece-save-image (namestring tmpfile)) t))
+                      (ok (probe-file tmpfile)))
+                 (when (probe-file tmpfile) (delete-file tmpfile))))))
+
+(deftest test-image-restores-simple-bindings
+    (testing "load-image! restores number bindings"
+             (let ((tmpfile (uiop:with-temporary-file (:stream s :pathname p :keep t
+                                                               :type "img")
+                              (declare (ignore s))
+                              p)))
+               (unwind-protect
+                    (progn
+                      (evaluate '(define img-test-num 42))
+                      (ece::ece-save-image (namestring tmpfile))
+                      (evaluate '(set img-test-num 999))
+                      (ece::ece-load-image (namestring tmpfile))
+                      (ok (= (evaluate 'img-test-num) 42)))
+                 (when (probe-file tmpfile) (delete-file tmpfile)))))
+
+  (testing "load-image! restores string bindings"
+           (let ((tmpfile (uiop:with-temporary-file (:stream s :pathname p :keep t
+                                                             :type "img")
+                            (declare (ignore s))
+                            p)))
+             (unwind-protect
+                  (progn
+                    (evaluate '(define img-test-str "hello world"))
+                    (ece::ece-save-image (namestring tmpfile))
+                    (evaluate '(set img-test-str "overwritten"))
+                    (ece::ece-load-image (namestring tmpfile))
+                    (ok (equal (evaluate 'img-test-str) "hello world")))
+               (when (probe-file tmpfile) (delete-file tmpfile)))))
+
+  (testing "load-image! restores boolean and symbol bindings"
+           (let ((tmpfile (uiop:with-temporary-file (:stream s :pathname p :keep t
+                                                             :type "img")
+                            (declare (ignore s))
+                            p)))
+             (unwind-protect
+                  (progn
+                    (evaluate '(define img-test-bool t))
+                    (evaluate '(define img-test-sym (quote hello)))
+                    (ece::ece-save-image (namestring tmpfile))
+                    (evaluate '(set img-test-bool nil))
+                    (ece::ece-load-image (namestring tmpfile))
+                    (ok (eq (evaluate 'img-test-bool) t))
+                    (ok (eq (evaluate 'img-test-sym) 'hello)))
+               (when (probe-file tmpfile) (delete-file tmpfile)))))
+
+  (testing "load-image! restores list bindings"
+           (let ((tmpfile (uiop:with-temporary-file (:stream s :pathname p :keep t
+                                                             :type "img")
+                            (declare (ignore s))
+                            p)))
+             (unwind-protect
+                  (progn
+                    (evaluate '(define img-test-lst (list 1 2 3)))
+                    (ece::ece-save-image (namestring tmpfile))
+                    (evaluate '(set img-test-lst (list 9 9 9)))
+                    (ece::ece-load-image (namestring tmpfile))
+                    (ok (equal (evaluate 'img-test-lst) '(1 2 3))))
+               (when (probe-file tmpfile) (delete-file tmpfile))))))
+
+(deftest test-image-restores-compiled-procedures
+    (testing "compiled function survives round-trip"
+             (let ((tmpfile (uiop:with-temporary-file (:stream s :pathname p :keep t
+                                                               :type "img")
+                              (declare (ignore s))
+                              p)))
+               (unwind-protect
+                    (progn
+                      (evaluate '(define (img-square n) (* n n)))
+                      (ece::ece-save-image (namestring tmpfile))
+                      ;; Clobber the environment to prove load restores it
+                      (evaluate '(define (img-square n) 0))
+                      (ece::ece-load-image (namestring tmpfile))
+                      (ok (= (evaluate '(img-square 7)) 49)))
+                 (when (probe-file tmpfile) (delete-file tmpfile)))))
+
+  (testing "recursive function survives round-trip"
+           (let ((tmpfile (uiop:with-temporary-file (:stream s :pathname p :keep t
+                                                             :type "img")
+                            (declare (ignore s))
+                            p)))
+             (unwind-protect
+                  (progn
+                    (evaluate '(define (img-fact n)
+                                (if (= n 0) 1 (* n (img-fact (- n 1))))))
+                    (ece::ece-save-image (namestring tmpfile))
+                    (ece::ece-load-image (namestring tmpfile))
+                    (ok (= (evaluate '(img-fact 10)) 3628800)))
+               (when (probe-file tmpfile) (delete-file tmpfile))))))
+
+(deftest test-image-restores-closures
+    (testing "closure over variable survives round-trip"
+             (let ((tmpfile (uiop:with-temporary-file (:stream s :pathname p :keep t
+                                                               :type "img")
+                              (declare (ignore s))
+                              p)))
+               (unwind-protect
+                    (progn
+                      (evaluate '(begin
+                                  (define img-make-counter
+                                   (lambda ()
+                                     (begin
+                                      (define count 0)
+                                      (lambda ()
+                                        (set count (+ count 1))
+                                        count))))
+                                  (define img-counter (img-make-counter))))
+                      ;; Increment twice before save
+                      (evaluate '(img-counter))
+                      (evaluate '(img-counter))
+                      (ece::ece-save-image (namestring tmpfile))
+                      ;; Increment more to change state
+                      (evaluate '(img-counter))
+                      (evaluate '(img-counter))
+                      (ece::ece-load-image (namestring tmpfile))
+                      ;; After load, counter should continue from 2
+                      (ok (= (evaluate '(img-counter)) 3)))
+                 (when (probe-file tmpfile) (delete-file tmpfile))))))
+
+(deftest test-image-restores-macros
+    (testing "compile-time macros survive round-trip"
+             (let ((tmpfile (uiop:with-temporary-file (:stream s :pathname p :keep t
+                                                               :type "img")
+                              (declare (ignore s))
+                              p)))
+               (unwind-protect
+                    (progn
+                      (evaluate '(define-macro (img-swap a b) `(list ,b ,a)))
+                      (ece::ece-save-image (namestring tmpfile))
+                      (ece::ece-load-image (namestring tmpfile))
+                      ;; Macro should still expand correctly for NEW code
+                      (ok (equal (evaluate '(img-swap 1 2)) '(2 1))))
+                 (when (probe-file tmpfile) (delete-file tmpfile))))))
+
+(deftest test-image-prelude-survives
+    (testing "map works after round-trip"
+             (let ((tmpfile (uiop:with-temporary-file (:stream s :pathname p :keep t
+                                                               :type "img")
+                              (declare (ignore s))
+                              p)))
+               (unwind-protect
+                    (progn
+                      (ece::ece-save-image (namestring tmpfile))
+                      (ece::ece-load-image (namestring tmpfile))
+                      (ok (equal (evaluate '(map (lambda (x) (* x x)) (list 1 2 3)))
+                                 '(1 4 9))))
+                 (when (probe-file tmpfile) (delete-file tmpfile)))))
+
+  (testing "filter works after round-trip"
+           (let ((tmpfile (uiop:with-temporary-file (:stream s :pathname p :keep t
+                                                             :type "img")
+                            (declare (ignore s))
+                            p)))
+             (unwind-protect
+                  (progn
+                    (ece::ece-save-image (namestring tmpfile))
+                    (ece::ece-load-image (namestring tmpfile))
+                    (ok (equal (evaluate '(filter odd? (list 1 2 3 4 5)))
+                               '(1 3 5))))
+               (when (probe-file tmpfile) (delete-file tmpfile)))))
+
+  (testing "reduce works after round-trip"
+           (let ((tmpfile (uiop:with-temporary-file (:stream s :pathname p :keep t
+                                                             :type "img")
+                            (declare (ignore s))
+                            p)))
+             (unwind-protect
+                  (progn
+                    (ece::ece-save-image (namestring tmpfile))
+                    (ece::ece-load-image (namestring tmpfile))
+                    (ok (= (evaluate '(reduce + 0 (list 1 2 3))) 6)))
+               (when (probe-file tmpfile) (delete-file tmpfile))))))
+
+(deftest test-image-hash-tables-and-vectors
+    (testing "hash tables survive round-trip"
+             (let ((tmpfile (uiop:with-temporary-file (:stream s :pathname p :keep t
+                                                               :type "img")
+                              (declare (ignore s))
+                              p)))
+               (unwind-protect
+                    (progn
+                      (evaluate '(define img-ht (hash-table 'name "Alice" 'age 30)))
+                      (ece::ece-save-image (namestring tmpfile))
+                      (ece::ece-load-image (namestring tmpfile))
+                      (ok (equal (evaluate '(hash-ref img-ht 'name)) "Alice"))
+                      (ok (= (evaluate '(hash-ref img-ht 'age)) 30)))
+                 (when (probe-file tmpfile) (delete-file tmpfile)))))
+
+  (testing "vectors survive round-trip"
+           (let ((tmpfile (uiop:with-temporary-file (:stream s :pathname p :keep t
+                                                             :type "img")
+                            (declare (ignore s))
+                            p)))
+             (unwind-protect
+                  (progn
+                    (evaluate '(define img-vec (vector 10 20 30)))
+                    (ece::ece-save-image (namestring tmpfile))
+                    (ece::ece-load-image (namestring tmpfile))
+                    (ok (= (evaluate '(vector-ref img-vec 0)) 10))
+                    (ok (= (evaluate '(vector-ref img-vec 2)) 30))
+                    (ok (= (evaluate '(vector-length img-vec)) 3)))
+               (when (probe-file tmpfile) (delete-file tmpfile))))))
+
+(deftest test-image-continuations
+    (testing "continuation survives round-trip"
+             (let ((tmpfile (uiop:with-temporary-file (:stream s :pathname p :keep t
+                                                               :type "img")
+                              (declare (ignore s))
+                              p)))
+               (unwind-protect
+                    (progn
+                      ;; Capture a continuation and check it round-trips
+                      (evaluate '(define img-k (call/cc (lambda (k) k))))
+                      (ok (eq t (evaluate `(eq? (car img-k)
+                                                ',(intern "CONTINUATION" :ece)))))
+                      (ece::ece-save-image (namestring tmpfile))
+                      (ece::ece-load-image (namestring tmpfile))
+                      ;; After load, verify it's still a continuation
+                      (ok (eq t (evaluate `(eq? (car img-k)
+                                                ',(intern "CONTINUATION" :ece))))))
+                 (when (probe-file tmpfile) (delete-file tmpfile))))))
+
+(deftest test-image-compiler-works-after-load
+    (testing "new code compiles and runs after loading an image"
+             (let ((tmpfile (uiop:with-temporary-file (:stream s :pathname p :keep t
+                                                               :type "img")
+                              (declare (ignore s))
+                              p)))
+               (unwind-protect
+                    (progn
+                      (ece::ece-save-image (namestring tmpfile))
+                      (ece::ece-load-image (namestring tmpfile))
+                      ;; Compile and run brand new code
+                      (ok (= (evaluate '(+ 1 2)) 3))
+                      ;; Define a new function after load
+                      (ok (= (evaluate '(begin
+                                         (define (img-post-load-fn x y) (+ (* x x) (* y y)))
+                                         (img-post-load-fn 3 4)))
+                             25))
+                      ;; Lambda and higher-order after load
+                      (ok (equal (evaluate '(map (lambda (x) (+ x 10)) (list 1 2 3)))
+                                 '(11 12 13))))
+                 (when (probe-file tmpfile) (delete-file tmpfile)))))
+
+  (testing "define-macro works after loading an image"
+           (let ((tmpfile (uiop:with-temporary-file (:stream s :pathname p :keep t
+                                                             :type "img")
+                            (declare (ignore s))
+                            p)))
+             (unwind-protect
+                  (progn
+                    (ece::ece-save-image (namestring tmpfile))
+                    (ece::ece-load-image (namestring tmpfile))
+                    ;; Define a NEW macro after load (use list instead of backtick
+                    ;; to avoid SBCL reader producing COMMA structs)
+                    (evaluate '(define-macro (img-double x) (list (quote +) x x)))
+                    (ok (= (evaluate '(img-double 21)) 42)))
+               (when (probe-file tmpfile) (delete-file tmpfile))))))

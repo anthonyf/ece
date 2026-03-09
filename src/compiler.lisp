@@ -164,8 +164,7 @@
               (compile-linkage linkage)))
 
 ;;; Compile-time macro environment
-(defvar *compile-time-macros* (make-hash-table :test 'eq)
-  "Hash table mapping macro names to (params body env) for compile-time expansion.")
+;;; *compile-time-macros* is declared in runtime.lisp (needed for image save/load)
 
 (defvar *compile-lexical-env* nil
   "List of locally-bound variable names, used to shadow macros.")
@@ -471,7 +470,7 @@
                       (preserving '(env continue)
                                   receiver-code
                                   (make-instruction-sequence
-                                   '(proc) (list target 'argl 'continue)
+                                   '(proc) *all-regs*
                                    `((assign continue (label ,return-label))
                                      (assign argl (op capture-continuation) (reg stack) (reg continue))
                                      (assign argl (op list) (reg argl))
@@ -558,6 +557,8 @@
 
 (define-variable! 'try-eval (list 'primitive 'ece-try-eval) *global-env*)
 (define-variable! 'load (list 'primitive 'ece-load) *global-env*)
+(define-variable! 'save-image! (list 'primitive 'ece-save-image) *global-env*)
+(define-variable! 'load-image! (list 'primitive 'ece-load-image) *global-env*)
 
 ;; Load the standard prelude (pure ECE stdlib definitions)
 (compile-file-ece (asdf:system-relative-pathname :ece "src/prelude.scm"))
