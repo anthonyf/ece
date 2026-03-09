@@ -1,37 +1,21 @@
-## ADDED Requirements
+## MODIFIED Requirements
 
-### Requirement: call/cc captures the current continuation and passes it to the receiver
-The evaluator SHALL support `(call/cc <receiver>)` where receiver is a one-argument procedure. The receiver SHALL be called with a continuation object representing the current continuation.
+### Requirement: call/cc captures and restores continuation
+`call/cc` SHALL capture the current continuation (stack and program counter state) and pass it to the receiver function. Invoking the continuation SHALL restore the captured state and return the given value.
 
-#### Scenario: Simple call/cc returns value from receiver
-- **WHEN** evaluating `(call/cc (lambda (k) 42))`
+#### Scenario: Simple capture and invoke
+- **WHEN** `(call/cc (lambda (k) (k 42)))` is evaluated
 - **THEN** the result SHALL be `42`
 
-#### Scenario: Continuation used for non-local exit
-- **WHEN** evaluating `(call/cc (lambda (k) (k 10) 20))`
-- **THEN** the result SHALL be `10` (the `(k 10)` invokes the continuation, skipping `20`)
+#### Scenario: Continuation as escape
+- **WHEN** `(call/cc (lambda (k) (begin (k 10) 20)))` is evaluated
+- **THEN** the result SHALL be `10` (the expression after `k` is never reached)
 
-### Requirement: Continuations work within larger expressions
-The continuation SHALL capture the full evaluation context so that invoking it resumes computation correctly.
+#### Scenario: Continuation works with compiled procedures
+- **WHEN** `(let ((x 5)) (call/cc (lambda (k) (k x))))` is evaluated
+- **THEN** the result SHALL be `5`
+- **AND** the continuation SHALL capture the compiled execution state (stack and instruction pointer)
 
-#### Scenario: call/cc in arithmetic expression
-- **WHEN** evaluating `(+ 1 (call/cc (lambda (k) (k 10))))`
-- **THEN** the result SHALL be `11`
-
-#### Scenario: call/cc with non-local exit in nested context
-- **WHEN** evaluating `(+ 1 (call/cc (lambda (k) (+ 2 (k 10)))))`
-- **THEN** the result SHALL be `11` (the `(k 10)` abandons `(+ 2 ...)` and returns 10 to the `(+ 1 ...)`)
-
-### Requirement: Receiver expression is evaluated
-The receiver argument to `call/cc` SHALL be an arbitrary expression that is evaluated before being applied.
-
-#### Scenario: Variable as receiver
-- **WHEN** evaluating `((lambda (f) (call/cc f)) (lambda (k) (k 99)))`
-- **THEN** the result SHALL be `99`
-
-### Requirement: Continuation not called returns receiver's result
-When the receiver does not invoke the continuation, `call/cc` SHALL return the receiver's return value.
-
-#### Scenario: Continuation ignored
-- **WHEN** evaluating `(+ 1 (call/cc (lambda (k) 5)))`
-- **THEN** the result SHALL be `6`
+#### Scenario: Saved continuation can be invoked later
+- **WHEN** a continuation is stored in a variable and invoked after `call/cc` returns
+- **THEN** execution SHALL resume from the point of capture with the given value
