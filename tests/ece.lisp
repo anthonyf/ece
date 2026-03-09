@@ -1525,3 +1525,28 @@
 (deftest test-unknown-expression-error
     (testing "unrecognized expression types signal an error"
              (signals (evaluate (make-hash-table) nil))))
+
+;;; Compiler-specific tests
+
+(deftest test-compiled-procedure-objects
+    (testing "lambda produces a compiled procedure list"
+             (ok (listp (evaluate '(lambda (x) (+ x 1))))))
+  (testing "compiled procedure is callable"
+           (ok (= (evaluate '((lambda (x) (+ x 1)) 5)) 6))))
+
+(deftest test-macro-lexical-shadowing
+    (testing "lambda parameter shadows macro"
+             (ok (= (evaluate '((lambda (loop) (loop loop 5))
+                                (lambda (self n)
+                                  (if (= n 0) 0 (self self (- n 1))))))
+                    0)))
+  (testing "define in begin shadows macro"
+           (ok (eq (evaluate '(begin
+                               (define (loop n)
+                                (if (= n 0) (quote done) (loop (- n 1))))
+                               (loop 10)))
+                   'done)))
+  (testing "named let with loop name works"
+           (ok (= (evaluate '(let loop ((n 10) (acc 0))
+                              (if (= n 0) acc (loop (- n 1) (+ acc n)))))
+                  55))))
