@@ -3,7 +3,7 @@
 [![Tests](https://github.com/anthonyf/ece/actions/workflows/test.yml/badge.svg)](https://github.com/anthonyf/ece/actions/workflows/test.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/anthonyf/ece/blob/main/LICENSE)
 
-A Scheme-like language implemented as an **Explicit Control Evaluator** in Common Lisp. Inspired by the register machine evaluator from SICP, ECE uses an explicit continuation stack rather than relying on the host language's call stack. Zero external dependencies.
+A Scheme-like language implemented in Common Lisp. Inspired by SICP Section 5.5, ECE compiles expressions to register machine instructions and executes them with an explicit stack — no reliance on the host language's call stack. Zero external dependencies.
 
 ## Key Features
 
