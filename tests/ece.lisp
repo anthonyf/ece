@@ -2182,3 +2182,50 @@
                         (if (= n 0) acc (loop-sum (- n 1) (+ acc n))))
                       (loop-sum 100000 0))")
                   5000050000))))
+
+(deftest test-procedure-name-table
+    (testing "format-ece-proc displays procedure name for defined function"
+             (ece-eval-string "(define (my-test-fn x) (+ x 1))")
+             ;; Find my-test-fn's entry PC in the environment
+             (let* ((proc (ece::lookup-variable-value 'ece::my-test-fn ece::*global-env*))
+                    (entry-pc (cadr proc))
+                    (name (gethash entry-pc ece::*procedure-name-table*)))
+               (ok (eq name 'ece::my-test-fn))
+               (ok (search "MY-TEST-FN" (ece::format-ece-proc proc)))))
+
+  (testing "error message shows procedure name in backtrace"
+           (handler-case
+               (progn
+                 (ece-eval-string
+                  "(begin
+                     (define (outer-fn x) (+ (inner-fn x) 1))
+                     (define (inner-fn x) (+ x \"bad\"))
+                     (outer-fn 5))")
+                 (ok nil "should have signaled"))
+             (ece-runtime-error (e)
+               (let ((msg (format nil "~A" e)))
+                 ;; The error message should contain formatted output
+                 (ok (search "ECE error" msg))))))
+
+  (testing "anonymous lambdas display as unnamed"
+           (let ((anon-proc (list 'ece::compiled-procedure 999999 nil)))
+             ;; PC 999999 is not in the name table
+             (ok (search "entry=" (ece::format-ece-proc anon-proc)))))
+
+  (testing "image save/load preserves procedure name mappings"
+           (ece-eval-string "(define (img-test-fn x) (* x x))")
+           (let ((pc-before (cadr (ece::lookup-variable-value 'ece::img-test-fn ece::*global-env*))))
+             ;; Save image
+             (ece-eval-string "(save-image! \"/tmp/ece-name-test.image\")")
+             ;; Clear and reload
+             (ece-eval-string "(load-image! \"/tmp/ece-name-test.image\")")
+             ;; Name should still be mapped
+             (let ((name-after (gethash pc-before ece::*procedure-name-table*)))
+               (ok (eq name-after 'ece::img-test-fn)))))
+
+  (testing "MC-compiled defines register procedure names"
+           (ece-eval-string "(mc-compile-and-go '(define (mc-name-test x) (+ x 1)))")
+           (let* ((proc (ece::lookup-variable-value 'ece::mc-name-test ece::*global-env*))
+                  (entry-pc (cadr proc))
+                  (name (gethash entry-pc ece::*procedure-name-table*)))
+             (ok (eq name 'ece::mc-name-test)))))

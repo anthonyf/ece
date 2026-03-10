@@ -249,20 +249,42 @@
                                    `((perform (op set-variable-value!) (const ,variable) (reg val) (reg env))
                                      (assign ,target (reg val))))))))
 
+(defun find-entry-label (instruction-list)
+  "Find the entry label from a compiled lambda's instruction list.
+Scans for (assign ... (op make-compiled-procedure) (label X) ...) and returns X."
+  (dolist (instr instruction-list)
+    (when (and (consp instr)
+               (eq (car instr) 'assign)
+               (let ((source (caddr instr)))
+                 (and (consp source) (eq (car source) 'op)
+                      (eq (cadr source) 'make-compiled-procedure))))
+      (let ((label-arg (cadddr instr)))
+        (when (and (consp label-arg) (eq (car label-arg) 'label))
+          (return (cadr label-arg)))))))
+
 (defun compile-define (expr target linkage)
   (let* ((variable (if (listp (cadr expr)) (caadr expr) (cadr expr)))
          (value-expr (if (listp (cadr expr))
                          ;; (define (f x) body) → (lambda (x) body)
                          `(lambda ,(cdadr expr) ,@(cddr expr))
                          (caddr expr)))
-         (value-code (ece-compile value-expr 'val 'next)))
-    (end-with-linkage linkage
-                      (preserving '(env)
+         (value-code (ece-compile value-expr 'val 'next))
+         (define-code (preserving '(env)
                                   value-code
                                   (make-instruction-sequence
                                    '(env val) (list target)
                                    `((perform (op define-variable!) (const ,variable) (reg val) (reg env))
-                                     (assign ,target (reg val))))))))
+                                     (assign ,target (reg val))))))
+         (entry-label (when (and (consp value-expr) (eq (car value-expr) 'lambda))
+                        (find-entry-label (instructions value-code)))))
+    (end-with-linkage linkage
+                      (if entry-label
+                          (append-2-sequences
+                           define-code
+                           (make-instruction-sequence
+                            '() '()
+                            `((procedure-name ,entry-label ,variable))))
+                          define-code))))
 
 (defun compile-if (expr target linkage)
   (let ((true-branch (make-label 'true-branch))

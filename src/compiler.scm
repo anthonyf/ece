@@ -359,20 +359,46 @@
                                                (list 'const variable) '(reg val) '(reg env))
                                          (list 'assign target '(reg val))))))))
 
+(define (mc-find-entry-label instruction-list)
+  "Find the entry label from a compiled lambda's instruction list."
+  (if (null? instruction-list)
+      ()
+      (let ((instr (car instruction-list)))
+        (if (and (pair? instr)
+                 (eq? (car instr) 'assign)
+                 (pair? (caddr instr))
+                 (eq? (car (caddr instr)) 'op)
+                 (eq? (cadr (caddr instr)) 'make-compiled-procedure))
+            (let ((label-arg (car (cdr (cddr instr)))))
+              (if (and (pair? label-arg) (eq? (car label-arg) 'label))
+                  (cadr label-arg)
+                  (mc-find-entry-label (cdr instruction-list))))
+            (mc-find-entry-label (cdr instruction-list))))))
+
 (define (mc-compile-define expr target linkage)
   (let ((variable (if (pair? (cadr expr)) (car (cadr expr)) (cadr expr)))
         (value-expr (if (pair? (cadr expr))
                         (cons 'lambda (cons (cdr (cadr expr)) (cddr expr)))
                         (caddr expr))))
     (let ((value-code (mc-compile value-expr 'val 'next)))
-      (end-with-linkage linkage
-                        (preserving '(env)
-                                    value-code
-                                    (make-instruction-sequence
-                                     '(env val) (list target)
-                                     (list (list 'perform '(op define-variable!)
-                                                 (list 'const variable) '(reg val) '(reg env))
-                                           (list 'assign target '(reg val)))))))))
+      (let ((define-code (preserving '(env)
+                                     value-code
+                                     (make-instruction-sequence
+                                      '(env val) (list target)
+                                      (list (list 'perform '(op define-variable!)
+                                                  (list 'const variable) '(reg val) '(reg env))
+                                            (list 'assign target '(reg val))))))
+            (entry-label (if (and (pair? value-expr) (eq? (car value-expr) 'lambda))
+                             (mc-find-entry-label (mc-instructions value-code))
+                             ())))
+        (end-with-linkage linkage
+                          (if entry-label
+                              (append-instruction-sequences
+                               define-code
+                               (make-instruction-sequence
+                                '() '()
+                                (list (list 'procedure-name entry-label variable))))
+                              define-code))))))
 
 (define (mc-compile-callcc expr target linkage)
   (let ((receiver-code (mc-compile (cadr expr) 'proc 'next))

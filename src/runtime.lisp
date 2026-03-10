@@ -187,7 +187,10 @@
   "Format a procedure value for display in errors."
   (cond
     ((and (listp proc) (eq (car proc) 'compiled-procedure))
-     (format nil "<compiled-procedure entry=~A>" (cadr proc)))
+     (let ((name (gethash (cadr proc) *procedure-name-table*)))
+       (if name
+           (format nil "~A" name)
+           (format nil "<compiled-procedure entry=~A>" (cadr proc)))))
     ((and (listp proc) (eq (car proc) 'primitive))
      (format nil "<primitive ~A>" (cadr proc)))
     (t (format nil "~S" proc))))
@@ -940,6 +943,11 @@ Each index corresponds to the same index in *global-instruction-vector*.")
 (defvar *global-label-table*
   (make-hash-table :test 'eq))
 
+(defvar *procedure-name-table*
+  (make-hash-table)
+  "Maps entry PCs (integers) to procedure name symbols.
+Populated at assembly time from procedure-name pseudo-instructions.")
+
 (defun resolve-operations (instr)
   "Pre-resolve operation names to function pointers in an instruction."
   (case (car instr)
@@ -961,13 +969,20 @@ Each index corresponds to the same index in *global-instruction-vector*.")
   "Append instructions to global vector, register labels. Return start PC."
   (let ((start-pc (fill-pointer *global-instruction-vector*)))
     (dolist (item instruction-list)
-      (if (symbolp item)
-          (setf (gethash item *global-label-table*)
-                (fill-pointer *global-instruction-vector*))
-          (progn
-            (vector-push-extend item *global-instruction-source*)
-            (vector-push-extend (resolve-operations item)
-                                *global-instruction-vector*))))
+      (cond
+        ((symbolp item)
+         (setf (gethash item *global-label-table*)
+               (fill-pointer *global-instruction-vector*)))
+        ((and (consp item) (eq (car item) 'procedure-name))
+         ;; Pseudo-instruction: (procedure-name <label> <name>)
+         ;; Resolve label to PC and store in name table
+         (let ((pc (gethash (cadr item) *global-label-table*)))
+           (when pc
+             (setf (gethash pc *procedure-name-table*) (caddr item)))))
+        (t
+         (vector-push-extend item *global-instruction-source*)
+         (vector-push-extend (resolve-operations item)
+                             *global-instruction-vector*))))
     start-pc))
 
 ;;; Metacircular compiler support primitives
@@ -1022,7 +1037,7 @@ Uses interned symbols so parameters survive image save/load round-trips."
 (defun ece-save-image (filename)
   "Save the full ECE system state to FILENAME.
 Serializes: instruction source vector, label table, global environment,
-and compile-time macros."
+compile-time macros, and procedure name table."
   (let ((label-alist (let ((pairs nil))
                        (maphash (lambda (k v) (push (cons k v) pairs))
                                 *global-label-table*)
@@ -1030,7 +1045,11 @@ and compile-time macros."
         (macro-alist (let ((pairs nil))
                        (maphash (lambda (k v) (push (cons k v) pairs))
                                 *compile-time-macros*)
-                       pairs)))
+                       pairs))
+        (name-alist (let ((pairs nil))
+                      (maphash (lambda (k v) (push (cons k v) pairs))
+                               *procedure-name-table*)
+                      pairs)))
     (with-open-file (stream filename :direction :output
                             :if-exists :supersede
                             :if-does-not-exist :create)
@@ -1040,7 +1059,8 @@ and compile-time macros."
         (write (list (coerce *global-instruction-source* 'list)
                      label-alist
                      *global-env*
-                     macro-alist)
+                     macro-alist
+                     name-alist)
                :stream stream))))
   t)
 
@@ -1055,7 +1075,8 @@ Rebuilds the execution vector by resolving operations on each instruction."
     (let ((source-list (first data))
           (label-alist (second data))
           (env (third data))
-          (macro-alist (fourth data)))
+          (macro-alist (fourth data))
+          (name-alist (fifth data)))
       ;; Rebuild instruction source vector
       (setf *global-instruction-source*
             (make-array (length source-list) :adjustable t :fill-pointer (length source-list)))
@@ -1076,5 +1097,9 @@ Rebuilds the execution vector by resolving operations on each instruction."
       (setf *global-env* env)
       (setf *compile-time-macros* (make-hash-table :test 'eq))
       (dolist (pair macro-alist)
-        (setf (gethash (car pair) *compile-time-macros*) (cdr pair)))))
+        (setf (gethash (car pair) *compile-time-macros*) (cdr pair)))
+      ;; Restore procedure name table
+      (setf *procedure-name-table* (make-hash-table))
+      (dolist (pair name-alist)
+        (setf (gethash (car pair) *procedure-name-table*) (cdr pair)))))
   t)
