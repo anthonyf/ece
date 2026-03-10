@@ -2501,6 +2501,69 @@
                             (eof? (ece::ece-scheme-read p))))))
              (ok result))))
 
+(defun run-repl (input-string)
+  "Run the ECE REPL with INPUT-STRING as input, return captured output."
+  (let ((ece::*current-input-port* (ece::ece-open-input-string input-string)))
+    (with-output-to-string (*standard-output*)
+      (ece:repl))))
+
+(deftest test-repl
+    (testing "simple integer expression"
+             (let ((output (run-repl "42")))
+               (ok (search "42" output))))
+
+  (testing "arithmetic expression"
+           (let ((output (run-repl "(+ 1 2)")))
+             (ok (search "3" output))))
+
+  (testing "multiple expressions"
+           (let ((output (run-repl (format nil "1~%2~%3"))))
+             (ok (search "1" output))
+             (ok (search "2" output))
+             (ok (search "3" output))
+             ;; Should have multiple prompts
+             (ok (> (count-substring "ece> " output) 1))))
+
+  (testing "define variable"
+           (let ((output (run-repl (format nil "(define repl-test-x 10)~%repl-test-x"))))
+             (ok (search "10" output))))
+
+  (testing "define function (crash regression)"
+           (let ((output (run-repl (format nil "(define (repl-test-plus a b) (+ a b))~%(repl-test-plus 3 4)"))))
+             (ok (search "REPL-TEST-PLUS" output))
+             (ok (search "7" output))))
+
+  (testing "error recovery"
+           (let ((output (run-repl (format nil "repl-test-nonexistent-var-xyz~%(+ 100 200)"))))
+             (ok (search "Error:" output))
+             (ok (search "300" output))))
+
+  (testing "string output"
+           (let ((output (run-repl "\"hello\"")))
+             (ok (search "\"hello\"" output))))
+
+  (testing "boolean #t"
+           (let ((output (run-repl "#t")))
+             (ok (search "T" output))))
+
+  (testing "lambda printing"
+           (let ((output (run-repl "(lambda (x) x)")))
+             (ok (search "procedure" output))))
+
+  (testing "EOF goodbye"
+           (let ((output (run-repl "42")))
+             (ok (search "Bye!" output))))
+
+  (testing "prompt displayed"
+           (let ((output (run-repl "1")))
+             (ok (search "ece> " output)))))
+
+(defun count-substring (substr string)
+  "Count occurrences of SUBSTR in STRING."
+  (loop :with len = (length substr)
+        :for i :from 0 :to (- (length string) len)
+        :count (string= substr string :start2 i :end2 (+ i len))))
+
 (deftest test-ece-assembler
     (testing "assemble and execute"
              ;; Compile an expression with ECE compiler, assemble with ECE assembler, execute

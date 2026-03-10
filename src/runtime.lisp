@@ -490,13 +490,19 @@ a nearby proc gives a named frame; a lone continue gives an anonymous frame."
 
 (defun ece-display (obj)
   "Write obj without leading newline (princ)."
-  (princ obj)
+  (if (and (listp obj) (member (car obj) '(compiled-procedure primitive)))
+      (princ (format-ece-proc obj))
+      (let ((*print-circle* t))
+        (princ obj)))
   (finish-output)
   obj)
 
 (defun ece-write (obj)
   "Write obj in readable form (prin1). Strings are quoted, symbols uppercase."
-  (prin1 obj)
+  (if (and (listp obj) (member (car obj) '(compiled-procedure primitive)))
+      (princ (format-ece-proc obj))
+      (let ((*print-circle* t))
+        (prin1 obj)))
   (finish-output)
   obj)
 
@@ -619,7 +625,10 @@ Returns EOF sentinel at end of input."
 
 (defun ece-write-to-string (x)
   "Convert any value to its human-readable string representation."
-  (princ-to-string x))
+  (if (and (listp x) (member (car x) '(compiled-procedure primitive)))
+      (format-ece-proc x)
+      (let ((*print-circle* t))
+        (princ-to-string x))))
 
 ;; Hash table primitives
 (defun ece-hash-table (&rest args)
