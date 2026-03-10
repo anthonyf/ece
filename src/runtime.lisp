@@ -469,6 +469,12 @@ a nearby proc gives a named frame; a lone continue gives an anonymous frame."
   (finish-output)
   obj)
 
+(defun ece-write (obj)
+  "Write obj in readable form (prin1). Strings are quoted, symbols uppercase."
+  (prin1 obj)
+  (finish-output)
+  obj)
+
 (defun ece-newline ()
   "Write a newline."
   (terpri)
@@ -707,6 +713,7 @@ Supports integers and decimal floats. Returns NIL on failure."
 (defparameter *wrapper-primitives*
   '((read . ece-read)
     (print . print)
+    (write . ece-write)
     (display . ece-display)
     (newline . ece-newline)
     (eof? . ece-eof-p)

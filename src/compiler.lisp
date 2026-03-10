@@ -606,6 +606,6 @@ Scans for (assign ... (op make-compiled-procedure) (label X) ...) and returns X.
           (begin (newline) (display "Bye!") (newline))
           (begin
            (define result (try-eval input))
-           (if result (print result) (quote ()))
+           (if result (begin (write result) (newline)) (quote ()))
            (repl-loop))))
      (repl-loop))))
