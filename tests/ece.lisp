@@ -2229,3 +2229,65 @@
                   (entry-pc (cadr proc))
                   (name (gethash entry-pc ece::*procedure-name-table*)))
              (ok (eq name 'ece::mc-name-test)))))
+
+(deftest test-tracing
+    (testing "tracing a compiled procedure produces output and correct value"
+             (ece-eval-string "(define (trace-add x y) (+ x y))")
+             (ece-eval-string "(trace 'trace-add)")
+             (let ((result nil))
+               (let ((output (with-output-to-string (*standard-output*)
+                               (setf result (ece-eval-string "(trace-add 3 4)")))))
+                 (ok (eql 7 result))
+                 (ok (search "TRACE-ADD" output))
+                 (ok (search "3" output))
+                 (ok (search "7" output))))
+             (ece-eval-string "(untrace 'trace-add)"))
+
+  (testing "tracing a primitive produces output and correct value"
+           (ece-eval-string "(trace '+)")
+           (let ((result nil))
+             (let ((output (with-output-to-string (*standard-output*)
+                             (setf result (ece-eval-string "(+ 2 3)")))))
+               (ok (eql 5 result))
+               (ok (search "+" output))
+               (ok (search "5" output))))
+           (ece-eval-string "(untrace '+)"))
+
+  (testing "untrace restores original behavior"
+           (ece-eval-string "(define (trace-sq x) (* x x))")
+           (ece-eval-string "(trace 'trace-sq)")
+           ;; Call once with tracing
+           (with-output-to-string (*standard-output*)
+             (ece-eval-string "(trace-sq 5)"))
+           ;; Untrace
+           (ece-eval-string "(untrace 'trace-sq)")
+           ;; Call again — should produce no trace output
+           (let ((result nil))
+             (let ((output (with-output-to-string (*standard-output*)
+                             (setf result (ece-eval-string "(trace-sq 5)")))))
+               (ok (eql 25 result))
+               (ok (eql 0 (length output))))))
+
+  (testing "nested traced calls show increasing indentation"
+           (ece-eval-string "(define (trace-outer x) (trace-inner x))")
+           (ece-eval-string "(define (trace-inner x) (+ x 1))")
+           (ece-eval-string "(trace 'trace-outer)")
+           (ece-eval-string "(trace 'trace-inner)")
+           (let* ((output (with-output-to-string (*standard-output*)
+                            (ece-eval-string "(trace-outer 10)")))
+                  (lines (remove-if (lambda (s) (zerop (length s)))
+                                    (ece::ece-string-split output #\Newline))))
+             ;; Should have 4 lines: enter outer, enter inner, exit inner, exit outer
+             (ok (>= (length lines) 4))
+             ;; Inner call lines should have more leading spaces than outer
+             (let ((outer-spaces (- (length (first lines))
+                                    (length (string-left-trim " " (first lines)))))
+                   (inner-spaces (- (length (second lines))
+                                    (length (string-left-trim " " (second lines))))))
+               (ok (> inner-spaces outer-spaces))))
+           (ece-eval-string "(untrace 'trace-outer)")
+           (ece-eval-string "(untrace 'trace-inner)"))
+
+  (testing "untrace on non-traced procedure does not error"
+           (ece-eval-string "(define (not-traced-fn x) x)")
+           (ok (ece-eval-string "(untrace 'not-traced-fn)"))))

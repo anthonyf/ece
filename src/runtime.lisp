@@ -749,7 +749,9 @@ Supports integers and decimal floats. Returns NIL on failure."
     (string-contains? . ece-string-contains-p)
     (string-join . ece-string-join)
     (save-continuation! . ece-save-continuation!)
-    (load-continuation . ece-load-continuation)))
+    (load-continuation . ece-load-continuation)
+    (trace . ece-trace)
+    (untrace . ece-untrace)))
 
 (dolist (entry *wrapper-primitives*)
   (define-variable! (car entry) (list 'primitive (cdr entry)) *global-env*))
@@ -820,15 +822,18 @@ Supports integers and decimal floats. Returns NIL on failure."
 ;;; Instruction executor
 
 (defun execute-instructions (instruction-vector label-table initial-env
-                             &optional (start-pc 0))
-  "Execute assembled instructions from START-PC, return val register."
+                             &optional (start-pc 0)
+                             &key initial-proc initial-argl initial-continue)
+  "Execute assembled instructions from START-PC, return val register.
+Optional INITIAL-PROC, INITIAL-ARGL, and INITIAL-CONTINUE pre-load registers
+for re-entering the executor to call a compiled procedure."
   (let ((pc start-pc)
         (flag nil)
         (val nil)
         (env initial-env)
-        (proc nil)
-        (argl nil)
-        (continue nil)
+        (proc initial-proc)
+        (argl initial-argl)
+        (continue initial-continue)
         (stack '())
         (len (length instruction-vector)))
     (labels ((get-reg (name)
@@ -948,6 +953,13 @@ Each index corresponds to the same index in *global-instruction-vector*.")
   "Maps entry PCs (integers) to procedure name symbols.
 Populated at assembly time from procedure-name pseudo-instructions.")
 
+(defvar *traced-procedures*
+  (make-hash-table :test 'eq)
+  "Maps symbol names to their original procedure values when traced.")
+
+(defvar *trace-depth* 0
+  "Current nesting depth for trace output indentation.")
+
 (defun resolve-operations (instr)
   "Pre-resolve operation names to function pointers in an instruction."
   (case (car instr)
@@ -993,6 +1005,53 @@ Populated at assembly time from procedure-name pseudo-instructions.")
                         *global-label-table*
                         *global-env*
                         start-pc))
+
+(defun ece-trace (name)
+  "Enable tracing for procedure NAME in the global environment.
+Replaces the binding with a primitive wrapper that logs entry/exit."
+  (let ((original (lookup-variable-value name *global-env*)))
+    (when (gethash name *traced-procedures*)
+      ;; Already traced, just return
+      (return-from ece-trace name))
+    (setf (gethash name *traced-procedures*) original)
+    (let ((wrapper-sym (intern (format nil "TRACE-~A" name) :ece)))
+      (setf (symbol-function wrapper-sym)
+            (lambda (&rest args)
+              (let ((indent (make-string (* 2 *trace-depth*) :initial-element #\Space)))
+                (format t "~A(~A~{ ~S~})~%" indent name args)
+                (incf *trace-depth*)
+                (let ((result
+                       (if (compiled-procedure-p original)
+                           (execute-compiled-call original args)
+                           (apply-primitive-procedure original args))))
+                  (decf *trace-depth*)
+                  (format t "~A=> ~S~%" indent result)
+                  result))))
+      (set-variable-value! name (list 'primitive wrapper-sym) *global-env*)))
+  name)
+
+(defun ece-untrace (name)
+  "Disable tracing for procedure NAME, restoring the original binding."
+  (let ((original (gethash name *traced-procedures*)))
+    (when original
+      (set-variable-value! name original *global-env*)
+      (remhash name *traced-procedures*)))
+  name)
+
+(defun execute-compiled-call (compiled-proc args)
+  "Call a compiled procedure with ARGS by re-entering the executor.
+Sets up proc and argl registers so the compiled code's entry point can
+extract its environment and extend it with arguments.
+Sets continue to past-end-of-vector so (goto (reg continue)) exits cleanly."
+  (let ((entry (compiled-procedure-entry compiled-proc))
+        (return-pc (length *global-instruction-vector*)))
+    (execute-instructions *global-instruction-vector*
+                          *global-label-table*
+                          *global-env*
+                          entry
+                          :initial-proc compiled-proc
+                          :initial-argl args
+                          :initial-continue return-pc)))
 
 (defun ece-get-macro (name)
   "Look up a compile-time macro by NAME. Returns the macro def or nil."
