@@ -403,8 +403,8 @@
     (testing "print is bound"
              (ok (eq (car (evaluate 'print)) 'primitive)))
 
-  (testing "read is bound"
-           (ok (eq (car (evaluate 'read)) 'primitive)))
+  (testing "read is bound (ECE reader)"
+           (ok (eq (car (evaluate 'read)) 'ece::compiled-procedure)))
 
   (testing "display is bound"
            (ok (eq (car (evaluate 'display)) 'primitive)))
@@ -2376,3 +2376,147 @@
                (ok (char= (ece::ece-read-char p) #\y))
                (ece::ece-close-input-port p))
              (delete-file test-file))))
+
+;;; Helper: read one expression via ECE reader from a string
+(defun ece-read-string (s)
+  "Read one s-expression from string S using the ECE reader."
+  (evaluate `(ece::ece-scheme-read (open-input-string ,s))))
+
+(deftest test-ece-reader
+    (testing "integers"
+             (ok (= (ece-read-string "42") 42))
+             (ok (= (ece-read-string "-7") -7))
+             (ok (= (ece-read-string "+3") 3))
+             (ok (= (ece-read-string "0") 0)))
+
+  (testing "floats"
+           (ok (= (ece-read-string "3.14") 3.14))
+           (ok (= (ece-read-string "-0.5") -0.5)))
+
+  (testing "symbols"
+           ;; Reader interns into ECE package; compare by name
+           (ok (string= (symbol-name (ece-read-string "hello")) "HELLO"))
+           (ok (string= (symbol-name (ece-read-string "null?")) "NULL?"))
+           (ok (string= (symbol-name (ece-read-string "set!")) "SET!"))
+           (ok (string= (symbol-name (ece-read-string "list->vector")) "LIST->VECTOR"))
+           ;; + and - are CL symbols, should still be eq
+           (ok (eq (ece-read-string "+") '+))
+           (ok (eq (ece-read-string "-") '-))
+           ;; define is exported from ECE via :use
+           (ok (eq (ece-read-string "define") 'define)))
+
+  (testing "strings with escapes"
+           (ok (equal (ece-read-string "\"hello\"") "hello"))
+           (ok (equal (ece-read-string "\"a\\nb\"")
+                      (coerce (list #\a #\Newline #\b) 'string)))
+           (ok (equal (ece-read-string "\"a\\tb\"")
+                      (coerce (list #\a #\Tab #\b) 'string)))
+           (ok (equal (ece-read-string "\"say \\\"hi\\\"\"") "say \"hi\"")))
+
+  (testing "string interpolation"
+           (ok (equal (ece-read-string "\"plain\"") "plain"))
+           ;; Interpolation produces (FMT ...) with ECE-package symbols
+           (let ((result (ece-read-string "\"hello $name\"")))
+             (ok (eq (car result) 'fmt))
+             (ok (equal (cadr result) "hello "))
+             (ok (string= (symbol-name (caddr result)) "NAME")))
+           (let ((result (ece-read-string "\"val: $(+ 1 2)\"")))
+             (ok (eq (car result) 'fmt))
+             (ok (equal (cadr result) "val: "))
+             (ok (= (length (caddr result)) 3)))  ; (+ 1 2)
+           (ok (equal (ece-read-string "\"costs $$5\"") "costs $5")))
+
+  (testing "lists"
+           ;; Use evaluate to test lists round-trip through compilation
+           (ok (equal (evaluate '(mc-compile-and-go
+                                  (list 'quote (ece::ece-scheme-read
+                                                (open-input-string "(1 2 3)")))))
+                      '(1 2 3)))
+           (ok (equal (ece-read-string "()") '()))
+           ;; Verify list structure
+           (let ((result (ece-read-string "(a b c)")))
+             (ok (= (length result) 3))
+             (ok (string= (symbol-name (car result)) "A"))))
+
+  (testing "dotted pairs"
+           (ok (equal (ece-read-string "(1 . 2)") '(1 . 2)))
+           (let ((result (ece-read-string "(a . b)")))
+             (ok (string= (symbol-name (car result)) "A"))
+             (ok (string= (symbol-name (cdr result)) "B"))))
+
+  (testing "quote"
+           (let ((result (ece-read-string "'foo")))
+             (ok (eq (car result) 'quote))
+             (ok (string= (symbol-name (cadr result)) "FOO")))
+           (let ((result (ece-read-string "'(1 2 3)")))
+             (ok (eq (car result) 'quote))
+             (ok (equal (cadr result) '(1 2 3)))))
+
+  (testing "quasiquote, unquote, unquote-splicing"
+           (let ((result (ece-read-string "`(a ,b)")))
+             (ok (eq (car result) 'quasiquote))
+             (let ((inner (cadr result)))
+               (ok (string= (symbol-name (car inner)) "A"))
+               (ok (eq (car (cadr inner)) 'unquote))))
+           (let ((result (ece-read-string "`(a ,@b)")))
+             (ok (eq (car result) 'quasiquote))
+             (ok (eq (car (cadr (cadr result))) 'unquote-splicing))))
+
+  (testing "character literals"
+           (ok (char= (ece-read-string "#\\a") #\a))
+           (ok (char= (ece-read-string "#\\space") #\Space))
+           (ok (char= (ece-read-string "#\\newline") #\Newline))
+           (ok (char= (ece-read-string "#\\tab") #\Tab)))
+
+  (testing "vectors"
+           (let ((v (ece-read-string "#(1 2 3)")))
+             (ok (vectorp v))
+             (ok (= (length v) 3))
+             (ok (= (aref v 0) 1))
+             (ok (= (aref v 2) 3))))
+
+  (testing "hash table literals"
+           (let ((ht (ece-read-string "{a 1 b 2}")))
+             (ok (consp ht))
+             (ok (eq (car ht) :hash-table))
+             ;; Keys are in ECE package
+             (ok (string= (symbol-name (caar (cdr ht))) "A"))
+             (ok (= (cdar (cdr ht)) 1))))
+
+  (testing "booleans"
+           (ok (eq (ece-read-string "#t") t))
+           (ok (eq (ece-read-string "#f") nil)))
+
+  (testing "comments"
+           (ok (= (ece-read-string "; comment
+42") 42)))
+
+  (testing "EOF"
+           (ok (evaluate `(eof? (ece::ece-scheme-read (open-input-string "")))))
+           ;; Read past last expression → EOF
+           (let ((result (evaluate
+                          '(begin
+                            (define p (open-input-string "42"))
+                            (ece::ece-scheme-read p)
+                            (eof? (ece::ece-scheme-read p))))))
+             (ok result))))
+
+(deftest test-ece-assembler
+    (testing "assemble and execute"
+             ;; Compile an expression with ECE compiler, assemble with ECE assembler, execute
+             (ok (= (evaluate '(mc-compile-and-go '(+ 1 2))) 3))
+             (ok (= (evaluate '(mc-compile-and-go '(begin (define asm-test-x 99) asm-test-x))) 99)))
+
+  (testing "round-trip: ECE reader + ECE compiler + ECE assembler"
+           ;; Read with ECE reader, compile with ECE compiler, assemble with ECE assembler
+           (ok (= (evaluate '(mc-compile-and-go
+                              (ece::ece-scheme-read (open-input-string "(+ 10 20)")))) 30))
+           ;; Full pipeline: load a file with ECE
+           (let ((tmpfile (uiop:with-temporary-file (:stream s :pathname p :keep t :type "scm")
+                            (write-string "(define round-trip-z 777)" s)
+                            p)))
+             (unwind-protect
+                  (progn
+                    (evaluate `(load ,(namestring tmpfile)))
+                    (ok (= (evaluate (intern "ROUND-TRIP-Z" :ece)) 777)))
+               (delete-file tmpfile)))))

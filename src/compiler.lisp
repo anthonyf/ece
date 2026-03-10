@@ -595,6 +595,14 @@ Scans for (assign ... (op make-compiled-procedure) (label X) ...) and returns X.
 ;; Load the metacircular compiler (ECE compiler written in ECE)
 (compile-file-ece (asdf:system-relative-pathname :ece "src/compiler.scm"))
 
+;; Load the ECE reader (replaces CL reader for user-facing read)
+(compile-file-ece (asdf:system-relative-pathname :ece "src/reader.scm"))
+
+;; Load the ECE assembler (replaces CL assemble-into-global)
+;; Assembler.scm performs the switchover: rebinds assemble-into-global to ECE version.
+;; Reader.scm performs the switchover: rebinds read to use ece-scheme-read.
+(compile-file-ece (asdf:system-relative-pathname :ece "src/assembler.scm"))
+
 (defun repl ()
   "Bootstrap and run the ECE REPL as a tail-recursive ECE function."
   (evaluate

@@ -149,6 +149,12 @@
            #:char-numeric?
            #:with-input-from-file
            #:with-output-to-file
+           #:%intern-ece
+           #:%instruction-vector-length
+           #:%instruction-vector-push!
+           #:%label-table-set!
+           #:%label-table-ref
+           #:%procedure-name-set!
            #:ece-runtime-error
            #:ece-original-error
            #:ece-error-procedure
@@ -562,6 +568,10 @@ Supports integers and decimal floats. Returns NIL on failure."
   "Intern a symbol from string s."
   (intern (string-upcase s)))
 
+(defun ece-%intern-ece (s)
+  "Intern an already-upcased string S as a symbol in the ECE package."
+  (intern s :ece))
+
 (defun ece-symbol->string (s)
   "Return the name of symbol s as a lowercase string."
   (string-downcase (symbol-name s)))
@@ -902,7 +912,14 @@ Returns EOF sentinel at end of input."
     (char-alphabetic? . ece-char-alphabetic-p)
     (char-numeric? . ece-char-numeric-p)
     (with-input-from-file . ece-with-input-from-file)
-    (with-output-to-file . ece-with-output-to-file)))
+    (with-output-to-file . ece-with-output-to-file)
+    (string . string)
+    (%intern-ece . ece-%intern-ece)
+    (%instruction-vector-length . ece-%instruction-vector-length)
+    (%instruction-vector-push! . ece-%instruction-vector-push!)
+    (%label-table-set! . ece-%label-table-set!)
+    (%label-table-ref . ece-%label-table-ref)
+    (%procedure-name-set! . ece-%procedure-name-set!)))
 
 (dolist (entry *wrapper-primitives*)
   (define-variable! (car entry) (list 'primitive (cdr entry)) *global-env*))
@@ -1147,6 +1164,34 @@ Populated at assembly time from procedure-name pseudo-instructions.")
          (vector-push-extend (resolve-operations item)
                              *global-instruction-vector*))))
     start-pc))
+
+;;; Assembler access primitives for ECE assembler
+;;; These thin wrappers let the ECE assembler manipulate the global
+;;; instruction vector, label table, and procedure name table.
+
+(defun ece-%instruction-vector-length ()
+  "Return the current fill-pointer of the global instruction vector."
+  (fill-pointer *global-instruction-vector*))
+
+(defun ece-%instruction-vector-push! (source-instr)
+  "Append SOURCE-INSTR to the source vector and its resolved form to the execution vector."
+  (vector-push-extend source-instr *global-instruction-source*)
+  (vector-push-extend (resolve-operations source-instr) *global-instruction-vector*)
+  nil)
+
+(defun ece-%label-table-set! (label pc)
+  "Register LABEL at PC in the global label table."
+  (setf (gethash label *global-label-table*) pc)
+  nil)
+
+(defun ece-%procedure-name-set! (pc name)
+  "Register procedure NAME at entry PC in the procedure name table."
+  (setf (gethash pc *procedure-name-table*) name)
+  nil)
+
+(defun ece-%label-table-ref (label)
+  "Look up LABEL in the global label table. Returns the PC or ()."
+  (gethash label *global-label-table*))
 
 ;;; Metacircular compiler support primitives
 
