@@ -130,6 +130,25 @@
            #:mc-compile-and-go
            #:make-parameter
            #:parameterize
+           #:input-port?
+           #:output-port?
+           #:port?
+           #:current-input-port
+           #:current-output-port
+           #:open-input-file
+           #:open-output-file
+           #:close-input-port
+           #:close-output-port
+           #:open-input-string
+           #:read-char
+           #:peek-char
+           #:write-char
+           #:char-ready?
+           #:char-whitespace?
+           #:char-alphabetic?
+           #:char-numeric?
+           #:with-input-from-file
+           #:with-output-to-file
            #:ece-runtime-error
            #:ece-original-error
            #:ece-error-procedure
@@ -580,9 +599,13 @@ Supports integers and decimal floats. Returns NIL on failure."
   "Convert list to vector."
   (coerce lst 'vector))
 
-(defun ece-read-line ()
-  "Read a line of text from standard input and return it as a string."
-  (read-line))
+(defun ece-read-line (&optional port)
+  "Read a line of text from PORT (default current-input-port).
+Returns EOF sentinel at end of input."
+  (let ((stream (if port (ece-port-stream port) (ece-port-stream *current-input-port*))))
+    (multiple-value-bind (line missing-newline-p)
+        (read-line stream nil nil)
+      (or line *eof-sentinel*))))
 
 (defun ece-write-to-string (x)
   "Convert any value to its human-readable string representation."
@@ -702,6 +725,108 @@ Supports integers and decimal floats. Returns NIL on failure."
           (*package* (find-package :ece)))
       (read stream))))
 
+;;; Ports (R7RS-style I/O abstraction)
+
+(defun ece-make-input-port (stream)
+  (list 'input-port stream))
+
+(defun ece-make-output-port (stream)
+  (list 'output-port stream))
+
+(defun ece-input-port-p (x)
+  (and (consp x) (eq (car x) 'input-port)))
+
+(defun ece-output-port-p (x)
+  (and (consp x) (eq (car x) 'output-port)))
+
+(defun ece-port-p (x)
+  (or (ece-input-port-p x) (ece-output-port-p x)))
+
+(defun ece-port-stream (port)
+  (cadr port))
+
+(defvar *current-input-port*
+  (ece-make-input-port *standard-input*))
+
+(defvar *current-output-port*
+  (ece-make-output-port *standard-output*))
+
+(defun ece-current-input-port ()
+  *current-input-port*)
+
+(defun ece-current-output-port ()
+  *current-output-port*)
+
+;;; File and string port constructors
+
+(defun ece-open-input-file (filename)
+  (ece-make-input-port (open filename :direction :input)))
+
+(defun ece-open-output-file (filename)
+  (ece-make-output-port (open filename :direction :output
+                              :if-exists :supersede
+                              :if-does-not-exist :create)))
+
+(defun ece-close-input-port (port)
+  (close (ece-port-stream port))
+  nil)
+
+(defun ece-close-output-port (port)
+  (close (ece-port-stream port))
+  nil)
+
+(defun ece-open-input-string (str)
+  (ece-make-input-port (make-string-input-stream str)))
+
+;;; Character I/O primitives
+
+(defun ece-read-char (&optional port)
+  (let* ((p (or port *current-input-port*))
+         (ch (read-char (ece-port-stream p) nil nil)))
+    (or ch *eof-sentinel*)))
+
+(defun ece-peek-char (&optional port)
+  (let* ((p (or port *current-input-port*))
+         (ch (peek-char nil (ece-port-stream p) nil nil)))
+    (or ch *eof-sentinel*)))
+
+(defun ece-write-char (ch &optional port)
+  (let ((p (or port *current-output-port*)))
+    (write-char ch (ece-port-stream p))
+    (finish-output (ece-port-stream p))
+    ch))
+
+(defun ece-char-ready-p (&optional port)
+  (let ((p (or port *current-input-port*)))
+    (if (listen (ece-port-stream p)) t nil)))
+
+;;; Character predicates
+
+(defun ece-char-whitespace-p (ch)
+  (if (member ch '(#\Space #\Tab #\Newline #\Return #\Page)) t nil))
+
+(defun ece-char-alphabetic-p (ch)
+  (if (alpha-char-p ch) t nil))
+
+(defun ece-char-numeric-p (ch)
+  (if (digit-char-p ch) t nil))
+
+;;; Scoped port redirection
+
+(defun ece-with-input-from-file (filename thunk)
+  (let ((port (ece-open-input-file filename)))
+    (unwind-protect
+         (let ((*current-input-port* port))
+           (apply-primitive-procedure thunk nil))
+      (ece-close-input-port port))))
+
+(defun ece-with-output-to-file (filename thunk)
+  (let ((port (ece-open-output-file filename)))
+    (unwind-protect
+         (let ((*current-output-port* port))
+           (apply-primitive-procedure thunk nil))
+      (ece-close-output-port port))))
+
 ;;; Compile-time macro table (declared here so image save/load can access it;
 ;;; used by compiler.lisp for macro expansion)
 (defvar *compile-time-macros* (make-hash-table :test 'eq)
@@ -758,7 +883,26 @@ Supports integers and decimal floats. Returns NIL on failure."
     (save-continuation! . ece-save-continuation!)
     (load-continuation . ece-load-continuation)
     (trace . ece-trace)
-    (untrace . ece-untrace)))
+    (untrace . ece-untrace)
+    (input-port? . ece-input-port-p)
+    (output-port? . ece-output-port-p)
+    (port? . ece-port-p)
+    (current-input-port . ece-current-input-port)
+    (current-output-port . ece-current-output-port)
+    (open-input-file . ece-open-input-file)
+    (open-output-file . ece-open-output-file)
+    (close-input-port . ece-close-input-port)
+    (close-output-port . ece-close-output-port)
+    (open-input-string . ece-open-input-string)
+    (read-char . ece-read-char)
+    (peek-char . ece-peek-char)
+    (write-char . ece-write-char)
+    (char-ready? . ece-char-ready-p)
+    (char-whitespace? . ece-char-whitespace-p)
+    (char-alphabetic? . ece-char-alphabetic-p)
+    (char-numeric? . ece-char-numeric-p)
+    (with-input-from-file . ece-with-input-from-file)
+    (with-output-to-file . ece-with-output-to-file)))
 
 (dolist (entry *wrapper-primitives*)
   (define-variable! (car entry) (list 'primitive (cdr entry)) *global-env*))

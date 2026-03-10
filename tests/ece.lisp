@@ -2291,3 +2291,88 @@
   (testing "untrace on non-traced procedure does not error"
            (ece-eval-string "(define (not-traced-fn x) x)")
            (ok (ece-eval-string "(untrace 'not-traced-fn)"))))
+
+(deftest test-ports
+    (testing "port predicates"
+             (let ((ip (ece::ece-open-input-string "test")))
+               (ok (ece::ece-input-port-p ip))
+               (ok (not (ece::ece-output-port-p ip)))
+               (ok (ece::ece-port-p ip)))
+             (ok (not (ece::ece-port-p 42)))
+             (ok (not (ece::ece-port-p "hello")))
+             (ok (not (ece::ece-input-port-p nil))))
+
+  (testing "string port: open, read chars, EOF"
+           (let ((p (ece::ece-open-input-string "hi")))
+             (ok (char= (ece::ece-read-char p) #\h))
+             (ok (char= (ece::ece-read-char p) #\i))
+             (ok (ece::ece-eof-p (ece::ece-read-char p)))))
+
+  (testing "read-char and peek-char"
+           (let ((p (ece::ece-open-input-string "ab")))
+             ;; peek does not consume
+             (ok (char= (ece::ece-peek-char p) #\a))
+             (ok (char= (ece::ece-peek-char p) #\a))
+             ;; read consumes
+             (ok (char= (ece::ece-read-char p) #\a))
+             (ok (char= (ece::ece-read-char p) #\b))
+             ;; EOF
+             (ok (ece::ece-eof-p (ece::ece-peek-char p)))
+             (ok (ece::ece-eof-p (ece::ece-read-char p)))))
+
+  (testing "write-char"
+           (let* ((result nil)
+                  (output (with-output-to-string (*standard-output*)
+                            (let ((op (ece::ece-make-output-port *standard-output*)))
+                              (ece::ece-write-char #\x op)
+                              (ece::ece-write-char #\y op)))))
+             (ok (string= "xy" output))))
+
+  (testing "character predicates"
+           (ok (ece::ece-char-whitespace-p #\Space))
+           (ok (ece::ece-char-whitespace-p #\Newline))
+           (ok (ece::ece-char-whitespace-p #\Tab))
+           (ok (not (ece::ece-char-whitespace-p #\a)))
+           (ok (ece::ece-char-alphabetic-p #\a))
+           (ok (ece::ece-char-alphabetic-p #\Z))
+           (ok (not (ece::ece-char-alphabetic-p #\5)))
+           (ok (ece::ece-char-numeric-p #\0))
+           (ok (ece::ece-char-numeric-p #\9))
+           (ok (not (ece::ece-char-numeric-p #\a))))
+
+  (testing "read-line with port argument"
+           (let ((p (ece::ece-open-input-string (format nil "hello~%world"))))
+             (ok (string= "hello" (ece::ece-read-line p)))
+             (ok (string= "world" (ece::ece-read-line p)))
+             (ok (ece::ece-eof-p (ece::ece-read-line p)))))
+
+  (testing "current-input-port and current-output-port"
+           (ok (ece::ece-input-port-p (ece::ece-current-input-port)))
+           (ok (ece::ece-output-port-p (ece::ece-current-output-port))))
+
+  (testing "with-input-from-file reads from file"
+           (let ((test-file "/tmp/ece-port-test.txt"))
+             ;; Write a test file
+             (with-open-file (s test-file :direction :output
+                                :if-exists :supersede)
+               (write-string "abc" s))
+             ;; Read via with-input-from-file
+             (let ((ch (ece::ece-with-input-from-file
+                        test-file
+                        (list 'primitive 'ece::ece-read-char))))
+               (ok (char= ch #\a)))
+             (delete-file test-file)))
+
+  (testing "file ports: open, read, close"
+           (let ((test-file "/tmp/ece-port-test2.txt"))
+             ;; Write a test file
+             (with-open-file (s test-file :direction :output
+                                :if-exists :supersede)
+               (write-string "xyz" s))
+             ;; Open, read, close
+             (let ((p (ece::ece-open-input-file test-file)))
+               (ok (ece::ece-input-port-p p))
+               (ok (char= (ece::ece-read-char p) #\x))
+               (ok (char= (ece::ece-read-char p) #\y))
+               (ece::ece-close-input-port p))
+             (delete-file test-file))))
