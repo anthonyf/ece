@@ -565,6 +565,7 @@
 (define-variable! 'get-macro (list 'primitive 'ece-get-macro) *global-env*)
 (define-variable! 'set-macro! (list 'primitive 'ece-set-macro!) *global-env*)
 (define-variable! 'expand-macro (list 'primitive 'expand-macro-at-compile-time) *global-env*)
+(define-variable! 'make-parameter (list 'primitive 'ece-make-parameter) *global-env*)
 
 ;; Load the standard prelude (pure ECE stdlib definitions)
 (compile-file-ece (asdf:system-relative-pathname :ece "src/prelude.scm"))

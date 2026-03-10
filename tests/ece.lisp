@@ -2020,3 +2020,96 @@
                            (define mc-qq-val 42)
                            (quasiquote (a (unquote mc-qq-val) c))))")
                       (list (intern "A" :ece) 42 (intern "C" :ece))))))
+
+;;;; ========================================================================
+;;;; PARAMETER OBJECT TESTS
+;;;; ========================================================================
+
+(deftest test-make-parameter
+    (testing "create and read parameter"
+             (ok (= (ece-eval-string
+                     "(begin (define p (make-parameter 42)) (p))")
+                    42)))
+  (testing "set parameter value"
+           (ok (= (ece-eval-string
+                   "(begin (define p (make-parameter 42)) (p 99) (p))")
+                  99)))
+  (testing "set returns old value"
+           (ok (= (ece-eval-string
+                   "(begin (define p (make-parameter 42)) (p 99))")
+                  42)))
+  (testing "parameter with converter on init"
+           (ok (= (ece-eval-string
+                   "(begin (define p (make-parameter \"hello\" string-length)) (p))")
+                  5)))
+  (testing "converter applied on set"
+           (ok (= (ece-eval-string
+                   "(begin
+                     (define p (make-parameter \"hello\" string-length))
+                     (p \"world\")
+                     (p))")
+                  5))))
+
+(deftest test-parameterize
+    (testing "basic dynamic rebinding"
+             (ok (= (ece-eval-string
+                     "(begin
+                       (define p (make-parameter 42))
+                       (parameterize ((p 99)) (p)))")
+                    99)))
+  (testing "restore after exit"
+           (ok (= (ece-eval-string
+                   "(begin
+                     (define p (make-parameter 42))
+                     (parameterize ((p 99)) (p))
+                     (p))")
+                  42)))
+  (testing "dynamic scope propagates to called functions"
+           (ok (= (ece-eval-string
+                   "(begin
+                     (define p (make-parameter 42))
+                     (define (read-p) (p))
+                     (parameterize ((p 99)) (read-p)))")
+                  99)))
+  (testing "multiple bindings"
+           (ok (= (ece-eval-string
+                   "(begin
+                     (define p1 (make-parameter 0))
+                     (define p2 (make-parameter 0))
+                     (parameterize ((p1 10) (p2 20)) (+ (p1) (p2))))")
+                  30)))
+  (testing "nested parameterize"
+           (ok (= (ece-eval-string
+                   "(begin
+                     (define p (make-parameter 0))
+                     (parameterize ((p 1))
+                       (parameterize ((p 2)) (p))))")
+                  2)))
+  (testing "nested parameterize restores correctly"
+           (ok (= (ece-eval-string
+                   "(begin
+                     (define p (make-parameter 0))
+                     (parameterize ((p 1))
+                       (parameterize ((p 2)) (p))
+                       (p)))")
+                  1)))
+  (testing "converter applied during parameterize"
+           (ok (= (ece-eval-string
+                   "(begin
+                     (define p (make-parameter \"hello\" string-length))
+                     (parameterize ((p \"goodbye\")) (p)))")
+                  7))))
+
+(deftest test-mc-macro-shadowing
+    (testing "MC compiler: lambda parameter shadows macro"
+             (ok (= (ece-eval-string
+                     "(mc-compile-and-go
+                       '((lambda (when) (+ when 1)) 41))")
+                    42)))
+  (testing "MC compiler: define in begin shadows macro"
+           (ok (= (ece-eval-string
+                   "(mc-compile-and-go
+                     '(begin
+                       (define (when x) (+ x 10))
+                       (when 5)))")
+                  15))))

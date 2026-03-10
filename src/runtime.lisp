@@ -128,6 +128,8 @@
            #:expand-macro
            #:mc-compile
            #:mc-compile-and-go
+           #:make-parameter
+           #:parameterize
            #:repl))
 
 (in-package :ece)
@@ -871,6 +873,33 @@ Each index corresponds to the same index in *global-instruction-vector*.")
   "Set a compile-time macro NAME to DEF."
   (setf (gethash name *compile-time-macros*) def)
   def)
+
+;;; Parameter objects (R7RS / SRFI-39)
+
+(defvar *parameter-counter* 0)
+
+(defun ece-make-parameter (init &optional converter)
+  "Create a parameter object. Returns a (primitive <name>) whose function
+dispatches on arg count: 0 args = get, 1 arg = set (with converter),
+2 args = raw set (bypass converter, used by parameterize restore).
+Uses interned symbols so parameters survive image save/load round-trips."
+  (let* ((converted-init (if converter
+                             (apply-primitive-procedure
+                              converter (list init))
+                             init))
+         (cell (cons converted-init converter))
+         (name (intern (format nil "PARAM~D" (incf *parameter-counter*)) :ece)))
+    (setf (symbol-function name)
+          (lambda (&optional (new-val nil supplied-p) (raw nil))
+            (if supplied-p
+                (let ((old (car cell)))
+                  (setf (car cell)
+                        (if (and (cdr cell) (not raw))
+                            (apply-primitive-procedure (cdr cell) (list new-val))
+                            new-val))
+                  old)
+                (car cell))))
+    (list 'primitive name)))
 
 ;;;; ========================================================================
 ;;;; IMAGE SAVE/LOAD

@@ -193,8 +193,8 @@
   (let ((body (cdr expr)))
     (let ((defined-names (mc-extract-define-names body)))
       (if (not (null? defined-names))
-          (let ((*mc-compile-lexical-env*
-                 (append defined-names *mc-compile-lexical-env*)))
+          (parameterize ((*mc-compile-lexical-env*
+                          (append defined-names (*mc-compile-lexical-env*))))
             (mc-compile-sequence body target linkage))
           (mc-compile-sequence body target linkage)))))
 
@@ -213,8 +213,8 @@
         ((pair? params) (cons (car params) (mc-flatten-params (cdr params))))))
 
 (define (mc-compile-lambda-body params body proc-entry)
-  (let ((*mc-compile-lexical-env*
-         (append (mc-flatten-params params) *mc-compile-lexical-env*)))
+  (parameterize ((*mc-compile-lexical-env*
+                  (append (mc-flatten-params params) (*mc-compile-lexical-env*))))
     (append-instruction-sequences
      (make-instruction-sequence
       '(env proc argl) '(env)
@@ -449,7 +449,7 @@
 
 ;;; Main compile dispatch
 
-(define *mc-compile-lexical-env* '())
+(define *mc-compile-lexical-env* (make-parameter '()))
 
 (define (mc-compile expr target linkage)
   (cond
@@ -467,7 +467,7 @@
    ((mc-begin? expr) (mc-compile-begin expr target linkage))
    ((mc-application? expr)
     ;; Check for compile-time macro (skip if operator is lexically shadowed)
-    (let ((macro-def (if (member (car expr) *mc-compile-lexical-env*)
+    (let ((macro-def (if (member (car expr) (*mc-compile-lexical-env*))
                          ()
                          (get-macro (car expr)))))
       (if macro-def

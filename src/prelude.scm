@@ -285,6 +285,20 @@
         ((member (car s1) s2) (set-difference (cdr s1) s2))
         (else (cons (car s1) (set-difference (cdr s1) s2)))))
 
+;; parameterize: dynamic rebinding of parameter objects (R7RS / SRFI-39)
+(define-macro (parameterize bindings . body)
+  (if (null? bindings)
+      `(begin ,@body)
+      (let ((param (car (car bindings)))
+            (val (cadr (car bindings)))
+            (rest (cdr bindings)))
+        (let ((old (gensym)) (result (gensym)))
+          `(let ((,old (,param)))
+             (,param ,val)
+             (let ((,result (parameterize ,rest ,@body)))
+               (,param ,old t)
+               ,result))))))
+
 ;; assert macro: signal error if condition is falsy
 (define-macro (assert expr . rest)
   (if (null? rest)
