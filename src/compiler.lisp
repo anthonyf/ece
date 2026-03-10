@@ -13,6 +13,7 @@
       (vectorp expr)
       (null expr)
       (eq expr t)
+      (keywordp expr)
       (and (consp expr) (eq (car expr) :hash-table))))
 
 (defun variable-p (expr)
@@ -559,9 +560,17 @@
 (define-variable! 'load (list 'primitive 'ece-load) *global-env*)
 (define-variable! 'save-image! (list 'primitive 'ece-save-image) *global-env*)
 (define-variable! 'load-image! (list 'primitive 'ece-load-image) *global-env*)
+(define-variable! 'assemble-into-global (list 'primitive 'assemble-into-global) *global-env*)
+(define-variable! 'execute-from-pc (list 'primitive 'ece-execute-from-pc) *global-env*)
+(define-variable! 'get-macro (list 'primitive 'ece-get-macro) *global-env*)
+(define-variable! 'set-macro! (list 'primitive 'ece-set-macro!) *global-env*)
+(define-variable! 'expand-macro (list 'primitive 'expand-macro-at-compile-time) *global-env*)
 
 ;; Load the standard prelude (pure ECE stdlib definitions)
 (compile-file-ece (asdf:system-relative-pathname :ece "src/prelude.scm"))
+
+;; Load the metacircular compiler (ECE compiler written in ECE)
+(compile-file-ece (asdf:system-relative-pathname :ece "src/compiler.scm"))
 
 (defun repl ()
   "Bootstrap and run the ECE REPL as a tail-recursive ECE function."

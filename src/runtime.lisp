@@ -119,6 +119,15 @@
            #:fold-left
            #:fold-right
            #:collect
+           #:union
+           #:set-difference
+           #:execute-from-pc
+           #:assemble-into-global
+           #:get-macro
+           #:set-macro!
+           #:expand-macro
+           #:mc-compile
+           #:mc-compile-and-go
            #:repl))
 
 (in-package :ece)
@@ -844,6 +853,24 @@ Each index corresponds to the same index in *global-instruction-vector*.")
             (vector-push-extend (resolve-operations item)
                                 *global-instruction-vector*))))
     start-pc))
+
+;;; Metacircular compiler support primitives
+
+(defun ece-execute-from-pc (start-pc)
+  "Execute instructions starting from START-PC using current global state."
+  (execute-instructions *global-instruction-vector*
+                        *global-label-table*
+                        *global-env*
+                        start-pc))
+
+(defun ece-get-macro (name)
+  "Look up a compile-time macro by NAME. Returns the macro def or nil."
+  (gethash name *compile-time-macros*))
+
+(defun ece-set-macro! (name def)
+  "Set a compile-time macro NAME to DEF."
+  (setf (gethash name *compile-time-macros*) def)
+  def)
 
 ;;;; ========================================================================
 ;;;; IMAGE SAVE/LOAD

@@ -274,6 +274,17 @@
 (define-macro (collect binding . body)
   `(map (lambda (,(car binding)) ,@body) ,(cadr binding)))
 
+;; Set operations (eq?-based, for symbol lists)
+(define (union s1 s2)
+  (cond ((null? s1) s2)
+        ((member (car s1) s2) (union (cdr s1) s2))
+        (else (cons (car s1) (union (cdr s1) s2)))))
+
+(define (set-difference s1 s2)
+  (cond ((null? s1) (quote ()))
+        ((member (car s1) s2) (set-difference (cdr s1) s2))
+        (else (cons (car s1) (set-difference (cdr s1) s2)))))
+
 ;; assert macro: signal error if condition is falsy
 (define-macro (assert expr . rest)
   (if (null? rest)

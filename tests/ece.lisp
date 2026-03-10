@@ -1824,3 +1824,199 @@
                     (evaluate '(define-macro (img-double x) (list (quote +) x x)))
                     (ok (= (evaluate '(img-double 21)) 42)))
                (when (probe-file tmpfile) (delete-file tmpfile))))))
+
+;;;; ========================================================================
+;;;; METACIRCULAR COMPILER FOUNDATION TESTS
+;;;; ========================================================================
+
+(deftest test-union
+    (testing "union of disjoint lists"
+             (ok (equal (evaluate '(union '(a b) '(c d))) '(a b c d))))
+  (testing "union with overlap"
+           (let ((result (evaluate '(union '(a b c) '(b c d)))))
+             (ok (= (length result) 4))
+             (ok (member 'a result))
+             (ok (member 'b result))
+             (ok (member 'c result))
+             (ok (member 'd result))))
+  (testing "union with empty list"
+           (ok (equal (evaluate '(union '() '(a b))) '(a b)))
+           (ok (equal (evaluate '(union '(a b) '())) '(a b)))))
+
+(deftest test-set-difference
+    (testing "basic difference"
+             (ok (equal (evaluate '(set-difference '(a b c d) '(b d))) '(a c))))
+  (testing "no overlap"
+           (ok (equal (evaluate '(set-difference '(a b) '(c d))) '(a b))))
+  (testing "complete overlap"
+           (ok (null (evaluate '(set-difference '(a b) '(a b))))))
+  (testing "empty first list"
+           (ok (null (evaluate '(set-difference '() '(a b)))))))
+
+(deftest test-assemble-and-execute
+    (testing "assemble-into-global returns a PC and execute-from-pc runs it"
+             (ok (= (ece-eval-string
+                     "(begin
+                       (define aig-test-pc
+                         (assemble-into-global
+                          (list (list 'assign 'val (list 'const 77)))))
+                       (execute-from-pc aig-test-pc))")
+                    77))))
+
+;;;; ========================================================================
+;;;; METACIRCULAR COMPILER TESTS
+;;;; ========================================================================
+
+;;; Instruction sequence infrastructure tests
+
+(deftest test-mc-instruction-sequences
+    (testing "make-instruction-sequence creates correct triple"
+             ;; Verify structure: list of 3 elements
+             (let ((result (ece-eval-string
+                            "(make-instruction-sequence '(env) '(val) '((assign val (const 1))))")))
+               (ok (= (length result) 3))
+               (ok (= (length (car result)) 1))    ; needs = (env)
+               (ok (= (length (cadr result)) 1)))) ; modifies = (val)
+  (testing "empty-instruction-sequence"
+           (ok (equal (ece-eval-string "(empty-instruction-sequence)")
+                      '(() () ()))))
+  (testing "registers-needed and registers-modified"
+           (ok (= (length (ece-eval-string
+                           "(registers-needed (make-instruction-sequence '(env val) '(proc) '()))"))
+                  2))
+           (ok (= (length (ece-eval-string
+                           "(registers-modified (make-instruction-sequence '(env val) '(proc) '()))"))
+                  1)))
+  (testing "registers-needed of symbol is empty"
+           (ok (null (ece-eval-string "(registers-needed 'some-label)"))))
+  (testing "append-2-sequences merges needs/modifies"
+           ;; seq1 needs (env), modifies (val); seq2 needs (val), modifies (proc)
+           ;; result needs: (env), modifies: (val proc), instructions: 2
+           (let ((result (ece-eval-string
+                          "(append-2-sequences
+                            (make-instruction-sequence '(env) '(val) '((i1)))
+                            (make-instruction-sequence '(val) '(proc) '((i2))))")))
+             (ok (= (length (car result)) 1))     ; needs = (env)
+             (ok (= (length (cadr result)) 2))    ; modifies = (val proc)
+             (ok (= (length (caddr result)) 2)))) ; 2 instructions
+  (testing "preserving inserts save/restore when needed"
+           ;; seq1 modifies env, seq2 needs env -> should add save/restore = 4 instructions
+           (let ((instrs (ece-eval-string
+                          "(caddr (preserving '(env)
+                            (make-instruction-sequence '() '(env) '((modify-env)))
+                            (make-instruction-sequence '(env) '() '((use-env)))))")))
+             (ok (= (length instrs) 4))))  ; save + modify + restore + use
+  (testing "preserving skips save/restore when not needed"
+           ;; seq1 modifies val, seq2 needs env (not val) -> no save/restore = 2 instructions
+           (let ((instrs (ece-eval-string
+                          "(caddr (preserving '(env)
+                            (make-instruction-sequence '() '(val) '((modify-val)))
+                            (make-instruction-sequence '(env) '() '((use-env)))))")))
+             (ok (= (length instrs) 2)))))
+
+;;; Label generation tests
+
+(deftest test-mc-labels
+    (testing "mc-make-label produces unique symbols"
+             (let ((l1 (ece-eval-string "(mc-make-label 'test)"))
+                   (l2 (ece-eval-string "(mc-make-label 'test)")))
+               (ok (symbolp l1))
+               (ok (symbolp l2))
+               (ok (not (eq l1 l2))))))
+
+;;; Core compile function tests
+
+(deftest test-mc-compile-core
+    (testing "compile self-evaluating integer"
+             (ok (= (ece-eval-string "(mc-compile-and-go 42)") 42)))
+  (testing "compile self-evaluating string"
+           (ok (equal (ece-eval-string "(mc-compile-and-go \"hello\")") "hello")))
+  (testing "compile variable reference"
+           (ece-eval-string "(define mc-test-var 99)")
+           (ok (= (ece-eval-string "(mc-compile-and-go 'mc-test-var)") 99)))
+  (testing "compile quoted expression"
+           (ok (equal (ece-eval-string "(mc-compile-and-go '(quote (a b c)))")
+                      (list (intern "A" :ece) (intern "B" :ece) (intern "C" :ece)))))
+  (testing "compile if true branch"
+           (ok (= (ece-eval-string "(mc-compile-and-go '(if t 1 2))") 1)))
+  (testing "compile if false branch"
+           (ok (= (ece-eval-string "(mc-compile-and-go '(if () 1 2))") 2)))
+  (testing "compile begin sequence"
+           (ok (= (ece-eval-string "(mc-compile-and-go '(begin 1 2 3))") 3))))
+
+;;; Metacircular compiler integration tests
+;;; All mc-compile-and-go tests in a single deftest to minimize overhead
+
+(deftest test-mc-compile-integration
+    ;; Lambda & application
+    (testing "compile and call lambda"
+             (ok (= (ece-eval-string "(mc-compile-and-go '((lambda (x) (+ x 1)) 5))") 6)))
+  (testing "compile lambda with multiple args"
+           (ok (= (ece-eval-string "(mc-compile-and-go '((lambda (x y) (+ x y)) 3 4))") 7)))
+  (testing "compile closure"
+           (ok (= (ece-eval-string
+                   "(mc-compile-and-go
+                     '(begin
+                       (define (mc-make-adder n) (lambda (x) (+ n x)))
+                       ((mc-make-adder 10) 5)))")
+                  15)))
+  (testing "compile primitive application"
+           (ok (= (ece-eval-string "(mc-compile-and-go '(+ (* 2 3) (* 4 5)))") 26)))
+  ;; Special forms
+  (testing "compile define and use"
+           (ok (= (ece-eval-string
+                   "(mc-compile-and-go '(begin (define mc-x-test 42) mc-x-test))")
+                  42)))
+  (testing "compile function shorthand define"
+           (ok (= (ece-eval-string
+                   "(mc-compile-and-go '(begin (define (mc-sq x) (* x x)) (mc-sq 7)))")
+                  49)))
+  (testing "compile set"
+           (ok (= (ece-eval-string
+                   "(mc-compile-and-go '(begin (define mc-y-test 1) (set mc-y-test 42) mc-y-test))")
+                  42)))
+  (testing "compile call/cc"
+           (ok (= (ece-eval-string "(mc-compile-and-go '(call/cc (lambda (k) (k 42))))") 42)))
+  (testing "compile apply form"
+           (ok (= (ece-eval-string "(mc-compile-and-go '(apply + (list 1 2 3)))") 6)))
+  ;; Macros
+  (testing "compile let macro"
+           (ok (= (ece-eval-string "(mc-compile-and-go '(let ((x 10) (y 20)) (+ x y)))") 30)))
+  (testing "compile cond macro"
+           (ok (= (ece-eval-string
+                   "(mc-compile-and-go '(cond ((= 1 2) 10) ((= 1 1) 20) (else 30)))")
+                  20)))
+  (testing "compile and/or macros"
+           (ok (= (ece-eval-string "(mc-compile-and-go '(and 1 2 3))") 3))
+           (ok (= (ece-eval-string "(mc-compile-and-go '(or () () 42))") 42)))
+  (testing "compile when/unless macros"
+           (ok (= (ece-eval-string "(mc-compile-and-go '(when t 42))") 42))
+           (ok (= (ece-eval-string "(mc-compile-and-go '(unless () 42))") 42)))
+  ;; Recursion
+  (testing "compile recursive function"
+           (ok (= (ece-eval-string
+                   "(mc-compile-and-go
+                     '(begin
+                       (define (mc-fact n) (if (= n 0) 1 (* n (mc-fact (- n 1)))))
+                       (mc-fact 10)))")
+                  3628800)))
+  (testing "compile tail-recursive function"
+           (ok (= (ece-eval-string
+                   "(mc-compile-and-go
+                     '(begin
+                       (define (mc-sum-iter n acc)
+                         (if (= n 0) acc (mc-sum-iter (- n 1) (+ acc n))))
+                       (mc-sum-iter 100 0)))")
+                  5050)))
+  (testing "compile higher-order functions"
+           (ok (equal (ece-eval-string
+                       "(mc-compile-and-go '(map (lambda (x) (* x x)) (list 1 2 3)))")
+                      '(1 4 9))))
+  ;; Quasiquote
+  (testing "compile quasiquote with unquote"
+           (ok (equal (ece-eval-string
+                       "(mc-compile-and-go
+                         '(begin
+                           (define mc-qq-val 42)
+                           (quasiquote (a (unquote mc-qq-val) c))))")
+                      (list (intern "A" :ece) 42 (intern "C" :ece))))))
