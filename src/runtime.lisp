@@ -130,6 +130,13 @@
            #:mc-compile-and-go
            #:make-parameter
            #:parameterize
+           #:ece-runtime-error
+           #:ece-original-error
+           #:ece-error-procedure
+           #:ece-error-arguments
+           #:ece-error-environment
+           #:ece-error-instruction
+           #:ece-error-backtrace
            #:repl))
 
 (in-package :ece)
@@ -137,6 +144,95 @@
 ;;;; ========================================================================
 ;;;; RUNTIME — Minimal code needed to execute compiled ECE instructions
 ;;;; ========================================================================
+
+;;; ECE runtime error condition
+;;; Wraps CL errors with register machine context for debugging
+
+(define-condition ece-runtime-error (error)
+  ((original-error :initarg :original-error :reader ece-original-error)
+   (ece-procedure :initarg :procedure :reader ece-error-procedure :initform nil)
+   (ece-arguments :initarg :arguments :reader ece-error-arguments :initform nil)
+   (ece-environment :initarg :environment :reader ece-error-environment :initform nil)
+   (ece-instruction :initarg :instruction :reader ece-error-instruction :initform nil)
+   (ece-backtrace :initarg :backtrace :reader ece-error-backtrace :initform nil))
+  (:report (lambda (c stream)
+             (format stream "ECE error: ~A" (ece-original-error c))
+             (let ((proc (ece-error-procedure c)))
+               (when proc
+                 (format stream "~%  in procedure: ~A" (format-ece-proc proc))
+                 (let ((args (ece-error-arguments c)))
+                   (when args
+                     (format stream "~%  with arguments: ~S" args)))))
+             (let ((env (ece-error-environment c)))
+               (when (and env (consp env) (consp (car env)))
+                 (let ((frame (car env)))
+                   (format stream "~%  bindings:")
+                   (loop for var in (car frame)
+                         for val in (cdr frame)
+                         for i below 10
+                         do (format stream "~%    ~A = ~S"
+                                    var (truncate-value val))))))
+             (let ((bt (ece-error-backtrace c)))
+               (when bt
+                 (format stream "~%  backtrace:")
+                 (loop for entry in bt
+                       for i from 0
+                       do (format stream "~%    [~D] ~A at pc=~D" i
+                                  (if (car entry)
+                                      (format-ece-proc (car entry))
+                                      "<unknown>")
+                                  (cdr entry))))))))
+
+(defun format-ece-proc (proc)
+  "Format a procedure value for display in errors."
+  (cond
+    ((and (listp proc) (eq (car proc) 'compiled-procedure))
+     (format nil "<compiled-procedure entry=~A>" (cadr proc)))
+    ((and (listp proc) (eq (car proc) 'primitive))
+     (format nil "<primitive ~A>" (cadr proc)))
+    (t (format nil "~S" proc))))
+
+(defun truncate-value (val)
+  "Truncate a value for display if too long."
+  (let* ((*print-level* 3)
+         (*print-length* 5)
+         (*print-circle* t)
+         (s (format nil "~S" val)))
+    (if (> (length s) 60)
+        (format nil "~A..." (subseq s 0 57))
+        s)))
+
+(defun extract-ece-backtrace (stack)
+  "Walk the register stack to extract a backtrace.
+Returns a list of (proc . pc) pairs, limited to 10 frames.
+The stack interleaves saved registers; we look for saved proc values
+and saved continue values (integers = PCs). A continue value paired with
+a nearby proc gives a named frame; a lone continue gives an anonymous frame."
+  (let ((frames '())
+        (last-proc nil))
+    (dolist (item stack)
+      (when (>= (length frames) 10)
+        (return))
+      (cond
+        ;; A compiled-procedure or primitive on the stack is likely a saved proc
+        ((and (listp item)
+              (consp item)
+              (or (eq (car item) 'compiled-procedure)
+                  (eq (car item) 'primitive)))
+         (setf last-proc item))
+        ;; An integer on the stack is likely a saved continue (return address)
+        ((integerp item)
+         (push (cons last-proc item) frames)
+         (setf last-proc nil))))
+    (nreverse frames)))
+
+(defun format-ece-backtrace (backtrace)
+  "Format a backtrace as readable text."
+  (with-output-to-string (s)
+    (loop for entry in backtrace
+          for i from 0
+          do (format s "~%  [~D] ~A at pc=~D"
+                     i (format-ece-proc (car entry)) (cdr entry)))))
 
 ;;; Frame-based environment (SICP Section 4.1.3)
 ;;; A frame is (cons vars vals) — parallel lists of variable names and values
@@ -762,53 +858,71 @@ Supports integers and decimal floats. Returns NIL on failure."
                                (r2 (cdr r)))
                            (if (null r2) (funcall fn a b)
                                (funcall fn a b (eval-operand (car r2))))))))))
-      (tagbody
-       loop-start
-         (when (>= pc len) (go loop-end))
-         (let ((instr (aref instruction-vector pc)))
-           (case (car instr)
-             (assign
-              (let ((target (cadr instr))
-                    (source (caddr instr)))
-                (case (car source)
-                  (const (set-reg target (cadr source)))
-                  (reg (set-reg target (get-reg (cadr source))))
-                  (label (set-reg target (resolve-label (cadr source))))
-                  (op-fn (set-reg target (call-op (cadr source) (cdddr instr))))
-                  (op (set-reg target
-                               (call-op (get-operation (cadr source))
-                                        (cdddr instr))))
-                  (t (error "Bad assign source: ~A" source)))))
-             (test
-              (let ((op-spec (cadr instr)))
-                (case (car op-spec)
-                  (op-fn (setf flag (call-op (cadr op-spec) (cddr instr))))
-                  (t (setf flag (call-op (get-operation (cadr op-spec))
-                                         (cddr instr)))))))
-             (branch
-              (when flag
-                (setf pc (resolve-label (cadr (cadr instr))))
-                (go loop-start)))
-             (goto
-              (let ((dest (cadr instr)))
-                (ecase (car dest)
-                  (label (setf pc (resolve-label (cadr dest))))
-                  (reg (let ((addr (get-reg (cadr dest))))
-                         (setf pc (if (numberp addr) addr (resolve-label addr))))))
-                (go loop-start)))
-             (save
-              (push (get-reg (cadr instr)) stack))
-             (restore
-              (set-reg (cadr instr) (pop stack)))
-             (perform
-              (let ((op-spec (cadr instr)))
-                (case (car op-spec)
-                  (op-fn (call-op (cadr op-spec) (cddr instr)))
-                  (t (call-op (get-operation (cadr op-spec)) (cddr instr))))))
-             (t (error "Unknown instruction: ~A" instr))))
-         (incf pc)
-         (go loop-start)
-       loop-end)
+      (handler-bind
+          ((error
+            (lambda (e)
+              (unless (typep e 'ece-runtime-error)
+                (let ((wrapped
+                       (ignore-errors
+                         (make-condition
+                          'ece-runtime-error
+                          :original-error e
+                          :procedure proc
+                          :arguments argl
+                          :environment env
+                          :instruction (when (< pc len)
+                                         (aref instruction-vector pc))
+                          :backtrace (extract-ece-backtrace stack)))))
+                  (if wrapped
+                      (error wrapped)
+                      (error e)))))))
+        (tagbody
+         loop-start
+           (when (>= pc len) (go loop-end))
+           (let ((instr (aref instruction-vector pc)))
+             (case (car instr)
+               (assign
+                (let ((target (cadr instr))
+                      (source (caddr instr)))
+                  (case (car source)
+                    (const (set-reg target (cadr source)))
+                    (reg (set-reg target (get-reg (cadr source))))
+                    (label (set-reg target (resolve-label (cadr source))))
+                    (op-fn (set-reg target (call-op (cadr source) (cdddr instr))))
+                    (op (set-reg target
+                                 (call-op (get-operation (cadr source))
+                                          (cdddr instr))))
+                    (t (error "Bad assign source: ~A" source)))))
+               (test
+                (let ((op-spec (cadr instr)))
+                  (case (car op-spec)
+                    (op-fn (setf flag (call-op (cadr op-spec) (cddr instr))))
+                    (t (setf flag (call-op (get-operation (cadr op-spec))
+                                           (cddr instr)))))))
+               (branch
+                (when flag
+                  (setf pc (resolve-label (cadr (cadr instr))))
+                  (go loop-start)))
+               (goto
+                (let ((dest (cadr instr)))
+                  (ecase (car dest)
+                    (label (setf pc (resolve-label (cadr dest))))
+                    (reg (let ((addr (get-reg (cadr dest))))
+                           (setf pc (if (numberp addr) addr (resolve-label addr))))))
+                  (go loop-start)))
+               (save
+                (push (get-reg (cadr instr)) stack))
+               (restore
+                (set-reg (cadr instr) (pop stack)))
+               (perform
+                (let ((op-spec (cadr instr)))
+                  (case (car op-spec)
+                    (op-fn (call-op (cadr op-spec) (cddr instr)))
+                    (t (call-op (get-operation (cadr op-spec)) (cddr instr))))))
+               (t (error "Unknown instruction: ~A" instr))))
+           (incf pc)
+           (go loop-start)
+         loop-end))
       val)))
 
 ;;; Global instruction accumulator

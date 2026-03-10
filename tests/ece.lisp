@@ -2113,3 +2113,72 @@
                        (define (when x) (+ x 10))
                        (when 5)))")
                   15))))
+
+(deftest test-error-context
+    (testing "error captures current procedure from proc register"
+             (handler-case
+                 (progn
+                   (ece-eval-string "(begin (define (f x) (+ x y)) (f 5))")
+                   (ok nil "should have signaled"))
+               (ece-runtime-error (e)
+                 ;; proc register has the inner call (+ x y), which is (primitive +)
+                 (ok (ece-error-procedure e))
+                 (ok (ece-original-error e)))))
+
+  (testing "error includes visible environment bindings"
+           (handler-case
+               (progn
+                 (ece-eval-string "((lambda (x) (+ x y)) 5)")
+                 (ok nil "should have signaled"))
+             (ece-runtime-error (e)
+               (let ((env (ece-error-environment e)))
+                 (ok (consp env))
+                 ;; innermost frame should have x=5
+                 (let* ((frame (car env))
+                        (vars (car frame))
+                        (vals (cdr frame))
+                        (pos (position 'ece::x vars)))
+                   (ok pos)
+                   (when pos (ok (= (nth pos vals) 5))))))))
+
+  (testing "original error is accessible"
+           (handler-case
+               (progn
+                 (ece-eval-string "(+ 1 \"bad\")")
+                 (ok nil "should have signaled"))
+             (ece-runtime-error (e)
+               (ok (typep (ece-original-error e) 'error)))))
+
+  (testing "nested non-tail calls produce backtrace"
+           (handler-case
+               (progn
+                 (ece-eval-string
+                  "(begin
+                     (define (g x) (+ x \"bad\"))
+                     (define (f x) (+ (g x) 1))
+                     (f 5))")
+                 (ok nil "should have signaled"))
+             (ece-runtime-error (e)
+               (ok (listp (ece-error-backtrace e)))
+               ;; non-tail calls save continues on the stack
+               (ok (>= (length (ece-error-backtrace e)) 1)))))
+
+  (testing "condition slots are programmatically accessible"
+           (handler-case
+               (progn
+                 (ece-eval-string "((lambda (a) (+ a z)) 99)")
+                 (ok nil "should have signaled"))
+             (ece-runtime-error (e)
+               (ok (typep e 'ece-runtime-error))
+               (ok (ece-original-error e))
+               (ok (ece-error-environment e))
+               (ok (ece-error-instruction e)))))
+
+  (testing "normal execution is not degraded"
+           ;; Run a loop and ensure it completes (performance, not timing)
+           (ok (= (ece-eval-string
+                   "(begin
+                      (define (loop-sum n acc)
+                        (if (= n 0) acc (loop-sum (- n 1) (+ acc n))))
+                      (loop-sum 100000 0))")
+                  5000050000))))
