@@ -1015,23 +1015,20 @@
                              (random 10)
                              (not (= before *random-state*))))))))
 
-(deftest test-fmt-macro
-    (testing "concatenate strings"
-             (ok (equal (evaluate '(fmt "hello" " " "world")) "hello world")))
+(deftest test-string-interpolation-eval
+    (testing "interpolation with write-to-string semantics"
+             ;; Test the expanded form directly: (string-append "hello " (write-to-string name))
+             (ok (equal (evaluate '(begin (define name "world")
+                                    (string-append "hello " (write-to-string name))))
+                        "hello world")))
 
-  (testing "mix strings and numbers"
-           (ok (equal (evaluate '(fmt "You have " 5 " gold")) "You have 5 gold")))
+  (testing "interpolation with number"
+           (ok (equal (evaluate '(begin (define n 42)
+                                  (string-append "value: " (write-to-string n))))
+                      "value: 42")))
 
-  (testing "single string argument"
-           (ok (equal (evaluate '(fmt "hello")) "hello")))
-
-  (testing "number argument"
-           (ok (equal (evaluate '(fmt 42)) "42")))
-
-  (testing "print-text displays formatted text"
-           (ok (equal (with-output-to-string (*standard-output*)
-                        (evaluate '(print-text "You have " 5 " gold")))
-                      "You have 5 gold"))))
+  (testing "plain string stays as-is"
+           (ok (equal (evaluate '"hello") "hello"))))
 
 (deftest test-hash-table-literals
     (testing "curly brace reader produces hash table"
@@ -1410,18 +1407,6 @@
   (testing "range of 1"
            (ok (equal (evaluate '(range 1)) '(0)))))
 
-(deftest test-lines
-    (testing "multiple lines"
-             (ok (equal (evaluate '(lines "hello" "world"))
-                        (format nil "hello~%world~%"))))
-  (testing "single line"
-           (ok (equal (evaluate '(lines "hello"))
-                      (format nil "hello~%"))))
-  (testing "empty call"
-           (ok (equal (evaluate '(lines)) "")))
-  (testing "mixed types auto-stringified"
-           (ok (equal (evaluate '(lines "count:" 42))
-                      (format nil "count:~%42~%")))))
 
 (deftest test-string-interpolation
     (testing "plain string without $ is unchanged"
@@ -2417,15 +2402,20 @@
 
   (testing "string interpolation"
            (ok (equal (ece-read-string "\"plain\"") "plain"))
-           ;; Interpolation produces (FMT ...) with ECE-package symbols
+           ;; Interpolation produces (STRING-APPEND ... (WRITE-TO-STRING ...))
            (let ((result (ece-read-string "\"hello $name\"")))
-             (ok (eq (car result) 'fmt))
+             (ok (eq (car result) 'string-append))
              (ok (equal (cadr result) "hello "))
-             (ok (string= (symbol-name (caddr result)) "NAME")))
+             (ok (eq (car (caddr result)) 'write-to-string))
+             (ok (string= (symbol-name (cadr (caddr result))) "NAME")))
            (let ((result (ece-read-string "\"val: $(+ 1 2)\"")))
-             (ok (eq (car result) 'fmt))
+             (ok (eq (car result) 'string-append))
              (ok (equal (cadr result) "val: "))
-             (ok (= (length (caddr result)) 3)))  ; (+ 1 2)
+             (ok (eq (car (caddr result)) 'write-to-string))
+             (ok (= (length (cadr (caddr result))) 3)))  ; (+ 1 2)
+           ;; Single interpolation without literals produces (WRITE-TO-STRING ...)
+           (let ((result (ece-read-string "\"$name\"")))
+             (ok (eq (car result) 'write-to-string)))
            (ok (equal (ece-read-string "\"costs $$5\"") "costs $5")))
 
   (testing "lists"

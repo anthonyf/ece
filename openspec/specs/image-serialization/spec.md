@@ -3,15 +3,17 @@
 ### Requirement: save-image! serializes full system state
 The `save-image!` primitive SHALL compact the instruction vector before serializing, removing unreachable instructions. It SHALL then write the compacted system state to a file. The compaction SHALL operate on copies — the live system state SHALL remain untouched.
 
+The compaction algorithm SHALL be implemented in ECE code (not the CL runtime). The CL runtime SHALL provide only the low-level serialization primitive (`%write-image`).
+
 The compaction algorithm SHALL:
-1. Collect all entry PCs from compiled procedures in the global environment, macro table, and procedure-name table
-2. Determine reachable entry PCs by walking all `(compiled-procedure pc env)` values in the global environment and macro table (transitively, including continuations)
-3. Use sorted entry PCs as block boundaries — each procedure's instructions form a contiguous block from its entry PC to the next entry PC
-4. Copy only blocks whose entry PC is reachable into a compacted instruction vector
-5. Build an old-pc → new-pc remapping table
+1. Collect block boundaries from the procedure-name table via `%procedure-name-entries`
+2. Determine reachable entry PCs by walking all `(compiled-procedure pc env)` values in `*global-env*` and the macro table (via `%macro-table-entries`), transitively including continuations
+3. Use sorted block boundaries to partition the instruction vector; retain blocks containing any reachable PC
+4. Transitively retain blocks referenced by labels in already-retained blocks (via scanning source instructions with `%instruction-source-ref`)
+5. Copy only retained blocks into a compacted instruction list, building an old-pc → new-pc remapping
 6. Deep-copy the global environment and macro table, remapping all PCs in compiled procedures and continuations
 7. Remap the label table and procedure-name table using the same mapping
-8. Serialize the compacted copies
+8. Pass the compacted state to `%write-image` for serialization
 
 #### Scenario: Save image after compiling code
 - **WHEN** `(save-image! "test.image")` is called after defining functions and variables

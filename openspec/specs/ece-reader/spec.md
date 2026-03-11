@@ -61,23 +61,24 @@ The ECE reader SHALL parse double-quoted strings, supporting `\n`, `\t`, `\\`, a
 - **THEN** the result SHALL be the string `say "hi"`
 
 ### Requirement: read parses string interpolation
-The ECE reader SHALL parse `$var` as variable interpolation and `$(expr)` as expression interpolation within strings, producing `(fmt ...)` forms. `$$` SHALL produce a literal `$`. Strings without `$` SHALL be returned as plain strings.
+String interpolation with `~{expr}` inside double-quoted strings SHALL expand to a `(string-append ...)` form that concatenates literal segments with `(write-to-string expr)` calls for interpolated expressions. Strings without interpolation SHALL be returned as plain strings.
 
-#### Scenario: Variable interpolation
-- **WHEN** `(read (open-input-string "\"hello $name\""))` is evaluated
-- **THEN** the result SHALL be `(FMT "hello " NAME)`
+#### Scenario: Single interpolation
+- **WHEN** the reader encounters `"Hello ~{name}"`
+- **THEN** it SHALL produce `(string-append "Hello " (write-to-string name))`
 
-#### Scenario: Expression interpolation
-- **WHEN** `(read (open-input-string "\"val: $(+ 1 2)\""))` is evaluated
-- **THEN** the result SHALL be `(FMT "val: " (+ 1 2))`
-
-#### Scenario: Escaped dollar
-- **WHEN** `(read (open-input-string "\"costs $$5\""))` is evaluated
-- **THEN** the result SHALL be the plain string `"costs $5"`
+#### Scenario: Multiple interpolations
+- **WHEN** the reader encounters `"~{a} and ~{b}"`
+- **THEN** it SHALL produce `(string-append (write-to-string a) " and " (write-to-string b))`
 
 #### Scenario: No interpolation
-- **WHEN** `(read (open-input-string "\"plain\""))` is evaluated
-- **THEN** the result SHALL be the plain string `"plain"`
+- **WHEN** the reader encounters `"plain string"`
+- **THEN** it SHALL produce the string literal `"plain string"` directly
+
+#### Scenario: Interpolation result is a string
+- **WHEN** an interpolated expression evaluates to a string
+- **THEN** `write-to-string` SHALL wrap it in quotes (as `write` would)
+- **AND** this is acceptable — interpolation uses `write` semantics, not `display` semantics
 
 ### Requirement: read parses lists
 The ECE reader SHALL parse parenthesized sequences as proper lists. It SHALL support dotted pair notation.

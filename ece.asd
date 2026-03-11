@@ -29,7 +29,8 @@
                           :components
                           ((:file "runtime")
                            (:file "compiler" :depends-on ("runtime"))
-                           (:static-file "prelude.scm")))))
+                           (:static-file "prelude.scm")
+                           (:static-file "compaction.scm")))))
 
 (defsystem "ece/tests"
     :author ""

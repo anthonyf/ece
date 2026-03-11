@@ -570,7 +570,6 @@ Scans for (assign ... (op make-compiled-procedure) (label X) ...) and returns X.
 
 (define-variable! 'try-eval (list 'primitive 'ece-try-eval) *global-env*)
 (define-variable! 'load (list 'primitive 'ece-load) *global-env*)
-(define-variable! 'save-image! (list 'primitive 'ece-save-image) *global-env*)
 (define-variable! 'load-image! (list 'primitive 'ece-load-image) *global-env*)
 (define-variable! 'assemble-into-global (list 'primitive 'assemble-into-global) *global-env*)
 (define-variable! 'execute-from-pc (list 'primitive 'ece-execute-from-pc) *global-env*)
@@ -593,6 +592,12 @@ Scans for (assign ... (op make-compiled-procedure) (label X) ...) and returns X.
 ;; Assembler.scm performs the switchover: rebinds assemble-into-global to ECE version.
 ;; Reader.scm performs the switchover: rebinds read to use ece-scheme-read.
 (compile-file-ece (asdf:system-relative-pathname :ece "src/assembler.scm"))
+
+;; Expose *global-env* as an ECE variable for compaction and mc-compiler
+(define-variable! '*global-env* *global-env* *global-env*)
+
+;; Load ECE-side compaction (defines save-image! as an ECE function)
+(compile-file-ece (asdf:system-relative-pathname :ece "src/compaction.scm"))
 
 (defun repl ()
   "Bootstrap and run the ECE REPL as a tail-recursive ECE function."

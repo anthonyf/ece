@@ -117,9 +117,21 @@
        ((char=? ch #\")
         (flush-buf!)
         (let ((segs (reverse segments)))
-          (if (and (= (length segs) 1) (string? (car segs)))
-              (car segs)
-              (cons 'fmt segs))))
+          (cond
+           ;; Single literal string — return directly
+           ((and (= (length segs) 1) (string? (car segs)))
+            (car segs))
+           ;; Single non-string expression — wrap in write-to-string
+           ((and (= (length segs) 1) (not (string? (car segs))))
+            (list 'write-to-string (car segs)))
+           ;; Mixed — build (string-append ...) with write-to-string for non-strings
+           (else
+            (cons 'string-append
+                  (map (lambda (seg)
+                         (if (string? seg)
+                             seg
+                             (list 'write-to-string seg)))
+                       segs))))))
        ;; Backslash escape
        ((char=? ch #\\)
         (let ((next (read-char port)))
