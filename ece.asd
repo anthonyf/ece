@@ -18,9 +18,18 @@
     :components ((:module "src"
                           :components
                           ((:file "runtime")
-                           (:file "compiler" :depends-on ("runtime"))
+                           (:file "boot" :depends-on ("runtime"))
                            (:static-file "prelude.scm"))))
     :in-order-to ((test-op (test-op "ece/tests"))))
+
+(defsystem "ece/cold"
+    :description "Cold-boot ECE from source (for bootstrap image generation)"
+    :serial t
+    :components ((:module "src"
+                          :components
+                          ((:file "runtime")
+                           (:file "compiler" :depends-on ("runtime"))
+                           (:static-file "prelude.scm")))))
 
 (defsystem "ece/tests"
     :author ""

@@ -164,7 +164,6 @@
            #:ece-error-instruction
            #:ece-error-backtrace
            #:repl
-           #:image-repl
            #:mc-eval))
 
 (in-package :ece)
@@ -1390,34 +1389,12 @@ Rebuilds the execution vector by resolving operations on each instruction."
         (setf *parameter-counter* param-counter))))
   t)
 
-(defun mc-eval (expr)
+(defun mc-eval (expr &optional (env nil env-supplied-p))
   "Evaluate EXPR using the metacircular compiler from the global env.
-Works with image-only startup (no compiler.lisp needed)."
+Works with image-only startup (no compiler.lisp needed).
+When ENV is supplied, it is passed to mc-compile-and-go."
   (let ((mc-cag (lookup-variable-value 'mc-compile-and-go *global-env*)))
-    (execute-compiled-call mc-cag (list expr))))
+    (if env-supplied-p
+        (execute-compiled-call mc-cag (list expr env))
+        (execute-compiled-call mc-cag (list expr)))))
 
-(defun ece-try-eval-via-mc (expr)
-  "Evaluate expr via metacircular compiler, catching errors."
-  (handler-case
-      (mc-eval expr)
-    (error (c)
-      (format t "Error: ~A~%" c)
-      (finish-output)
-      nil)))
-
-(defun image-repl (image-path)
-  "Load an ECE image and start the REPL. No compiler.lisp needed."
-  (ece-load-image image-path)
-  ;; Rebind try-eval to use the metacircular compiler
-  (set-variable-value! 'try-eval (list 'primitive 'ece-try-eval-via-mc) *global-env*)
-  (mc-eval '(begin
-             (define (repl-loop)
-              (display "ece> ")
-              (define input (read))
-              (if (eof? input)
-                  (begin (newline) (display "Bye!") (newline))
-                  (begin
-                   (define result (try-eval input))
-                   (if result (begin (write result) (newline)) (quote ()))
-                   (repl-loop))))
-             (repl-loop))))

@@ -10,11 +10,11 @@ repl:
 
 image:
 	@mkdir -p bootstrap
-	qlot exec sbcl --load ece.asd --eval '(asdf:load-system :ece)' --eval '(ece::ece-save-image "$(BOOTSTRAP_IMAGE)")' --quit
+	qlot exec sbcl --load ece.asd --eval '(asdf:load-system :ece/cold)' --eval '(ece::ece-save-image "$(BOOTSTRAP_IMAGE)")' --quit
 	@echo "Bootstrap image saved to $(BOOTSTRAP_IMAGE)"
 
 run:
-	qlot exec sbcl --load src/runtime.lisp --eval '(ece:image-repl "$(BOOTSTRAP_IMAGE)")'
+	qlot exec sbcl --load ece.asd --eval '(asdf:load-system :ece)' --eval '(ece:repl)'
 
 ROOT_DIR := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
 LISP_FILES := $(wildcard src/*.lisp) $(wildcard tests/*.lisp) ece.asd

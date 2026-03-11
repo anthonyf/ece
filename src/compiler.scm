@@ -201,9 +201,14 @@
 (define (mc-compile-sequence seq target linkage)
   (if (null? (cdr seq))
       (mc-compile (car seq) target linkage)
-      (preserving '(env continue)
-                  (mc-compile (car seq) target 'next)
-                  (mc-compile-sequence (cdr seq) target linkage))))
+      ;; Use let to force left-to-right compilation order.
+      ;; Without this, right-to-left argument evaluation in the SICP compiler
+      ;; causes (mc-compile-sequence rest) to run before (mc-compile first),
+      ;; breaking define-macro side effects that must happen before later forms.
+      (let ((first-seq (mc-compile (car seq) target 'next)))
+        (preserving '(env continue)
+                    first-seq
+                    (mc-compile-sequence (cdr seq) target linkage)))))
 
 ;;; Lambda & application
 
