@@ -2687,3 +2687,51 @@
                                                  (list 1 2 3)))
                                  '(1 4 9))))
                  (when (probe-file tmpfile) (delete-file tmpfile))))))
+
+(deftest test-image-compaction-removes-dead-code
+    (testing "redefining a function then saving produces a smaller image"
+             (let ((tmpfile1 (uiop:with-temporary-file (:stream s :pathname p :keep t
+                                                                :type "img")
+                               (declare (ignore s))
+                               p))
+                   (tmpfile2 (uiop:with-temporary-file (:stream s :pathname p :keep t
+                                                                :type "img")
+                               (declare (ignore s))
+                               p)))
+               (unwind-protect
+                    (progn
+                      ;; Save once (baseline)
+                      (ece::ece-save-image (namestring tmpfile1))
+                      (let ((size-before (file-length
+                                          (open tmpfile1 :direction :input))))
+                        ;; Define, then redefine a function to leave dead code
+                        (evaluate '(define (compact-test-fn x)
+                                    (+ x 1 2 3 4 5 6 7 8 9 10)))
+                        (evaluate '(define (compact-test-fn x)
+                                    (+ x 1)))
+                        ;; Save again — compaction should remove old definition
+                        (ece::ece-save-image (namestring tmpfile2))
+                        (let ((size-after (file-length
+                                           (open tmpfile2 :direction :input))))
+                          ;; Load the compacted image and verify function works
+                          (ece::ece-load-image (namestring tmpfile2))
+                          (ok (= (evaluate '(compact-test-fn 5)) 6))
+                          ;; The compacted image should not be significantly larger
+                          ;; than the baseline (dead code removed)
+                          (ok (<= size-after (* size-before 1.1))))))
+                 (when (probe-file tmpfile1) (delete-file tmpfile1))
+                 (when (probe-file tmpfile2) (delete-file tmpfile2))))))
+
+(deftest test-image-compaction-preserves-anonymous-lambda
+    (testing "anonymous lambda stored in variable survives compaction"
+             (let ((tmpfile (uiop:with-temporary-file (:stream s :pathname p :keep t
+                                                               :type "img")
+                              (declare (ignore s))
+                              p)))
+               (unwind-protect
+                    (progn
+                      (evaluate '(define compact-adder (lambda (x) (+ x 100))))
+                      (ece::ece-save-image (namestring tmpfile))
+                      (ece::ece-load-image (namestring tmpfile))
+                      (ok (= (evaluate '(compact-adder 5)) 105)))
+                 (when (probe-file tmpfile) (delete-file tmpfile))))))

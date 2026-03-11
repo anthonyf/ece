@@ -1312,6 +1312,264 @@ State is stored in *parameter-table* so parameters survive image round-trips."
     (list 'primitive name)))
 
 ;;;; ========================================================================
+;;;; IMAGE COMPACTION
+;;;; ========================================================================
+
+;;; Walk a value to collect entry PCs from compiled procedures and continuations.
+;;; VISITED is an eq hash table to handle cycles.
+
+(defun collect-entry-pcs-from-value (val pcs visited)
+  "Walk VAL, adding entry PCs from compiled-procedure and continuation values to PCS (a hash set)."
+  (when (or (not (listp val)) (null val))
+    (return-from collect-entry-pcs-from-value))
+  (when (gethash val visited)
+    (return-from collect-entry-pcs-from-value))
+  (setf (gethash val visited) t)
+  (cond
+    ((compiled-procedure-p val)
+     (setf (gethash (compiled-procedure-entry val) pcs) t)
+     ;; Walk the closure's environment for nested compiled procedures
+     (collect-entry-pcs-from-env (compiled-procedure-env val) pcs visited))
+    ((continuation-p val)
+     ;; continue-pc is a raw integer, not an entry PC for a procedure block
+     ;; Walk the stack for compiled procedures
+     (dolist (item (continuation-stack val))
+       (collect-entry-pcs-from-value item pcs visited)))
+    ((primitive-procedure-p val)
+     nil) ; primitives hold no PCs
+    (t
+     ;; Generic list — walk car and cdr
+     (collect-entry-pcs-from-value (car val) pcs visited)
+     (collect-entry-pcs-from-value (cdr val) pcs visited))))
+
+(defun collect-entry-pcs-from-env (env pcs visited)
+  "Walk all frames in ENV collecting entry PCs from values."
+  (dolist (frame env)
+    (when (and (listp frame) (not (gethash frame visited)))
+      (setf (gethash frame visited) t)
+      (dolist (val (frame-values frame))
+        (collect-entry-pcs-from-value val pcs visited)))))
+
+(defun collect-block-boundaries ()
+  "Return sorted list of block boundary PCs from the procedure-name table.
+These are entry PCs for all define'd procedures (including old versions from
+redefinitions). They partition the instruction vector into procedure-sized blocks."
+  (let ((pcs nil))
+    (maphash (lambda (pc name)
+               (declare (ignore name))
+               (push pc pcs))
+             *procedure-name-table*)
+    (sort pcs #'<)))
+
+(defun collect-reachable-entry-pcs ()
+  "Collect entry PCs reachable from roots: global env and macro table.
+Returns a hash table (pc → t)."
+  (let ((pcs (make-hash-table))
+        (visited (make-hash-table :test 'eq)))
+    ;; From global env (the main root)
+    (collect-entry-pcs-from-env *global-env* pcs visited)
+    ;; From macro table (also a root — macros are compiled procedures)
+    (maphash (lambda (name proc)
+               (declare (ignore name))
+               (collect-entry-pcs-from-value proc pcs visited))
+             *compile-time-macros*)
+    pcs))
+
+(defun block-contains-reachable-pc (start end reachable-pcs)
+  "Return T if any PC in [START, END) is in the REACHABLE-PCS hash set."
+  (maphash (lambda (pc val)
+             (declare (ignore val))
+             (when (and (>= pc start) (< pc end))
+               (return-from block-contains-reachable-pc t)))
+           reachable-pcs)
+  nil)
+
+(defun mark-reachable-blocks (boundaries reachable-pcs vector-length)
+  "Given sorted BOUNDARIES (from procedure-name table) and REACHABLE-PCS (from
+env/macros walk), return list of (start . end) ranges for live blocks.
+Blocks partition the vector: [0,b0), [b0,b1), ..., [bN,len).
+A block is live if ANY reachable PC falls within it."
+  (let ((ranges nil)
+        ;; Prepend 0 to get all blocks including pre-first-procedure code
+        (all-starts (if (and boundaries (zerop (car boundaries)))
+                        boundaries
+                        (cons 0 boundaries))))
+    (loop for (start . rest) on all-starts
+          for end = (if rest (car rest) vector-length)
+          when (block-contains-reachable-pc start end reachable-pcs)
+          do (push (cons start end) ranges))
+    (nreverse ranges)))
+
+(defun collect-label-refs (instr)
+  "Return a list of label names referenced by instruction INSTR."
+  (let ((refs nil))
+    (labels ((walk (form)
+               (when (consp form)
+                 (cond
+                   ((eq (car form) 'label)
+                    (push (cadr form) refs))
+                   (t
+                    (walk (car form))
+                    (walk (cdr form)))))))
+      (walk instr))
+    refs))
+
+(defun find-block-for-pc (target-pc boundaries vector-length)
+  "Find the block (start . end) that contains TARGET-PC.
+BOUNDARIES is a sorted list. Returns nil if TARGET-PC >= VECTOR-LENGTH."
+  (when (>= target-pc vector-length)
+    (return-from find-block-for-pc nil))
+  (let ((starts (if (and boundaries (zerop (car boundaries)))
+                    boundaries
+                    (cons 0 boundaries))))
+    (loop for (start . rest) on starts
+          for end = (if rest (car rest) vector-length)
+          when (and (>= target-pc start) (< target-pc end))
+          return (cons start end))))
+
+(defun transitively-retain-blocks (initial-ranges boundaries label-table source-vec vector-length)
+  "Starting from INITIAL-RANGES, transitively retain blocks referenced by labels
+in already-retained blocks. Returns sorted list of (start . end) ranges."
+  (let ((retained (make-hash-table))  ; start-pc → (start . end)
+        (worklist (copy-list initial-ranges)))
+    ;; Seed with initial ranges
+    (dolist (range initial-ranges)
+      (setf (gethash (car range) retained) range))
+    ;; Process worklist — scan each retained block for label references
+    (loop while worklist do
+          (let ((range (pop worklist)))
+            (loop for pc from (car range) below (cdr range) do
+                  (let ((instr (aref source-vec pc)))
+                    (dolist (label-name (collect-label-refs instr))
+                      (let ((target-pc (gethash label-name label-table)))
+                        (when target-pc
+                          (let ((block (find-block-for-pc target-pc boundaries vector-length)))
+                            (when (and block (not (gethash (car block) retained)))
+                              (setf (gethash (car block) retained) block)
+                              (push block worklist))))))))))
+    ;; Return sorted ranges
+    (let ((ranges nil))
+      (maphash (lambda (k v) (declare (ignore k)) (push v ranges)) retained)
+      (sort ranges #'< :key #'car))))
+
+(defun compact-instruction-vector (source-vec ranges)
+  "Copy live instruction blocks from SOURCE-VEC per RANGES into a new vector.
+Returns (values new-source-vector pc-remap-table).
+PC-REMAP-TABLE maps old-pc → new-pc."
+  (let* ((total-size (loop for (start . end) in ranges sum (- end start)))
+         (new-vec (make-array total-size :adjustable t :fill-pointer total-size))
+         (remap (make-hash-table))
+         (new-pc 0))
+    (dolist (range ranges)
+      (loop for old-pc from (car range) below (cdr range)
+            do (setf (aref new-vec new-pc) (aref source-vec old-pc))
+            (setf (gethash old-pc remap) new-pc)
+            (incf new-pc)))
+    (values new-vec remap)))
+
+(defun remap-label-table (label-table remap)
+  "Produce a new label table with remapped PCs. Drop labels pointing to dead code."
+  (let ((new-table (make-hash-table :test 'eq)))
+    (maphash (lambda (label pc)
+               (let ((new-pc (gethash pc remap)))
+                 (when new-pc
+                   (setf (gethash label new-table) new-pc))))
+             label-table)
+    new-table))
+
+(defun remap-procedure-name-table (name-table remap)
+  "Produce a new procedure-name table with remapped PCs. Drop dead entries."
+  (let ((new-table (make-hash-table)))
+    (maphash (lambda (pc name)
+               (let ((new-pc (gethash pc remap)))
+                 (when new-pc
+                   (setf (gethash new-pc new-table) name))))
+             name-table)
+    new-table))
+
+(defun deep-copy-and-remap (value remap visited)
+  "Deep-copy VALUE, remapping PCs in compiled procedures and continuations.
+VISITED maps original cons cells to their copies to handle sharing/cycles."
+  (cond
+    ((not (listp value)) value)
+    ((null value) nil)
+    ((gethash value visited))  ; already copied — return the copy
+    (t
+     (cond
+       ((compiled-procedure-p value)
+        (let* ((new-pc (gethash (compiled-procedure-entry value) remap))
+               (copy (list 'compiled-procedure
+                           (or new-pc (compiled-procedure-entry value))
+                           nil))) ; placeholder for env
+          (setf (gethash value visited) copy)
+          (setf (caddr copy)
+                (deep-copy-and-remap (compiled-procedure-env value) remap visited))
+          copy))
+       ((continuation-p value)
+        (let ((copy (list 'continuation nil nil))) ; placeholders
+          (setf (gethash value visited) copy)
+          (setf (cadr copy)
+                (deep-copy-and-remap (continuation-stack value) remap visited))
+          ;; continue-pc is a raw integer — remap it
+          (let ((old-cont-pc (continuation-conts value)))
+            (setf (caddr copy)
+                  (if (integerp old-cont-pc)
+                      (or (gethash old-cont-pc remap) old-cont-pc)
+                      (deep-copy-and-remap old-cont-pc remap visited))))
+          copy))
+       ((primitive-procedure-p value)
+        value) ; primitives are immutable, no PCs
+       (t
+        ;; Generic cons cell — deep copy car and cdr
+        (let ((copy (cons nil nil)))
+          (setf (gethash value visited) copy)
+          (setf (car copy) (deep-copy-and-remap (car value) remap visited))
+          (setf (cdr copy) (deep-copy-and-remap (cdr value) remap visited))
+          copy))))))
+
+(defun deep-copy-and-remap-env (env remap)
+  "Deep-copy the global environment, remapping all PCs."
+  (let ((visited (make-hash-table :test 'eq)))
+    (deep-copy-and-remap env remap visited)))
+
+(defun deep-copy-and-remap-macros (macro-table remap)
+  "Deep-copy the macro table, remapping PCs in compiled transformers."
+  (let ((visited (make-hash-table :test 'eq))
+        (new-table (make-hash-table :test 'eq)))
+    (maphash (lambda (name proc)
+               (setf (gethash name new-table)
+                     (deep-copy-and-remap proc remap visited)))
+             macro-table)
+    new-table))
+
+(defun compact-for-save ()
+  "Compact the instruction vector, removing unreachable code.
+Returns a plist: (:source new-source :labels new-labels :env new-env
+                  :macros new-macros :names new-names)."
+  (let* ((boundaries (collect-block-boundaries))
+         (reachable-pcs (collect-reachable-entry-pcs))
+         (vec-len (length *global-instruction-source*)))
+    ;; If no boundaries found, nothing to compact — return originals
+    (when (null boundaries)
+      (return-from compact-for-save
+        (list :source *global-instruction-source*
+              :labels *global-label-table*
+              :env *global-env*
+              :macros *compile-time-macros*
+              :names *procedure-name-table*)))
+    (let* ((initial-ranges (mark-reachable-blocks boundaries reachable-pcs vec-len))
+           (ranges (transitively-retain-blocks
+                    initial-ranges boundaries *global-label-table*
+                    *global-instruction-source* vec-len)))
+      (multiple-value-bind (new-source remap)
+          (compact-instruction-vector *global-instruction-source* ranges)
+        (list :source new-source
+              :labels (remap-label-table *global-label-table* remap)
+              :env (deep-copy-and-remap-env *global-env* remap)
+              :macros (deep-copy-and-remap-macros *compile-time-macros* remap)
+              :names (remap-procedure-name-table *procedure-name-table* remap))))))
+
+;;;; ========================================================================
 ;;;; IMAGE SAVE/LOAD
 ;;;; ========================================================================
 
@@ -1323,28 +1581,29 @@ State is stored in *parameter-table* so parameters survive image round-trips."
 
 (defun ece-save-image (filename)
   "Save the full ECE system state to FILENAME.
-Serializes: instruction source vector, label table, global environment,
-compile-time macros, procedure name table, parameter table, and parameter counter.
+Compacts the instruction vector (removes dead code) before serializing.
+Live system state is untouched — compaction operates on copies.
 Unreadable objects (e.g., open ports/streams) are replaced with NIL."
-  (with-open-file (out filename :direction :output
-                       :if-exists :supersede
-                       :if-does-not-exist :create)
-    (let ((*print-circle* t)
-          (*print-readably* t)
-          (*package* (find-package :ece)))
-      (handler-bind ((print-not-readable
-                      (lambda (c)
-                        (declare (ignore c))
-                        (let ((restart (find-restart 'use-value)))
-                          (when restart (invoke-restart restart nil))))))
-        (write (list (coerce *global-instruction-source* 'list)
-                     (hash-table-to-alist *global-label-table*)
-                     *global-env*
-                     (hash-table-to-alist *compile-time-macros*)
-                     (hash-table-to-alist *procedure-name-table*)
-                     (hash-table-to-alist *parameter-table*)
-                     *parameter-counter*)
-               :stream out))))
+  (let ((compacted (compact-for-save)))
+    (with-open-file (out filename :direction :output
+                         :if-exists :supersede
+                         :if-does-not-exist :create)
+      (let ((*print-circle* t)
+            (*print-readably* t)
+            (*package* (find-package :ece)))
+        (handler-bind ((print-not-readable
+                        (lambda (c)
+                          (declare (ignore c))
+                          (let ((restart (find-restart 'use-value)))
+                            (when restart (invoke-restart restart nil))))))
+          (write (list (coerce (getf compacted :source) 'list)
+                       (hash-table-to-alist (getf compacted :labels))
+                       (getf compacted :env)
+                       (hash-table-to-alist (getf compacted :macros))
+                       (hash-table-to-alist (getf compacted :names))
+                       (hash-table-to-alist *parameter-table*)
+                       *parameter-counter*)
+                 :stream out)))))
   t)
 
 (defun alist-to-hash-table (alist &key (test 'eql))
