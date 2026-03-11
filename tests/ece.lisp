@@ -1693,7 +1693,9 @@
                               p)))
                (unwind-protect
                     (progn
-                      (evaluate '(define-macro (img-swap a b) `(list ,b ,a)))
+                      ;; Use explicit (list) instead of CL backtick — SBCL's internal
+                      ;; comma objects don't survive image serialization round-trip.
+                      (evaluate '(define-macro (img-swap a b) (list 'list b a)))
                       (ece::ece-save-image (namestring tmpfile))
                       (ece::ece-load-image (namestring tmpfile))
                       ;; Macro should still expand correctly for NEW code

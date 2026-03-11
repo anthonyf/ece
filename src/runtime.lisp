@@ -851,7 +851,7 @@ Returns EOF sentinel at end of input."
 ;;; Compile-time macro table (declared here so image save/load can access it;
 ;;; used by compiler.lisp for macro expansion)
 (defvar *compile-time-macros* (make-hash-table :test 'eq)
-  "Hash table mapping macro names to (params body env) for compile-time expansion.")
+  "Hash table mapping macro names to compiled transformer procedures.")
 
 ;;; Register wrapper primitives that don't depend on the compiler.
 ;;; (try-eval, load, save-image!, and load-image! are registered in compiler.lisp.)
@@ -1277,6 +1277,11 @@ Sets continue to past-end-of-vector so (goto (reg continue)) exits cleanly."
                           :initial-proc compiled-proc
                           :initial-argl args
                           :initial-continue return-pc)))
+
+(defun ece-apply-compiled-procedure (compiled-proc args)
+  "Call a compiled procedure with ARGS. Thin wrapper around execute-compiled-call
+for use as an ECE primitive."
+  (execute-compiled-call compiled-proc args))
 
 (defun ece-get-macro (name)
   "Look up a compile-time macro by NAME. Returns the macro def or nil."

@@ -1,7 +1,7 @@
 ## Requirements
 
 ### Requirement: define-macro creates macro transformers
-The evaluator SHALL support `define-macro` as a special form that binds a name to a macro transformer. The transformer SHALL be stored in the environment as `(macro params body env)`.
+The evaluator SHALL support `define-macro` as a special form that binds a name to a macro transformer. The transformer SHALL be compiled into a procedure at definition time and stored in the macro table as a compiled procedure. At expansion time, the compiled transformer SHALL be called with the unevaluated operands and its return value SHALL be the expanded form.
 
 #### Scenario: Simple macro definition and expansion
 - **WHEN** evaluating `(begin (define-macro (my-const name) (list (quote quote) name)) (my-const hello))`

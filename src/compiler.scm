@@ -431,24 +431,18 @@
                             (mc-compile-procedure-call target linkage)))))
 
 ;;; Compile-time macro expansion (self-hosted)
-;;; Expands macros using ECE's own mc-compile-and-go instead of CL primitive.
+;;; Macros are compiled procedures. Call the transformer with unevaluated operands.
 
 (define (mc-expand-macro-at-compile-time macro-def operands)
-  (let ((params (car macro-def))
-        (body (cadr macro-def))
-        (macro-env (caddr macro-def)))
-    (let ((expansion-env (extend-environment params operands macro-env)))
-      (let loop ((exprs body) (result '()))
-        (if (null? exprs)
-            result
-            (loop (cdr exprs) (mc-compile-and-go (car exprs) expansion-env)))))))
+  (apply-compiled-procedure macro-def operands))
 
 (define (mc-compile-define-macro expr target linkage)
   (let ((variable (car (cadr expr)))
         (params (cdr (cadr expr)))
         (body (cddr expr)))
-    ;; Store macro for compile-time expansion using the shared macro table
-    (set-macro! variable (list params body *global-env*))
+    ;; Compile the transformer as a lambda and store the compiled procedure.
+    (let ((transformer (mc-compile-and-go (cons 'lambda (cons params body)))))
+      (set-macro! variable transformer))
     (end-with-linkage linkage
                       (make-instruction-sequence
                        '() (list target)

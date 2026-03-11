@@ -1,4 +1,4 @@
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Macro expansion is self-hosted
 The ECE compiler (`compiler.scm`) SHALL expand macros by calling the compiled macro transformer procedure directly via `execute-compiled-call`. Macro definitions SHALL be compiled into procedures at definition time and stored in the `*compile-time-macros*` table as compiled procedures.

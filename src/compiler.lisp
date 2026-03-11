@@ -200,18 +200,8 @@
 ;;; Compile-time macro expansion
 
 (defun expand-macro-at-compile-time (macro-def operands)
-  "Expand a macro at compile time. MACRO-DEF is (params body env)."
-  (let ((params (car macro-def))
-        (body (cadr macro-def))
-        (macro-env (caddr macro-def)))
-    ;; Build a temporary env for expansion, evaluate the body with the interpreter
-    (let ((expansion-env (extend-environment params operands macro-env)))
-      ;; Evaluate macro body in expansion env to get the expanded form
-      ;; We use the old evaluate for macro expansion at compile time
-      (let ((expanded nil))
-        (dolist (body-expr body)
-          (setf expanded (evaluate body-expr expansion-env)))
-        expanded))))
+  "Expand a macro at compile time. MACRO-DEF is a compiled transformer procedure."
+  (execute-compiled-call macro-def operands))
 
 ;;; Individual compile functions
 
@@ -505,13 +495,13 @@ Scans for (assign ... (op make-compiled-procedure) (label X) ...) and returns X.
 ;;; define-macro compilation
 
 (defun compile-define-macro (expr target linkage)
-  "Register a macro at compile time. Evaluate the macro body to capture it."
+  "Register a macro at compile time. Compile transformer as a lambda."
   (let* ((variable (caadr expr))
          (params (cdadr expr))
          (body (cddr expr)))
-    ;; Store macro for compile-time expansion
-    (setf (gethash variable *compile-time-macros*)
-          (list params body *global-env*))
+    ;; Compile the transformer as a lambda and store the compiled procedure
+    (let ((transformer (compile-and-go `(lambda ,params ,@body))))
+      (setf (gethash variable *compile-time-macros*) transformer))
     (end-with-linkage linkage
                       (make-instruction-sequence
                        '() (list target)
@@ -587,6 +577,7 @@ Scans for (assign ... (op make-compiled-procedure) (label X) ...) and returns X.
 (define-variable! 'get-macro (list 'primitive 'ece-get-macro) *global-env*)
 (define-variable! 'set-macro! (list 'primitive 'ece-set-macro!) *global-env*)
 (define-variable! 'expand-macro (list 'primitive 'expand-macro-at-compile-time) *global-env*)
+(define-variable! 'apply-compiled-procedure (list 'primitive 'ece-apply-compiled-procedure) *global-env*)
 (define-variable! 'make-parameter (list 'primitive 'ece-make-parameter) *global-env*)
 
 ;; Load the standard prelude (pure ECE stdlib definitions)
