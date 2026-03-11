@@ -425,12 +425,18 @@
                             args-code
                             (mc-compile-procedure-call target linkage)))))
 
-;;; Compile-time macro expansion
-;;; Delegates to the CL-level expand-macro-at-compile-time primitive,
-;;; which evaluates macro bodies using extend-environment + evaluate.
+;;; Compile-time macro expansion (self-hosted)
+;;; Expands macros using ECE's own mc-compile-and-go instead of CL primitive.
 
 (define (mc-expand-macro-at-compile-time macro-def operands)
-  (expand-macro macro-def operands))
+  (let ((params (car macro-def))
+        (body (cadr macro-def))
+        (macro-env (caddr macro-def)))
+    (let ((expansion-env (extend-environment params operands macro-env)))
+      (let loop ((exprs body) (result '()))
+        (if (null? exprs)
+            result
+            (loop (cdr exprs) (mc-compile-and-go (car exprs) expansion-env)))))))
 
 (define (mc-compile-define-macro expr target linkage)
   (let ((variable (car (cadr expr)))
@@ -505,7 +511,11 @@
 
 ;;; Integration: compile-and-go via metacircular compiler
 
-(define (mc-compile-and-go expr)
+(define (mc-compile-and-go expr . env-args)
   (let ((compiled (mc-compile expr 'val 'next)))
     (let ((start-pc (assemble-into-global (mc-instructions compiled))))
-      (execute-from-pc start-pc))))
+      (if (null? env-args)
+          (execute-from-pc start-pc)
+          (execute-from-pc start-pc (car env-args))))))
+
+(define (eval expr) (mc-compile-and-go expr))

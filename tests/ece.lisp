@@ -2583,3 +2583,39 @@
                     (evaluate `(load ,(namestring tmpfile)))
                     (ok (= (evaluate (intern "ROUND-TRIP-Z" :ece)) 777)))
                (delete-file tmpfile)))))
+
+(deftest test-eval
+    (testing "eval literal"
+             (ok (= (evaluate '(eval 42)) 42)))
+
+  (testing "eval arithmetic"
+           (ok (= (evaluate '(eval '(+ 1 2))) 3)))
+
+  (testing "eval define"
+           (ok (= (evaluate '(eval '(begin (define eval-test-var 99) eval-test-var))) 99)))
+
+  (testing "eval lambda and call"
+           (ok (= (evaluate '(eval '(begin (define (eval-test-fn x) (* x x))
+                                     (eval-test-fn 5))))
+                  25))))
+
+(deftest test-self-hosted-macros
+    (testing "simple user-defined macro expands correctly"
+             (ok (= (evaluate '(begin
+                                (define-macro (my-add a b) (list '+ a b))
+                                (my-add 10 20)))
+                    30)))
+
+  (testing "macro using stdlib macros in body"
+           (ok (= (evaluate '(begin
+                              (define-macro (my-when-add c a b)
+                               (list 'when c (list '+ a b)))
+                              (my-when-add t 3 4)))
+                  7)))
+
+  (testing "lexical shadowing prevents macro expansion"
+           (ok (= (evaluate '(begin
+                              (define-macro (shadowed-mac x) (list '+ x 1))
+                              ((lambda (shadowed-mac) (shadowed-mac 5))
+                               (lambda (x) (* x 10)))))
+                  50))))

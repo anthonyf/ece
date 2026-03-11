@@ -155,6 +155,7 @@
            #:%label-table-set!
            #:%label-table-ref
            #:%procedure-name-set!
+           #:extend-environment
            #:ece-runtime-error
            #:ece-original-error
            #:ece-error-procedure
@@ -928,7 +929,8 @@ Returns EOF sentinel at end of input."
     (%instruction-vector-push! . ece-%instruction-vector-push!)
     (%label-table-set! . ece-%label-table-set!)
     (%label-table-ref . ece-%label-table-ref)
-    (%procedure-name-set! . ece-%procedure-name-set!)))
+    (%procedure-name-set! . ece-%procedure-name-set!)
+    (extend-environment . extend-environment)))
 
 (dolist (entry *wrapper-primitives*)
   (define-variable! (car entry) (list 'primitive (cdr entry)) *global-env*))
@@ -1204,11 +1206,11 @@ Populated at assembly time from procedure-name pseudo-instructions.")
 
 ;;; Metacircular compiler support primitives
 
-(defun ece-execute-from-pc (start-pc)
-  "Execute instructions starting from START-PC using current global state."
+(defun ece-execute-from-pc (start-pc &optional (env *global-env*))
+  "Execute instructions starting from START-PC in ENV (default: global)."
   (execute-instructions *global-instruction-vector*
                         *global-label-table*
-                        *global-env*
+                        env
                         start-pc))
 
 (defun ece-trace (name)
