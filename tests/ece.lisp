@@ -2619,3 +2619,69 @@
                               ((lambda (shadowed-mac) (shadowed-mac 5))
                                (lambda (x) (* x 10)))))
                   50))))
+
+;;;; ========================================================================
+;;;; PARAMETER ROUND-TRIP TESTS
+;;;; ========================================================================
+
+(deftest test-parameter-round-trip
+    (testing "parameter survives image save/load"
+             (let ((tmpfile (uiop:with-temporary-file (:stream s :pathname p :keep t
+                                                               :type "img")
+                              (declare (ignore s))
+                              p)))
+               (unwind-protect
+                    (progn
+                      (evaluate '(define param-rt-test (make-parameter 42)))
+                      (ok (= (evaluate '(param-rt-test)) 42))
+                      (ece::ece-save-image (namestring tmpfile))
+                      (ece::ece-load-image (namestring tmpfile))
+                      ;; Parameter get should work after round-trip
+                      (ok (= (evaluate '(param-rt-test)) 42))
+                      ;; Parameter set should work after round-trip
+                      (evaluate '(param-rt-test 99))
+                      (ok (= (evaluate '(param-rt-test)) 99)))
+                 (when (probe-file tmpfile) (delete-file tmpfile)))))
+
+  (testing "parameterize works after image round-trip"
+           (let ((tmpfile (uiop:with-temporary-file (:stream s :pathname p :keep t
+                                                             :type "img")
+                            (declare (ignore s))
+                            p)))
+             (unwind-protect
+                  (progn
+                    (evaluate '(define param-rt-dyn (make-parameter 10)))
+                    (ece::ece-save-image (namestring tmpfile))
+                    (ece::ece-load-image (namestring tmpfile))
+                    ;; parameterize should work with restored parameter
+                    (ok (= (evaluate '(parameterize ((param-rt-dyn 777))
+                                       (param-rt-dyn)))
+                           777))
+                    ;; Original value restored after parameterize
+                    (ok (= (evaluate '(param-rt-dyn)) 10)))
+               (when (probe-file tmpfile) (delete-file tmpfile))))))
+
+;;;; ========================================================================
+;;;; IMAGE-BASED STARTUP TESTS
+;;;; ========================================================================
+
+(deftest test-image-startup
+    (testing "mc-compile-and-go works after image load without compiler.lisp"
+             (let ((tmpfile (uiop:with-temporary-file (:stream s :pathname p :keep t
+                                                               :type "img")
+                              (declare (ignore s))
+                              p)))
+               (unwind-protect
+                    (progn
+                      (ece::ece-save-image (namestring tmpfile))
+                      ;; Simulate image-only startup by loading image into current state
+                      (ece::ece-load-image (namestring tmpfile))
+                      ;; Use mc-eval which goes through the ECE metacircular compiler
+                      (ok (= (ece::mc-eval '(+ 1 2)) 3))
+                      (ok (= (ece::mc-eval '(begin (define img-startup-test 42)
+                                             img-startup-test))
+                             42))
+                      (ok (equal (ece::mc-eval '(map (lambda (x) (* x x))
+                                                 (list 1 2 3)))
+                                 '(1 4 9))))
+                 (when (probe-file tmpfile) (delete-file tmpfile))))))

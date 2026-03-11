@@ -163,7 +163,9 @@
            #:ece-error-environment
            #:ece-error-instruction
            #:ece-error-backtrace
-           #:repl))
+           #:repl
+           #:image-repl
+           #:mc-eval))
 
 (in-package :ece)
 
@@ -959,7 +961,24 @@ Returns EOF sentinel at end of input."
   (and (listp proc) (eq (car proc) 'primitive)))
 
 (defun apply-primitive-procedure (proc argl)
-  (apply (symbol-function (cadr proc)) argl))
+  (let* ((name (cadr proc))
+         (param-cell (gethash name *parameter-table*)))
+    (if param-cell
+        ;; Parameter dispatch: 0 args = get, 1 arg = set, 2 args = raw set
+        (cond
+          ((null argl) (car param-cell))
+          ((null (cdr argl))
+           (let ((old (car param-cell)))
+             (setf (car param-cell)
+                   (if (cdr param-cell)
+                       (apply-primitive-procedure (cdr param-cell) argl)
+                       (car argl)))
+             old))
+          (t ;; 2 args: raw set (bypass converter)
+           (let ((old (car param-cell)))
+             (setf (car param-cell) (car argl))
+             old)))
+        (apply (symbol-function name) argl))))
 
 ;;; Continuation helpers for compiled code
 
@@ -1271,64 +1290,64 @@ Sets continue to past-end-of-vector so (goto (reg continue)) exits cleanly."
 
 ;;; Parameter objects (R7RS / SRFI-39)
 
+(defvar *parameter-table* (make-hash-table :test 'eq)
+  "Maps parameter name symbols (PARAM1, PARAM2, ...) to (value . converter) cells.")
 (defvar *parameter-counter* 0)
 
 (defun ece-make-parameter (init &optional converter)
-  "Create a parameter object. Returns a (primitive <name>) whose function
-dispatches on arg count: 0 args = get, 1 arg = set (with converter),
+  "Create a parameter object. Returns a (primitive <name>) that dispatches
+through *parameter-table*: 0 args = get, 1 arg = set (with converter),
 2 args = raw set (bypass converter, used by parameterize restore).
-Uses interned symbols so parameters survive image save/load round-trips."
+State is stored in *parameter-table* so parameters survive image round-trips."
   (let* ((converted-init (if converter
                              (apply-primitive-procedure
                               converter (list init))
                              init))
-         (cell (cons converted-init converter))
          (name (intern (format nil "PARAM~D" (incf *parameter-counter*)) :ece)))
-    (setf (symbol-function name)
-          (lambda (&optional (new-val nil supplied-p) (raw nil))
-            (if supplied-p
-                (let ((old (car cell)))
-                  (setf (car cell)
-                        (if (and (cdr cell) (not raw))
-                            (apply-primitive-procedure (cdr cell) (list new-val))
-                            new-val))
-                  old)
-                (car cell))))
+    (setf (gethash name *parameter-table*) (cons converted-init converter))
     (list 'primitive name)))
 
 ;;;; ========================================================================
 ;;;; IMAGE SAVE/LOAD
 ;;;; ========================================================================
 
+(defun hash-table-to-alist (ht)
+  "Convert a hash table to an alist."
+  (let ((pairs nil))
+    (maphash (lambda (k v) (push (cons k v) pairs)) ht)
+    pairs))
+
 (defun ece-save-image (filename)
   "Save the full ECE system state to FILENAME.
 Serializes: instruction source vector, label table, global environment,
-compile-time macros, and procedure name table."
-  (let ((label-alist (let ((pairs nil))
-                       (maphash (lambda (k v) (push (cons k v) pairs))
-                                *global-label-table*)
-                       pairs))
-        (macro-alist (let ((pairs nil))
-                       (maphash (lambda (k v) (push (cons k v) pairs))
-                                *compile-time-macros*)
-                       pairs))
-        (name-alist (let ((pairs nil))
-                      (maphash (lambda (k v) (push (cons k v) pairs))
-                               *procedure-name-table*)
-                      pairs)))
-    (with-open-file (stream filename :direction :output
-                            :if-exists :supersede
-                            :if-does-not-exist :create)
-      (let ((*print-circle* t)
-            (*print-readably* t)
-            (*package* (find-package :ece)))
+compile-time macros, procedure name table, parameter table, and parameter counter.
+Unreadable objects (e.g., open ports/streams) are replaced with NIL."
+  (with-open-file (out filename :direction :output
+                       :if-exists :supersede
+                       :if-does-not-exist :create)
+    (let ((*print-circle* t)
+          (*print-readably* t)
+          (*package* (find-package :ece)))
+      (handler-bind ((print-not-readable
+                      (lambda (c)
+                        (declare (ignore c))
+                        (let ((restart (find-restart 'use-value)))
+                          (when restart (invoke-restart restart nil))))))
         (write (list (coerce *global-instruction-source* 'list)
-                     label-alist
+                     (hash-table-to-alist *global-label-table*)
                      *global-env*
-                     macro-alist
-                     name-alist)
-               :stream stream))))
+                     (hash-table-to-alist *compile-time-macros*)
+                     (hash-table-to-alist *procedure-name-table*)
+                     (hash-table-to-alist *parameter-table*)
+                     *parameter-counter*)
+               :stream out))))
   t)
+
+(defun alist-to-hash-table (alist &key (test 'eql))
+  "Build a hash table from an alist."
+  (let ((ht (make-hash-table :test test)))
+    (dolist (pair alist ht)
+      (setf (gethash (car pair) ht) (cdr pair)))))
 
 (defun ece-load-image (filename)
   "Load ECE system state from FILENAME, replacing all globals.
@@ -1342,7 +1361,9 @@ Rebuilds the execution vector by resolving operations on each instruction."
           (label-alist (second data))
           (env (third data))
           (macro-alist (fourth data))
-          (name-alist (fifth data)))
+          (name-alist (fifth data))
+          (param-alist (sixth data))
+          (param-counter (seventh data)))
       ;; Rebuild instruction source vector
       (setf *global-instruction-source*
             (make-array (length source-list) :adjustable t :fill-pointer (length source-list)))
@@ -1356,16 +1377,47 @@ Rebuilds the execution vector by resolving operations on each instruction."
             for i from 0
             do (setf (aref *global-instruction-vector* i) (resolve-operations instr)))
       ;; Rebuild label table
-      (setf *global-label-table* (make-hash-table :test 'eq))
-      (dolist (pair label-alist)
-        (setf (gethash (car pair) *global-label-table*) (cdr pair)))
+      (setf *global-label-table* (alist-to-hash-table label-alist :test 'eq))
       ;; Restore environment and macros
       (setf *global-env* env)
-      (setf *compile-time-macros* (make-hash-table :test 'eq))
-      (dolist (pair macro-alist)
-        (setf (gethash (car pair) *compile-time-macros*) (cdr pair)))
+      (setf *compile-time-macros* (alist-to-hash-table macro-alist :test 'eq))
       ;; Restore procedure name table
-      (setf *procedure-name-table* (make-hash-table))
-      (dolist (pair name-alist)
-        (setf (gethash (car pair) *procedure-name-table*) (cdr pair)))))
+      (setf *procedure-name-table* (alist-to-hash-table name-alist))
+      ;; Restore parameter table and counter
+      (when param-alist
+        (setf *parameter-table* (alist-to-hash-table param-alist :test 'eq)))
+      (when param-counter
+        (setf *parameter-counter* param-counter))))
   t)
+
+(defun mc-eval (expr)
+  "Evaluate EXPR using the metacircular compiler from the global env.
+Works with image-only startup (no compiler.lisp needed)."
+  (let ((mc-cag (lookup-variable-value 'mc-compile-and-go *global-env*)))
+    (execute-compiled-call mc-cag (list expr))))
+
+(defun ece-try-eval-via-mc (expr)
+  "Evaluate expr via metacircular compiler, catching errors."
+  (handler-case
+      (mc-eval expr)
+    (error (c)
+      (format t "Error: ~A~%" c)
+      (finish-output)
+      nil)))
+
+(defun image-repl (image-path)
+  "Load an ECE image and start the REPL. No compiler.lisp needed."
+  (ece-load-image image-path)
+  ;; Rebind try-eval to use the metacircular compiler
+  (set-variable-value! 'try-eval (list 'primitive 'ece-try-eval-via-mc) *global-env*)
+  (mc-eval '(begin
+             (define (repl-loop)
+              (display "ece> ")
+              (define input (read))
+              (if (eof? input)
+                  (begin (newline) (display "Bye!") (newline))
+                  (begin
+                   (define result (try-eval input))
+                   (if result (begin (write result) (newline)) (quote ()))
+                   (repl-loop))))
+             (repl-loop))))

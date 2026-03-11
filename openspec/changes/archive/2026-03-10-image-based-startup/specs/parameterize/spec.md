@@ -1,4 +1,4 @@
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: make-parameter creates parameter objects
 `make-parameter` SHALL create a parameter object — a procedure that returns its current value when called with zero arguments and sets it when called with one argument. Parameter objects SHALL use a serializable parameter table instead of CL `symbol-function` closures, so they survive image save/load round-trips.
@@ -23,28 +23,3 @@
 - **WHEN** a parameter is created with `(make-parameter 42)` and an image is saved and loaded
 - **THEN** the parameter SHALL still return `42` when called with zero arguments
 - **AND** setting the parameter SHALL work correctly after load
-
-### Requirement: parameterize dynamically rebinds parameters
-`parameterize` SHALL dynamically rebind parameter objects for the extent of its body, restoring original values afterward. Called functions within the body SHALL see the rebound values.
-
-#### Scenario: Basic dynamic rebinding
-- **WHEN** `(parameterize ((p 99)) (p))` is evaluated where `p` has value `42`
-- **THEN** the result SHALL be `99`
-- **AND** `(p)` SHALL be `42` after `parameterize` returns
-
-#### Scenario: Dynamic scope propagates to called functions
-- **WHEN** a function `(define (read-p) (p))` is called inside `(parameterize ((p 99)) (read-p))`
-- **THEN** `read-p` SHALL return `99`
-
-#### Scenario: Multiple bindings
-- **WHEN** `(parameterize ((p1 10) (p2 20)) (+ (p1) (p2)))` is evaluated
-- **THEN** the result SHALL be `30`
-
-#### Scenario: Nested parameterize
-- **WHEN** `(parameterize ((p 1)) (parameterize ((p 2)) (p)))` is evaluated
-- **THEN** the result SHALL be `2`
-- **AND** `(p)` SHALL be the original value after both return
-
-#### Scenario: Converter applied during parameterize
-- **WHEN** a parameter with converter is rebound via `parameterize`
-- **THEN** the converter SHALL be applied to the new value

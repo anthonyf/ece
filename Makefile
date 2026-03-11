@@ -1,10 +1,20 @@
-.PHONY: test repl fmt check-fmt setup clean
+.PHONY: test repl run image fmt check-fmt setup clean
+
+BOOTSTRAP_IMAGE := bootstrap/ece.image
 
 test:
 	qlot exec sbcl --eval '(asdf:test-system :ece)' --quit
 
 repl:
 	qlot exec sbcl --load ece.asd --eval '(asdf:load-system :ece)' --eval '(ece:repl)'
+
+image:
+	@mkdir -p bootstrap
+	qlot exec sbcl --load ece.asd --eval '(asdf:load-system :ece)' --eval '(ece::ece-save-image "$(BOOTSTRAP_IMAGE)")' --quit
+	@echo "Bootstrap image saved to $(BOOTSTRAP_IMAGE)"
+
+run:
+	qlot exec sbcl --load src/runtime.lisp --eval '(ece:image-repl "$(BOOTSTRAP_IMAGE)")'
 
 ROOT_DIR := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
 LISP_FILES := $(wildcard src/*.lisp) $(wildcard tests/*.lisp) ece.asd
