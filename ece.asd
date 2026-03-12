@@ -18,6 +18,7 @@
     :components ((:module "src"
                           :components
                           ((:file "runtime")
+                           (:file "readtable" :depends-on ("runtime"))
                            (:file "boot" :depends-on ("runtime"))
                            (:static-file "prelude.scm"))))
     :in-order-to ((test-op (test-op "ece/tests"))))
@@ -28,7 +29,8 @@
     :components ((:module "src"
                           :components
                           ((:file "runtime")
-                           (:file "compiler" :depends-on ("runtime"))
+                           (:file "readtable" :depends-on ("runtime"))
+                           (:file "compiler" :depends-on ("runtime" "readtable"))
                            (:static-file "prelude.scm")
                            (:static-file "compaction.scm")))))
 

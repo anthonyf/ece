@@ -10,7 +10,7 @@ repl:
 
 image:
 	@mkdir -p bootstrap
-	qlot exec sbcl --load ece.asd --eval '(asdf:load-system :ece/cold)' --eval '(ece::ece-save-image "$(BOOTSTRAP_IMAGE)")' --quit
+	qlot exec sbcl --dynamic-space-size 4096 --load ece.asd --eval '(asdf:load-system :ece/cold)' --eval '(ece::ece-save-image "$(BOOTSTRAP_IMAGE)")' --quit
 	@echo "Bootstrap image saved to $(BOOTSTRAP_IMAGE)"
 
 run:

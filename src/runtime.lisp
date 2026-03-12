@@ -372,125 +372,7 @@ a nearby proc gives a named frame; a lone continue gives an anonymous frame."
 (defvar *eof-sentinel* (gensym "EOF"))
 
 ;;; Custom readtable for ECE: ` → quasiquote, , → unquote, ,@ → unquote-splicing
-;;; Wrapped in eval-when so it's available at compile time (needed for backtick
-;;; syntax in macro definitions below).
-(eval-when (:compile-toplevel :load-toplevel :execute)
-  (defvar *ece-readtable* (copy-readtable))
-
-  (set-macro-character #\`
-                       (lambda (stream char)
-                         (declare (ignore char))
-                         (list 'quasiquote (read stream t nil t)))
-                       nil *ece-readtable*)
-
-  (set-macro-character #\,
-                       (lambda (stream char)
-                         (declare (ignore char))
-                         (if (eql (peek-char nil stream nil nil) #\@)
-                             (progn (read-char stream)
-                                    (list 'unquote-splicing (read stream t nil t)))
-                             (list 'unquote (read stream t nil t))))
-                       nil *ece-readtable*)
-
-  ;; Hash table literal: {k1 v1 k2 v2 ...} → (hash-table (k1 . v1) (k2 . v2) ...)
-  (set-macro-character #\{
-                       (lambda (stream char)
-                         (declare (ignore char))
-                         (let* ((items (read-delimited-list #\} stream t))
-                                (entries (loop for (k v) on items by #'cddr
-                                               collect (cons k v))))
-                           (cons :hash-table entries)))
-                       nil *ece-readtable*)
-
-  (set-macro-character #\}
-                       (get-macro-character #\))
-                       nil *ece-readtable*)
-
-  ;; String interpolation: "Hello $name" → (string-append "Hello " (write-to-string name))
-  ;; $var interpolates a variable, $(expr) interpolates an expression, $$ is literal $
-  ;; Strings without $ are returned as plain strings.
-  (defun ece-identifier-char-p (c)
-    "Return T if C is a valid identifier character after $."
-    (and c (or (alphanumericp c)
-               (member c '(#\- #\? #\! #\* #\> #\< #\_ #\/)))))
-
-  (set-macro-character #\"
-                       (lambda (stream char)
-                         (declare (ignore char))
-                         (let ((segments '())
-                               (buf (make-array 0 :element-type 'character :adjustable t :fill-pointer 0)))
-                           (flet ((flush-buf ()
-                                    (when (> (length buf) 0)
-                                      (push (copy-seq buf) segments)
-                                      (setf (fill-pointer buf) 0))))
-                             (loop
-                              (let ((c (read-char stream t nil t)))
-                                (cond
-                                  ;; End of string
-                                  ((eql c #\")
-                                   (flush-buf)
-                                   (let ((segs (nreverse segments)))
-                                     (return
-                                       (cond
-                                         ;; Single literal string — return directly
-                                         ((and (= (length segs) 1) (stringp (first segs)))
-                                          (first segs))
-                                         ;; Single non-string expression — wrap in write-to-string
-                                         ((and (= (length segs) 1) (not (stringp (first segs))))
-                                          (list 'write-to-string (first segs)))
-                                         ;; Mixed — build (string-append ...) with write-to-string wrapping
-                                         (t
-                                          (cons 'string-append
-                                                (mapcar (lambda (seg)
-                                                          (if (stringp seg)
-                                                              seg
-                                                              (list 'write-to-string seg)))
-                                                        segs)))))))
-                                  ;; Backslash escape
-                                  ((eql c #\\)
-                                   (let ((next (read-char stream t nil t)))
-                                     (case next
-                                       (#\n (vector-push-extend #\Newline buf))
-                                       (#\t (vector-push-extend #\Tab buf))
-                                       (#\" (vector-push-extend #\" buf))
-                                       (#\\ (vector-push-extend #\\ buf))
-                                       (t (vector-push-extend next buf)))))
-                                  ;; Dollar interpolation
-                                  ((eql c #\$)
-                                   (let ((next (peek-char nil stream t nil t)))
-                                     (cond
-                                       ;; $$ → literal $
-                                       ((eql next #\$)
-                                        (read-char stream t nil t)
-                                        (vector-push-extend #\$ buf))
-                                       ;; $(expr) → read s-expression
-                                       ((eql next #\()
-                                        (flush-buf)
-                                        (push (read stream t nil t) segments))
-                                       ;; $identifier → read symbol name
-                                       ((ece-identifier-char-p next)
-                                        (flush-buf)
-                                        (let ((sym-buf (make-array 0 :element-type 'character
-                                                                   :adjustable t :fill-pointer 0)))
-                                          (loop for sc = (peek-char nil stream nil nil t)
-                                                while (ece-identifier-char-p sc)
-                                                do (vector-push-extend (read-char stream t nil t) sym-buf))
-                                          (push (intern (string-upcase sym-buf) :ece) segments)))
-                                       ;; $ followed by non-identifier → literal $
-                                       (t (vector-push-extend #\$ buf)))))
-                                  ;; Regular character
-                                  (t (vector-push-extend c buf))))))))
-                       nil *ece-readtable*))
-
 ;;; I/O primitives with custom wrappers
-
-(defun ece-read ()
-  "Read an s-expression with *read-eval* disabled. Returns *eof-sentinel* on EOF."
-  (handler-case
-      (let ((*read-eval* nil)
-            (*readtable* *ece-readtable*))
-        (read))
-    (end-of-file () *eof-sentinel*)))
 
 (defun hamt-collect-entries (root)
   "Walk a HAMT trie and collect all (key . val) pairs into a list."
@@ -715,23 +597,17 @@ Returns EOF sentinel at end of input."
               lst)))
 
 (defun ece-save-continuation! (filename value)
-  "Write a value to a file as a readable s-expression with circular structure support."
+  "Write a value to a file in flat image format."
   (with-open-file (stream filename :direction :output
                           :if-exists :supersede
                           :if-does-not-exist :create)
-    (let ((*print-circle* t)
-          (*print-readably* t)
-          (*package* (find-package :ece)))
-      (write value :stream stream)))
+    (flat-image-serialize value stream))
   t)
 
 (defun ece-load-continuation (filename)
-  "Read a single s-expression from a file, returning it as an ECE value."
+  "Read a value from a file in flat image format."
   (with-open-file (stream filename :direction :input)
-    (let ((*readtable* *ece-readtable*)
-          (*read-eval* nil)
-          (*package* (find-package :ece)))
-      (read stream))))
+    (flat-image-deserialize stream)))
 
 ;;; Ports (R7RS-style I/O abstraction)
 
@@ -844,8 +720,7 @@ Returns EOF sentinel at end of input."
 ;;; (try-eval, load, save-image!, and load-image! are registered in compiler.lisp.)
 
 (defparameter *wrapper-primitives*
-  '((read . ece-read)
-    (print . print)
+  '((print . print)
     (write . ece-write)
     (display . ece-display)
     (newline . ece-newline)
@@ -1381,21 +1256,204 @@ State is stored in *parameter-table* so parameters survive image round-trips."
     (maphash (lambda (k v) (push (cons k v) pairs)) ht)
     pairs))
 
+(defun flat-image-count-refs (data)
+  "Pre-pass: walk DATA depth-first, counting references by identity (eq).
+Returns a hash table mapping objects to their reference count.
+Only cons cells, vectors, and strings are tracked (atoms are cheap to re-emit).
+Uses an explicit work stack to avoid CL stack overflow."
+  (let ((counts (make-hash-table :test 'eq))
+        (work (list data)))
+    (loop while work do
+          (let ((obj (pop work)))
+            (when (or (consp obj) (vectorp obj) (stringp obj)
+                      ;; Track uninterned symbols (gensyms) for identity sharing
+                      (and (symbolp obj) (null (symbol-package obj))))
+              (let ((n (gethash obj counts 0)))
+                (setf (gethash obj counts) (1+ n))
+                (when (= n 0)
+                  ;; First visit — push children (symbols have none)
+                  (cond
+                    ((consp obj)
+                     (push (cdr obj) work)
+                     (push (car obj) work))
+                    ((and (vectorp obj) (not (stringp obj)))
+                     (loop for i from (1- (length obj)) downto 0
+                           do (push (aref obj i) work)))))))))
+    counts))
+
+(defun flat-image-escape-string (s)
+  "Escape a string for flat image format: \\n, \\t, \\r, \\\", \\\\."
+  (with-output-to-string (out)
+    (loop for c across s do
+          (case c
+            (#\Newline (write-string "\\n" out))
+            (#\Tab (write-string "\\t" out))
+            (#\Return (write-string "\\r" out))
+            (#\" (write-string "\\\"" out))
+            (#\\ (write-string "\\\\" out))
+            (t (write-char c out))))))
+
+(defun flat-image-format-keyword-name (sym)
+  "Format a keyword name, using |...| escaping if needed."
+  (let ((name (symbol-name sym)))
+    (if (and (> (length name) 0)
+             (every (lambda (c)
+                      (or (alpha-char-p c) (digit-char-p c)
+                          (member c '(#\- #\_ #\? #\! #\* #\> #\< #\/ #\+ #\= #\. #\~))))
+                    name))
+        name
+        (format nil "|~A|" name))))
+
+(defun flat-image-proper-list-p (obj def-ids)
+  "Return the length if OBJ is a proper list with no shared internal cons cells, NIL otherwise.
+A list can use the `list N` opcode only if no cdr spine cons is shared."
+  (let ((len 0))
+    (loop
+     (cond
+       ((null obj) (return len))
+       ((not (consp obj)) (return nil))
+       ;; If a cdr-spine cons (after the head) is shared, can't use list opcode
+       ((and (> len 0) (gethash obj def-ids)) (return nil))
+       (t (incf len)
+          (setf obj (cdr obj)))))))
+
+(defun flat-image-serialize (data stream)
+  "Serialize DATA to STREAM in flat image format.
+Two-pass: first count references, then emit instructions.
+Fully iterative to avoid stack overflow."
+  (let* ((counts (flat-image-count-refs data))
+         (def-ids (make-hash-table :test 'eq))
+         (emitted (make-hash-table :test 'eq))
+         (next-id 0)
+         (work-stack (make-array 1024 :adjustable t :fill-pointer 0)))
+    ;; Assign def IDs to multiply-referenced objects
+    (maphash (lambda (obj count)
+               (when (> count 1)
+                 (setf (gethash obj def-ids) next-id)
+                 (incf next-id)))
+             counts)
+    (flet ((wpush (item) (vector-push-extend item work-stack))
+           (wpop () (vector-pop work-stack)))
+      (labels
+          ((schedule-emit (obj) (wpush (cons :emit obj)))
+           (mark-emitted (obj)
+             (let ((id (gethash obj def-ids)))
+               (when id
+                 (setf (gethash obj emitted) t))))
+           (emit-atom (obj)
+             (cond
+               ((null obj) (write-string "nil" stream) (terpri stream))
+               ((eq obj t) (write-string "t" stream) (terpri stream))
+               ((integerp obj) (format stream "int ~D~%" obj))
+               ((floatp obj) (format stream "float ~F~%" obj))
+               ((characterp obj) (format stream "chr ~D~%" (char-code obj)))
+               ((keywordp obj) (format stream "kwd ~A~%" (flat-image-format-keyword-name obj)))
+               ;; Uninterned symbol (gensym)
+               ((and (symbolp obj) (null (symbol-package obj)))
+                (format stream "gsym ~A~%" (symbol-name obj)))
+               ;; Interned symbol — include package if not accessible from :ece
+               ((symbolp obj)
+                (let ((name (symbol-name obj)))
+                  (multiple-value-bind (found-sym status)
+                      (find-symbol name :ece)
+                    (if (and status (eq found-sym obj))
+                        (format stream "sym ~A~%" name)
+                        (format stream "sym ~A::~A~%"
+                                (package-name (symbol-package obj)) name)))))
+               (t (warn "flat-image-serialize: unhandled type ~A for ~S" (type-of obj) obj)
+                  (write-string "nil" stream) (terpri stream))))
+           (schedule-cons-structure (start)
+             ;; Mark start as emitted immediately to prevent duplicate scheduling
+             (mark-emitted start)
+             (let ((list-len (flat-image-proper-list-p start def-ids)))
+               (if list-len
+                   ;; Proper list
+                   (progn
+                     (when (gethash start def-ids)
+                       (wpush (cons :def start)))
+                     (wpush (cons :list list-len))
+                     (let ((rev nil))
+                       (do ((cur start (cdr cur)))
+                           ((null cur))
+                         (push (car cur) rev))
+                       (dolist (item rev)
+                         (schedule-emit item))))
+                   ;; Dotted/improper chain
+                   (let ((cars nil) (n 0) (final-cdr nil))
+                     (do ((cur start))
+                         (nil)
+                       (push (car cur) cars)
+                       (incf n)
+                       (let ((next (cdr cur)))
+                         (cond
+                           ((null next) (setf final-cdr nil) (return))
+                           ((not (consp next)) (setf final-cdr next) (return))
+                           ;; Shared cdr: stop here
+                           ((gethash next def-ids) (setf final-cdr next) (return))
+                           (t (setf cur next)))))
+                     (when (gethash start def-ids)
+                       (wpush (cons :def start)))
+                     (wpush (cons :conses n))
+                     (schedule-emit final-cdr)
+                     ;; cars is in reverse; emit outermost first
+                     (dolist (car-val cars)
+                       (schedule-emit car-val)))))))
+        ;; Initialize
+        (schedule-emit data)
+        ;; Process work stack
+        (loop while (> (fill-pointer work-stack) 0) do
+              (let* ((item (wpop))
+                     (tag (car item))
+                     (val (cdr item)))
+                (case tag
+                  (:emit
+                   (cond
+                     ;; Already emitted (shared): back-reference
+                     ((gethash val emitted)
+                      (format stream "ref ~D~%" (gethash val def-ids)))
+                     ;; String
+                     ((stringp val)
+                      (format stream "str \"~A\"~%" (flat-image-escape-string val))
+                      (mark-emitted val)
+                      (let ((id (gethash val def-ids)))
+                        (when id (format stream "def ~D~%" id))))
+                     ;; Vector (non-string)
+                     ((and (vectorp val) (not (stringp val)))
+                      (mark-emitted val)
+                      (when (gethash val def-ids)
+                        (wpush (cons :def val)))
+                      (wpush (cons :vec (length val)))
+                      (loop for i from (1- (length val)) downto 0
+                            do (schedule-emit (aref val i))))
+                     ;; Uninterned symbol (gensym) - needs def/ref like strings
+                     ((and (symbolp val) (null (symbol-package val)))
+                      (format stream "gsym ~A~%" (symbol-name val))
+                      (mark-emitted val)
+                      (let ((id (gethash val def-ids)))
+                        (when id (format stream "def ~D~%" id))))
+                     ;; Cons cell
+                     ((consp val)
+                      (schedule-cons-structure val))
+                     ;; Atoms
+                     (t (emit-atom val))))
+                  (:def
+                   (format stream "def ~D~%" (gethash val def-ids)))
+                  (:list
+                   (format stream "list ~D~%" val))
+                  (:vec
+                   (format stream "vec ~D~%" val))
+                  (:conses
+                   (loop repeat val
+                         do (write-string "cons" stream)
+                         (terpri stream))))))))))
+
 (defun ece-%write-image (filename data)
-  "Serialize DATA list to FILENAME with *print-circle* and unreadable-object handling.
+  "Serialize DATA to FILENAME in flat image format.
 DATA should be the 7-element image format list."
   (with-open-file (out filename :direction :output
                        :if-exists :supersede
                        :if-does-not-exist :create)
-    (let ((*print-circle* t)
-          (*print-readably* t)
-          (*package* (find-package :ece)))
-      (handler-bind ((print-not-readable
-                      (lambda (c)
-                        (declare (ignore c))
-                        (let ((restart (find-restart 'use-value)))
-                          (when restart (invoke-restart restart nil))))))
-        (write data :stream out))))
+    (flat-image-serialize data out))
   t)
 
 (defun ece-save-image (filename)
@@ -1409,14 +1467,162 @@ DATA should be the 7-element image format list."
     (dolist (pair alist ht)
       (setf (gethash (car pair) ht) (cdr pair)))))
 
+(defun flat-image-unescape-string (s)
+  "Unescape a flat image string: \\n → newline, \\t → tab, \\r → CR, \\\" → quote, \\\\ → backslash."
+  (let ((result (make-array 0 :element-type 'character :adjustable t :fill-pointer 0))
+        (i 0)
+        (len (length s)))
+    (loop while (< i len) do
+          (let ((c (char s i)))
+            (if (and (eql c #\\) (< (1+ i) len))
+                (let ((next (char s (1+ i))))
+                  (case next
+                    (#\n (vector-push-extend #\Newline result))
+                    (#\t (vector-push-extend #\Tab result))
+                    (#\r (vector-push-extend #\Return result))
+                    (#\" (vector-push-extend #\" result))
+                    (#\\ (vector-push-extend #\\ result))
+                    (t (vector-push-extend #\\ result)
+                       (vector-push-extend next result)))
+                  (incf i 2))
+                (progn
+                  (vector-push-extend c result)
+                  (incf i)))))
+    (copy-seq result)))
+
+(defun flat-image-parse-keyword-name (name-str)
+  "Parse a keyword name, handling |...| escaping."
+  (if (and (>= (length name-str) 2)
+           (eql (char name-str 0) #\|)
+           (eql (char name-str (1- (length name-str))) #\|))
+      ;; Escaped name: strip the pipes
+      (intern (subseq name-str 1 (1- (length name-str))) :keyword)
+      (intern name-str :keyword)))
+
+(defun flat-image-backpatch (root defs forward-refs)
+  "Walk ROOT replacing forward-reference placeholders with actual values.
+FORWARD-REFS maps placeholder symbols to def IDs."
+  (let ((visited (make-hash-table :test 'eq)))
+    (labels ((patch-value (v)
+               "Return the patched value for V."
+               (let ((id (gethash v forward-refs)))
+                 (if id (gethash id defs) v)))
+             (walk (obj)
+               (when (and obj (not (gethash obj visited)))
+                 (cond
+                   ((consp obj)
+                    (setf (gethash obj visited) t)
+                    (setf (car obj) (patch-value (car obj)))
+                    (setf (cdr obj) (patch-value (cdr obj)))
+                    (walk (car obj))
+                    (walk (cdr obj)))
+                   ((and (vectorp obj) (not (stringp obj)))
+                    (setf (gethash obj visited) t)
+                    (loop for i below (length obj)
+                          do (setf (aref obj i) (patch-value (aref obj i)))
+                          (walk (aref obj i))))))))
+      (walk root)
+      root)))
+
+(defun flat-image-deserialize (stream)
+  "Deserialize flat image format from STREAM. Returns the top-of-stack value.
+Supports forward references: ref N before def N uses placeholders that are
+backpatched after deserialization."
+  (let ((stack nil)
+        (defs (make-hash-table))
+        (forward-refs (make-hash-table :test 'eq))
+        (has-forward-refs nil))
+    (loop for line = (read-line stream nil nil)
+          while line do
+          (let ((trimmed (string-trim '(#\Space #\Tab #\Return) line)))
+            (when (> (length trimmed) 0)
+              (let* ((space-pos (position #\Space trimmed))
+                     (opcode (if space-pos (subseq trimmed 0 space-pos) trimmed))
+                     (arg (if space-pos (subseq trimmed (1+ space-pos)) nil)))
+                (cond
+                  ;; nil
+                  ((string= opcode "nil")
+                   (push nil stack))
+                  ;; t
+                  ((string= opcode "t")
+                   (push t stack))
+                  ;; int N
+                  ((string= opcode "int")
+                   (push (parse-integer arg) stack))
+                  ;; float N
+                  ((string= opcode "float")
+                   (push (read-from-string arg) stack))
+                  ;; chr N
+                  ((string= opcode "chr")
+                   (push (code-char (parse-integer arg)) stack))
+                  ;; sym NAME or sym PACKAGE::NAME
+                  ((string= opcode "sym")
+                   (let ((dcolon (search "::" arg)))
+                     (if dcolon
+                         (let ((pkg-name (subseq arg 0 dcolon))
+                               (sym-name (subseq arg (+ 2 dcolon))))
+                           (push (intern sym-name (or (find-package pkg-name)
+                                                      (make-package pkg-name :use nil)))
+                                 stack))
+                         (push (intern arg :ece) stack))))
+                  ;; gsym NAME (uninterned symbol)
+                  ((string= opcode "gsym")
+                   (push (make-symbol arg) stack))
+                  ;; kwd NAME
+                  ((string= opcode "kwd")
+                   (push (flat-image-parse-keyword-name arg) stack))
+                  ;; str "..."
+                  ((string= opcode "str")
+                   ;; Strip surrounding quotes and unescape
+                   (let ((content (subseq arg 1 (1- (length arg)))))
+                     (push (flat-image-unescape-string content) stack)))
+                  ;; cons
+                  ((string= opcode "cons")
+                   (let ((b (pop stack))
+                         (a (pop stack)))
+                     (push (cons a b) stack)))
+                  ;; list N
+                  ((string= opcode "list")
+                   (let* ((n (parse-integer arg))
+                          (items (make-list n)))
+                     ;; Pop N items (last pushed = last element)
+                     (loop for i from (1- n) downto 0
+                           do (setf (nth i items) (pop stack)))
+                     (push items stack)))
+                  ;; vec N
+                  ((string= opcode "vec")
+                   (let* ((n (parse-integer arg))
+                          (v (make-array n)))
+                     (loop for i from (1- n) downto 0
+                           do (setf (aref v i) (pop stack)))
+                     (push v stack)))
+                  ;; def N
+                  ((string= opcode "def")
+                   (let ((id (parse-integer arg)))
+                     (setf (gethash id defs) (first stack))))
+                  ;; ref N
+                  ((string= opcode "ref")
+                   (let ((id (parse-integer arg)))
+                     (let ((val (gethash id defs)))
+                       (if val
+                           (push val stack)
+                           ;; Forward reference: create placeholder
+                           (let ((placeholder (gensym "FWD-")))
+                             (setf (gethash placeholder forward-refs) id)
+                             (setf has-forward-refs t)
+                             (push placeholder stack))))))
+                  ;; Unknown opcode
+                  (t (warn "flat-image-deserialize: unknown opcode ~S" opcode)))))))
+    (let ((result (first stack)))
+      (if has-forward-refs
+          (flat-image-backpatch result defs forward-refs)
+          result))))
+
 (defun ece-load-image (filename)
-  "Load ECE system state from FILENAME, replacing all globals.
+  "Load ECE system state from FILENAME in flat image format.
 Rebuilds the execution vector by resolving operations on each instruction."
   (let ((data (with-open-file (stream filename :direction :input)
-                (let ((*readtable* *ece-readtable*)
-                      (*read-eval* nil)
-                      (*package* (find-package :ece)))
-                  (read stream)))))
+                (flat-image-deserialize stream))))
     (let ((source-list (first data))
           (label-alist (second data))
           (env (third data))

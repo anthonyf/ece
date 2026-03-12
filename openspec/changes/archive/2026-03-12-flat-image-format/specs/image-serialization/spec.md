@@ -1,4 +1,4 @@
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: save-image! serializes full system state
 The `save-image!` primitive SHALL compact the instruction vector before serializing, removing unreachable instructions. It SHALL then write the compacted system state to a file using the flat line-oriented format. The compaction SHALL operate on copies — the live system state SHALL remain untouched.
