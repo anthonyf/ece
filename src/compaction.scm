@@ -1,6 +1,9 @@
 ;;; ECE Image Compaction
 ;;; Compacts the instruction vector by removing unreachable code blocks
 ;;; before saving an image. Ported from CL runtime to ECE.
+;;;
+;;; All internal hash tables use %eq-hash-* (CL-backed O(1)) instead of
+;;; ECE's alist-based hash tables to handle large instruction vectors.
 
 ;;; Helper: insertion sort for a list of numbers (ascending)
 (define (sort-numbers lst)
@@ -14,7 +17,7 @@
 
 ;;; Walk a value to collect entry PCs from compiled procedures and continuations.
 ;;; VISITED is an eq-based hash table (from %eq-hash-table).
-;;; PCS is a regular ECE hash table (integer keys).
+;;; PCS is also an eq-based hash table (integer keys).
 (define (collect-entry-pcs-from-value val pcs visited)
   (when (pair? val)
     (unless (%eq-hash-has-key? visited val)
@@ -22,7 +25,7 @@
       (cond
        ;; compiled-procedure: (compiled-procedure entry-pc env)
        ((eq? (car val) 'compiled-procedure)
-        (hash-set! pcs (car (cdr val)) t)
+        (%eq-hash-set! pcs (car (cdr val)) t)
         (collect-entry-pcs-from-env (car (cdr (cdr val))) pcs visited))
        ;; continuation: (continuation stack continue-pc)
        ((eq? (car val) 'continuation)
@@ -56,9 +59,9 @@
    (map car (%procedure-name-entries))))
 
 ;;; Collect entry PCs reachable from roots: global env and macro table.
-;;; Returns an ECE hash table (pc -> t).
+;;; Returns an %eq-hash-table (pc -> t).
 (define (collect-reachable-entry-pcs)
-  (let ((pcs (hash-table))
+  (let ((pcs (%eq-hash-table))
         (visited (%eq-hash-table)))
     ;; From global env
     (collect-entry-pcs-from-env *global-env* pcs visited)
@@ -68,16 +71,6 @@
        (collect-entry-pcs-from-value (cdr entry) pcs visited))
      (%macro-table-entries))
     pcs))
-
-;;; Check if any PC in [start, end) is in the reachable-pcs hash set.
-(define (block-contains-reachable-pc start end reachable-pcs)
-  (let ((found '()))
-    (for-each
-     (lambda (pc)
-       (when (and (>= pc start) (< pc end))
-         (set found t)))
-     (hash-keys reachable-pcs))
-    found))
 
 ;;; Build list of all block ranges from boundaries.
 ;;; Prepend 0 if not already a boundary.
@@ -95,12 +88,24 @@
             (cons (cons start end) (build (cdr starts))))))
     (build all-starts)))
 
-;;; Mark reachable blocks: return list of (start . end) ranges for live blocks.
-(define (mark-reachable-blocks boundaries reachable-pcs vector-length)
-  (filter
-   (lambda (range)
-     (block-contains-reachable-pc (car range) (cdr range) reachable-pcs))
-   (build-all-block-ranges boundaries vector-length)))
+;;; Mark reachable blocks: for each reachable PC, find its block.
+;;; Returns list of (start . end) ranges for live blocks.
+(define (mark-reachable-blocks all-ranges reachable-pcs)
+  (let ((result (%eq-hash-table)))  ;; start-pc -> range, deduplicates
+    (for-each
+     (lambda (pc)
+       ;; Find which range contains this PC
+       (define (find-range ranges)
+         (when (pair? ranges)
+           (let ((range (car ranges)))
+             (if (and (>= pc (car range)) (< pc (cdr range)))
+                 (%eq-hash-set! result (car range) range)
+                 (find-range (cdr ranges))))))
+       (find-range all-ranges))
+     (%eq-hash-keys reachable-pcs))
+    ;; Collect values
+    (map (lambda (k) (%eq-hash-ref result k))
+         (%eq-hash-keys result))))
 
 ;;; Collect label names referenced by an instruction (recursive tree walk).
 (define (collect-label-refs instr)
@@ -115,35 +120,32 @@
   refs)
 
 ;;; Find the block (start . end) that contains target-pc.
-(define (find-block-for-pc target-pc boundaries vector-length)
-  (if (>= target-pc vector-length)
+;;; Uses pre-computed all-ranges list.
+(define (find-block-for-pc target-pc all-ranges)
+  (if (null? all-ranges)
       '()
-      (let ((all-ranges (build-all-block-ranges boundaries vector-length)))
-        (define (search ranges)
-          (if (null? ranges)
-              '()
-              (let ((range (car ranges)))
-                (if (and (>= target-pc (car range)) (< target-pc (cdr range)))
-                    range
-                    (search (cdr ranges))))))
-        (search all-ranges))))
+      (let ((range (car all-ranges)))
+        (if (and (>= target-pc (car range)) (< target-pc (cdr range)))
+            range
+            (find-block-for-pc target-pc (cdr all-ranges))))))
 
 ;;; Build a label-to-pc lookup hash table from label-table entries.
+;;; Uses %eq-hash for O(1) lookup.
 (define (build-label-lookup)
-  (let ((lookup (hash-table)))
+  (let ((lookup (%eq-hash-table)))
     (for-each
      (lambda (entry)
-       (hash-set! lookup (car entry) (cdr entry)))
+       (%eq-hash-set! lookup (car entry) (cdr entry)))
      (%label-table-entries))
     lookup))
 
 ;;; Transitively retain blocks referenced by labels in already-retained blocks.
-(define (transitively-retain-blocks initial-ranges boundaries label-lookup vector-length)
-  (let ((retained (hash-table))   ;; start-pc -> (start . end)
+(define (transitively-retain-blocks initial-ranges all-ranges label-lookup)
+  (let ((retained (%eq-hash-table))   ;; start-pc -> (start . end)
         (worklist initial-ranges))
     ;; Seed with initial ranges
     (for-each
-     (lambda (range) (hash-set! retained (car range) range))
+     (lambda (range) (%eq-hash-set! retained (car range) range))
      initial-ranges)
     ;; Process worklist
     (define (process)
@@ -156,11 +158,12 @@
               (let ((instr (%instruction-source-ref pc)))
                 (for-each
                  (lambda (label-name)
-                   (let ((target-pc (hash-ref label-lookup label-name)))
+                   (let ((target-pc (%eq-hash-ref label-lookup label-name)))
                      (when target-pc
-                       (let ((block (find-block-for-pc target-pc boundaries vector-length)))
-                         (when (and (pair? block) (not (hash-has-key? retained (car block))))
-                           (hash-set! retained (car block) block)
+                       (let ((block (find-block-for-pc target-pc all-ranges)))
+                         (when (and (pair? block)
+                                    (not (%eq-hash-has-key? retained (car block))))
+                           (%eq-hash-set! retained (car block) block)
                            (set worklist (cons block worklist)))))))
                  (collect-label-refs instr)))
               (scan-pc (+ pc 1))))
@@ -168,8 +171,8 @@
         (process)))
     (process)
     ;; Return sorted ranges
-    (let ((ranges (map (lambda (k) (hash-ref retained k))
-                       (hash-keys retained))))
+    (let ((ranges (map (lambda (k) (%eq-hash-ref retained k))
+                       (%eq-hash-keys retained))))
       (sort-ranges ranges))))
 
 ;;; Sort ranges by start PC (ascending).
@@ -183,17 +186,17 @@
   (reduce (lambda (acc r) (insert r acc)) '() ranges))
 
 ;;; Compact instruction vector: copy live blocks into a new list.
-;;; Returns (new-source-list . remap-table) where remap maps old-pc -> new-pc.
+;;; Returns (new-source-list . remap-table) where remap is an %eq-hash-table.
 (define (compact-instruction-vector ranges)
   (let ((new-source '())
-        (remap (hash-table))
+        (remap (%eq-hash-table))
         (new-pc 0))
     (for-each
      (lambda (range)
        (define (copy-pc old-pc)
          (when (< old-pc (cdr range))
            (set new-source (cons (%instruction-source-ref old-pc) new-source))
-           (hash-set! remap old-pc new-pc)
+           (%eq-hash-set! remap old-pc new-pc)
            (set new-pc (+ new-pc 1))
            (copy-pc (+ old-pc 1))))
        (copy-pc (car range)))
@@ -205,7 +208,7 @@
   (filter
    (lambda (entry) (pair? entry))
    (map (lambda (entry)
-          (let ((new-pc (hash-ref remap (cdr entry))))
+          (let ((new-pc (%eq-hash-ref remap (cdr entry))))
             (if new-pc
                 (cons (car entry) new-pc)
                 '())))
@@ -216,7 +219,7 @@
   (filter
    (lambda (entry) (pair? entry))
    (map (lambda (entry)
-          (let ((new-pc (hash-ref remap (car entry))))
+          (let ((new-pc (%eq-hash-ref remap (car entry))))
             (if new-pc
                 (cons new-pc (cdr entry))
                 '())))
@@ -224,7 +227,7 @@
 
 ;;; Deep-copy a value, remapping PCs in compiled procedures and continuations.
 ;;; VISITED is an eq-based hash table (from %eq-hash-table).
-;;; REMAP is a regular ECE hash table (integer keys).
+;;; REMAP is also an %eq-hash-table (integer keys).
 (define (deep-copy-and-remap value remap visited)
   (cond
    ((not (pair? value)) value)
@@ -234,7 +237,7 @@
    ;; compiled-procedure
    ((eq? (car value) 'compiled-procedure)
     (let* ((old-pc (car (cdr value)))
-           (new-pc (hash-ref remap old-pc))
+           (new-pc (%eq-hash-ref remap old-pc))
            (copy (list 'compiled-procedure (if new-pc new-pc old-pc) '())))
       (%eq-hash-set! visited value copy)
       ;; Deep-copy the environment (third element)
@@ -252,7 +255,7 @@
       (let ((old-cont-pc (car (cdr (cdr value)))))
         (set-car! (cdr (cdr copy))
                   (if (number? old-cont-pc)
-                      (let ((new-pc (hash-ref remap old-cont-pc)))
+                      (let ((new-pc (%eq-hash-ref remap old-cont-pc)))
                         (if new-pc new-pc old-cont-pc))
                       (deep-copy-and-remap old-cont-pc remap visited))))
       copy))
@@ -298,10 +301,11 @@
               *global-env*
               (%macro-table-entries)
               (%procedure-name-entries))
-        (let* ((initial-ranges (mark-reachable-blocks boundaries reachable-pcs vec-len))
+        (let* ((all-ranges (build-all-block-ranges boundaries vec-len))
+               (initial-ranges (mark-reachable-blocks all-ranges reachable-pcs))
                (label-lookup (build-label-lookup))
                (ranges (transitively-retain-blocks
-                        initial-ranges boundaries label-lookup vec-len))
+                        initial-ranges all-ranges label-lookup))
                (result (compact-instruction-vector ranges))
                (new-source (car result))
                (remap (cdr result)))

@@ -261,14 +261,19 @@
        ((eof? ch) (error "Unexpected EOF in hash table literal"))
        ((char=? ch #\})
         (read-char port)
-        ;; Convert flat list to alist pairs
-        (let pair-up ((lst (reverse items)) (pairs '()))
+        ;; Build HAMT from flat key-value list
+        (let build ((lst (reverse items)) (root '()) (count 0))
           (if (null? lst)
-              (cons :hash-table (reverse pairs))
+              (cons :hash-table (cons count root))
               (if (null? (cdr lst))
                   (error "Odd number of elements in hash table literal")
-                  (pair-up (cddr lst)
-                           (cons (cons (car lst) (cadr lst)) pairs))))))
+                  (let* ((key (car lst))
+                         (val (cadr lst))
+                         (result (hamt-insert root key val (hash-code key) 0))
+                         (new-root (car result))
+                         (added? (cdr result)))
+                    (build (cddr lst) new-root
+                           (if added? (+ count 1) count)))))))
        (else
         (set items (cons (ece-scheme-read port) items))
         (loop))))))

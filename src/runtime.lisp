@@ -341,22 +341,15 @@ a nearby proc gives a named frame; a lone continue gives an anonymous frame."
 
 ;;; Primitives and global environment
 
-(defun ece-boolean-p (x)
-  "Test if x is a boolean (t or nil)."
-  (or (eq x t) (eq x nil)))
-
 (defparameter *primitive-procedures*
-  '(+ - * / = < > <= >= car cdr cadr caddr caar cddr cons list append length
-    (null? . null) (pair? . consp) not
+  '(+ - * / = < > car cdr cons list
+    (null? . null) (pair? . consp)
     (number? . numberp) (string? . stringp) (symbol? . symbolp)
-    (zero? . zerop) (even? . evenp) (odd? . oddp)
-    (positive? . plusp) (negative? . minusp)
     (eq? . eq) (equal? . equal)
-    (modulo . mod) abs min max reverse
+    (modulo . mod)
     (char? . characterp) (char=? . char=) (char<? . char<)
     (char->integer . char-code) (integer->char . code-char)
     (error . error)
-    (assoc . assoc) (member . member)
     (string=? . string=) (string<? . string<) (string>? . string>)
     (vector-length . length) (vector-ref . aref)
     (bitwise-and . logand) (bitwise-or . logior) (bitwise-xor . logxor)
@@ -499,21 +492,66 @@ a nearby proc gives a named frame; a lone continue gives an anonymous frame."
         (read))
     (end-of-file () *eof-sentinel*)))
 
+(defun hamt-collect-entries (root)
+  "Walk a HAMT trie and collect all (key . val) pairs into a list."
+  (cond
+    ((null root) nil)
+    ((and (consp root) (eq (car root) :hamt-node))
+     (let ((vec (caddr root))
+           (entries nil))
+       (dotimes (i (length vec))
+         (let ((entry (aref vec i)))
+           (cond
+             ((and (consp entry) (member (car entry) '(:hamt-node :hamt-collision)))
+              (setf entries (nconc entries (hamt-collect-entries entry))))
+             ((consp entry)
+              (push entry entries)))))
+       entries))
+    ((and (consp root) (eq (car root) :hamt-collision))
+     (copy-list (cadr root)))
+    (t nil)))
+
+(defun ece-hash-table-p (obj)
+  "Check if obj is an ECE hash table (HAMT-backed)."
+  (and (consp obj) (eq (car obj) :hash-table)))
+
+(defun format-ece-hash-table (obj stream writer)
+  "Format an ECE HAMT hash table as {k1 v1 k2 v2 ...}."
+  (let ((root (cddr obj))
+        (entries (hamt-collect-entries (cddr obj))))
+    (write-char #\{ stream)
+    (loop for (pair . rest) on entries
+          for key = (car pair)
+          for val = (cdr pair)
+          do (funcall writer key stream)
+          (write-char #\Space stream)
+          (funcall writer val stream)
+          when rest do (write-char #\Space stream))
+    (write-char #\} stream)))
+
 (defun ece-display (obj)
   "Write obj without leading newline (princ)."
-  (if (and (listp obj) (member (car obj) '(compiled-procedure primitive)))
-      (princ (format-ece-proc obj))
-      (let ((*print-circle* t))
-        (princ obj)))
+  (cond
+    ((and (listp obj) (member (car obj) '(compiled-procedure primitive)))
+     (princ (format-ece-proc obj)))
+    ((ece-hash-table-p obj)
+     (format-ece-hash-table obj *standard-output*
+                            (lambda (v s) (let ((*print-circle* t)) (princ v s)))))
+    (t (let ((*print-circle* t))
+         (princ obj))))
   (finish-output)
   obj)
 
 (defun ece-write (obj)
   "Write obj in readable form (prin1). Strings are quoted, symbols uppercase."
-  (if (and (listp obj) (member (car obj) '(compiled-procedure primitive)))
-      (princ (format-ece-proc obj))
-      (let ((*print-circle* t))
-        (prin1 obj)))
+  (cond
+    ((and (listp obj) (member (car obj) '(compiled-procedure primitive)))
+     (princ (format-ece-proc obj)))
+    ((ece-hash-table-p obj)
+     (format-ece-hash-table obj *standard-output*
+                            (lambda (v s) (let ((*print-circle* t)) (prin1 v s)))))
+    (t (let ((*print-circle* t))
+         (prin1 obj))))
   (finish-output)
   obj)
 
@@ -593,14 +631,6 @@ Supports integers and decimal floats. Returns NIL on failure."
   "Return the name of symbol s as a lowercase string."
   (string-downcase (symbol-name s)))
 
-(defun ece-list-ref (lst n)
-  "Return element at index n in lst. Scheme arg order: (list-ref list index)."
-  (nth n lst))
-
-(defun ece-list-tail (lst n)
-  "Return sublist from index n. Scheme arg order: (list-tail list index)."
-  (nthcdr n lst))
-
 (defun ece-vector-p (x)
   "Test if x is a vector (but not a string)."
   (and (vectorp x) (not (stringp x))))
@@ -636,67 +666,15 @@ Returns EOF sentinel at end of input."
 
 (defun ece-write-to-string (x)
   "Convert any value to its human-readable string representation."
-  (if (and (listp x) (member (car x) '(compiled-procedure primitive)))
-      (format-ece-proc x)
-      (let ((*print-circle* t))
-        (princ-to-string x))))
-
-;; Hash table primitives
-(defun ece-hash-table (&rest args)
-  "Create a hash table from alternating key-value arguments."
-  (cons :hash-table
-        (loop for (k v) on args by #'cddr
-              collect (cons k v))))
-
-(defun ece-hash-table-p (x)
-  "Test if x is a hash table."
-  (and (consp x) (eq (car x) :hash-table) t))
-
-(defun ece-hash-ref (ht key &optional default)
-  "Look up key in hash table using equal. Returns default (nil) if not found."
-  (let ((pair (assoc key (cdr ht) :test #'equal)))
-    (if pair (cdr pair) default)))
-
-(defun ece-hash-has-key-p (ht key)
-  "Test if key exists in hash table."
-  (if (assoc key (cdr ht) :test #'equal) t nil))
-
-(defun ece-hash-keys (ht)
-  "Return list of all keys in hash table."
-  (mapcar #'car (cdr ht)))
-
-(defun ece-hash-values (ht)
-  "Return list of all values in hash table."
-  (mapcar #'cdr (cdr ht)))
-
-(defun ece-hash-count (ht)
-  "Return number of entries in hash table."
-  (length (cdr ht)))
-
-(defun ece-hash-set! (ht key val)
-  "Mutate hash table in place. Update existing key or add new entry."
-  (let ((pair (assoc key (cdr ht) :test #'equal)))
-    (if pair
-        (setf (cdr pair) val)
-        (setf (cdr ht) (cons (cons key val) (cdr ht)))))
-  ht)
-
-(defun ece-hash-set (ht key val)
-  "Return a new hash table with key set to val. Original is unchanged."
-  (let ((found nil))
-    (cons :hash-table
-          (append (mapcar (lambda (pair)
-                            (if (equal (car pair) key)
-                                (progn (setf found t)
-                                       (cons key val))
-                                (cons (car pair) (cdr pair))))
-                          (cdr ht))
-                  (unless found (list (cons key val)))))))
-
-(defun ece-hash-remove! (ht key)
-  "Remove key from hash table in place."
-  (setf (cdr ht) (remove key (cdr ht) :key #'car :test #'equal))
-  ht)
+  (cond
+    ((and (listp x) (member (car x) '(compiled-procedure primitive)))
+     (format-ece-proc x))
+    ((ece-hash-table-p x)
+     (with-output-to-string (s)
+       (format-ece-hash-table x s
+                              (lambda (v str) (let ((*print-circle* t)) (princ v str))))))
+    (t (let ((*print-circle* t))
+         (princ-to-string x)))))
 
 (defun ece-sleep (seconds)
   "Pause execution for the given number of seconds. Returns nil."
@@ -872,7 +850,6 @@ Returns EOF sentinel at end of input."
     (display . ece-display)
     (newline . ece-newline)
     (eof? . ece-eof-p)
-    (boolean? . ece-boolean-p)
     (gensym . gensym)
     (string-length . length)
     (string-ref . ece-string-ref)
@@ -882,8 +859,6 @@ Returns EOF sentinel at end of input."
     (number->string . ece-number->string)
     (string->symbol . ece-string->symbol)
     (symbol->string . ece-symbol->string)
-    (list-ref . ece-list-ref)
-    (list-tail . ece-list-tail)
     (vector? . ece-vector-p)
     (make-vector . ece-make-vector)
     (vector . ece-vector)
@@ -892,16 +867,6 @@ Returns EOF sentinel at end of input."
     (list->vector . ece-list->vector)
     (read-line . ece-read-line)
     (write-to-string . ece-write-to-string)
-    (hash-table . ece-hash-table)
-    (hash-table? . ece-hash-table-p)
-    (hash-ref . ece-hash-ref)
-    (hash-has-key? . ece-hash-has-key-p)
-    (hash-keys . ece-hash-keys)
-    (hash-values . ece-hash-values)
-    (hash-count . ece-hash-count)
-    (hash-set! . ece-hash-set!)
-    (hash-set . ece-hash-set)
-    (hash-remove! . ece-hash-remove!)
     (sleep . ece-sleep)
     (clear-screen . ece-clear-screen)
     (string-downcase . string-downcase)
@@ -951,6 +916,7 @@ Returns EOF sentinel at end of input."
     (%eq-hash-ref . ece-%eq-hash-ref)
     (%eq-hash-set! . ece-%eq-hash-set!)
     (%eq-hash-has-key? . ece-%eq-hash-has-key-p)
+    (%eq-hash-keys . ece-%eq-hash-keys)
     (%write-image . ece-%write-image)
     (set-car! . rplaca)
     (set-cdr! . rplacd)
@@ -1308,6 +1274,12 @@ Returns a raw CL hash table — use %eq-hash-ref/set!/has-key? to access."
   (multiple-value-bind (val found) (gethash key ht)
     (declare (ignore val))
     (if found t nil)))
+
+(defun ece-%eq-hash-keys (ht)
+  "Return a list of all keys in an eq-based hash table."
+  (let ((keys nil))
+    (maphash (lambda (k v) (declare (ignore v)) (push k keys)) ht)
+    keys))
 
 ;;; Metacircular compiler support primitives
 

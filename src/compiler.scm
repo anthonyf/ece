@@ -72,8 +72,8 @@
                          (set-difference (registers-modified seq1)
                                          (list first-reg))
                          (append (list (list 'save first-reg))
-                                 (mc-instructions seq1)
-                                 (list (list 'restore first-reg))))
+                                 (append (mc-instructions seq1)
+                                         (list (list 'restore first-reg)))))
                         seq2)
             (preserving (cdr regs) seq1 seq2)))))
 

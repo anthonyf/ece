@@ -1,4 +1,4 @@
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: hash-table constructor function
 The `hash-table` function SHALL accept alternating key-value arguments and return a new hash table backed by a HAMT. Arguments SHALL be evaluated (keys need quoting for literal symbols).

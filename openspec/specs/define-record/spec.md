@@ -1,4 +1,4 @@
-## ADDED Requirements
+## Requirements
 
 ### Requirement: define-record generates a constructor
 `define-record` SHALL generate a constructor function `make-<name>` that accepts one argument per field and returns a hash table with a `type` key set to the record name and each field stored by its symbol name.
@@ -59,8 +59,8 @@
 - **THEN** `(point-x p)` SHALL remain `1` and `(point-x p2)` SHALL be `99`
 
 ### Requirement: Records are compatible with hash table operations
-Records produced by `define-record` SHALL be standard hash tables, fully compatible with `hash-ref`, `hash-set!`, `hash-set`, `hash-keys`, `hash-count`, `hash-table?`, and serialization via `save-continuation!`/`load-continuation`.
+Records produced by `define-record` SHALL be HAMT-backed hash tables, fully compatible with `hash-ref`, `hash-set!`, `hash-set`, `hash-keys`, `hash-count`, `hash-table?`, and serialization via `save-continuation!`/`load-continuation`.
 
 #### Scenario: Hash table operations work on records
 - **WHEN** a record is created with `(make-point 10 20)`
-- **THEN** `(hash-table? (make-point 10 20))` SHALL be `#t` and `(hash-keys (make-point 10 20))` SHALL include `type`, `x`, and `y`
+- **THEN** `(hash-table? (make-point 10 20))` SHALL be `t` and `(hash-keys (make-point 10 20))` SHALL include `type`, `x`, and `y`

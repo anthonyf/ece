@@ -1050,10 +1050,10 @@
                       '(:hash-table (name . "Alice")))))
 
   (testing "hash table stored in variable"
-           (ok (equal (evaluate '(begin
-                                  (define ht (hash-table 'a 1))
-                                  ht))
-                      '(:hash-table (a . 1)))))
+           (ok (evaluate '(hash-table? (begin
+                                        (define ht (hash-table 'a 1))
+                                        ht))))
+           (ok (= (evaluate '(hash-ref ht 'a)) 1)))
 
   (testing "serialization round-trip"
            (let* ((*package* (find-package :ece))
@@ -1065,8 +1065,10 @@
 
 (deftest test-hash-table-ops
     (testing "hash-table constructor with symbol keys"
-             (ok (equal (evaluate '(hash-table 'a 1 'b 2))
-                        '(:hash-table (a . 1) (b . 2)))))
+             (ok (evaluate '(hash-table? (hash-table 'a 1 'b 2))))
+             (ok (= (evaluate '(hash-count (hash-table 'a 1 'b 2))) 2))
+             (ok (= (evaluate '(hash-ref (hash-table 'a 1 'b 2) 'a)) 1))
+             (ok (= (evaluate '(hash-ref (hash-table 'a 1 'b 2) 'b)) 2)))
 
   (testing "hash-table constructor empty"
            (ok (equal (evaluate '(:hash-table))
@@ -1074,8 +1076,8 @@
 
   (testing "hash-table constructor with computed key"
            (ok (equal (evaluate '(begin (define k 'name)
-                                  (hash-table k "Alice")))
-                      '(:hash-table (name . "Alice")))))
+                                  (hash-ref (hash-table k "Alice") 'name)))
+                      "Alice")))
 
   (testing "hash-table? predicate true"
            (ok (evaluate '(hash-table? (hash-table 'a 1)))))
@@ -1108,8 +1110,11 @@
            (ok (not (evaluate '(hash-has-key? (hash-table 'name "Alice") 'age)))))
 
   (testing "hash-keys returns all keys"
-           (ok (equal (evaluate '(hash-keys (hash-table 'a 1 'b 2 'c 3)))
-                      '(a b c))))
+           (let ((keys (evaluate '(hash-keys (hash-table 'a 1 'b 2 'c 3)))))
+             (ok (= (length keys) 3))
+             (ok (member 'a keys))
+             (ok (member 'b keys))
+             (ok (member 'c keys))))
 
   (testing "hash-keys empty"
            (ok (null (evaluate '(hash-keys (hash-table))))))
@@ -1245,8 +1250,10 @@
                   (progn
                     (evaluate `(save-continuation! ,(namestring tmpfile)
                                                    (hash-table 'name "Alice" 'age 30)))
-                    (let ((loaded (evaluate `(load-continuation ,(namestring tmpfile)))))
-                      (ok (equal loaded '(:hash-table (name . "Alice") (age . 30))))))
+                    (evaluate `(define rt-loaded-ht (load-continuation ,(namestring tmpfile))))
+                    (ok (evaluate '(hash-table? rt-loaded-ht)))
+                    (ok (equal (evaluate '(hash-ref rt-loaded-ht 'name)) "Alice"))
+                    (ok (= (evaluate '(hash-ref rt-loaded-ht 'age)) 30)))
                (delete-file tmpfile))))
 
   (testing "round-trip with continuation"
@@ -1446,8 +1453,10 @@
 
 (deftest test-hash-values
     (testing "table with entries"
-             (ok (equal (evaluate '(hash-values (hash-table (quote a) 1 (quote b) 2)))
-                        '(1 2))))
+             (let ((vals (evaluate '(hash-values (hash-table (quote a) 1 (quote b) 2)))))
+               (ok (= (length vals) 2))
+               (ok (member 1 vals))
+               (ok (member 2 vals))))
   (testing "empty table"
            (ok (null (evaluate '(hash-values (hash-table)))))))
 
@@ -2471,9 +2480,15 @@
            (let ((ht (ece-read-string "{a 1 b 2}")))
              (ok (consp ht))
              (ok (eq (car ht) :hash-table))
-             ;; Keys are in ECE package
-             (ok (string= (symbol-name (caar (cdr ht))) "A"))
-             (ok (= (cdar (cdr ht)) 1))))
+             ;; Count is second element in HAMT format (:hash-table count . root)
+             (ok (= (cadr ht) 2))
+             ;; Verify values via hash-ref (use ECE-interned symbols for keys)
+             (ok (= (evaluate `(hash-ref (ece::ece-scheme-read (open-input-string "{a 1 b 2}"))
+                                         (quote ,(intern "A" :ece))))
+                    1))
+             (ok (= (evaluate `(hash-ref (ece::ece-scheme-read (open-input-string "{a 1 b 2}"))
+                                         (quote ,(intern "B" :ece))))
+                    2))))
 
   (testing "booleans"
            (ok (eq (ece-read-string "#t") t))
