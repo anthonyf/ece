@@ -1263,10 +1263,12 @@
                             p)))
              (unwind-protect
                   (progn
-                    ;; Capture a continuation and save it
+                    ;; Capture a raw continuation and save it
+                    ;; Use %raw-call/cc to get the unwrapped continuation
+                    ;; (call/cc now wraps in a lambda for dynamic-wind support)
                     (evaluate `(begin
                                 (define k nil)
-                                (call/cc (lambda (cont) (set k cont)))
+                                (%raw-call/cc (lambda (cont) (set k cont)))
                                 (save-continuation! ,(namestring tmpfile) k)))
                     ;; Verify entirely within ECE to avoid circular data in CL test output
                     (ok (eq t (evaluate `(begin
@@ -1775,8 +1777,10 @@
                               p)))
                (unwind-protect
                     (progn
-                      ;; Capture a continuation and check it round-trips
-                      (evaluate '(define img-k (call/cc (lambda (k) k))))
+                      ;; Capture a raw continuation and check it round-trips
+                      ;; Use %raw-call/cc to get the unwrapped continuation
+                      ;; (call/cc now wraps in a lambda for dynamic-wind support)
+                      (evaluate '(define img-k (%raw-call/cc (lambda (k) k))))
                       (ok (eq t (evaluate `(eq? (car img-k)
                                                 ',(intern "CONTINUATION" :ece)))))
                       (ece::ece-save-image (namestring tmpfile))
@@ -2742,3 +2746,20 @@
                       (ece::ece-load-image (namestring tmpfile))
                       (ok (= (evaluate '(compact-adder 5)) 105)))
                  (when (probe-file tmpfile) (delete-file tmpfile))))))
+
+;;; ECE Native Test Suite — run all .scm-based tests via run-all.scm
+
+(deftest test-ece-native-suite
+    (testing "ECE native test suite passes"
+             ;; Reload the bootstrap image to get a clean environment,
+             ;; since prior rove tests may have modified global state.
+             (ece::ece-load-image
+              (namestring (asdf:system-relative-pathname :ece "bootstrap/ece.image")))
+             ;; Load and run all ECE native tests
+             (evaluate '(load "tests/ece/run-all.scm"))
+             ;; Read failure count directly from the global environment
+             (let ((failures (ece::lookup-variable-value
+                              (intern "*TEST-FAILURES*" :ece)
+                              ece::*global-env*)))
+               (ok (= failures 0)
+                   (format nil "ECE native suite: ~A failures" failures)))))

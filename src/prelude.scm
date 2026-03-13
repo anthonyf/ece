@@ -750,6 +750,64 @@
       init
       (f (car lst) (fold-right f init (cdr lst)))))
 
+;; ---- dynamic-wind (R7RS) ----
+;; Winding stack: list of (before . after) pairs, innermost first.
+
+(define *winding-stack* '())
+
+(define (do-winds! from to)
+  "Transition from winding stack FROM to TO.
+   Calls after thunks for exited extents, before thunks for entered extents."
+  (if (eq? from to)
+      ()
+      (begin
+        (define (shared-tail a b)
+          (cond ((eq? a b) a)
+                ((> (length a) (length b))
+                 (shared-tail (cdr a) b))
+                ((< (length a) (length b))
+                 (shared-tail a (cdr b)))
+                (else (shared-tail (cdr a) (cdr b)))))
+        (define common (shared-tail from to))
+        ;; Unwind: call after thunks for exited extents (innermost first)
+        (define (unwind ws)
+          (when (not (eq? ws common))
+            (set *winding-stack* (cdr ws))
+            ((cdr (car ws)))  ;; after thunk
+            (unwind (cdr ws))))
+        (unwind from)
+        ;; Rewind: call before thunks for entered extents (outermost first)
+        (define (rewind ws)
+          (when (not (eq? ws common))
+            (rewind (cdr ws))
+            ((car (car ws)))  ;; before thunk
+            (set *winding-stack* (cons (car ws) *winding-stack*))))
+        (rewind to))))
+
+(define (dynamic-wind before thunk after)
+  "R7RS dynamic-wind: call before, thunk, after with proper winding."
+  (before)
+  (set *winding-stack* (cons (cons before after) *winding-stack*))
+  (let ((result (thunk)))
+    (set *winding-stack* (cdr *winding-stack*))
+    (after)
+    result))
+
+;; ---- call/cc: winding-aware continuation capture (R7RS) ----
+
+(define-macro (call/cc receiver)
+  (let ((saved (gensym))
+        (raw-k (gensym))
+        (val (gensym)))
+    `(let ((,saved *winding-stack*))
+       (%raw-call/cc (lambda (,raw-k)
+                       (,receiver (lambda (,val)
+                                    (do-winds! *winding-stack* ,saved)
+                                    (,raw-k ,val))))))))
+
+(define (call-with-current-continuation receiver)
+  (call/cc receiver))
+
 ;; loop: infinite loop with break
 (define-macro (loop . body)
   (let ((go-sym (gensym)))
@@ -785,8 +843,73 @@
                (,param ,old t)
                ,result))))))
 
+;; ---- Error objects (R7RS) ----
+
+(define-record error-object message irritants)
+
+;; ---- Exception handling (R7RS) ----
+
+(define *current-exception-handler* '())
+
+(define (raise obj)
+  "Raise an exception. Invoke the current handler or fall through to CL."
+  (if (null? *current-exception-handler*)
+      ;; No handler: fall through to CL error system
+      (if (error-object? obj)
+          (%raw-error (error-object-message obj))
+          (%raw-error (write-to-string obj)))
+      (let ((handler *current-exception-handler*))
+        (handler obj)
+        ;; If handler returns, it's a non-continuable exception error
+        (%raw-error "exception handler returned on non-continuable exception"))))
+
+(define (with-exception-handler handler thunk)
+  "Install HANDLER as exception handler for the dynamic extent of THUNK."
+  (let ((old-handler *current-exception-handler*))
+    (dynamic-wind
+        (lambda () (set *current-exception-handler* handler))
+        thunk
+        (lambda () (set *current-exception-handler* old-handler)))))
+
+(define (error msg . irritants)
+  "Create an error object and raise it."
+  (raise (make-error-object msg irritants)))
+
+;; ---- guard macro (R7RS) ----
+
+(define-macro (guard var-and-clauses . body)
+  (let ((var (car var-and-clauses))
+        (clauses (cdr var-and-clauses))
+        (guard-k (gensym))
+        (condition (gensym))
+        (prev-handler (gensym)))
+    (define (has-else? clauses)
+      (if (null? clauses) ()
+          (if (eq? (caar clauses) 'else) t
+              (has-else? (cdr clauses)))))
+    (let ((full-clauses
+           (if (has-else? clauses)
+               clauses
+               ;; Re-raise goes to previous handler directly, not through raise
+               ;; (which would call the current guard's handler again)
+               (append clauses
+                       (list `(else (if (null? ,prev-handler)
+                                        (%raw-error (if (error-object? ,condition)
+                                                        (error-object-message ,condition)
+                                                        "unhandled exception"))
+                                        (,prev-handler ,condition))))))))
+      `(let ((,prev-handler *current-exception-handler*))
+         (call/cc (lambda (,guard-k)
+                    (with-exception-handler
+                     (lambda (,condition)
+                       (,guard-k
+                        (let ((,var ,condition))
+                          (cond ,@full-clauses))))
+                     (lambda () ,@body))))))))
+
 ;; assert macro: signal error if condition is falsy
 (define-macro (assert expr . rest)
   (if (null? rest)
       `(if (not ,expr) (error "Assertion failed") ())
       `(if (not ,expr) (error ,(car rest)) ())))
+

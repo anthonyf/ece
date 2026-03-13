@@ -29,7 +29,7 @@
 (define-special-form-predicate lambda lambda)
 (define-special-form-predicate begin begin)
 (define-special-form-predicate if if)
-(define-special-form-predicate call/cc callcc)
+(define-special-form-predicate %raw-call/cc callcc)
 (define-special-form-predicate define define)
 (define-special-form-predicate apply apply-form)
 (define-special-form-predicate define-macro define-macro)
@@ -60,7 +60,7 @@
            (qq-expand (cdr form) depth)))
     (t (list 'cons (qq-expand (car form) depth) (qq-expand (cdr form) depth)))))
 
-(defparameter *special-forms* '(quote if var set lambda begin call/cc define apply define-macro quasiquote))
+(defparameter *special-forms* '(quote if var set lambda begin %raw-call/cc define apply define-macro quasiquote))
 
 (defun application-p (expr)
   (and (listp expr)
@@ -473,10 +473,10 @@ Scans for (assign ... (op make-compiled-procedure) (label X) ...) and returns X.
     ((and (not (eq target 'val)) (eq linkage 'return))
      (error "Return linkage, target not val -- COMPILE: ~A" target))))
 
-;;; call/cc compilation
+;;; %raw-call/cc compilation
 
 (defun compile-callcc (expr target linkage)
-  "Compile (call/cc receiver-expr)."
+  "Compile (%raw-call/cc receiver-expr)."
   (let ((receiver-code (ece-compile (cadr expr) 'proc 'next))
         (return-label (make-label 'callcc-return)))
     (end-with-linkage linkage

@@ -47,6 +47,38 @@
          (newline))
        (set *test-passes* (+ *test-passes* 1))))
 
+(define-macro (assert-error-message expr expected-msg)
+  "Check that expr raises an error with the expected message."
+  (let ((result (gensym))
+        (msg-val (gensym)))
+    `(let ((,result
+            (guard (e
+                    ((error-object? e) (error-object-message e))
+                    (else ':not-error-object))
+              ,expr
+              ':no-error)))
+       (cond
+        ((eq? ,result ':no-error)
+         (begin
+           (set *test-failures* (+ *test-failures* 1))
+           (display "    FAIL: expected error but expression succeeded")
+           (newline)))
+        ((eq? ,result ':not-error-object)
+         (begin
+           (set *test-failures* (+ *test-failures* 1))
+           (display "    FAIL: raised value was not an error object")
+           (newline)))
+        ((equal? ,result ,expected-msg)
+         (set *test-passes* (+ *test-passes* 1)))
+        (else
+         (begin
+           (set *test-failures* (+ *test-failures* 1))
+           (display "    FAIL: expected error message ")
+           (write ,expected-msg)
+           (display " got ")
+           (write ,result)
+           (newline)))))))
+
 ;; --- Runner ---
 
 (define (run-tests)

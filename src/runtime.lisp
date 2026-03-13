@@ -8,6 +8,7 @@
            #:if
            #:begin
            #:quote
+           #:%raw-call/cc
            #:call/cc
            #:define
            #:display
@@ -127,6 +128,16 @@
            #:mc-compile-and-go
            #:make-parameter
            #:parameterize
+           #:dynamic-wind
+           #:call-with-current-continuation
+           #:%raw-error
+           #:error-object?
+           #:error-object-message
+           #:error-object-irritants
+           #:make-error-object
+           #:raise
+           #:with-exception-handler
+           #:guard
            #:input-port?
            #:output-port?
            #:port?
@@ -345,15 +356,17 @@ a nearby proc gives a named frame; a lone continue gives an anonymous frame."
   '(+ - * / = < > car cdr cons list
     (null? . null) (pair? . consp)
     (number? . numberp) (string? . stringp) (symbol? . symbolp)
+    (integer? . integerp) (vector? . vectorp)
     (eq? . eq) (equal? . equal)
     (modulo . mod)
     (char? . characterp) (char=? . char=) (char<? . char<)
     (char->integer . char-code) (integer->char . code-char)
-    (error . error)
+    (%raw-error . error)
     (string=? . string=) (string<? . string<) (string>? . string>)
     (vector-length . length) (vector-ref . aref)
-    (bitwise-and . logand) (bitwise-or . logior) (bitwise-xor . logxor)
-    (bitwise-not . lognot) (arithmetic-shift . ash)))
+    (bitwise-and . logand) (bitwise-or . logior)
+    (bitwise-xor . logxor) (bitwise-not . lognot)
+    (arithmetic-shift . ash)))
 
 (defparameter *primitive-procedure-names*
   (mapcar (lambda (p) (if (listp p) (car p) p))
@@ -823,6 +836,10 @@ Returns EOF sentinel at end of input."
 (defun primitive-procedure-p (proc)
   (and (listp proc) (eq (car proc) 'primitive)))
 
+;;; Error sentinel — returned by apply-primitive-procedure when CL signals
+;;; a type-error or division-by-zero, so the executor can bridge to ECE's raise.
+(defstruct ece-error-sentinel message irritants)
+
 (defun apply-primitive-procedure (proc argl)
   (let* ((name (cadr proc))
          (param-cell (gethash name *parameter-table*)))
@@ -841,7 +858,16 @@ Returns EOF sentinel at end of input."
            (let ((old (car param-cell)))
              (setf (car param-cell) (car argl))
              old)))
-        (apply (symbol-function name) argl))))
+        (handler-case
+            (apply (symbol-function name) argl)
+          (division-by-zero ()
+            (make-ece-error-sentinel
+             :message (format nil "~(~A~): division by zero" name)
+             :irritants nil))
+          (type-error (e)
+            (make-ece-error-sentinel
+             :message (format nil "~(~A~): ~A" name e)
+             :irritants (list (type-error-datum e))))))))
 
 ;;; Continuation helpers for compiled code
 
@@ -957,7 +983,23 @@ for re-entering the executor to call a compiled procedure."
                     (const (set-reg target (cadr source)))
                     (reg (set-reg target (get-reg (cadr source))))
                     (label (set-reg target (resolve-label (cadr source))))
-                    (op-fn (set-reg target (call-op (cadr source) (cdddr instr))))
+                    (op-fn
+                     (let ((result (call-op (cadr source) (cdddr instr))))
+                       (if (ece-error-sentinel-p result)
+                           ;; Bridge CL error to ECE's error function
+                           ;; (error msg . irritants) creates a proper error-object and raises
+                           (let ((error-fn (ignore-errors
+                                             (lookup-variable-value 'error *global-env*))))
+                             (if (and error-fn (compiled-procedure-p error-fn))
+                                 (progn
+                                   (setf proc error-fn)
+                                   (setf argl (cons (ece-error-sentinel-message result)
+                                                    (ece-error-sentinel-irritants result)))
+                                   (setf pc (compiled-procedure-entry error-fn))
+                                   (go loop-start))
+                                 ;; Fallback: no error yet (cold boot) — signal CL error
+                                 (error "~A" (ece-error-sentinel-message result))))
+                           (set-reg target result))))
                     (op (set-reg target
                                  (call-op (get-operation (cadr source))
                                           (cdddr instr))))

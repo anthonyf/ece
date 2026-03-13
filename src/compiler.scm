@@ -103,7 +103,7 @@
 ;;; Expression predicates
 
 (define *mc-special-forms*
-  '(quote if var set lambda begin call/cc define apply define-macro quasiquote))
+  '(quote if var set lambda begin %raw-call/cc define apply define-macro quasiquote))
 
 (define (mc-self-evaluating? expr)
   (or (number? expr)
@@ -125,7 +125,7 @@
 (define (mc-lambda? expr) (mc-tagged-list? expr 'lambda))
 (define (mc-begin? expr) (mc-tagged-list? expr 'begin))
 (define (mc-if? expr) (mc-tagged-list? expr 'if))
-(define (mc-callcc? expr) (mc-tagged-list? expr 'call/cc))
+(define (mc-callcc? expr) (mc-tagged-list? expr '%raw-call/cc))
 (define (mc-define? expr) (mc-tagged-list? expr 'define))
 (define (mc-assignment? expr) (mc-tagged-list? expr 'set))
 (define (mc-apply-form? expr) (mc-tagged-list? expr 'apply))
