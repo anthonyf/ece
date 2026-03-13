@@ -1,9 +1,14 @@
-.PHONY: test repl run image fmt check-fmt setup clean
+.PHONY: test test-ece repl run image fmt check-fmt setup clean
 
 BOOTSTRAP_IMAGE := bootstrap/ece.image
 
 test:
 	qlot exec sbcl --eval '(asdf:test-system :ece)' --quit
+
+test-ece:
+	qlot exec sbcl --eval '(asdf:load-system :ece)' \
+	  --eval '(unless (ece:evaluate (list (quote load) "tests/ece/run-all.scm")) (sb-ext:exit :code 1))' \
+	  --quit
 
 repl:
 	qlot exec sbcl --load ece.asd --eval '(asdf:load-system :ece)' --eval '(ece:repl)'

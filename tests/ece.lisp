@@ -798,13 +798,13 @@
            (ok (equal (evaluate '(number->string -7)) "-7")))
 
   (testing "string->symbol"
-           (ok (eq (evaluate '(string->symbol "hello")) 'hello)))
+           (ok (eq (ece-eval-string "(string->symbol \"hello\")") 'ece::hello)))
 
   (testing "symbol->string"
-           (ok (equal (evaluate '(symbol->string (quote hello))) "hello")))
+           (ok (equal (ece-eval-string "(symbol->string 'hello)") "hello")))
 
   (testing "symbol round-trip"
-           (ok (evaluate '(equal? (string->symbol (symbol->string (quote foo))) (quote foo))))))
+           (ok (ece-eval-string "(equal? (string->symbol (symbol->string 'foo)) 'foo)"))))
 
 (deftest test-error-signaling
     (testing "error signals a condition"
@@ -1297,73 +1297,75 @@
                (delete-file tmpfile)))))
 
 (deftest test-define-record
+    ;; define-record uses string->symbol internally, which interns in :ece.
+    ;; We must use ece-eval-string so the reader also interns in :ece.
     (testing "constructor creates typed hash table"
-             (ok (equal (evaluate '(begin (define-record point x y)
-                                    (point-x (make-point 10 20))))
+             (ok (equal (ece-eval-string "(begin (define-record point x y)
+                                            (point-x (make-point 10 20)))")
                         10))
-             (ok (equal (evaluate '(begin (define-record point x y)
-                                    (point-y (make-point 10 20))))
+             (ok (equal (ece-eval-string "(begin (define-record point x y)
+                                            (point-y (make-point 10 20)))")
                         20))
-             (ok (equal (evaluate '(begin (define-record point x y)
-                                    (hash-ref (make-point 10 20) 'type)))
-                        'point)))
+             (ok (equal (ece-eval-string "(begin (define-record point x y)
+                                            (hash-ref (make-point 10 20) 'type))")
+                        'ece::point)))
 
   (testing "constructor with no fields"
-           (ok (equal (evaluate '(begin (define-record empty)
-                                  (hash-count (make-empty))))
+           (ok (equal (ece-eval-string "(begin (define-record empty)
+                                          (hash-count (make-empty)))")
                       1))
-           (ok (equal (evaluate '(begin (define-record empty)
-                                  (hash-ref (make-empty) 'type)))
-                      'empty)))
+           (ok (equal (ece-eval-string "(begin (define-record empty)
+                                          (hash-ref (make-empty) 'type))")
+                      'ece::empty)))
 
   (testing "predicate returns true for matching record"
-           (ok (equal (evaluate '(begin (define-record point x y)
-                                  (point? (make-point 1 2))))
+           (ok (equal (ece-eval-string "(begin (define-record point x y)
+                                          (point? (make-point 1 2)))")
                       t)))
 
   (testing "predicate returns false for non-matching value"
-           (ok (equal (evaluate '(begin (define-record point x y)
-                                  (point? 42)))
+           (ok (equal (ece-eval-string "(begin (define-record point x y)
+                                          (point? 42))")
                       nil)))
 
   (testing "predicate returns false for different record type"
-           (ok (equal (evaluate '(begin (define-record point x y)
-                                  (define-record vec x y)
-                                  (point? (make-vec 1 2))))
+           (ok (equal (ece-eval-string "(begin (define-record point x y)
+                                          (define-record vec x y)
+                                          (point? (make-vec 1 2)))")
                       nil)))
 
   (testing "mutator updates field in place"
-           (ok (equal (evaluate '(begin (define-record point x y)
-                                  (define p (make-point 1 2))
-                                  (set-point-x! p 99)
-                                  (point-x p)))
+           (ok (equal (ece-eval-string "(begin (define-record point x y)
+                                          (define p (make-point 1 2))
+                                          (set-point-x! p 99)
+                                          (point-x p))")
                       99)))
 
   (testing "functional update returns new record, original unchanged"
-           (ok (equal (evaluate '(begin (define-record point x y)
-                                  (define p (make-point 1 2))
-                                  (define p2 (point-with-x p 99))
-                                  (list (point-x p) (point-x p2))))
+           (ok (equal (ece-eval-string "(begin (define-record point x y)
+                                          (define p (make-point 1 2))
+                                          (define p2 (point-with-x p 99))
+                                          (list (point-x p) (point-x p2)))")
                       '(1 99))))
 
   (testing "copy creates independent record"
-           (ok (equal (evaluate '(begin (define-record point x y)
-                                  (define p (make-point 1 2))
-                                  (define p2 (copy-point p))
-                                  (set-point-x! p2 99)
-                                  (list (point-x p) (point-x p2))))
+           (ok (equal (ece-eval-string "(begin (define-record point x y)
+                                          (define p (make-point 1 2))
+                                          (define p2 (copy-point p))
+                                          (set-point-x! p2 99)
+                                          (list (point-x p) (point-x p2)))")
                       '(1 99))))
 
   (testing "records are standard hash tables"
-           (ok (equal (evaluate '(begin (define-record point x y)
-                                  (hash-table? (make-point 10 20))))
+           (ok (equal (ece-eval-string "(begin (define-record point x y)
+                                          (hash-table? (make-point 10 20)))")
                       t)))
 
   (testing "multiple record types coexist"
-           (ok (equal (evaluate '(begin (define-record point x y)
-                                  (define-record person name age)
-                                  (list (point-x (make-point 3 4))
-                                   (person-name (make-person "Alice" 30)))))
+           (ok (equal (ece-eval-string "(begin (define-record point x y)
+                                          (define-record person name age)
+                                          (list (point-x (make-point 3 4))
+                                           (person-name (make-person \"Alice\" 30))))")
                       (list 3 "Alice")))))
 
 (deftest test-assert

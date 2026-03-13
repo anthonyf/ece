@@ -1,0 +1,72 @@
+;;; Arithmetic tests — +, -, *, /, modulo, abs, min, max, numeric comparisons
+
+(test "integer self-evaluation" (lambda ()
+  (assert-equal 4 4)
+  (assert-equal -10 -10)
+  (assert-equal 0 0)))
+
+(test "float self-evaluation" (lambda ()
+  (assert-equal 0.4 0.4)
+  (assert-equal 3.14 3.14)))
+
+(test "addition" (lambda ()
+  (assert-equal (+ 1 2) 3)
+  (assert-equal (+ 0 0) 0)
+  (assert-equal (+ -1 1) 0)
+  (assert-equal (+ 1 2 3 4) 10)))
+
+(test "subtraction" (lambda ()
+  (assert-equal (- 10 3) 7)
+  (assert-equal (- 5 5) 0)
+  (assert-equal (- 0 1) -1)))
+
+(test "multiplication" (lambda ()
+  (assert-equal (* 3 4) 12)
+  (assert-equal (* 0 100) 0)
+  (assert-equal (* -2 3) -6)
+  (assert-equal (* 2 3 4) 24)))
+
+(test "division" (lambda ()
+  (assert-equal (/ 10 2) 5)
+  (assert-equal (/ 15 3) 5)))
+
+(test "modulo" (lambda ()
+  (assert-equal (modulo 10 3) 1)
+  (assert-equal (modulo 9 3) 0)
+  (assert-equal (modulo 7 2) 1)))
+
+(test "abs" (lambda ()
+  (assert-equal (abs -5) 5)
+  (assert-equal (abs 5) 5)
+  (assert-equal (abs 0) 0)))
+
+(test "min and max" (lambda ()
+  (assert-equal (min 3 1 4 1 5) 1)
+  (assert-equal (max 3 1 4 1 5) 5)
+  (assert-equal (min 7) 7)
+  (assert-equal (max 7) 7)))
+
+(test "numeric comparisons" (lambda ()
+  (assert-true (= 3 3))
+  (assert-true (< 1 2))
+  (assert-true (> 5 3))
+  (assert-true (<= 3 3))
+  (assert-true (<= 2 3))
+  (assert-true (>= 4 3))
+  (assert-true (>= 3 3))))
+
+(test "numeric predicates" (lambda ()
+  (assert-true (even? 4))
+  (assert-true (not (even? 3)))
+  (assert-true (odd? 3))
+  (assert-true (not (odd? 4)))
+  (assert-true (positive? 5))
+  (assert-true (not (positive? -1)))
+  (assert-true (negative? -1))
+  (assert-true (not (negative? 1)))
+  (assert-true (zero? 0))
+  (assert-true (not (zero? 5)))))
+
+(test "nested arithmetic" (lambda ()
+  (assert-equal (+ (* 2 3) (- 10 4)) 12)
+  (assert-equal (* (+ 1 2) (+ 3 4)) 21)))

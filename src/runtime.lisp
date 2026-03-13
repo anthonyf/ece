@@ -502,8 +502,8 @@ Supports integers and decimal floats. Returns NIL on failure."
   (write-to-string n))
 
 (defun ece-string->symbol (s)
-  "Intern a symbol from string s."
-  (intern (string-upcase s)))
+  "Intern a symbol from string s in the ECE package."
+  (intern (string-upcase s) :ece))
 
 (defun ece-%intern-ece (s)
   "Intern an already-upcased string S as a symbol in the ECE package."
