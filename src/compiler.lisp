@@ -169,7 +169,24 @@
 ;;; *compile-time-macros* is declared in runtime.lisp (needed for image save/load)
 
 (defvar *compile-lexical-env* nil
-  "List of locally-bound variable names, used to shadow macros.")
+  "List of frames (each frame a list of variable names), mirroring runtime env structure.
+Used to compute lexical addresses (depth . offset) and shadow macros.")
+
+(defvar *compile-macro-shadows* nil
+  "Flat list of names that shadow macros at the top level (begin blocks).
+These prevent macro expansion but don't create lexical frames.")
+
+(defun find-variable (var env)
+  "Return (depth . offset) if VAR is in compile-time ENV, or nil."
+  (loop for frame in env
+        for depth fixnum from 0
+        do (let ((offset (position var frame)))
+             (when offset (return (cons depth offset))))))
+
+(defun lexically-shadows-macro-p (name)
+  "Check if NAME is lexically bound or shadows a macro at top level."
+  (or (find-variable name *compile-lexical-env*)
+      (member name *compile-macro-shadows*)))
 
 ;;; Main compile dispatch
 
@@ -190,7 +207,7 @@
     ((begin-p expr) (compile-begin expr target linkage))
     ((application-p expr)
      ;; Check for compile-time macro (skip if operator is lexically shadowed)
-     (let ((macro-def (and (not (member (car expr) *compile-lexical-env*))
+     (let ((macro-def (and (not (lexically-shadows-macro-p (car expr)))
                            (gethash (car expr) *compile-time-macros*))))
        (if macro-def
            (let ((expanded (expand-macro-at-compile-time macro-def (cdr expr))))
@@ -213,10 +230,15 @@
                      `((assign ,target (const ,expr))))))
 
 (defun compile-variable (expr target linkage)
-  (end-with-linkage linkage
-                    (make-instruction-sequence
-                     '(env) (list target)
-                     `((assign ,target (op lookup-variable-value) (const ,expr) (reg env))))))
+  (let ((addr (find-variable expr *compile-lexical-env*)))
+    (end-with-linkage linkage
+                      (if addr
+                          (make-instruction-sequence
+                           '(env) (list target)
+                           `((assign ,target (op lexical-ref) (const ,(car addr)) (const ,(cdr addr)) (reg env))))
+                          (make-instruction-sequence
+                           '(env) (list target)
+                           `((assign ,target (op lookup-variable-value) (const ,expr) (reg env))))))))
 
 (defun compile-quoted (expr target linkage)
   (end-with-linkage linkage
@@ -230,15 +252,21 @@
     (ece-compile expanded target linkage)))
 
 (defun compile-assignment (expr target linkage)
-  (let ((variable (cadr expr))
-        (value-code (ece-compile (caddr expr) 'val 'next)))
+  (let* ((variable (cadr expr))
+         (value-code (ece-compile (caddr expr) 'val 'next))
+         (addr (find-variable variable *compile-lexical-env*)))
     (end-with-linkage linkage
                       (preserving '(env)
                                   value-code
-                                  (make-instruction-sequence
-                                   '(env val) (list target)
-                                   `((perform (op set-variable-value!) (const ,variable) (reg val) (reg env))
-                                     (assign ,target (reg val))))))))
+                                  (if addr
+                                      (make-instruction-sequence
+                                       '(env val) (list target)
+                                       `((perform (op lexical-set!) (const ,(car addr)) (const ,(cdr addr)) (reg val) (reg env))
+                                         (assign ,target (reg val))))
+                                      (make-instruction-sequence
+                                       '(env val) (list target)
+                                       `((perform (op set-variable-value!) (const ,variable) (reg val) (reg env))
+                                         (assign ,target (reg val)))))))))
 
 (defun find-entry-label (instruction-list)
   "Find the entry label from a compiled lambda's instruction list.
@@ -260,12 +288,20 @@ Scans for (assign ... (op make-compiled-procedure) (label X) ...) and returns X.
                          `(lambda ,(cdadr expr) ,@(cddr expr))
                          (caddr expr)))
          (value-code (ece-compile value-expr 'val 'next))
+         (addr (find-variable variable *compile-lexical-env*))
          (define-code (preserving '(env)
                                   value-code
-                                  (make-instruction-sequence
-                                   '(env val) (list target)
-                                   `((perform (op define-variable!) (const ,variable) (reg val) (reg env))
-                                     (assign ,target (reg val))))))
+                                  (if addr
+                                      ;; Internal define: use lexical-set! to pre-allocated slot
+                                      (make-instruction-sequence
+                                       '(env val) (list target)
+                                       `((perform (op lexical-set!) (const ,(car addr)) (const ,(cdr addr)) (reg val) (reg env))
+                                         (assign ,target (reg val))))
+                                      ;; Top-level define: use define-variable!
+                                      (make-instruction-sequence
+                                       '(env val) (list target)
+                                       `((perform (op define-variable!) (const ,variable) (reg val) (reg env))
+                                         (assign ,target (reg val)))))))
          (entry-label (when (and (consp value-expr) (eq (car value-expr) 'lambda))
                         (find-entry-label (instructions value-code)))))
     (end-with-linkage linkage
@@ -306,17 +342,35 @@ Scans for (assign ... (op make-compiled-procedure) (label X) ...) and returns X.
    (append (instructions seq1) (instructions seq2))))
 
 (defun extract-define-names (body)
-  "Extract names bound by define forms in a body (for macro shadowing)."
+  "Extract names bound by define forms in a body, expanding macros to find all defines."
   (loop for form in body
-        when (and (consp form) (eq (car form) 'define))
-        collect (let ((name-spec (cadr form)))
-                  (if (consp name-spec) (car name-spec) name-spec))))
+        when (consp form)
+        nconc (cond
+                ((eq (car form) 'define)
+                 (list (let ((name-spec (cadr form)))
+                         (if (consp name-spec) (car name-spec) name-spec))))
+                ((eq (car form) 'begin)
+                 (extract-define-names (cdr form)))
+                ((eq (car form) 'if)
+                 ;; Search consequent and alternative for internal defines
+                 (extract-define-names (cddr form)))
+                ;; Expand compile-time macros to find defines hidden inside
+                ;; (e.g., named let expands to (begin (define ...) ...))
+                ((and (symbolp (car form))
+                      (not (lexically-shadows-macro-p (car form)))
+                      (gethash (car form) *compile-time-macros*))
+                 (let ((expanded (expand-macro-at-compile-time
+                                  (gethash (car form) *compile-time-macros*)
+                                  (cdr form))))
+                   (extract-define-names (list expanded))))
+                (t nil))))
 
 (defun compile-begin (expr target linkage)
   (let ((body (cdr expr)))
     (let ((defined-names (extract-define-names body)))
       (if defined-names
-          (let ((*compile-lexical-env* (append defined-names *compile-lexical-env*)))
+          ;; Add define names to macro shadows so they prevent macro expansion
+          (let ((*compile-macro-shadows* (append defined-names *compile-macro-shadows*)))
             (compile-sequence body target linkage))
           (compile-sequence body target linkage)))))
 
@@ -352,15 +406,19 @@ Scans for (assign ... (op make-compiled-procedure) (label X) ...) and returns X.
         ((consp params) (cons (car params) (flatten-params (cdr params))))))
 
 (defun compile-lambda-body (params body proc-entry)
-  "Compile the body of a lambda, with entry point label."
-  (let ((*compile-lexical-env* (append (flatten-params params)
-                                       *compile-lexical-env*)))
+  "Compile the body of a lambda, with entry point label.
+Pushes a new frame with params + internal define names onto the compile-time env."
+  (let* ((param-names (flatten-params params))
+         (define-names (extract-define-names body))
+         (frame (append param-names define-names))
+         (extra-slots (length define-names))
+         (*compile-lexical-env* (cons frame *compile-lexical-env*)))
     (append-instruction-sequences
      (make-instruction-sequence
       '(env proc argl) '(env)
       `(,proc-entry
         (assign env (op compiled-procedure-env) (reg proc))
-        (assign env (op extend-environment) (const ,params) (reg argl) (reg env))))
+        (assign env (op extend-environment) (const ,params) (reg argl) (reg env) (const ,extra-slots))))
      (compile-sequence body 'val 'return))))
 
 (defun compile-application (expr target linkage)

@@ -71,7 +71,7 @@ The deserializer SHALL support `def N` and `ref N` instructions to restore struc
 - **THEN** all four occurrences SHALL be `eq` to each other
 
 ### Requirement: flat deserializer restores global state
-After reading the flat-format file, the deserializer SHALL destructure the top-of-stack value as a 7-element list and restore all global state identically to the current `ece-load-image`.
+After reading the flat-format file, the deserializer SHALL destructure the top-of-stack value as a 7-element list and restore all global state identically to the current `ece-load-image`. Environment frames that are vectors SHALL be restored as vectors.
 
 #### Scenario: Full image load restores system state
 - **WHEN** `ece-load-image` is called with a flat-format image file
@@ -83,10 +83,21 @@ After reading the flat-format file, the deserializer SHALL destructure the top-o
 - **AND** `*procedure-name-table*` SHALL be restored
 - **AND** `*parameter-table*` and `*parameter-counter*` SHALL be restored
 
+#### Scenario: Full image load restores system state with vector frames
+- **WHEN** `ece-load-image` is called with an image containing vector-backed lexical frames
+- **THEN** `*global-env*` SHALL be restored with vector frames intact
+- **AND** `lexical-ref` operations SHALL work correctly on the restored environment
+- **AND** all prelude functions, macros, and primitives SHALL work correctly
+
 #### Scenario: Image load is idempotent with save
 - **WHEN** an image is saved with `ece-%write-image` and loaded with `ece-load-image`
 - **THEN** the restored system state SHALL be functionally equivalent to the state at save time
 - **AND** all prelude functions, macros, and primitives SHALL work correctly
+
+#### Scenario: Image round-trip preserves frame types
+- **WHEN** an image is saved and then loaded
+- **THEN** lexical frames SHALL remain as vectors
+- **AND** the global frame SHALL remain as a list-based frame
 
 ### Requirement: flat deserializer requires no recursive parser
 The deserializer SHALL be implementable as a simple loop with a switch/case over opcode strings. It SHALL NOT require recursive descent parsing, parenthesis matching, or lookahead beyond the current line.

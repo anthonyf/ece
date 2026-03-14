@@ -302,27 +302,56 @@ a nearby proc gives a named frame; a lone continue gives an anonymous frame."
 (defun frame-values (frame)
   (cdr frame))
 
-(defun extend-environment (vars vals base-env)
-  (if (or (listp vars) (null vars))
-      ;; Walk vars/vals, handling dotted pair rest parameters
-      (let ((var-list nil)
-            (val-list nil)
-            (v vars)
-            (a vals))
-        (loop while (consp v)
-              do (push (car v) var-list)
-              (push (car a) val-list)
-              (setf v (cdr v))
-              (setf a (cdr a)))
-        ;; If v is non-nil atom, it's the rest parameter
-        (when v
-          (push v var-list)
-          (push a val-list))
-        (cons (make-frame (nreverse var-list) (nreverse val-list)) base-env))
-      ;; vars is a symbol: rest-only parameter
-      (cons (make-frame (list vars) (list vals)) base-env)))
+(defun lexical-ref (depth offset env)
+  "O(1) variable access: traverse DEPTH frames, index at OFFSET."
+  (declare (type fixnum depth offset))
+  (let ((frame env))
+    (loop repeat depth do (setf frame (cdr frame)))
+    (svref (car frame) offset)))
+
+(defun lexical-set! (depth offset val env)
+  "O(1) variable mutation: traverse DEPTH frames, set at OFFSET."
+  (declare (type fixnum depth offset))
+  (let ((frame env))
+    (loop repeat depth do (setf frame (cdr frame)))
+    (setf (svref (car frame) offset) val)))
+
+(defun extend-environment (vars vals base-env &optional extra-slots)
+  "Create a new environment frame.
+When EXTRA-SLOTS is provided (even if 0), creates vector frames for O(1) lexical access.
+When EXTRA-SLOTS is nil (3-arg call), creates list-based frames for name-based lookup."
+  (if extra-slots
+      ;; 4-arg call from CL compiler: create vector frame
+      (let ((extra (the fixnum extra-slots)))
+        (cond
+          ((or (listp vars) (null vars))
+           (let ((val-list nil) (v vars) (a vals))
+             (loop while (consp v)
+                   do (push (car a) val-list)
+                   (setf v (cdr v)) (setf a (cdr a)))
+             (when v (push a val-list))
+             (let ((vals-vec (nreverse val-list)))
+               (when (> extra 0)
+                 (setf vals-vec (nconc vals-vec (make-list extra))))
+               (cons (coerce vals-vec 'simple-vector) base-env))))
+          (t ; rest-only parameter
+           (if (> extra 0)
+               (let ((vec (make-array (1+ extra) :initial-element nil)))
+                 (setf (svref vec 0) vals)
+                 (cons vec base-env))
+               (cons (vector vals) base-env)))))
+      ;; 3-arg call from metacircular compiler: create list-based frame
+      (if (or (listp vars) (null vars))
+          (let ((var-list nil) (val-list nil) (v vars) (a vals))
+            (loop while (consp v)
+                  do (push (car v) var-list) (push (car a) val-list)
+                  (setf v (cdr v)) (setf a (cdr a)))
+            (when v (push v var-list) (push a val-list))
+            (cons (make-frame (nreverse var-list) (nreverse val-list)) base-env))
+          (cons (make-frame (list vars) (list vals)) base-env))))
 
 (defun lookup-variable-value (var env)
+  "Look up VAR by name, skipping vector frames (lexical-only)."
   (labels ((scan-frame (vars vals)
              (cond
                ((null vars) nil)
@@ -331,14 +360,19 @@ a nearby proc gives a named frame; a lone continue gives an anonymous frame."
            (env-loop (env)
              (if (null env)
                  (error "Unbound variable: ~A" var)
-                 (let ((result (scan-frame (frame-variables (car env))
-                                           (frame-values (car env)))))
-                   (if result
-                       (cdr result)
-                       (env-loop (cdr env)))))))
+                 (let ((frame (car env)))
+                   (if (vectorp frame)
+                       ;; Skip vector frames — no variable names
+                       (env-loop (cdr env))
+                       (let ((result (scan-frame (frame-variables frame)
+                                                 (frame-values frame))))
+                         (if result
+                             (cdr result)
+                             (env-loop (cdr env)))))))))
     (env-loop env)))
 
 (defun set-variable-value! (var val env)
+  "Set VAR by name, skipping vector frames (lexical-only)."
   (labels ((scan (vars vals)
              (cond
                ((null vars) nil)
@@ -349,23 +383,31 @@ a nearby proc gives a named frame; a lone continue gives an anonymous frame."
            (env-loop (env)
              (if (null env)
                  (error "Unbound variable: ~A" var)
-                 (if (scan (frame-variables (car env))
-                           (frame-values (car env)))
-                     val
-                     (env-loop (cdr env))))))
+                 (let ((frame (car env)))
+                   (if (vectorp frame)
+                       (env-loop (cdr env))
+                       (if (scan (frame-variables frame)
+                                 (frame-values frame))
+                           val
+                           (env-loop (cdr env))))))))
     (env-loop env)))
 
 (defun define-variable! (var val env)
-  (let ((frame (car env)))
-    (labels ((scan (vars vals)
-               (cond
-                 ((null vars)
-                  (setf (car frame) (cons var (car frame)))
-                  (setf (cdr frame) (cons val (cdr frame))))
-                 ((eq var (car vars))
-                  (setf (car vals) val))
-                 (t (scan (cdr vars) (cdr vals))))))
-      (scan (frame-variables frame) (frame-values frame)))))
+  "Define VAR in the first list-based frame in ENV, skipping vector frames."
+  (labels ((find-list-frame (e)
+             (cond ((null e) (error "No list-based frame found for define-variable!"))
+                   ((vectorp (car e)) (find-list-frame (cdr e)))
+                   (t (car e)))))
+    (let ((frame (find-list-frame env)))
+      (labels ((scan (vars vals)
+                 (cond
+                   ((null vars)
+                    (setf (car frame) (cons var (car frame)))
+                    (setf (cdr frame) (cons val (cdr frame))))
+                   ((eq var (car vars))
+                    (setf (car vals) val))
+                   (t (scan (cdr vars) (cdr vals))))))
+        (scan (frame-variables frame) (frame-values frame))))))
 
 ;;; Primitives and global environment
 
@@ -409,9 +451,8 @@ a nearby proc gives a named frame; a lone continue gives an anonymous frame."
           *primitive-procedures*))
 
 (defparameter *global-env*
-  (extend-environment *primitive-procedure-names*
-                      *primitive-procedure-objects*
-                      nil))
+  (list (make-frame (copy-list *primitive-procedure-names*)
+                    (copy-list *primitive-procedure-objects*))))
 
 ;; EOF sentinel for safe read
 (defvar *eof-sentinel* (gensym "EOF"))
@@ -956,6 +997,8 @@ Returns EOF sentinel at end of input."
     (lookup-variable-value #'lookup-variable-value)
     (set-variable-value! #'set-variable-value!)
     (define-variable! #'define-variable!)
+    (lexical-ref #'lexical-ref)
+    (lexical-set! #'lexical-set!)
     (extend-environment #'extend-environment)
     (make-compiled-procedure #'make-compiled-procedure)
     (compiled-procedure-entry #'compiled-procedure-entry)
@@ -1017,7 +1060,10 @@ for re-entering the executor to call a compiled procedure."
                          (let ((b (eval-operand (car r)))
                                (r2 (cdr r)))
                            (if (null r2) (funcall fn a b)
-                               (funcall fn a b (eval-operand (car r2))))))))))
+                               (let ((c (eval-operand (car r2)))
+                                     (r3 (cdr r2)))
+                                 (if (null r3) (funcall fn a b c)
+                                     (funcall fn a b c (eval-operand (car r3))))))))))))
       (handler-bind
           ((error
             (lambda (e)
