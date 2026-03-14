@@ -9,9 +9,14 @@
 - **AND** needs SHALL be empty
 - **AND** modifies SHALL contain `val`
 
-#### Scenario: Compile variable reference
-- **WHEN** `(compile 'x 'val 'next)` is called
-- **THEN** the instruction list SHALL contain a lookup of `x` in `env` assigning to `val`
+#### Scenario: Compile variable reference (lexical)
+- **WHEN** `(compile 'x 'val 'next)` is called and `x` is in the compile-time lexical environment at depth 0, offset 1
+- **THEN** the instruction list SHALL contain `(assign val (op lexical-ref) (const 0) (const 1) (reg env))`
+- **AND** needs SHALL contain `env`
+
+#### Scenario: Compile variable reference (global)
+- **WHEN** `(compile 'x 'val 'next)` is called and `x` is NOT in the compile-time lexical environment
+- **THEN** the instruction list SHALL contain `(assign val (op lookup-variable-value) (const x) (reg env))`
 - **AND** needs SHALL contain `env`
 
 #### Scenario: Compile quoted expression
@@ -35,12 +40,23 @@
 - **THEN** the alternative SHALL fall through and the consequent SHALL jump past the alternative
 
 ### Requirement: compile handles lambda expressions
-`compile` SHALL compile lambda by compiling the body as a separate instruction sequence and emitting an instruction that creates a compiled-procedure object capturing the current environment.
+`compile` SHALL compile lambda by compiling the body as a separate instruction sequence and emitting an instruction that creates a compiled-procedure object capturing the current environment. The lambda parameters SHALL be pushed as a new frame in the compile-time lexical environment when compiling the body.
 
 #### Scenario: Lambda body compiled separately
 - **WHEN** `(lambda (x) (+ x 1))` is compiled
 - **THEN** the body instructions SHALL be a separate sequence entered via a label
 - **AND** the entry point SHALL set up the extended environment from parameters and arguments
+
+#### Scenario: Lambda body compiled with lexical env
+- **WHEN** `(lambda (x y) (+ x y))` is compiled
+- **THEN** the body SHALL be compiled with compile-time lexical env extended by `(x y)`
+- **AND** references to `x` and `y` in the body SHALL use `lexical-ref`
+
+#### Scenario: Lambda body with internal defines
+- **WHEN** `(lambda (x) (define y 10) (+ x y))` is compiled
+- **THEN** the compile-time frame SHALL include both `x` and `y`
+- **AND** the define of `y` SHALL compile as `lexical-set!`
+- **AND** references to both `x` and `y` SHALL use `lexical-ref`
 
 ### Requirement: compile handles begin sequences
 `compile` SHALL compile begin by compiling each expression in sequence, with the last expression inheriting the linkage (tail position).
@@ -73,11 +89,15 @@
 - **THEN** it SHALL be equivalent to compiling `(define f (lambda (x) (+ x 1)))`
 
 ### Requirement: compile handles set
-`compile` SHALL compile `set` by compiling the value expression, then emitting a `set-variable-value!` operation.
+`compile` SHALL compile `set` by compiling the value expression, then emitting either a `lexical-set!` operation (if the variable has a lexical address) or a `set-variable-value!` operation (if global).
 
-#### Scenario: Variable assignment
-- **WHEN** `(set x 10)` is compiled
-- **THEN** the instructions SHALL evaluate `10` and call `set-variable-value!` with `x`
+#### Scenario: Lexical variable assignment
+- **WHEN** `(set x 10)` is compiled and `x` is at lexical address (0, 2)
+- **THEN** the instructions SHALL emit `(perform (op lexical-set!) (const 0) (const 2) (reg val) (reg env))`
+
+#### Scenario: Global variable assignment
+- **WHEN** `(set x 10)` is compiled and `x` is NOT in the lexical environment
+- **THEN** the instructions SHALL emit `(perform (op set-variable-value!) (const x) (reg val) (reg env))`
 
 ### Requirement: compile handles quasiquote
 `compile` SHALL expand quasiquote at compile time using the existing `qq-expand` function, then compile the expanded form.

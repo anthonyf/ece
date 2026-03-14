@@ -1,7 +1,7 @@
 ## Requirements
 
 ### Requirement: flat serializer emits stack-based build instructions
-The `ece-%write-image` function SHALL serialize ECE image data to a flat, line-oriented text format. Each line SHALL contain exactly one opcode with its arguments. The opcodes SHALL be: `int`, `sym`, `kwd`, `str`, `chr`, `nil`, `t`, `cons`, `list`, `vec`, `def`, `ref`.
+The `ece-%write-image` function SHALL serialize ECE image data to a flat, line-oriented text format. Each line SHALL contain exactly one opcode with its arguments. The opcodes SHALL be: `int`, `sym`, `kwd`, `str`, `chr`, `nil`, `t`, `cons`, `list`, `vec`, `def`, `ref`, `float`, `gsym`.
 
 #### Scenario: Serialize integer
 - **WHEN** the image data contains the integer `42`
@@ -48,6 +48,14 @@ The `ece-%write-image` function SHALL serialize ECE image data to a flat, line-o
 #### Scenario: Serialize vector
 - **WHEN** the image data contains the vector `#(1 2 3)`
 - **THEN** the serializer SHALL emit `int 1`, `int 2`, `int 3`, then `vec 3`
+
+#### Scenario: Serialize vector frame in environment
+- **WHEN** the image data contains an environment frame that is a simple vector `#(10 20 30)`
+- **THEN** the serializer SHALL emit `int 10`, `int 20`, `int 30`, then `vec 3`
+
+#### Scenario: Serialize mixed environment (vector and list frames)
+- **WHEN** the image data contains an environment with vector frames (lexical) and a list-based global frame
+- **THEN** each frame type SHALL be serialized according to its type (vector frames as `vec`, list frames as `cons`/`list`)
 
 ### Requirement: flat serializer preserves structural sharing
 The serializer SHALL detect structurally shared values (same identity, `eq`) and emit `def N` / `ref N` instructions to preserve sharing.

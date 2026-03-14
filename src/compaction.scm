@@ -19,7 +19,16 @@
 ;;; VISITED is an eq-based hash table (from %eq-hash-table).
 ;;; PCS is also an eq-based hash table (integer keys).
 (define (collect-entry-pcs-from-value val pcs visited)
-  (when (pair? val)
+  (cond
+   ;; Vector frame (from lexical addressing) — walk each element
+   ((vector? val)
+    (define (walk-vec i)
+      (when (< i (vector-length val))
+        (collect-entry-pcs-from-value (vector-ref val i) pcs visited)
+        (walk-vec (+ i 1))))
+    (walk-vec 0))
+   ;; Pairs: compiled-procedure, continuation, primitive, or generic cons
+   ((pair? val)
     (unless (%eq-hash-has-key? visited val)
       (%eq-hash-set! visited val t)
       (cond
@@ -37,20 +46,28 @@
        ;; generic list: walk car and cdr
        (else
         (collect-entry-pcs-from-value (car val) pcs visited)
-        (collect-entry-pcs-from-value (cdr val) pcs visited))))))
+        (collect-entry-pcs-from-value (cdr val) pcs visited)))))))
 
 ;;; Walk all frames in an environment collecting entry PCs from values.
 (define (collect-entry-pcs-from-env env pcs visited)
   (for-each
    (lambda (frame)
-     (when (pair? frame)
+     (cond
+      ;; Vector frame (from lexical addressing) — walk each slot
+      ((vector? frame)
+       (define (walk-vec i)
+         (when (< i (vector-length frame))
+           (collect-entry-pcs-from-value (vector-ref frame i) pcs visited)
+           (walk-vec (+ i 1))))
+       (walk-vec 0))
+      ;; List-based frame — walk values list
+      ((pair? frame)
        (unless (%eq-hash-has-key? visited frame)
          (%eq-hash-set! visited frame t)
-         ;; cdr of frame = values list
          (for-each
           (lambda (val)
             (collect-entry-pcs-from-value val pcs visited))
-          (cdr frame)))))
+          (cdr frame))))))
    env))
 
 ;;; Return sorted list of block boundary PCs from the procedure-name table.
@@ -230,6 +247,16 @@
 ;;; REMAP is also an %eq-hash-table (integer keys).
 (define (deep-copy-and-remap value remap visited)
   (cond
+   ((vector? value)
+    ;; Vector frame (from lexical addressing) — deep-copy each element
+    (let ((len (vector-length value))
+          (copy (make-vector (vector-length value))))
+      (define (copy-elements i)
+        (when (< i len)
+          (vector-set! copy i (deep-copy-and-remap (vector-ref value i) remap visited))
+          (copy-elements (+ i 1))))
+      (copy-elements 0)
+      copy))
    ((not (pair? value)) value)
    ((null? value) '())
    ((%eq-hash-has-key? visited value)
