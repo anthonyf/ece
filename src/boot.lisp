@@ -23,13 +23,13 @@
 ;;; ece-try-eval: error-handling wrapper around evaluate.
 ;;; The image's (primitive ece-try-eval) binding resolves to this via symbol-function.
 (defun ece-try-eval (expr)
-  "Evaluate expr, catching errors. Prints the error and returns nil on failure."
+  "Evaluate expr, catching errors. Prints the error and returns the EOF sentinel on failure."
   (handler-case
       (evaluate expr)
     (error (c)
       (format t "Error: ~A~%" c)
       (finish-output)
-      nil)))
+      *eof-sentinel*)))
 
 ;;; REPL: compile and run the REPL loop via the metacircular compiler.
 (defun repl ()
@@ -43,6 +43,6 @@
           (begin (newline) (display "Bye!") (newline))
           (begin
            (define result (try-eval input))
-           (if result (begin (write result) (newline)) (quote ()))
+           (if (not (eof? result)) (begin (write result) (newline)) (quote ()))
            (repl-loop))))
      (repl-loop))))

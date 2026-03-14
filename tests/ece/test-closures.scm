@@ -56,8 +56,8 @@
 
 (test "letrec mutual recursion" (lambda ()
   (assert-true
-   (letrec ((is-even? (lambda (n) (if (= n 0) t (is-odd? (- n 1)))))
-            (is-odd? (lambda (n) (if (= n 0) '() (is-even? (- n 1))))))
+   (letrec ((is-even? (lambda (n) (if (= n 0) #t (is-odd? (- n 1)))))
+            (is-odd? (lambda (n) (if (= n 0) #f (is-even? (- n 1))))))
      (is-even? 4)))))
 
 (test "named let" (lambda ()

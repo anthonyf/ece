@@ -16,10 +16,10 @@
    '(3 0 10))))
 
 (test "assert with custom message" (lambda ()
-  (assert-error-message (assert () "my custom assert message") "my custom assert message")))
+  (assert-error-message (assert #f "my custom assert message") "my custom assert message")))
 
 (test "assert default message" (lambda ()
-  (assert-error-message (assert ()) "Assertion failed")))
+  (assert-error-message (assert #f) "Assertion failed")))
 
 (test "error-object round-trip" (lambda ()
   (define obj (make-error-object "test msg" '(a b c)))
@@ -33,40 +33,40 @@
 ;; rather than exact message text.
 
 (test "guard catches (+ \"a\" 1)" (lambda ()
-  (assert-true (guard (e ((error-object? e) t)) (+ "a" 1) ()))))
+  (assert-true (guard (e ((error-object? e) #t)) (+ "a" 1) ()))))
 
 (test "guard catches (car 5)" (lambda ()
-  (assert-true (guard (e ((error-object? e) t)) (car 5) ()))))
+  (assert-true (guard (e ((error-object? e) #t)) (car 5) ()))))
 
 (test "guard catches (/ 1 0)" (lambda ()
-  (assert-true (guard (e ((error-object? e) t)) (/ 1 0) ()))))
+  (assert-true (guard (e ((error-object? e) #t)) (/ 1 0) ()))))
 
 (test "guard catches (vector-ref 42 0)" (lambda ()
-  (assert-true (guard (e ((error-object? e) t)) (vector-ref 42 0) ()))))
+  (assert-true (guard (e ((error-object? e) #t)) (vector-ref 42 0) ()))))
 
 (test "guard catches (- \"x\")" (lambda ()
-  (assert-true (guard (e ((error-object? e) t)) (- "x") ()))))
+  (assert-true (guard (e ((error-object? e) #t)) (- "x") ()))))
 
 (test "guard catches (* #t 2)" (lambda ()
-  (assert-true (guard (e ((error-object? e) t)) (* t 2) ()))))
+  (assert-true (guard (e ((error-object? e) #t)) (* #t 2) ()))))
 
 (test "guard catches (< 1 \"two\")" (lambda ()
-  (assert-true (guard (e ((error-object? e) t)) (< 1 "two") ()))))
+  (assert-true (guard (e ((error-object? e) #t)) (< 1 "two") ()))))
 
 (test "guard catches (cdr 42)" (lambda ()
-  (assert-true (guard (e ((error-object? e) t)) (cdr 42) ()))))
+  (assert-true (guard (e ((error-object? e) #t)) (cdr 42) ()))))
 
 (test "guard catches (string=? 1 2)" (lambda ()
-  (assert-true (guard (e ((error-object? e) t)) (string=? 1 2) ()))))
+  (assert-true (guard (e ((error-object? e) #t)) (string=? 1 2) ()))))
 
 (test "guard catches (char->integer 5)" (lambda ()
-  (assert-true (guard (e ((error-object? e) t)) (char->integer 5) ()))))
+  (assert-true (guard (e ((error-object? e) #t)) (char->integer 5) ()))))
 
 (test "guard catches (bitwise-and 1.5 2)" (lambda ()
-  (assert-true (guard (e ((error-object? e) t)) (bitwise-and 1.5 2) ()))))
+  (assert-true (guard (e ((error-object? e) #t)) (bitwise-and 1.5 2) ()))))
 
 (test "guard catches (modulo 10 0)" (lambda ()
-  (assert-true (guard (e ((error-object? e) t)) (modulo 10 0) ()))))
+  (assert-true (guard (e ((error-object? e) #t)) (modulo 10 0) ()))))
 
 ;; Bridged error has message and irritants
 (test "bridged error has message string" (lambda ()

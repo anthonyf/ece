@@ -6,10 +6,10 @@
 
 (test "if false branch" (lambda ()
   (assert-equal (if (> 1 2) 10 20) 20)
-  (assert-equal (if '() 10 20) 20)))
+  (assert-equal (if #f 10 20) 20)))
 
 (test "if omitted alternative" (lambda ()
-  (assert-equal (if '() 42) '())
+  (assert-equal (if #f 42) #f)
   (assert-equal (if 1 42) 42)))
 
 (test "cond basic" (lambda ()
@@ -17,7 +17,7 @@
   (assert-equal (cond ((= 1 2) 10) ((= 2 2) 20)) 20)))
 
 (test "cond no match" (lambda ()
-  (assert-equal (cond ((= 1 2) 10) ((= 3 4) 20)) '())))
+  (assert-equal (cond ((= 1 2) 10) ((= 3 4) 20)) #f)))
 
 (test "cond else" (lambda ()
   (assert-equal (cond ((= 1 2) 10) (else 99)) 99)))
@@ -34,25 +34,25 @@
   (assert-equal (case 99 ((1) 'one) (else 'other)) 'other)))
 
 (test "case no match" (lambda ()
-  (assert-equal (case 5 ((1) 'one) ((2) 'two)) '())))
+  (assert-equal (case 5 ((1) 'one) ((2) 'two)) #f)))
 
 (test "and" (lambda ()
   (assert-equal (and 1 2 3) 3)
-  (assert-equal (and 1 '() 3) '())
-  (assert-equal (and) t)))
+  (assert-equal (and 1 #f 3) #f)
+  (assert-equal (and) #t)))
 
 (test "or" (lambda ()
-  (assert-equal (or '() 2 3) 2)
-  (assert-equal (or '() '()) '())
-  (assert-equal (or) '())))
+  (assert-equal (or #f 2 3) 2)
+  (assert-equal (or #f #f) #f)
+  (assert-equal (or) #f)))
 
 (test "when" (lambda ()
   (assert-equal (when (= 1 1) 42) 42)
-  (assert-equal (when (= 1 2) 42) '())))
+  (assert-equal (when (= 1 2) 42) #f)))
 
 (test "unless" (lambda ()
   (assert-equal (unless (= 1 2) 42) 42)
-  (assert-equal (unless (= 1 1) 42) '())))
+  (assert-equal (unless (= 1 1) 42) #f)))
 
 (test "do loop" (lambda ()
   (assert-equal (do ((i 0 (+ i 1))) ((= i 5) i)) 5)

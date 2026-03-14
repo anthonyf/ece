@@ -47,6 +47,38 @@
                        (get-macro-character #\))
                        nil *ece-readtable*)
 
+  ;; Boolean literals: #t → T, #f → *scheme-false*
+  ;; Also accept #true and #false (R7RS long forms)
+  (set-dispatch-macro-character #\# #\t
+                                (lambda (stream char arg)
+                                  (declare (ignore char arg))
+                                  ;; Consume "rue" if present (#true), otherwise just #t
+                                  (let ((next (peek-char nil stream nil nil t)))
+                                    (when (and next (alpha-char-p next))
+                                      (let ((rest (make-array 0 :element-type 'character :adjustable t :fill-pointer 0)))
+                                        (loop for c = (peek-char nil stream nil nil t)
+                                              while (and c (alpha-char-p c))
+                                              do (vector-push-extend (read-char stream t nil t) rest))
+                                        (unless (string-equal rest "rue")
+                                          (error "Invalid boolean literal: #t~A" rest)))))
+                                  t)
+                                *ece-readtable*)
+
+  (set-dispatch-macro-character #\# #\f
+                                (lambda (stream char arg)
+                                  (declare (ignore char arg))
+                                  ;; Consume "alse" if present (#false), otherwise just #f
+                                  (let ((next (peek-char nil stream nil nil t)))
+                                    (when (and next (alpha-char-p next))
+                                      (let ((rest (make-array 0 :element-type 'character :adjustable t :fill-pointer 0)))
+                                        (loop for c = (peek-char nil stream nil nil t)
+                                              while (and c (alpha-char-p c))
+                                              do (vector-push-extend (read-char stream t nil t) rest))
+                                        (unless (string-equal rest "alse")
+                                          (error "Invalid boolean literal: #f~A" rest)))))
+                                  *scheme-false*)
+                                *ece-readtable*)
+
   ;; String interpolation: "Hello $name" → (string-append "Hello " (write-to-string name))
   ;; $var interpolates a variable, $(expr) interpolates an expression, $$ is literal $
   ;; Strings without $ are returned as plain strings.

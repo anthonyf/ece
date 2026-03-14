@@ -56,7 +56,7 @@
   (assert-equal
    (guard (e (#t (error-object? e)))
      (error "test"))
-   t)))
+   #t)))
 
 (test "error-object? false for non-errors" (lambda ()
   (assert-true (not (error-object? 42)))
