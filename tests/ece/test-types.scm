@@ -17,8 +17,8 @@
   (assert-true (not (symbol? "hello")))))
 
 (test "boolean?" (lambda ()
-  (assert-true (boolean? t))
-  (assert-true (boolean? '()))
+  (assert-true (boolean? #t))
+  (assert-true (boolean? #f))
   (assert-true (not (boolean? 42)))
   (assert-true (not (boolean? "hello")))))
 

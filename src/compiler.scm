@@ -111,7 +111,8 @@
       (char? expr)
       (vector? expr)
       (null? expr)
-      (eq? expr t)
+      (eq? expr #t)
+      (eq? expr #f)
       (and (pair? expr) (eq? (car expr) :hash-table))))
 
 (define (mc-variable? expr)
@@ -166,7 +167,7 @@
     (let ((consequent-linkage (if (eq? linkage 'next) after-if linkage)))
       (let ((predicate-code (mc-compile (cadr expr) 'val 'next))
             (consequent-code (mc-compile (caddr expr) target consequent-linkage))
-            (alternative-code (mc-compile (if (cdr (cddr expr)) (cadr (cddr expr)) '())
+            (alternative-code (mc-compile (if (pair? (cdr (cddr expr))) (cadr (cddr expr)) #f)
                                           target linkage)))
         (preserving '(env continue)
                     predicate-code
@@ -186,7 +187,7 @@
                  (if (and (pair? form) (eq? (car form) 'define))
                      (let ((name-spec (cadr form)))
                        (if (pair? name-spec) (car name-spec) name-spec))
-                     ()))
+                     #f))
                body)))
 
 (define (mc-compile-begin expr target linkage)
@@ -367,7 +368,7 @@
 (define (mc-find-entry-label instruction-list)
   "Find the entry label from a compiled lambda's instruction list."
   (if (null? instruction-list)
-      ()
+      #f
       (let ((instr (car instruction-list)))
         (if (and (pair? instr)
                  (eq? (car instr) 'assign)
@@ -395,7 +396,7 @@
                                             (list 'assign target '(reg val))))))
             (entry-label (if (and (pair? value-expr) (eq? (car value-expr) 'lambda))
                              (mc-find-entry-label (mc-instructions value-code))
-                             ())))
+                             #f)))
         (end-with-linkage linkage
                           (if entry-label
                               (append-instruction-sequences
@@ -499,7 +500,7 @@
    ((mc-application? expr)
     ;; Check for compile-time macro (skip if operator is lexically shadowed)
     (let ((macro-def (if (member (car expr) (*mc-compile-lexical-env*))
-                         ()
+                         #f
                          (get-macro (car expr)))))
       (if macro-def
           (mc-compile (mc-expand-macro-at-compile-time macro-def (cdr expr))

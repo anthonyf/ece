@@ -39,13 +39,13 @@
 
 (define-macro (assert-error expr)
   "Check that expr signals an error. Uses try-eval."
-  `(if (try-eval ',expr)
+  `(if (eof? (try-eval ',expr))
+       (set *test-passes* (+ *test-passes* 1))
        (begin
          (set *test-failures* (+ *test-failures* 1))
          (display "    FAIL: expected error from ")
          (display ',expr)
-         (newline))
-       (set *test-passes* (+ *test-passes* 1))))
+         (newline))))
 
 (define-macro (assert-error-message expr expected-msg)
   "Check that expr raises an error with the expected message."

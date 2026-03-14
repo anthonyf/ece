@@ -50,12 +50,12 @@
 
 (test "assoc" (lambda ()
   (assert-equal (assoc 'b '((a 1) (b 2) (c 3))) '(b 2))
-  (assert-true (null? (assoc 'z '((a 1) (b 2)))))))
+  (assert-equal (assoc 'z '((a 1) (b 2))) #f)))
 
 (test "member" (lambda ()
   (assert-equal (member 3 '(1 2 3 4 5)) '(3 4 5))
-  (assert-true (null? (member 6 '(1 2 3 4 5))))))
+  (assert-equal (member 6 '(1 2 3 4 5)) #f)))
 
 (test "not" (lambda ()
-  (assert-true (not '()))
+  (assert-true (not #f))
   (assert-true (not (not 42)))))

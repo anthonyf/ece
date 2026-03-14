@@ -96,4 +96,4 @@
        (lambda () (set log (cons 'after log)))))))
   (assert-equal result 'raw-escape)
   ;; after should NOT be called because %raw-call/cc bypasses winding
-  (assert-equal (member 'after log) '())))
+  (assert-equal (member 'after log) #f)))

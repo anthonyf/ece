@@ -289,12 +289,12 @@
      ;; #( vector literal
      ((char=? ch #\()
       (read-vector port))
-     ;; #t → t
+     ;; #t → #t
      ((or (char=? ch #\t) (char=? ch #\T))
-      t)
-     ;; #f → ()
+      #t)
+     ;; #f → #f
      ((or (char=? ch #\f) (char=? ch #\F))
-      '())
+      #f)
      (else
       (error (string-append "Unknown # dispatch: #" (string ch)))))))
 

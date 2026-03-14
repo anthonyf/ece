@@ -172,9 +172,26 @@
            #:ece-error-instruction
            #:ece-error-backtrace
            #:repl
-           #:mc-eval))
+           #:mc-eval
+           #:*scheme-false*
+           #:scheme-false-p
+           #:scheme-bool))
 
 (in-package :ece)
+
+;;;; ========================================================================
+;;;; SCHEME BOOLEAN SENTINEL
+;;;; ========================================================================
+;;;
+;;; In Scheme, #f is the only false value — '() is truthy.
+;;; CL conflates nil and '(), so we need a distinct sentinel for #f.
+
+(defstruct (scheme-false (:constructor %make-scheme-false)))
+(defvar *scheme-false* (%make-scheme-false))
+(declaim (inline scheme-bool))
+(defun scheme-bool (x)
+  "Convert a CL boolean (t/nil) to a Scheme boolean (#t/#f)."
+  (if x t *scheme-false*))
 
 ;;;; ========================================================================
 ;;;; RUNTIME — Minimal code needed to execute compiled ECE instructions
@@ -353,20 +370,35 @@ a nearby proc gives a named frame; a lone continue gives an anonymous frame."
 ;;; Primitives and global environment
 
 (defparameter *primitive-procedures*
-  '(+ - * / = < > car cdr cons list
-    (null? . null) (pair? . consp)
-    (number? . numberp) (string? . stringp) (symbol? . symbolp)
-    (integer? . integerp) (vector? . vectorp)
-    (eq? . eq) (equal? . equal)
+  '(+ - * / car cdr cons list
     (modulo . mod)
-    (char? . characterp) (char=? . char=) (char<? . char<)
     (char->integer . char-code) (integer->char . code-char)
     (%raw-error . error)
-    (string=? . string=) (string<? . string<) (string>? . string>)
     (vector-length . length) (vector-ref . aref)
     (bitwise-and . logand) (bitwise-or . logior)
     (bitwise-xor . logxor) (bitwise-not . lognot)
     (arithmetic-shift . ash)))
+
+;;; Boolean-returning primitive wrappers
+;;; These CL functions return t/nil; we convert nil → *scheme-false*.
+
+(defun ece-= (&rest args) (scheme-bool (apply #'cl:= args)))
+(defun ece-< (&rest args) (scheme-bool (apply #'cl:< args)))
+(defun ece-> (&rest args) (scheme-bool (apply #'cl:> args)))
+(defun ece-null? (x) (scheme-bool (null x)))
+(defun ece-pair? (x) (scheme-bool (consp x)))
+(defun ece-number? (x) (scheme-bool (numberp x)))
+(defun ece-string? (x) (scheme-bool (stringp x)))
+(defun ece-symbol? (x) (scheme-bool (symbolp x)))
+(defun ece-integer? (x) (scheme-bool (integerp x)))
+(defun ece-eq? (x y) (scheme-bool (eq x y)))
+(defun ece-equal? (x y) (scheme-bool (equal x y)))
+(defun ece-char? (x) (scheme-bool (characterp x)))
+(defun ece-char=? (x y) (scheme-bool (char= x y)))
+(defun ece-char<? (x y) (scheme-bool (char< x y)))
+(defun ece-string=? (x y) (scheme-bool (string= x y)))
+(defun ece-string<? (x y) (scheme-bool (if (string< x y) t nil)))
+(defun ece-string>? (x y) (scheme-bool (if (string> x y) t nil)))
 
 (defparameter *primitive-procedure-names*
   (mapcar (lambda (p) (if (listp p) (car p) p))
@@ -427,28 +459,50 @@ a nearby proc gives a named frame; a lone continue gives an anonymous frame."
 (defun ece-display (obj)
   "Write obj without leading newline (princ)."
   (cond
+    ((scheme-false-p obj) (write-string "#f"))
+    ((eq obj t) (write-string "#t"))
+    ((null obj) (write-string "()"))
     ((and (listp obj) (member (car obj) '(compiled-procedure primitive)))
      (princ (format-ece-proc obj)))
     ((ece-hash-table-p obj)
      (format-ece-hash-table obj *standard-output*
-                            (lambda (v s) (let ((*print-circle* t)) (princ v s)))))
+                            (lambda (v s) (ece-display-to-stream v s))))
     (t (let ((*print-circle* t))
          (princ obj))))
   (finish-output)
   obj)
 
+(defun ece-display-to-stream (obj stream)
+  "Display obj to a specific stream."
+  (cond
+    ((scheme-false-p obj) (write-string "#f" stream))
+    ((eq obj t) (write-string "#t" stream))
+    ((null obj) (write-string "()" stream))
+    (t (let ((*print-circle* t)) (princ obj stream)))))
+
 (defun ece-write (obj)
   "Write obj in readable form (prin1). Strings are quoted, symbols uppercase."
   (cond
+    ((scheme-false-p obj) (write-string "#f"))
+    ((eq obj t) (write-string "#t"))
+    ((null obj) (write-string "()"))
     ((and (listp obj) (member (car obj) '(compiled-procedure primitive)))
      (princ (format-ece-proc obj)))
     ((ece-hash-table-p obj)
      (format-ece-hash-table obj *standard-output*
-                            (lambda (v s) (let ((*print-circle* t)) (prin1 v s)))))
+                            (lambda (v s) (ece-write-to-stream v s))))
     (t (let ((*print-circle* t))
          (prin1 obj))))
   (finish-output)
   obj)
+
+(defun ece-write-to-stream (obj stream)
+  "Write obj in readable form to a specific stream."
+  (cond
+    ((scheme-false-p obj) (write-string "#f" stream))
+    ((eq obj t) (write-string "#t" stream))
+    ((null obj) (write-string "()" stream))
+    (t (let ((*print-circle* t)) (prin1 obj stream)))))
 
 (defun ece-newline ()
   "Write a newline."
@@ -458,7 +512,7 @@ a nearby proc gives a named frame; a lone continue gives an anonymous frame."
 
 (defun ece-eof-p (obj)
   "Test if obj is the EOF sentinel."
-  (eq obj *eof-sentinel*))
+  (scheme-bool (eq obj *eof-sentinel*)))
 
 (defun ece-string-ref (s i)
   "Return the character at index i in string s."
@@ -474,10 +528,10 @@ a nearby proc gives a named frame; a lone continue gives an anonymous frame."
 
 (defun ece-string->number (s)
   "Parse a number from string S without invoking the CL reader.
-Supports integers and decimal floats. Returns NIL on failure."
+Supports integers and decimal floats. Returns #f on failure."
   (let ((trimmed (string-trim '(#\Space #\Tab) s)))
     (when (zerop (length trimmed))
-      (return-from ece-string->number nil))
+      (return-from ece-string->number *scheme-false*))
     (let ((dot-pos (position #\. trimmed)))
       (if dot-pos
           ;; Try float: parse integer and fractional parts separately
@@ -492,10 +546,10 @@ Supports integers and decimal floats. Returns NIL on failure."
                                 nil
                                 (parse-integer frac-str :junk-allowed t))))
             (when (and sign-only (null frac-part))
-              (return-from ece-string->number nil))
+              (return-from ece-string->number *scheme-false*))
             (when (or (and (not sign-only) (null int-part))
                       (and (> (length frac-str) 0) (null frac-part)))
-              (return-from ece-string->number nil))
+              (return-from ece-string->number *scheme-false*))
             (let* ((negative (and (> (length int-str) 0) (char= (char int-str 0) #\-)))
                    (abs-int (abs (or int-part 0)))
                    (frac-val (if frac-part
@@ -508,7 +562,7 @@ Supports integers and decimal floats. Returns NIL on failure."
               (parse-integer trimmed :junk-allowed t)
             (if (and val (= pos (length trimmed)))
                 val
-                nil))))))
+                *scheme-false*))))))
 
 (defun ece-number->string (n)
   "Convert number n to string."
@@ -528,7 +582,7 @@ Supports integers and decimal floats. Returns NIL on failure."
 
 (defun ece-vector-p (x)
   "Test if x is a vector (but not a string)."
-  (and (vectorp x) (not (stringp x))))
+  (scheme-bool (and (vectorp x) (not (stringp x)))))
 
 (defun ece-make-vector (n &optional (fill 0))
   "Create a vector of n elements filled with fill (default 0)."
@@ -562,12 +616,15 @@ Returns EOF sentinel at end of input."
 (defun ece-write-to-string (x)
   "Convert any value to its human-readable string representation."
   (cond
+    ((scheme-false-p x) "#f")
+    ((eq x t) "#t")
+    ((null x) "()")
     ((and (listp x) (member (car x) '(compiled-procedure primitive)))
      (format-ece-proc x))
     ((ece-hash-table-p x)
      (with-output-to-string (s)
        (format-ece-hash-table x s
-                              (lambda (v str) (let ((*print-circle* t)) (princ v str))))))
+                              (lambda (v str) (ece-display-to-stream v str)))))
     (t (let ((*print-circle* t))
          (princ-to-string x)))))
 
@@ -600,7 +657,7 @@ Returns EOF sentinel at end of input."
 
 (defun ece-string-contains-p (haystack needle)
   "Test if HAYSTACK contains NEEDLE as a substring."
-  (if (search needle haystack) t nil))
+  (scheme-bool (search needle haystack)))
 
 (defun ece-string-join (lst separator)
   "Join a list of strings with SEPARATOR between them."
@@ -631,13 +688,14 @@ Returns EOF sentinel at end of input."
   (list 'output-port stream))
 
 (defun ece-input-port-p (x)
-  (and (consp x) (eq (car x) 'input-port)))
+  (scheme-bool (and (consp x) (eq (car x) 'input-port))))
 
 (defun ece-output-port-p (x)
-  (and (consp x) (eq (car x) 'output-port)))
+  (scheme-bool (and (consp x) (eq (car x) 'output-port))))
 
 (defun ece-port-p (x)
-  (or (ece-input-port-p x) (ece-output-port-p x)))
+  (scheme-bool (or (and (consp x) (eq (car x) 'input-port))
+                   (and (consp x) (eq (car x) 'output-port)))))
 
 (defun ece-port-stream (port)
   (cadr port))
@@ -695,18 +753,18 @@ Returns EOF sentinel at end of input."
 
 (defun ece-char-ready-p (&optional port)
   (let ((p (or port *current-input-port*)))
-    (if (listen (ece-port-stream p)) t nil)))
+    (scheme-bool (listen (ece-port-stream p)))))
 
 ;;; Character predicates
 
 (defun ece-char-whitespace-p (ch)
-  (if (member ch '(#\Space #\Tab #\Newline #\Return #\Page)) t nil))
+  (scheme-bool (member ch '(#\Space #\Tab #\Newline #\Return #\Page))))
 
 (defun ece-char-alphabetic-p (ch)
-  (if (alpha-char-p ch) t nil))
+  (scheme-bool (alpha-char-p ch)))
 
 (defun ece-char-numeric-p (ch)
-  (if (digit-char-p ch) t nil))
+  (scheme-bool (digit-char-p ch)))
 
 ;;; Scoped port redirection
 
@@ -733,7 +791,14 @@ Returns EOF sentinel at end of input."
 ;;; (try-eval, load, save-image!, and load-image! are registered in compiler.lisp.)
 
 (defparameter *wrapper-primitives*
-  '((print . print)
+  '((= . ece-=) (< . ece-<) (> . ece->)
+    (null? . ece-null?) (pair? . ece-pair?)
+    (number? . ece-number?) (string? . ece-string?) (symbol? . ece-symbol?)
+    (integer? . ece-integer?)
+    (eq? . ece-eq?) (equal? . ece-equal?)
+    (char? . ece-char?) (char=? . ece-char=?) (char<? . ece-char<?)
+    (string=? . ece-string=?) (string<? . ece-string<?) (string>? . ece-string>?)
+    (print . print)
     (write . ece-write)
     (display . ece-display)
     (newline . ece-newline)
@@ -901,7 +966,7 @@ Returns EOF sentinel at end of input."
     (capture-continuation #'capture-continuation)
     (continuation-stack #'continuation-stack)
     (continuation-conts #'continuation-conts)
-    (false? #'null)
+    (false? #'scheme-false-p)
     (list #'list)
     (cons #'cons)
     (car #'car)))
@@ -1177,9 +1242,10 @@ Populated at assembly time from procedure-name pseudo-instructions.")
 Returns a raw CL hash table — use %eq-hash-ref/set!/has-key? to access."
   (make-hash-table :test 'eq))
 
-(defun ece-%eq-hash-ref (ht key &optional default)
-  "Look up KEY in an eq-based hash table."
-  (gethash key ht default))
+(defun ece-%eq-hash-ref (ht key &optional (default *scheme-false*))
+  "Look up KEY in an eq-based hash table. Returns *scheme-false* if not found."
+  (multiple-value-bind (val found) (gethash key ht)
+    (if found val default)))
 
 (defun ece-%eq-hash-set! (ht key val)
   "Set KEY to VAL in an eq-based hash table."
@@ -1190,7 +1256,7 @@ Returns a raw CL hash table — use %eq-hash-ref/set!/has-key? to access."
   "Test if KEY exists in an eq-based hash table."
   (multiple-value-bind (val found) (gethash key ht)
     (declare (ignore val))
-    (if found t nil)))
+    (scheme-bool found)))
 
 (defun ece-%eq-hash-keys (ht)
   "Return a list of all keys in an eq-based hash table."
@@ -1260,8 +1326,8 @@ for use as an ECE primitive."
   (execute-compiled-call compiled-proc args))
 
 (defun ece-get-macro (name)
-  "Look up a compile-time macro by NAME. Returns the macro def or nil."
-  (gethash name *compile-time-macros*))
+  "Look up a compile-time macro by NAME. Returns the macro def or #f."
+  (or (gethash name *compile-time-macros*) *scheme-false*))
 
 (defun ece-set-macro! (name def)
   "Set a compile-time macro NAME to DEF."
@@ -1384,6 +1450,7 @@ Fully iterative to avoid stack overflow."
                  (setf (gethash obj emitted) t))))
            (emit-atom (obj)
              (cond
+               ((scheme-false-p obj) (write-string "false" stream) (terpri stream))
                ((null obj) (write-string "nil" stream) (terpri stream))
                ((eq obj t) (write-string "t" stream) (terpri stream))
                ((integerp obj) (format stream "int ~D~%" obj))
@@ -1588,6 +1655,9 @@ backpatched after deserialization."
                   ;; t
                   ((string= opcode "t")
                    (push t stack))
+                  ;; false (#f sentinel)
+                  ((string= opcode "false")
+                   (push *scheme-false* stack))
                   ;; int N
                   ((string= opcode "int")
                    (push (parse-integer arg) stack))

@@ -50,21 +50,21 @@
 
 (define (member x lst)
   (if (null? lst)
-      (quote ())
+      #f
       (if (equal? x (car lst))
           lst
           (member x (cdr lst)))))
 
 (define (assoc key alist)
   (if (null? alist)
-      (quote ())
+      #f
       (if (equal? key (car (car alist)))
           (car alist)
           (assoc key (cdr alist)))))
 
 ;; ---- Derived predicates ----
 
-(define (not x) (if x (quote ()) t))
+(define (not x) (if x #f #t))
 
 (define (zero? n) (= n 0))
 (define (even? n) (= (modulo n 2) 0))
@@ -72,7 +72,7 @@
 (define (positive? n) (> n 0))
 (define (negative? n) (< n 0))
 
-(define (boolean? x) (if (eq? x t) t (if (null? x) t (quote ()))))
+(define (boolean? x) (if (eq? x #t) #t (if (eq? x #f) #t #f)))
 
 (define (<= a b) (not (> a b)))
 (define (>= a b) (not (< a b)))
@@ -133,17 +133,17 @@
 ;; List predicates
 (define (any pred lst)
   (if (null? lst)
-      ()
+      #f
       (if (pred (car lst))
-          t
+          #t
           (any pred (cdr lst)))))
 
 (define (every pred lst)
   (if (null? lst)
-      t
+      #t
       (if (pred (car lst))
           (every pred (cdr lst))
-          ())))
+          #f)))
 
 ;; Function composition
 (define (compose f g)
@@ -163,7 +163,7 @@
 ;; Standard derived forms (macros)
 (define-macro (cond . clauses)
   (if (null? clauses)
-      (quote ())
+      #f
       (if (eq? (caar clauses) (quote else))
           `(begin ,@(cdr (car clauses)))
           `(if ,(caar clauses)
@@ -189,16 +189,16 @@
 
 (define-macro (and . args)
   (if (null? args)
-      (quote t)
+      #t
       (if (null? (cdr args))
           (car args)
           `(if ,(car args)
                (and ,@(cdr args))
-               ()))))
+               #f))))
 
 (define-macro (or . args)
   (if (null? args)
-      (quote ())
+      #f
       (if (null? (cdr args))
           (car args)
           (let ((temp (gensym)))
@@ -208,10 +208,10 @@
                    (or ,@(cdr args))))))))
 
 (define-macro (when test . body)
-  `(if ,test (begin ,@body) ()))
+  `(if ,test (begin ,@body)))
 
 (define-macro (unless test . body)
-  `(if ,test () (begin ,@body)))
+  `(if (not ,test) (begin ,@body)))
 
 (define-macro (letrec bindings . body)
   `(let ,(map (lambda (b) (list (car b) (quote ()))) bindings)
@@ -221,7 +221,7 @@
 (define-macro (case key . clauses)
   (define (expand-clauses k clauses)
     (if (null? clauses)
-        (quote ())
+        #f
         (if (eq? (caar clauses) (quote else))
             `(begin ,@(cdr (car clauses)))
             `(if ,(if (null? (cdr (caar clauses)))
@@ -292,7 +292,8 @@
                  *hamt-mask32*))
    ((symbol? val) (hash-string-fnv (symbol->string val)))
    ((string? val) (hash-string-fnv val))
-   ((eq? val t) 1)
+   ((eq? val #t) 1)
+   ((eq? val #f) 2)
    ((pair? val)
     (bitwise-and
      (bitwise-xor (hash-code (car val))
@@ -415,7 +416,7 @@
               (begin (vector-set! vec 0 leaf2) (vector-set! vec 1 leaf1)))
           (list :hamt-node bitmap vec)))))
 
-;; Insert into HAMT, returns (new-root . added?) where added? is t if key was new
+;; Insert into HAMT, returns (new-root . added?) where added? is #t if key was new
 (define (hamt-insert root key val hash depth)
   (cond
    ;; Empty trie — create single-entry node
@@ -423,7 +424,7 @@
     (let ((bit (hamt-bit hash depth))
           (vec (make-vector 1)))
       (vector-set! vec 0 (cons key val))
-      (cons (list :hamt-node bit vec) t)))
+      (cons (list :hamt-node bit vec) #t)))
    ;; Internal node
    ((eq? (car root) :hamt-node)
     (let* ((bitmap (car (cdr root)))
@@ -433,7 +434,7 @@
       (if (= (bitwise-and bitmap bit) 0)
           ;; Slot empty — insert new leaf
           (let ((new-vec (vector-insert vec idx (cons key val))))
-            (cons (list :hamt-node (bitwise-or bitmap bit) new-vec) t))
+            (cons (list :hamt-node (bitwise-or bitmap bit) new-vec) #t))
           ;; Slot occupied
           (let ((entry (vector-ref vec idx)))
             (cond
@@ -446,7 +447,7 @@
              ((and (pair? entry) (eq? (car entry) :hamt-collision))
               (let* ((alist (car (cdr entry)))
                      (existing (assoc key alist)))
-                (if (pair? existing)
+                (if existing
                     ;; Update existing in collision
                     (let ((new-alist (map (lambda (pair)
                                             (if (equal? (car pair) key)
@@ -454,42 +455,42 @@
                                           alist)))
                       (cons (list :hamt-node bitmap
                                   (vector-copy-set vec idx (list :hamt-collision new-alist)))
-                            ()))
+                            #f))
                     ;; Add to collision
                     (cons (list :hamt-node bitmap
                                 (vector-copy-set vec idx
                                                  (list :hamt-collision (cons (cons key val) alist))))
-                          t))))
+                          #t))))
              ;; Leaf — check if same key
              ((and (pair? entry) (equal? (car entry) key))
               ;; Update value
               (cons (list :hamt-node bitmap (vector-copy-set vec idx (cons key val)))
-                    ()))
+                    #f))
              ;; Leaf — different key, expand to subtrie
              ((pair? entry)
               (let* ((existing-hash (hash-code (car entry)))
                      (child (hamt-make-two-node entry existing-hash (cons key val) hash (+ depth 1))))
                 (cons (list :hamt-node bitmap (vector-copy-set vec idx child))
-                      t)))
-             (else (cons root ())))))))
+                      #t)))
+             (else (cons root #f)))))))
    ;; Collision node at root (rare)
    ((eq? (car root) :hamt-collision)
     (let* ((alist (car (cdr root)))
            (existing (assoc key alist)))
-      (if (pair? existing)
+      (if existing
           (cons (list :hamt-collision
                       (map (lambda (pair)
                              (if (equal? (car pair) key) (cons key val) pair))
                            alist))
-                ())
+                #f)
           (cons (list :hamt-collision (cons (cons key val) alist))
-                t))))
-   (else (cons root ()))))
+                #t))))
+   (else (cons root #f))))
 
-;; Remove from HAMT, returns (new-root . removed?) where removed? is t if key was found
+;; Remove from HAMT, returns (new-root . removed?) where removed? is #t if key was found
 (define (hamt-remove root key hash depth)
   (cond
-   ((null? root) (cons root ()))
+   ((null? root) (cons root #f))
    ;; Internal node
    ((eq? (car root) :hamt-node)
     (let* ((bitmap (car (cdr root)))
@@ -498,59 +499,59 @@
            (idx (hamt-compressed-index bitmap bit)))
       (if (= (bitwise-and bitmap bit) 0)
           ;; Key not present
-          (cons root ())
+          (cons root #f)
           (let ((entry (vector-ref vec idx)))
             (cond
              ;; Child node — recurse
              ((and (pair? entry) (eq? (car entry) :hamt-node))
               (let ((result (hamt-remove entry key hash (+ depth 1))))
-                (if (null? (cdr result))
-                    (cons root ())  ;; not found
+                (if (not (cdr result))
+                    (cons root #f)  ;; not found
                     (let ((child (car result)))
                       (if (null? child)
                           ;; Child became empty — remove slot
                           (if (= (vector-length vec) 1)
-                              (cons '() t)
+                              (cons '() #t)
                               (cons (list :hamt-node
                                           (bitwise-and bitmap (bitwise-not bit))
                                           (vector-remove vec idx))
-                                    t))
+                                    #t))
                           ;; Replace child
                           (cons (list :hamt-node bitmap (vector-copy-set vec idx child))
-                                t))))))
+                                #t))))))
              ;; Collision node
              ((and (pair? entry) (eq? (car entry) :hamt-collision))
               (let* ((alist (car (cdr entry)))
                      (new-alist (filter (lambda (pair) (not (equal? (car pair) key))) alist)))
                 (if (= (length alist) (length new-alist))
-                    (cons root ())  ;; key not in collision
+                    (cons root #f)  ;; key not in collision
                     (if (= (length new-alist) 1)
                         ;; Collapse collision to leaf
                         (cons (list :hamt-node bitmap
                                     (vector-copy-set vec idx (car new-alist)))
-                              t)
+                              #t)
                         (cons (list :hamt-node bitmap
                                     (vector-copy-set vec idx
                                                      (list :hamt-collision new-alist)))
-                              t)))))
+                              #t)))))
              ;; Leaf — check if matching key
              ((and (pair? entry) (equal? (car entry) key))
               (if (= (vector-length vec) 1)
-                  (cons '() t)  ;; node becomes empty
+                  (cons '() #t)  ;; node becomes empty
                   (cons (list :hamt-node
                               (bitwise-and bitmap (bitwise-not bit))
                               (vector-remove vec idx))
-                        t)))
+                        #t)))
              ;; Leaf — different key
-             (else (cons root ())))))))
+             (else (cons root #f)))))))
    ;; Collision node at root
    ((eq? (car root) :hamt-collision)
     (let* ((alist (car (cdr root)))
            (new-alist (filter (lambda (pair) (not (equal? (car pair) key))) alist)))
       (if (= (length alist) (length new-alist))
-          (cons root ())
+          (cons root #f)
           (if (null? new-alist)
-              (cons '() t)
+              (cons '() #t)
               (if (= (length new-alist) 1)
                   ;; Promote single entry — wrap in a node
                   (let* ((leaf (car new-alist))
@@ -558,9 +559,9 @@
                          (bit (hamt-bit h depth))
                          (vec (make-vector 1)))
                     (vector-set! vec 0 leaf)
-                    (cons (list :hamt-node bit vec) t))
-                  (cons (list :hamt-collision new-alist) t))))))
-   (else (cons root ()))))
+                    (cons (list :hamt-node bit vec) #t))
+                  (cons (list :hamt-collision new-alist) #t))))))
+   (else (cons root #f))))
 
 ;; Fold over all (key . val) entries in a HAMT
 (define (hamt-fold f init root)
@@ -609,18 +610,18 @@
 
 (define (hash-table? x)
   (if (pair? x)
-      (if (eq? (car x) :hash-table) t (quote ()))
-      (quote ())))
+      (if (eq? (car x) :hash-table) #t #f)
+      #f))
 
 (define (hash-ref ht key . default)
   (let ((result (hamt-lookup (cdr (cdr ht)) key (hash-code key) 0)))
     (if (eq? result *hamt-not-found*)
-        (if (null? default) (quote ()) (car default))
+        (if (null? default) #f (car default))
         result)))
 
 (define (hash-has-key? ht key)
   (let ((result (hamt-lookup (cdr (cdr ht)) key (hash-code key) 0)))
-    (if (eq? result *hamt-not-found*) (quote ()) t)))
+    (if (eq? result *hamt-not-found*) #f #t)))
 
 (define (hash-keys ht)
   (hamt-fold (lambda (acc k v) (cons k acc)) '() (cdr (cdr ht))))
@@ -884,8 +885,8 @@
         (condition (gensym))
         (prev-handler (gensym)))
     (define (has-else? clauses)
-      (if (null? clauses) ()
-          (if (eq? (caar clauses) 'else) t
+      (if (null? clauses) #f
+          (if (eq? (caar clauses) 'else) #t
               (has-else? (cdr clauses)))))
     (let ((full-clauses
            (if (has-else? clauses)

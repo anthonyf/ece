@@ -1,8 +1,8 @@
 ;;; Error and assert tests
 
 (test "assert passes on truthy" (lambda ()
-  (assert t)
-  (assert-true t)))
+  (assert #t)
+  (assert-true #t)))
 
 (test "assert-error on division by zero" (lambda ()
   (assert-error (/ 1 0))))

@@ -19,27 +19,27 @@
 (test "TCO in cond" (lambda ()
   (define (tco-cond n)
     (cond ((= n 0) 'done)
-          (t (tco-cond (- n 1)))))
+          (#t (tco-cond (- n 1)))))
   (assert-equal (tco-cond 100000) 'done)))
 
 (test "TCO in and" (lambda ()
   (define (tco-and n)
-    (and t (if (= n 0) 'done (tco-and (- n 1)))))
+    (and #t (if (= n 0) 'done (tco-and (- n 1)))))
   (assert-equal (tco-and 100000) 'done)))
 
 (test "TCO in or" (lambda ()
   (define (tco-or n)
-    (or '() (if (= n 0) 'done (tco-or (- n 1)))))
+    (or #f (if (= n 0) 'done (tco-or (- n 1)))))
   (assert-equal (tco-or 100000) 'done)))
 
 (test "TCO in when" (lambda ()
   (define (tco-when n)
-    (when t (if (= n 0) 'done (tco-when (- n 1)))))
+    (when #t (if (= n 0) 'done (tco-when (- n 1)))))
   (assert-equal (tco-when 100000) 'done)))
 
 (test "TCO in unless" (lambda ()
   (define (tco-unless n)
-    (unless '() (if (= n 0) 'done (tco-unless (- n 1)))))
+    (unless #f (if (= n 0) 'done (tco-unless (- n 1)))))
   (assert-equal (tco-unless 100000) 'done)))
 
 (test "TCO in let" (lambda ()

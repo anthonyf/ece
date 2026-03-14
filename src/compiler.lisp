@@ -13,6 +13,7 @@
       (vectorp expr)
       (null expr)
       (eq expr t)
+      (scheme-false-p expr)
       (keywordp expr)
       (and (consp expr) (eq (car expr) :hash-table))))
 
@@ -283,7 +284,7 @@ Scans for (assign ... (op make-compiled-procedure) (label X) ...) and returns X.
     (let ((consequent-linkage (if (eq linkage 'next) after-if linkage)))
       (let ((predicate-code (ece-compile (cadr expr) 'val 'next))
             (consequent-code (ece-compile (caddr expr) target consequent-linkage))
-            (alternative-code (ece-compile (if (cdddr expr) (cadddr expr) nil)
+            (alternative-code (ece-compile (if (cdddr expr) (cadddr expr) *scheme-false*)
                                            target linkage)))
         (preserving '(env continue)
                     predicate-code
@@ -556,13 +557,13 @@ Scans for (assign ... (op make-compiled-procedure) (label X) ...) and returns X.
 ;;; These call evaluate/compile-file-ece so they must be defined after the compiler.
 
 (defun ece-try-eval (expr)
-  "Evaluate expr, catching errors. Prints the error and returns nil on failure."
+  "Evaluate expr, catching errors. Prints the error and returns the EOF sentinel on failure."
   (handler-case
       (evaluate expr)
     (error (c)
       (format t "Error: ~A~%" c)
       (finish-output)
-      nil)))
+      *eof-sentinel*)))
 
 (defun ece-load (filename)
   "Load and compile all expressions from an ECE source file."
