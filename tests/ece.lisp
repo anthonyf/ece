@@ -71,16 +71,16 @@
 
   (testing "char? predicate"
            (ok (evaluate '(char? #\a)))
-           (ok (not (evaluate '(char? 42))))
-           (ok (not (evaluate '(char? "a")))))
+           (ok (ece::scheme-false-p (evaluate '(char? 42))))
+           (ok (ece::scheme-false-p (evaluate '(char? "a")))))
 
   (testing "char=? equality"
            (ok (evaluate '(char=? #\a #\a)))
-           (ok (not (evaluate '(char=? #\a #\b)))))
+           (ok (ece::scheme-false-p (evaluate '(char=? #\a #\b)))))
 
   (testing "char<? ordering"
            (ok (evaluate '(char<? #\a #\b)))
-           (ok (not (evaluate '(char<? #\b #\a)))))
+           (ok (ece::scheme-false-p (evaluate '(char<? #\b #\a)))))
 
   (testing "char->integer"
            (ok (= (evaluate '(char->integer #\a)) 97)))
@@ -114,8 +114,8 @@
 
   (testing "null? and not"
            (ok (evaluate '(null? (quote ()))))
-           (ok (not (evaluate '(null? (quote (1))))))
-           (ok (evaluate '(not (quote ())))))
+           (ok (ece::scheme-false-p (evaluate '(null? (quote (1))))))
+           (ok (ece::scheme-false-p (evaluate '(not (quote ()))))))
 
   (testing "reverse"
            (ok (equal (evaluate '(reverse (quote (1 2 3)))) '(3 2 1)))
@@ -141,12 +141,12 @@
              (ok (= (evaluate '(if (< 1 2) 10 20)) 10))
              (ok (= (evaluate '(if (quote t) 1 2)) 1)))
 
-  (testing "nil predicate takes alternative"
-           (ok (= (evaluate '(if (quote ()) 10 20)) 20))
+  (testing "false predicate takes alternative"
+           (ok (= (evaluate (list 'if ece::*scheme-false* 10 20)) 20))
            (ok (= (evaluate '(if (> 1 2) 10 20)) 20)))
 
-  (testing "omitted alternative returns nil"
-           (ok (equal (evaluate '(if (quote ()) 42)) nil))
+  (testing "empty list is truthy"
+           (ok (= (evaluate '(if (quote ()) 10 20)) 10))
            (ok (= (evaluate '(if 1 42)) 42)))
 
   (testing "computed subexpressions and nested if"
@@ -210,21 +210,21 @@
                    'done)))
 
   (testing "tail call as last argument of or"
-           (ok (eq (evaluate '(begin (define (tco-or n)
-                                      (if (= n 0) (quote done)
-                                          (or (quote ()) (tco-or (- n 1)))))
-                               (tco-or 1000000)))
+           (ok (eq (evaluate `(begin (define (tco-or n)
+                                         (if (= n 0) (quote done)
+                                             (or ,ece::*scheme-false* (tco-or (- n 1)))))
+                                     (tco-or 1000000)))
                    'done)))
 
   (testing "tail call in when body"
-           (ok (null (evaluate '(begin (define (tco-when n)
-                                        (when (> n 0) (tco-when (- n 1))))
-                                 (tco-when 1000000))))))
+           (ok (ece::scheme-false-p (evaluate '(begin (define (tco-when n)
+                                                       (when (> n 0) (tco-when (- n 1))))
+                                                (tco-when 1000000))))))
 
   (testing "tail call in unless body"
-           (ok (null (evaluate '(begin (define (tco-unless n)
-                                        (unless (= n 0) (tco-unless (- n 1))))
-                                 (tco-unless 1000000))))))
+           (ok (ece::scheme-false-p (evaluate '(begin (define (tco-unless n)
+                                                       (unless (= n 0) (tco-unless (- n 1))))
+                                                (tco-unless 1000000))))))
 
   (testing "tail call in let body"
            (ok (eq (evaluate '(begin (define (tco-let n)
@@ -365,10 +365,10 @@
            (ok (evaluate '(pair? (cons 1 2)))))
 
   (testing "pair? on number"
-           (ok (not (evaluate '(pair? 42)))))
+           (ok (ece::scheme-false-p (evaluate '(pair? 42)))))
 
   (testing "pair? on empty list"
-           (ok (not (evaluate '(pair? (quote ())))))))
+           (ok (ece::scheme-false-p (evaluate '(pair? (quote ())))))))
 
 (deftest test-map
     (testing "map with lambda"
@@ -448,8 +448,8 @@
   (testing "second clause matches"
            (ok (= (evaluate '(cond ((= 1 2) 10) ((= 2 2) 20))) 20)))
 
-  (testing "no clause matches returns nil"
-           (ok (null (evaluate '(cond ((= 1 2) 10) ((= 3 4) 20))))))
+  (testing "no clause matches returns #f"
+           (ok (ece::scheme-false-p (evaluate '(cond ((= 1 2) 10) ((= 3 4) 20))))))
 
   (testing "multi-expression clause body"
            (ok (= (evaluate '(begin (define x 0)
@@ -473,8 +473,8 @@
   (testing "else clause"
            (ok (eq (evaluate '(case 99 ((1) (quote one)) (else (quote other)))) 'other)))
 
-  (testing "no match returns nil"
-           (ok (null (evaluate '(case 5 ((1) (quote one)) ((2) (quote two)))))))
+  (testing "no match returns #f"
+           (ok (ece::scheme-false-p (evaluate '(case 5 ((1) (quote one)) ((2) (quote two)))))))
 
   (testing "key expression evaluated once"
            (ok (= (evaluate '(begin (define counter 0)
@@ -568,33 +568,33 @@
              (ok (= (evaluate '(and 1 2 3)) 3)))
 
   (testing "short-circuit on false"
-           (ok (null (evaluate '(and 1 (quote ()) 3)))))
+           (ok (ece::scheme-false-p (evaluate (list 'and 1 ece::*scheme-false* 3)))))
 
   (testing "empty and"
            (ok (evaluate '(and)))))
 
 (deftest test-or
     (testing "first truthy"
-             (ok (= (evaluate '(or (quote ()) 2 3)) 2)))
+             (ok (= (evaluate (list 'or ece::*scheme-false* 2 3)) 2)))
 
   (testing "all falsy"
-           (ok (null (evaluate '(or (quote ()) (quote ()))))))
+           (ok (ece::scheme-false-p (evaluate (list 'or ece::*scheme-false* ece::*scheme-false*)))))
 
   (testing "empty or"
-           (ok (null (evaluate '(or))))))
+           (ok (ece::scheme-false-p (evaluate '(or))))))
 
 (deftest test-when-unless
     (testing "when with truthy test evaluates body"
              (ok (= (evaluate '(when (= 1 1) 42)) 42)))
 
-  (testing "when with falsy test returns nil"
-           (ok (null (evaluate '(when (= 1 2) 42)))))
+  (testing "when with falsy test returns #f"
+           (ok (ece::scheme-false-p (evaluate '(when (= 1 2) 42)))))
 
   (testing "unless with falsy test evaluates body"
            (ok (= (evaluate '(unless (= 1 2) 42)) 42)))
 
-  (testing "unless with truthy test returns nil"
-           (ok (null (evaluate '(unless (= 1 1) 42))))))
+  (testing "unless with truthy test returns #f"
+           (ok (ece::scheme-false-p (evaluate '(unless (= 1 1) 42))))))
 
 (deftest test-quasiquote
     (testing "all-literal template"
@@ -654,37 +654,37 @@
 (deftest test-type-predicates
     (testing "number?"
              (ok (evaluate '(number? 42)))
-             (ok (not (evaluate '(number? "hello")))))
+             (ok (ece::scheme-false-p (evaluate '(number? "hello")))))
 
   (testing "string?"
            (ok (evaluate '(string? "hello")))
-           (ok (not (evaluate '(string? 42)))))
+           (ok (ece::scheme-false-p (evaluate '(string? 42)))))
 
   (testing "symbol?"
            (ok (evaluate '(symbol? (quote foo))))
-           (ok (not (evaluate '(symbol? 42)))))
+           (ok (ece::scheme-false-p (evaluate '(symbol? 42)))))
 
   (testing "boolean?"
            (ok (evaluate '(boolean? t)))
-           (ok (evaluate '(boolean? (quote ()))))
-           (ok (not (evaluate '(boolean? 42)))))
+           (ok (ece::scheme-false-p (evaluate '(boolean? (quote ())))))
+           (ok (ece::scheme-false-p (evaluate '(boolean? 42)))))
 
   (testing "zero?"
            (ok (evaluate '(zero? 0)))
-           (ok (not (evaluate '(zero? 5))))))
+           (ok (ece::scheme-false-p (evaluate '(zero? 5))))))
 
 (deftest test-equality
     (testing "eq? on same symbol"
              (ok (evaluate '(eq? (quote a) (quote a)))))
 
   (testing "eq? on different symbols"
-           (ok (not (evaluate '(eq? (quote a) (quote b))))))
+           (ok (ece::scheme-false-p (evaluate '(eq? (quote a) (quote b))))))
 
   (testing "equal? on identical lists"
            (ok (evaluate '(equal? (quote (1 2 3)) (quote (1 2 3))))))
 
   (testing "equal? on different lists"
-           (ok (not (evaluate '(equal? (quote (1 2)) (quote (1 3)))))))
+           (ok (ece::scheme-false-p (evaluate '(equal? (quote (1 2)) (quote (1 3)))))))
 
   (testing "equal? on strings"
            (ok (evaluate '(equal? "hello" "hello")))))
@@ -704,14 +704,14 @@
 
   (testing "even?"
            (ok (evaluate '(even? 4)))
-           (ok (not (evaluate '(even? 3)))))
+           (ok (ece::scheme-false-p (evaluate '(even? 3)))))
 
   (testing "odd?"
            (ok (evaluate '(odd? 3))))
 
   (testing "positive?"
            (ok (evaluate '(positive? 5)))
-           (ok (not (evaluate '(positive? -1)))))
+           (ok (ece::scheme-false-p (evaluate '(positive? -1)))))
 
   (testing "negative?"
            (ok (evaluate '(negative? -1)))))
@@ -756,7 +756,7 @@
              (ok (evaluate '(symbol? (gensym)))))
 
   (testing "gensym returns unique symbols"
-           (ok (not (evaluate '(eq? (gensym) (gensym)))))))
+           (ok (ece::scheme-false-p (evaluate '(eq? (gensym) (gensym)))))))
 
 (deftest test-or-no-double-eval
     (testing "or does not double-evaluate truthy argument"
@@ -786,12 +786,12 @@
   (testing "string->number"
            (ok (= (evaluate '(string->number "42")) 42))
            (ok (= (evaluate '(string->number "-7")) -7))
-           (ok (null (evaluate '(string->number "abc"))))
+           (ok (ece::scheme-false-p (evaluate '(string->number "abc"))))
            (ok (= (evaluate '(string->number "3.14")) 3.14))
            (ok (= (evaluate '(string->number "-0.5")) -0.5))
-           (ok (null (evaluate '(string->number "3/4"))))
-           (ok (null (evaluate '(string->number ""))))
-           (ok (null (evaluate '(string->number "  ")))))
+           (ok (ece::scheme-false-p (evaluate '(string->number "3/4"))))
+           (ok (ece::scheme-false-p (evaluate '(string->number ""))))
+           (ok (ece::scheme-false-p (evaluate '(string->number "  ")))))
 
   (testing "number->string"
            (ok (equal (evaluate '(number->string 42)) "42"))
@@ -819,7 +819,7 @@
              (ok (equal (evaluate '(assoc (quote b) (quote ((a 1) (b 2) (c 3))))) '(b 2))))
 
   (testing "assoc key not found"
-           (ok (null (evaluate '(assoc (quote d) (quote ((a 1) (b 2) (c 3))))))))
+           (ok (ece::scheme-false-p (evaluate '(assoc (quote d) (quote ((a 1) (b 2) (c 3))))))))
 
   (testing "assoc with numeric key"
            (ok (equal (evaluate '(assoc 2 (quote ((1 a) (2 b) (3 c))))) '(2 b))))
@@ -828,7 +828,7 @@
            (ok (equal (evaluate '(member 3 (quote (1 2 3 4 5)))) '(3 4 5))))
 
   (testing "member element not found"
-           (ok (null (evaluate '(member 6 (quote (1 2 3 4 5)))))))
+           (ok (ece::scheme-false-p (evaluate '(member 6 (quote (1 2 3 4 5)))))))
 
   (testing "member with symbol"
            (ok (equal (evaluate '(member (quote c) (quote (a b c d)))) '(c d)))))
@@ -857,19 +857,19 @@
              (ok (evaluate '(string=? "hello" "hello"))))
 
   (testing "string=? unequal"
-           (ok (not (evaluate '(string=? "hello" "world")))))
+           (ok (ece::scheme-false-p (evaluate '(string=? "hello" "world")))))
 
   (testing "string<? less than"
            (ok (evaluate '(string<? "abc" "abd"))))
 
   (testing "string<? not less than"
-           (ok (not (evaluate '(string<? "abd" "abc")))))
+           (ok (ece::scheme-false-p (evaluate '(string<? "abd" "abc")))))
 
   (testing "string>? greater than"
            (ok (evaluate '(string>? "abd" "abc"))))
 
   (testing "string>? not greater than"
-           (ok (not (evaluate '(string>? "abc" "abd"))))))
+           (ok (ece::scheme-false-p (evaluate '(string>? "abc" "abd"))))))
 
 (deftest test-vector-ops
     (testing "vector literal self-evaluates"
@@ -877,8 +877,8 @@
 
   (testing "vector? predicate"
            (ok (evaluate '(vector? #(1 2 3))))
-           (ok (not (evaluate '(vector? (quote (1 2 3))))))
-           (ok (not (evaluate '(vector? "hello")))))
+           (ok (ece::scheme-false-p (evaluate '(vector? (quote (1 2 3))))))
+           (ok (ece::scheme-false-p (evaluate '(vector? "hello")))))
 
   (testing "make-vector"
            (ok (= (evaluate '(vector-length (make-vector 5))) 5))
@@ -955,13 +955,13 @@
            (ok (equal (evaluate '(write-to-string "hello")) "hello")))
 
   (testing "boolean to string"
-           (ok (equal (evaluate '(write-to-string t)) "T")))
+           (ok (equal (evaluate '(write-to-string t)) "#t")))
 
   (testing "list to string"
            (ok (equal (evaluate '(write-to-string (quote (1 2 3)))) "(1 2 3)")))
 
   (testing "empty list to string"
-           (ok (equal (evaluate '(write-to-string (quote ()))) "NIL"))))
+           (ok (equal (evaluate '(write-to-string (quote ()))) "()"))))
 
 (deftest test-bitwise-ops
     (testing "bitwise-and"
@@ -1083,17 +1083,17 @@
            (ok (evaluate '(hash-table? (hash-table 'a 1)))))
 
   (testing "hash-table? predicate false for list"
-           (ok (not (evaluate '(hash-table? '(1 2 3))))))
+           (ok (ece::scheme-false-p (evaluate '(hash-table? '(1 2 3))))))
 
   (testing "hash-table? predicate false for number"
-           (ok (not (evaluate '(hash-table? 42)))))
+           (ok (ece::scheme-false-p (evaluate '(hash-table? 42)))))
 
   (testing "hash-ref key found"
            (ok (equal (evaluate '(hash-ref (hash-table 'name "Alice" 'age 30) 'name))
                       "Alice")))
 
-  (testing "hash-ref key not found returns nil"
-           (ok (null (evaluate '(hash-ref (hash-table 'a 1) 'missing)))))
+  (testing "hash-ref key not found returns #f"
+           (ok (ece::scheme-false-p (evaluate '(hash-ref (hash-table 'a 1) 'missing)))))
 
   (testing "hash-ref key not found with default"
            (ok (equal (evaluate '(hash-ref (hash-table 'a 1) 'missing "default"))
@@ -1107,7 +1107,7 @@
            (ok (evaluate '(hash-has-key? (hash-table 'name "Alice") 'name))))
 
   (testing "hash-has-key? false"
-           (ok (not (evaluate '(hash-has-key? (hash-table 'name "Alice") 'age)))))
+           (ok (ece::scheme-false-p (evaluate '(hash-has-key? (hash-table 'name "Alice") 'age)))))
 
   (testing "hash-keys returns all keys"
            (let ((keys (evaluate '(hash-keys (hash-table 'a 1 'b 2 'c 3)))))
@@ -1176,16 +1176,16 @@
                   50)))
 
   (testing "hash-set original lacks new key"
-           (ok (not (evaluate '(begin
-                                (define ht (hash-table 'hp 100))
-                                (hash-set ht 'mp 50)
-                                (hash-has-key? ht 'mp))))))
+           (ok (ece::scheme-false-p (evaluate '(begin
+                                                (define ht (hash-table 'hp 100))
+                                                (hash-set ht 'mp 50)
+                                                (hash-has-key? ht 'mp))))))
 
   (testing "hash-remove! removes key"
-           (ok (not (evaluate '(begin
-                                (define ht (hash-table 'a 1 'b 2))
-                                (hash-remove! ht 'a)
-                                (hash-has-key? ht 'a))))))
+           (ok (ece::scheme-false-p (evaluate '(begin
+                                                (define ht (hash-table 'a 1 'b 2))
+                                                (hash-remove! ht 'a)
+                                                (hash-has-key? ht 'a))))))
 
   (testing "hash-remove! preserves other keys"
            (ok (evaluate '(begin
@@ -1326,15 +1326,13 @@
                       t)))
 
   (testing "predicate returns false for non-matching value"
-           (ok (equal (ece-eval-string "(begin (define-record point x y)
-                                          (point? 42))")
-                      nil)))
+           (ok (ece::scheme-false-p (ece-eval-string "(begin (define-record point x y)
+                                          (point? 42))"))))
 
   (testing "predicate returns false for different record type"
-           (ok (equal (ece-eval-string "(begin (define-record point x y)
+           (ok (ece::scheme-false-p (ece-eval-string "(begin (define-record point x y)
                                           (define-record vec x y)
-                                          (point? (make-vec 1 2)))")
-                      nil)))
+                                          (point? (make-vec 1 2)))"))))
 
   (testing "mutator updates field in place"
            (ok (equal (ece-eval-string "(begin (define-record point x y)
@@ -1374,12 +1372,13 @@
     (testing "truthy condition passes"
              (ok (not (evaluate '(assert t))))
              (ok (not (evaluate '(assert 42))))
-             (ok (not (evaluate '(assert "hello")))))
+             (ok (not (evaluate '(assert "hello"))))
+             (ok (not (evaluate '(assert ())))))
   (testing "falsy condition signals error"
-           (ok (handler-case (progn (evaluate '(assert ())) nil)
+           (ok (handler-case (progn (evaluate (list 'assert ece::*scheme-false*)) nil)
                  (error (c) (search "Assertion failed" (format nil "~A" c))))))
   (testing "custom message on failure"
-           (ok (handler-case (progn (evaluate '(assert () "x must be positive")) nil)
+           (ok (handler-case (progn (evaluate (list 'assert ece::*scheme-false* "x must be positive")) nil)
                  (error (c) (search "x must be positive" (format nil "~A" c))))))
   (testing "custom message not used on success"
            (ok (not (evaluate '(assert t "should not see this"))))))
@@ -1388,15 +1387,15 @@
     (testing "element found"
              (ok (evaluate '(any odd? (list 2 3 4)))))
   (testing "no element found"
-           (ok (not (evaluate '(any odd? (list 2 4 6))))))
+           (ok (ece::scheme-false-p (evaluate '(any odd? (list 2 4 6))))))
   (testing "empty list"
-           (ok (not (evaluate '(any odd? (list)))))))
+           (ok (ece::scheme-false-p (evaluate '(any odd? (list)))))))
 
 (deftest test-every
     (testing "all elements match"
              (ok (evaluate '(every even? (list 2 4 6)))))
   (testing "some element fails"
-           (ok (not (evaluate '(every even? (list 2 3 6))))))
+           (ok (ece::scheme-false-p (evaluate '(every even? (list 2 3 6))))))
   (testing "empty list"
            (ok (evaluate '(every even? (list))))))
 
@@ -1439,11 +1438,11 @@
     (testing "substring found"
              (ok (evaluate '(string-contains? "hello world" "world"))))
   (testing "substring not found"
-           (ok (not (evaluate '(string-contains? "hello world" "xyz")))))
+           (ok (ece::scheme-false-p (evaluate '(string-contains? "hello world" "xyz")))))
   (testing "empty needle"
            (ok (evaluate '(string-contains? "hello" ""))))
   (testing "case sensitive"
-           (ok (not (evaluate '(string-contains? "Hello" "hello"))))))
+           (ok (ece::scheme-false-p (evaluate '(string-contains? "Hello" "hello"))))))
 
 (deftest test-string-join
     (testing "join with comma"
@@ -1942,7 +1941,7 @@
   (testing "compile if true branch"
            (ok (= (ece-eval-string "(mc-compile-and-go '(if t 1 2))") 1)))
   (testing "compile if false branch"
-           (ok (= (ece-eval-string "(mc-compile-and-go '(if () 1 2))") 2)))
+           (ok (= (ece-eval-string "(mc-compile-and-go '(if #f 1 2))") 2)))
   (testing "compile begin sequence"
            (ok (= (ece-eval-string "(mc-compile-and-go '(begin 1 2 3))") 3))))
 
@@ -1990,10 +1989,10 @@
                   20)))
   (testing "compile and/or macros"
            (ok (= (ece-eval-string "(mc-compile-and-go '(and 1 2 3))") 3))
-           (ok (= (ece-eval-string "(mc-compile-and-go '(or () () 42))") 42)))
+           (ok (= (ece-eval-string "(mc-compile-and-go '(or #f #f 42))") 42)))
   (testing "compile when/unless macros"
            (ok (= (ece-eval-string "(mc-compile-and-go '(when t 42))") 42))
-           (ok (= (ece-eval-string "(mc-compile-and-go '(unless () 42))") 42)))
+           (ok (= (ece-eval-string "(mc-compile-and-go '(unless #f 42))") 42)))
   ;; Recursion
   (testing "compile recursive function"
            (ok (= (ece-eval-string
@@ -2298,11 +2297,11 @@
     (testing "port predicates"
              (let ((ip (ece::ece-open-input-string "test")))
                (ok (ece::ece-input-port-p ip))
-               (ok (not (ece::ece-output-port-p ip)))
+               (ok (ece::scheme-false-p (ece::ece-output-port-p ip)))
                (ok (ece::ece-port-p ip)))
-             (ok (not (ece::ece-port-p 42)))
-             (ok (not (ece::ece-port-p "hello")))
-             (ok (not (ece::ece-input-port-p nil))))
+             (ok (ece::scheme-false-p (ece::ece-port-p 42)))
+             (ok (ece::scheme-false-p (ece::ece-port-p "hello")))
+             (ok (ece::scheme-false-p (ece::ece-input-port-p nil))))
 
   (testing "string port: open, read chars, EOF"
            (let ((p (ece::ece-open-input-string "hi")))
@@ -2334,13 +2333,13 @@
            (ok (ece::ece-char-whitespace-p #\Space))
            (ok (ece::ece-char-whitespace-p #\Newline))
            (ok (ece::ece-char-whitespace-p #\Tab))
-           (ok (not (ece::ece-char-whitespace-p #\a)))
+           (ok (ece::scheme-false-p (ece::ece-char-whitespace-p #\a)))
            (ok (ece::ece-char-alphabetic-p #\a))
            (ok (ece::ece-char-alphabetic-p #\Z))
-           (ok (not (ece::ece-char-alphabetic-p #\5)))
+           (ok (ece::scheme-false-p (ece::ece-char-alphabetic-p #\5)))
            (ok (ece::ece-char-numeric-p #\0))
            (ok (ece::ece-char-numeric-p #\9))
-           (ok (not (ece::ece-char-numeric-p #\a))))
+           (ok (ece::scheme-false-p (ece::ece-char-numeric-p #\a))))
 
   (testing "read-line with port argument"
            (let ((p (ece::ece-open-input-string (format nil "hello~%world"))))
@@ -2498,7 +2497,7 @@
 
   (testing "booleans"
            (ok (eq (ece-read-string "#t") t))
-           (ok (eq (ece-read-string "#f") nil)))
+           (ok (ece::scheme-false-p (ece-read-string "#f"))))
 
   (testing "comments"
            (ok (= (ece-read-string "; comment
@@ -2557,7 +2556,7 @@
 
   (testing "boolean #t"
            (let ((output (run-repl "#t")))
-             (ok (search "T" output))))
+             (ok (search "#t" output))))
 
   (testing "lambda printing"
            (let ((output (run-repl "(lambda (x) x)")))
