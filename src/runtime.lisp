@@ -175,7 +175,8 @@
            #:mc-eval
            #:*scheme-false*
            #:scheme-false-p
-           #:scheme-bool))
+           #:scheme-bool
+           #:ece-disassemble-image))
 
 (in-package :ece)
 
@@ -1404,6 +1405,175 @@ State is stored in *parameter-table* so parameters survive image round-trips."
 ;;;; IMAGE SAVE/LOAD
 ;;;; ========================================================================
 
+;;; ---- Binary format constants ----
+
+;; Instruction opcodes
+(defconstant +bin-assign+  #x01)
+(defconstant +bin-test+    #x02)
+(defconstant +bin-perform+ #x03)
+(defconstant +bin-save+    #x04)
+(defconstant +bin-restore+ #x05)
+(defconstant +bin-goto+    #x06)
+(defconstant +bin-branch+  #x07)
+
+;; Register enum
+(defconstant +reg-val+      #x00)
+(defconstant +reg-env+      #x01)
+(defconstant +reg-proc+     #x02)
+(defconstant +reg-argl+     #x03)
+(defconstant +reg-continue+ #x04)
+(defconstant +reg-stack+    #x05)
+
+;; Source type (for assign)
+(defconstant +src-const+ #x00)
+(defconstant +src-reg+   #x01)
+(defconstant +src-op+    #x02)
+(defconstant +src-label+ #x03)
+
+;; Operand type (for op arguments)
+(defconstant +operand-reg+   #x00)
+(defconstant +operand-const+ #x01)
+(defconstant +operand-label+ #x02)
+
+;; Goto/branch target type
+(defconstant +target-label+ #x00)
+(defconstant +target-reg+   #x01)
+
+;; Operation enum — must match get-operation dispatch
+(defparameter *operation-to-id*
+  (let ((ht (make-hash-table :test 'eq)))
+    (loop for (sym id) in '((lookup-variable-value     #x00)
+                            (set-variable-value!        #x01)
+                            (define-variable!           #x02)
+                            (lexical-ref                #x03)
+                            (lexical-set!               #x04)
+                            (extend-environment         #x05)
+                            (make-compiled-procedure    #x06)
+                            (compiled-procedure-entry   #x07)
+                            (compiled-procedure-env     #x08)
+                            (primitive-procedure?       #x09)
+                            (continuation?              #x0A)
+                            (apply-primitive-procedure  #x0B)
+                            (capture-continuation       #x0C)
+                            (continuation-stack         #x0D)
+                            (continuation-conts         #x0E)
+                            (false?                     #x0F)
+                            (list                       #x10)
+                            (cons                       #x11)
+                            (car                        #x12))
+          do (setf (gethash sym ht) id))
+    ht))
+
+(defparameter *id-to-operation*
+  (let ((vec (make-array 19)))
+    (maphash (lambda (sym id) (setf (aref vec id) sym)) *operation-to-id*)
+    vec))
+
+;; Register name lookup tables
+(defparameter *register-to-id*
+  (let ((ht (make-hash-table :test 'eq)))
+    (loop for (sym id) in '((val #x00) (env #x01) (proc #x02)
+                            (argl #x03) (continue #x04) (stack #x05))
+          do (setf (gethash sym ht) id))
+    ht))
+
+(defparameter *id-to-register*
+  #(val env proc argl continue stack))
+
+;; Data type tags (for binary stack-machine encoding)
+(defconstant +data-nil+     #x01)
+(defconstant +data-t+       #x02)
+(defconstant +data-false+   #x03)
+(defconstant +data-int+     #x04)
+(defconstant +data-float+   #x05)
+(defconstant +data-char+    #x06)
+(defconstant +data-sym+     #x07)
+(defconstant +data-kwd+     #x08)
+(defconstant +data-str+     #x09)
+(defconstant +data-cons+    #x0A)
+(defconstant +data-list+    #x0B)
+(defconstant +data-def+     #x0C)
+(defconstant +data-ref+     #x0D)
+(defconstant +data-vec+     #x0E)
+(defconstant +data-gsym+    #x0F)
+
+;; Symbol table package tags
+(defconstant +pkg-ece+        #x00)
+(defconstant +pkg-keyword+    #x01)
+(defconstant +pkg-cl+         #x02)
+(defconstant +pkg-uninterned+ #x03)
+(defconstant +pkg-other+      #x04)
+
+;; Section type tags
+(defconstant +section-instructions+ #x00)
+(defconstant +section-labels+       #x01)
+(defconstant +section-env+          #x02)
+(defconstant +section-macros+       #x03)
+(defconstant +section-names+        #x04)
+(defconstant +section-params+       #x05)
+(defconstant +section-param-counter+ #x06)
+
+;;; ---- Binary I/O helpers ----
+
+(defun bin-write-u8 (byte stream)
+  (write-byte byte stream))
+
+(defun bin-write-u16-be (val stream)
+  (write-byte (ldb (byte 8 8) val) stream)
+  (write-byte (ldb (byte 8 0) val) stream))
+
+(defun bin-write-u32-be (val stream)
+  (write-byte (ldb (byte 8 24) val) stream)
+  (write-byte (ldb (byte 8 16) val) stream)
+  (write-byte (ldb (byte 8 8) val) stream)
+  (write-byte (ldb (byte 8 0) val) stream))
+
+(defun bin-write-i64-be (val stream)
+  ;; Handles negative values via two's complement
+  (let ((unsigned (if (< val 0) (+ (ash 1 64) val) val)))
+    (loop for shift from 56 downto 0 by 8
+          do (write-byte (ldb (byte 8 shift) unsigned) stream))))
+
+(defun bin-write-f64-be (val stream)
+  (let* ((d (float val 1.0d0))
+         (hi (sb-kernel:double-float-high-bits d))
+         (lo (sb-kernel:double-float-low-bits d)))
+    (bin-write-u32-be (logand hi #xFFFFFFFF) stream)
+    (bin-write-u32-be lo stream)))
+
+(defun bin-read-u8 (stream)
+  (read-byte stream))
+
+(defun bin-read-u16-be (stream)
+  (let ((hi (read-byte stream))
+        (lo (read-byte stream)))
+    (logior (ash hi 8) lo)))
+
+(defun bin-read-u32-be (stream)
+  (let ((b3 (read-byte stream))
+        (b2 (read-byte stream))
+        (b1 (read-byte stream))
+        (b0 (read-byte stream)))
+    (logior (ash b3 24) (ash b2 16) (ash b1 8) b0)))
+
+(defun bin-read-i64-be (stream)
+  (let ((unsigned 0))
+    (loop for shift from 56 downto 0 by 8
+          do (setf unsigned (logior unsigned (ash (read-byte stream) shift))))
+    (if (logbitp 63 unsigned)
+        (- unsigned (ash 1 64))
+        unsigned)))
+
+(defun bin-read-f64-be (stream)
+  (let ((hi (bin-read-u32-be stream))
+        (lo (bin-read-u32-be stream)))
+    (sb-kernel:make-double-float (if (logbitp 31 hi)
+                                     (- hi (ash 1 32))
+                                     hi)
+                                 lo)))
+
+;;; ---- Shared utilities ----
+
 (defun hash-table-to-alist (ht)
   "Convert a hash table to an alist."
   (let ((pairs nil))
@@ -1602,15 +1772,6 @@ Fully iterative to avoid stack overflow."
                          do (write-string "cons" stream)
                          (terpri stream))))))))))
 
-(defun ece-%write-image (filename data)
-  "Serialize DATA to FILENAME in flat image format.
-DATA should be the 7-element image format list."
-  (with-open-file (out filename :direction :output
-                       :if-exists :supersede
-                       :if-does-not-exist :create)
-    (flat-image-serialize data out))
-  t)
-
 (defun ece-save-image (filename)
   "Delegate to ECE-side save-image! which handles compaction and serialization."
   (let ((save-fn (lookup-variable-value 'save-image! *global-env*)))
@@ -1776,42 +1937,906 @@ backpatched after deserialization."
           (flat-image-backpatch result defs forward-refs)
           result))))
 
+;;; ---- Binary image format ----
+
+;;; Symbol table: collect, write, read
+
+(defun bin-collect-symbols (data)
+  "Walk DATA collecting all unique symbols. Returns (values symbol-vector symbol-to-index-ht).
+DATA is the 7-element image list. Uses explicit work stack to avoid CL stack overflow."
+  (let ((seen (make-hash-table :test 'eq))
+        (symbols (make-array 256 :adjustable t :fill-pointer 0))
+        (work-stack (make-array 1024 :adjustable t :fill-pointer 0)))
+    (labels ((add-sym (s)
+               (unless (gethash s seen)
+                 (setf (gethash s seen) (fill-pointer symbols))
+                 (vector-push-extend s symbols)))
+             (wpush (obj) (vector-push-extend obj work-stack))
+             (walk ()
+               (loop while (> (fill-pointer work-stack) 0) do
+                     (let ((obj (vector-pop work-stack)))
+                       (cond
+                         ((symbolp obj) (add-sym obj))
+                         ((consp obj)
+                          (unless (gethash obj seen)
+                            (setf (gethash obj seen) t)
+                            (wpush (cdr obj))
+                            (wpush (car obj))))
+                         ((and (vectorp obj) (not (stringp obj)))
+                          (unless (gethash obj seen)
+                            (setf (gethash obj seen) t)
+                            (loop for i from (1- (length obj)) downto 0
+                                  do (wpush (aref obj i))))))))))
+      (wpush data)
+      (walk)
+      ;; Reset seen to be symbol-to-index only
+      (let ((sym-to-idx (make-hash-table :test 'eq)))
+        (loop for i below (fill-pointer symbols)
+              do (setf (gethash (aref symbols i) sym-to-idx) i))
+        (values symbols sym-to-idx)))))
+
+(defun bin-write-symbol-table (symbols stream)
+  "Write SYMBOLS vector to binary STREAM."
+  (loop for sym across symbols do
+        (cond
+          ;; Uninterned (gensym)
+          ((null (symbol-package sym))
+           (let ((bytes (sb-ext:string-to-octets (symbol-name sym) :external-format :utf-8)))
+             (bin-write-u8 +pkg-uninterned+ stream)
+             (bin-write-u16-be (length bytes) stream)
+             (write-sequence bytes stream)))
+          ;; Keyword
+          ((eq (symbol-package sym) (find-package :keyword))
+           (let ((bytes (sb-ext:string-to-octets (symbol-name sym) :external-format :utf-8)))
+             (bin-write-u8 +pkg-keyword+ stream)
+             (bin-write-u16-be (length bytes) stream)
+             (write-sequence bytes stream)))
+          ;; ECE package
+          ((multiple-value-bind (found-sym status)
+               (find-symbol (symbol-name sym) :ece)
+             (and status (eq found-sym sym)))
+           (let ((bytes (sb-ext:string-to-octets (symbol-name sym) :external-format :utf-8)))
+             (bin-write-u8 +pkg-ece+ stream)
+             (bin-write-u16-be (length bytes) stream)
+             (write-sequence bytes stream)))
+          ;; CL package
+          ((multiple-value-bind (found-sym status)
+               (find-symbol (symbol-name sym) :cl)
+             (and status (eq found-sym sym)))
+           (let ((bytes (sb-ext:string-to-octets (symbol-name sym) :external-format :utf-8)))
+             (bin-write-u8 +pkg-cl+ stream)
+             (bin-write-u16-be (length bytes) stream)
+             (write-sequence bytes stream)))
+          ;; Other package
+          (t
+           (let ((name-bytes (sb-ext:string-to-octets (symbol-name sym) :external-format :utf-8))
+                 (pkg-bytes (sb-ext:string-to-octets (package-name (symbol-package sym)) :external-format :utf-8)))
+             (bin-write-u8 +pkg-other+ stream)
+             (bin-write-u16-be (length pkg-bytes) stream)
+             (write-sequence pkg-bytes stream)
+             (bin-write-u16-be (length name-bytes) stream)
+             (write-sequence name-bytes stream))))))
+
+(defun bin-read-symbol-table (count stream)
+  "Read COUNT symbol entries from STREAM. Returns index-to-symbol vector."
+  (let ((symbols (make-array count)))
+    (loop for i below count do
+          (let ((pkg-tag (bin-read-u8 stream)))
+            (case pkg-tag
+              (#.+pkg-ece+
+               (let* ((len (bin-read-u16-be stream))
+                      (bytes (make-array len :element-type '(unsigned-byte 8))))
+                 (read-sequence bytes stream)
+                 (setf (aref symbols i)
+                       (intern (sb-ext:octets-to-string bytes :external-format :utf-8) :ece))))
+              (#.+pkg-keyword+
+               (let* ((len (bin-read-u16-be stream))
+                      (bytes (make-array len :element-type '(unsigned-byte 8))))
+                 (read-sequence bytes stream)
+                 (setf (aref symbols i)
+                       (intern (sb-ext:octets-to-string bytes :external-format :utf-8) :keyword))))
+              (#.+pkg-cl+
+               (let* ((len (bin-read-u16-be stream))
+                      (bytes (make-array len :element-type '(unsigned-byte 8))))
+                 (read-sequence bytes stream)
+                 (setf (aref symbols i)
+                       (intern (sb-ext:octets-to-string bytes :external-format :utf-8) :cl))))
+              (#.+pkg-uninterned+
+               (let* ((len (bin-read-u16-be stream))
+                      (bytes (make-array len :element-type '(unsigned-byte 8))))
+                 (read-sequence bytes stream)
+                 (setf (aref symbols i)
+                       (make-symbol (sb-ext:octets-to-string bytes :external-format :utf-8)))))
+              (#.+pkg-other+
+               (let* ((pkg-len (bin-read-u16-be stream))
+                      (pkg-bytes (make-array pkg-len :element-type '(unsigned-byte 8))))
+                 (read-sequence pkg-bytes stream)
+                 (let* ((name-len (bin-read-u16-be stream))
+                        (name-bytes (make-array name-len :element-type '(unsigned-byte 8))))
+                   (read-sequence name-bytes stream)
+                   (let ((pkg-name (sb-ext:octets-to-string pkg-bytes :external-format :utf-8))
+                         (sym-name (sb-ext:octets-to-string name-bytes :external-format :utf-8)))
+                     (setf (aref symbols i)
+                           (intern sym-name (or (find-package pkg-name)
+                                                (make-package pkg-name :use nil)))))))))))
+    symbols))
+
+;;; Binary instruction serializer
+
+(defun bin-register-id (name)
+  "Get register ID for NAME."
+  (or (gethash name *register-to-id*)
+      (error "Unknown register: ~S" name)))
+
+(defun bin-operation-id (name)
+  "Get operation ID for NAME."
+  (or (gethash name *operation-to-id*)
+      (error "Unknown operation: ~S" name)))
+
+(defun bin-write-operand (operand sym-to-idx stream)
+  "Write a single operand (reg, const, or label) for an op instruction."
+  (cond
+    ((and (consp operand) (eq (car operand) 'reg))
+     (bin-write-u8 +operand-reg+ stream)
+     (bin-write-u8 (bin-register-id (cadr operand)) stream))
+    ((and (consp operand) (eq (car operand) 'const))
+     (bin-write-u8 +operand-const+ stream)
+     (bin-serialize-data-value (cadr operand) sym-to-idx stream))
+    ((and (consp operand) (eq (car operand) 'label))
+     (bin-write-u8 +operand-label+ stream)
+     (bin-serialize-data-value (cadr operand) sym-to-idx stream))
+    (t (error "Unknown operand form: ~S" operand))))
+
+(defun bin-serialize-instruction (instr sym-to-idx stream)
+  "Encode a single register machine instruction in binary format."
+  (case (car instr)
+    (assign
+     (bin-write-u8 +bin-assign+ stream)
+     (bin-write-u8 (bin-register-id (cadr instr)) stream)
+     (let ((source (caddr instr)))
+       (cond
+         ;; (assign reg (const val))
+         ((and (consp source) (eq (car source) 'const))
+          (bin-write-u8 +src-const+ stream)
+          (bin-serialize-data-value (cadr source) sym-to-idx stream))
+         ;; (assign reg (reg src))
+         ((and (consp source) (eq (car source) 'reg))
+          (bin-write-u8 +src-reg+ stream)
+          (bin-write-u8 (bin-register-id (cadr source)) stream))
+         ;; (assign reg (op name) operands...)
+         ((and (consp source) (eq (car source) 'op))
+          (bin-write-u8 +src-op+ stream)
+          (bin-write-u8 (bin-operation-id (cadr source)) stream)
+          (let ((operands (cdddr instr)))
+            (bin-write-u8 (length operands) stream)
+            (dolist (op operands)
+              (bin-write-operand op sym-to-idx stream))))
+         ;; (assign reg (label name))
+         ((and (consp source) (eq (car source) 'label))
+          (bin-write-u8 +src-label+ stream)
+          (bin-serialize-data-value (cadr source) sym-to-idx stream))
+         (t (error "Unknown assign source: ~S" source)))))
+    (test
+     (bin-write-u8 +bin-test+ stream)
+     (let ((op-spec (cadr instr)))
+       (bin-write-u8 (bin-operation-id (cadr op-spec)) stream)
+       (let ((operands (cddr instr)))
+         (bin-write-u8 (length operands) stream)
+         (dolist (op operands)
+           (bin-write-operand op sym-to-idx stream)))))
+    (perform
+     (bin-write-u8 +bin-perform+ stream)
+     (let ((op-spec (cadr instr)))
+       (bin-write-u8 (bin-operation-id (cadr op-spec)) stream)
+       (let ((operands (cddr instr)))
+         (bin-write-u8 (length operands) stream)
+         (dolist (op operands)
+           (bin-write-operand op sym-to-idx stream)))))
+    (save
+     (bin-write-u8 +bin-save+ stream)
+     (bin-write-u8 (bin-register-id (cadr instr)) stream))
+    (restore
+     (bin-write-u8 +bin-restore+ stream)
+     (bin-write-u8 (bin-register-id (cadr instr)) stream))
+    (goto
+     (bin-write-u8 +bin-goto+ stream)
+     (let ((dest (cadr instr)))
+       (cond
+         ((and (consp dest) (eq (car dest) 'label))
+          (bin-write-u8 +target-label+ stream)
+          (bin-serialize-data-value (cadr dest) sym-to-idx stream))
+         ((and (consp dest) (eq (car dest) 'reg))
+          (bin-write-u8 +target-reg+ stream)
+          (bin-write-u8 (bin-register-id (cadr dest)) stream))
+         (t (error "Unknown goto target: ~S" dest)))))
+    (branch
+     (bin-write-u8 +bin-branch+ stream)
+     (let ((dest (cadr instr)))
+       (bin-serialize-data-value (cadr dest) sym-to-idx stream)))
+    (t (error "Unknown instruction type: ~S" (car instr)))))
+
+;;; Binary data serializer (stack-machine encoding for arbitrary values)
+;;; Fully iterative (work-stack) to handle circular/deeply nested structures.
+
+(defun bin-serialize-data-atom (obj sym-to-idx stream)
+  "Emit a single atom in binary data format. For use by the work-stack serializer."
+  (cond
+    ((scheme-false-p obj) (bin-write-u8 +data-false+ stream))
+    ((null obj) (bin-write-u8 +data-nil+ stream))
+    ((eq obj t) (bin-write-u8 +data-t+ stream))
+    ((integerp obj)
+     (bin-write-u8 +data-int+ stream)
+     (bin-write-i64-be obj stream))
+    ((floatp obj)
+     (bin-write-u8 +data-float+ stream)
+     (bin-write-f64-be obj stream))
+    ((characterp obj)
+     (bin-write-u8 +data-char+ stream)
+     (bin-write-u32-be (char-code obj) stream))
+    ((keywordp obj)
+     (bin-write-u8 +data-kwd+ stream)
+     (bin-write-u16-be (gethash obj sym-to-idx) stream))
+    ((and (symbolp obj) (null (symbol-package obj)))
+     (bin-write-u8 +data-gsym+ stream)
+     (bin-write-u16-be (gethash obj sym-to-idx) stream))
+    ((symbolp obj)
+     (bin-write-u8 +data-sym+ stream)
+     (bin-write-u16-be (gethash obj sym-to-idx) stream))
+    (t (warn "bin-serialize-data-atom: unhandled type ~A for ~S" (type-of obj) obj)
+       (bin-write-u8 +data-nil+ stream))))
+
+(defun bin-proper-list-p (start def-ids)
+  "If START is a proper list with no shared internal cdrs, return its length. Otherwise nil."
+  (let ((len 0))
+    (do ((cur start (cdr cur)))
+        ((null cur) len)
+      (unless (consp cur) (return nil))
+      ;; If a cdr-spine cons (after the head) is shared, can't use list opcode
+      (when (and (> len 0) (gethash cur def-ids))
+        (return nil))
+      (incf len))))
+
+(defun bin-serialize-data (data sym-to-idx stream)
+  "Serialize DATA to binary STREAM with shared reference tracking.
+Fully iterative using a work stack to avoid stack overflow on circular structures."
+  (let* ((counts (flat-image-count-refs data))
+         (def-ids (make-hash-table :test 'eq))
+         (emitted (make-hash-table :test 'eq))
+         (next-id 0)
+         (work-stack (make-array 1024 :adjustable t :fill-pointer 0)))
+    ;; Assign def IDs to multiply-referenced objects
+    (maphash (lambda (obj count)
+               (when (> count 1)
+                 (setf (gethash obj def-ids) next-id)
+                 (incf next-id)))
+             counts)
+    (flet ((wpush (item) (vector-push-extend item work-stack))
+           (wpop () (vector-pop work-stack)))
+      (labels
+          ((schedule-emit (obj) (wpush (cons :emit obj)))
+           (mark-emitted (obj)
+             (let ((id (gethash obj def-ids)))
+               (when id (setf (gethash obj emitted) t))))
+           (schedule-cons-structure (start)
+             (mark-emitted start)
+             (let ((list-len (bin-proper-list-p start def-ids)))
+               (if list-len
+                   ;; Proper list
+                   (progn
+                     (when (gethash start def-ids) (wpush (cons :def start)))
+                     (wpush (cons :list list-len))
+                     (let ((rev nil))
+                       (do ((cur start (cdr cur))) ((null cur))
+                         (push (car cur) rev))
+                       (dolist (item rev) (schedule-emit item))))
+                   ;; Dotted/improper chain — emit as individual conses
+                   (let ((cars nil) (n 0) (final-cdr nil))
+                     (do ((cur start)) (nil)
+                       (push (car cur) cars)
+                       (incf n)
+                       (let ((next (cdr cur)))
+                         (cond
+                           ((null next) (setf final-cdr nil) (return))
+                           ((not (consp next)) (setf final-cdr next) (return))
+                           ((gethash next def-ids) (setf final-cdr next) (return))
+                           (t (setf cur next)))))
+                     (when (gethash start def-ids) (wpush (cons :def start)))
+                     (wpush (cons :conses n))
+                     (schedule-emit final-cdr)
+                     (dolist (car-val cars) (schedule-emit car-val)))))))
+        ;; Initialize
+        (schedule-emit data)
+        ;; Process work stack
+        (loop while (> (fill-pointer work-stack) 0) do
+              (let* ((item (wpop))
+                     (tag (car item))
+                     (val (cdr item)))
+                (case tag
+                  (:emit
+                   (cond
+                     ;; Already emitted (shared): back-reference
+                     ((gethash val emitted)
+                      (bin-write-u8 +data-ref+ stream)
+                      (bin-write-u16-be (gethash val def-ids) stream))
+                     ;; String
+                     ((stringp val)
+                      (bin-write-u8 +data-str+ stream)
+                      (let ((bytes (sb-ext:string-to-octets val :external-format :utf-8)))
+                        (bin-write-u32-be (length bytes) stream)
+                        (write-sequence bytes stream))
+                      (mark-emitted val)
+                      (let ((id (gethash val def-ids)))
+                        (when id
+                          (bin-write-u8 +data-def+ stream)
+                          (bin-write-u16-be id stream))))
+                     ;; Vector (non-string)
+                     ((and (vectorp val) (not (stringp val)))
+                      (mark-emitted val)
+                      (when (gethash val def-ids) (wpush (cons :def val)))
+                      (wpush (cons :vec (length val)))
+                      (loop for i from (1- (length val)) downto 0
+                            do (schedule-emit (aref val i))))
+                     ;; Uninterned symbol (gensym) — needs def/ref like strings
+                     ((and (symbolp val) (null (symbol-package val)))
+                      (bin-write-u8 +data-gsym+ stream)
+                      (bin-write-u16-be (gethash val sym-to-idx) stream)
+                      (mark-emitted val)
+                      (let ((id (gethash val def-ids)))
+                        (when id
+                          (bin-write-u8 +data-def+ stream)
+                          (bin-write-u16-be id stream))))
+                     ;; Cons cell
+                     ((consp val) (schedule-cons-structure val))
+                     ;; Atoms
+                     (t (bin-serialize-data-atom val sym-to-idx stream))))
+                  (:def
+                   (bin-write-u8 +data-def+ stream)
+                      (bin-write-u16-be (gethash val def-ids) stream))
+                  (:list
+                   (bin-write-u8 +data-list+ stream)
+                   (bin-write-u16-be val stream))
+                  (:vec
+                   (bin-write-u8 +data-vec+ stream)
+                   (bin-write-u16-be val stream))
+                  (:conses
+                   (loop repeat val do (bin-write-u8 +data-cons+ stream))))))))))
+
+;;; bin-serialize-data-value — simple recursive version for inline const values
+;;; in instructions. These are always small atoms/lists, no circular structures.
+
+(defun bin-serialize-data-value (obj sym-to-idx stream)
+  "Serialize a single (small) value for inline instruction operands."
+  (cond
+    ((scheme-false-p obj) (bin-write-u8 +data-false+ stream))
+    ((null obj) (bin-write-u8 +data-nil+ stream))
+    ((eq obj t) (bin-write-u8 +data-t+ stream))
+    ((integerp obj) (bin-write-u8 +data-int+ stream) (bin-write-i64-be obj stream))
+    ((floatp obj) (bin-write-u8 +data-float+ stream) (bin-write-f64-be obj stream))
+    ((characterp obj) (bin-write-u8 +data-char+ stream) (bin-write-u32-be (char-code obj) stream))
+    ((stringp obj)
+     (bin-write-u8 +data-str+ stream)
+     (let ((bytes (sb-ext:string-to-octets obj :external-format :utf-8)))
+       (bin-write-u32-be (length bytes) stream)
+       (write-sequence bytes stream)))
+    ((keywordp obj) (bin-write-u8 +data-kwd+ stream) (bin-write-u16-be (gethash obj sym-to-idx) stream))
+    ((and (symbolp obj) (null (symbol-package obj)))
+     (bin-write-u8 +data-gsym+ stream) (bin-write-u16-be (gethash obj sym-to-idx) stream))
+    ((symbolp obj) (bin-write-u8 +data-sym+ stream) (bin-write-u16-be (gethash obj sym-to-idx) stream))
+    ((consp obj)
+     ;; Tree-order encoding for inline consts: tag first, then children
+     ;; Check for proper list (list-length errors on dotted lists, so catch it)
+     (let ((len (ignore-errors (list-length obj))))
+       (cond
+         (len
+          ;; Proper list
+          (bin-write-u8 +data-list+ stream)
+          (bin-write-u16-be len stream)
+          (dolist (item obj)
+            (bin-serialize-data-value item sym-to-idx stream)))
+         (t
+          ;; Dotted pair / improper list — serialize as chain of cons cells
+          (bin-write-u8 +data-cons+ stream)
+          (bin-serialize-data-value (car obj) sym-to-idx stream)
+          (bin-serialize-data-value (cdr obj) sym-to-idx stream)))))
+    (t (warn "bin-serialize-data-value: unhandled ~S" obj) (bin-write-u8 +data-nil+ stream))))
+
+;;; In-memory byte buffer stream for section serialization
+
+(defclass byte-buffer-stream (sb-gray:fundamental-binary-output-stream)
+  ((buffer :initform (make-array 4096 :element-type '(unsigned-byte 8)
+                                 :adjustable t :fill-pointer 0)
+           :accessor bbs-buffer)))
+
+(defmethod sb-gray:stream-write-byte ((stream byte-buffer-stream) byte)
+  (vector-push-extend byte (bbs-buffer stream))
+  byte)
+
+(defmethod sb-gray:stream-write-sequence ((stream byte-buffer-stream) seq &optional (start 0) end)
+  (let ((end (or end (length seq))))
+    (loop for i from start below end
+          do (vector-push-extend (aref seq i) (bbs-buffer stream))))
+  seq)
+
+(defun make-byte-buffer-stream ()
+  "Create an in-memory binary output stream."
+  (make-instance 'byte-buffer-stream))
+
+(defun byte-buffer-contents (stream)
+  "Get the accumulated bytes from a byte-buffer-stream as a simple array."
+  (let* ((buf (bbs-buffer stream))
+         (len (fill-pointer buf))
+         (result (make-array len :element-type '(unsigned-byte 8))))
+    (replace result buf)
+    result))
+
+;;; Full binary image serializer
+
+(defun binary-image-serialize (data stream)
+  "Serialize 7-element image DATA to binary STREAM."
+  (let ((source-list (first data))
+        (label-alist (second data))
+        (env (third data))
+        (macro-alist (fourth data))
+        (name-alist (fifth data))
+        (param-alist (sixth data))
+        (param-counter (seventh data)))
+    ;; Collect all symbols from the entire image data
+    (multiple-value-bind (symbols sym-to-idx)
+        (bin-collect-symbols data)
+      ;; Build section byte vectors
+      (let* ((section-data
+              (list
+               ;; Section 0: Instructions
+               (cons +section-instructions+
+                     (let ((buf (make-byte-buffer-stream)))
+                       (bin-write-u32-be (length source-list) buf)
+                       (dolist (instr source-list)
+                         (bin-serialize-instruction instr sym-to-idx buf))
+                       (byte-buffer-contents buf)))
+               ;; Section 1: Labels
+               (cons +section-labels+
+                     (let ((buf (make-byte-buffer-stream)))
+                       (bin-serialize-data label-alist sym-to-idx buf)
+                       (byte-buffer-contents buf)))
+               ;; Section 2: Environment
+               (cons +section-env+
+                     (let ((buf (make-byte-buffer-stream)))
+                       (bin-serialize-data env sym-to-idx buf)
+                       (byte-buffer-contents buf)))
+               ;; Section 3: Macros
+               (cons +section-macros+
+                     (let ((buf (make-byte-buffer-stream)))
+                       (bin-serialize-data macro-alist sym-to-idx buf)
+                       (byte-buffer-contents buf)))
+               ;; Section 4: Procedure names
+               (cons +section-names+
+                     (let ((buf (make-byte-buffer-stream)))
+                       (bin-serialize-data name-alist sym-to-idx buf)
+                       (byte-buffer-contents buf)))
+               ;; Section 5: Parameters
+               (cons +section-params+
+                     (let ((buf (make-byte-buffer-stream)))
+                       (bin-serialize-data param-alist sym-to-idx buf)
+                       (byte-buffer-contents buf)))
+               ;; Section 6: Parameter counter
+               (cons +section-param-counter+
+                     (let ((buf (make-byte-buffer-stream)))
+                       (bin-serialize-data param-counter sym-to-idx buf)
+                       (byte-buffer-contents buf)))))
+             (num-sections (length section-data)))
+        ;; Write header
+        (write-byte (char-code #\E) stream)
+        (write-byte (char-code #\C) stream)
+        (write-byte (char-code #\E) stream)
+        (bin-write-u8 1 stream)  ; version
+        (bin-write-u32-be (length symbols) stream)
+        (bin-write-u32-be num-sections stream)
+        ;; Write symbol table
+        (bin-write-symbol-table symbols stream)
+        ;; Write section directory
+        ;; Calculate offsets: header(12) + symbol-table + directory, then sections sequentially
+        (let ((dir-size (* num-sections 9)))  ; 1 + 4 + 4 per entry
+          (declare (ignore dir-size))
+          ;; First compute all offsets (relative to start of section data area)
+          (let ((offset 0))
+            (dolist (entry section-data)
+              (let ((bytes (cdr entry)))
+                (bin-write-u8 (car entry) stream)
+                (bin-write-u32-be offset stream)
+                (bin-write-u32-be (length bytes) stream)
+                (incf offset (length bytes))))))
+        ;; Write section bodies
+        (dolist (entry section-data)
+          (write-sequence (cdr entry) stream))))))
+
+;;; Binary image deserializer
+
+(defun bin-deserialize-data-value (stream symbols)
+  "Deserialize a single value from binary STREAM using SYMBOLS table.
+Tree-order encoding: tag first, then children (for inline instruction constants)."
+  (let ((tag (bin-read-u8 stream)))
+    (case tag
+      (#.+data-nil+ nil)
+      (#.+data-t+ t)
+      (#.+data-false+ *scheme-false*)
+      (#.+data-int+ (bin-read-i64-be stream))
+      (#.+data-float+ (bin-read-f64-be stream))
+      (#.+data-char+ (code-char (bin-read-u32-be stream)))
+      (#.+data-sym+ (aref symbols (bin-read-u16-be stream)))
+      (#.+data-kwd+ (aref symbols (bin-read-u16-be stream)))
+      (#.+data-gsym+ (aref symbols (bin-read-u16-be stream)))
+      (#.+data-str+
+       (let* ((len (bin-read-u32-be stream))
+              (bytes (make-array len :element-type '(unsigned-byte 8))))
+         (read-sequence bytes stream)
+         (sb-ext:octets-to-string bytes :external-format :utf-8)))
+      (#.+data-cons+
+       ;; Tree order: tag, then car, then cdr
+       (let ((a (bin-deserialize-data-value stream symbols))
+             (b (bin-deserialize-data-value stream symbols)))
+         (cons a b)))
+      (#.+data-list+
+       (let* ((n (bin-read-u16-be stream)))
+         (loop repeat n collect (bin-deserialize-data-value stream symbols))))
+      (#.+data-vec+
+       (let* ((n (bin-read-u16-be stream)))
+         (let ((v (make-array n)))
+           (loop for i below n
+                 do (setf (aref v i) (bin-deserialize-data-value stream symbols)))
+           v)))
+      (t (error "bin-deserialize-data-value: unknown tag ~X" tag)))))
+
+(defun bin-deserialize-data-stream (stream symbols end-pos)
+  "Deserialize data from binary STREAM until END-POS, using SYMBOLS table.
+Returns the final value on the stack.
+Supports forward references via placeholder gensyms and backpatching."
+  (let ((stack nil)
+        (defs (make-hash-table))
+        (forward-refs (make-hash-table :test 'eq))
+        (has-forward-refs nil))
+    (loop while (< (file-position stream) end-pos) do
+          (let ((tag (bin-read-u8 stream)))
+            (case tag
+              (#.+data-nil+ (push nil stack))
+              (#.+data-t+ (push t stack))
+              (#.+data-false+ (push *scheme-false* stack))
+              (#.+data-int+ (push (bin-read-i64-be stream) stack))
+              (#.+data-float+ (push (bin-read-f64-be stream) stack))
+              (#.+data-char+ (push (code-char (bin-read-u32-be stream)) stack))
+              (#.+data-sym+ (push (aref symbols (bin-read-u16-be stream)) stack))
+              (#.+data-kwd+ (push (aref symbols (bin-read-u16-be stream)) stack))
+              (#.+data-gsym+ (push (aref symbols (bin-read-u16-be stream)) stack))
+              (#.+data-str+
+               (let* ((len (bin-read-u32-be stream))
+                      (bytes (make-array len :element-type '(unsigned-byte 8))))
+                 (read-sequence bytes stream)
+                 (push (sb-ext:octets-to-string bytes :external-format :utf-8) stack)))
+              (#.+data-cons+
+               (let ((b (pop stack)) (a (pop stack)))
+                 (push (cons a b) stack)))
+              (#.+data-list+
+               (let* ((n (bin-read-u16-be stream))
+                      (items (make-list n)))
+                 (loop for i from (1- n) downto 0
+                       do (setf (nth i items) (pop stack)))
+                 (push items stack)))
+              (#.+data-vec+
+               (let* ((n (bin-read-u16-be stream))
+                      (v (make-array n)))
+                 (loop for i from (1- n) downto 0
+                       do (setf (aref v i) (pop stack)))
+                 (push v stack)))
+              (#.+data-def+
+               (let ((id (bin-read-u16-be stream)))
+                 (setf (gethash id defs) (first stack))))
+              (#.+data-ref+
+               (let ((id (bin-read-u16-be stream)))
+                 (let ((val (gethash id defs)))
+                   (if val
+                       (push val stack)
+                       ;; Forward reference: create placeholder
+                       (let ((placeholder (gensym "FWD-")))
+                         (setf (gethash placeholder forward-refs) id)
+                         (setf has-forward-refs t)
+                         (push placeholder stack))))))
+              (t (error "bin-deserialize-data-stream: unknown tag ~X" tag)))))
+    (let ((result (first stack)))
+      (if has-forward-refs
+          (flat-image-backpatch result defs forward-refs)
+          result))))
+
+(defun bin-read-operand (stream symbols)
+  "Read a single instruction operand. Returns (reg X), (const X), or (label X)."
+  (let ((type (bin-read-u8 stream)))
+    (case type
+      (#.+operand-reg+
+       (list 'reg (aref *id-to-register* (bin-read-u8 stream))))
+      (#.+operand-const+
+       (list 'const (bin-deserialize-data-value stream symbols)))
+      (#.+operand-label+
+       (list 'label (bin-deserialize-data-value stream symbols)))
+      (t (error "Unknown operand type: ~X" type)))))
+
+(defun bin-deserialize-instruction (stream symbols)
+  "Decode one instruction from binary STREAM. Returns (values resolved source).
+RESOLVED has op-fn with function pointers; SOURCE has op with symbol names."
+  (let ((opcode (bin-read-u8 stream)))
+    (case opcode
+      (#.+bin-assign+
+       (let* ((reg (aref *id-to-register* (bin-read-u8 stream)))
+              (src-type (bin-read-u8 stream)))
+         (case src-type
+           (#.+src-const+
+            (let ((val (bin-deserialize-data-value stream symbols)))
+              (let ((instr `(assign ,reg (const ,val))))
+                (values instr instr))))
+           (#.+src-reg+
+            (let ((src-reg (aref *id-to-register* (bin-read-u8 stream))))
+              (let ((instr `(assign ,reg (reg ,src-reg))))
+                (values instr instr))))
+           (#.+src-op+
+            (let* ((op-id (bin-read-u8 stream))
+                   (op-name (aref *id-to-operation* op-id))
+                   (op-fn (get-operation op-name))
+                   (n-operands (bin-read-u8 stream))
+                   (operands (loop repeat n-operands
+                                   collect (bin-read-operand stream symbols))))
+              (values `(assign ,reg (op-fn ,op-fn) ,@operands)
+                      `(assign ,reg (op ,op-name) ,@operands))))
+           (#.+src-label+
+            (let ((label (bin-deserialize-data-value stream symbols)))
+              (let ((instr `(assign ,reg (label ,label))))
+                (values instr instr))))
+           (t (error "Unknown assign source type: ~X" src-type)))))
+      (#.+bin-test+
+       (let* ((op-id (bin-read-u8 stream))
+              (op-name (aref *id-to-operation* op-id))
+              (op-fn (get-operation op-name))
+              (n-operands (bin-read-u8 stream))
+              (operands (loop repeat n-operands
+                              collect (bin-read-operand stream symbols))))
+         (values `(test (op-fn ,op-fn) ,@operands)
+                 `(test (op ,op-name) ,@operands))))
+      (#.+bin-perform+
+       (let* ((op-id (bin-read-u8 stream))
+              (op-name (aref *id-to-operation* op-id))
+              (op-fn (get-operation op-name))
+              (n-operands (bin-read-u8 stream))
+              (operands (loop repeat n-operands
+                              collect (bin-read-operand stream symbols))))
+         (values `(perform (op-fn ,op-fn) ,@operands)
+                 `(perform (op ,op-name) ,@operands))))
+      (#.+bin-save+
+       (let* ((reg (aref *id-to-register* (bin-read-u8 stream)))
+              (instr `(save ,reg)))
+         (values instr instr)))
+      (#.+bin-restore+
+       (let* ((reg (aref *id-to-register* (bin-read-u8 stream)))
+              (instr `(restore ,reg)))
+         (values instr instr)))
+      (#.+bin-goto+
+       (let ((target-type (bin-read-u8 stream)))
+         (case target-type
+           (#.+target-label+
+            (let ((label (bin-deserialize-data-value stream symbols)))
+              (let ((instr `(goto (label ,label))))
+                (values instr instr))))
+           (#.+target-reg+
+            (let ((reg (aref *id-to-register* (bin-read-u8 stream))))
+              (let ((instr `(goto (reg ,reg))))
+                (values instr instr))))
+           (t (error "Unknown goto target type: ~X" target-type)))))
+      (#.+bin-branch+
+       (let ((label (bin-deserialize-data-value stream symbols)))
+         (let ((instr `(branch (label ,label))))
+           (values instr instr))))
+      (t (error "Unknown instruction opcode: ~X" opcode)))))
+
+;;; Full binary image deserializer
+
+(defun binary-image-deserialize (stream)
+  "Deserialize a binary format image from STREAM.
+Returns (values) and directly sets global state.
+Builds resolved instructions (with op-fn) directly — no resolve-operations pass needed."
+  ;; Read header (magic already consumed for format detection)
+  (let ((version (bin-read-u8 stream))
+        (sym-count (bin-read-u32-be stream))
+        (section-count (bin-read-u32-be stream)))
+    (declare (ignore version))
+    ;; Read symbol table
+    (let ((symbols (bin-read-symbol-table sym-count stream)))
+      ;; Read section directory
+      (let ((sections (loop repeat section-count
+                            collect (let ((type (bin-read-u8 stream))
+                                          (offset (bin-read-u32-be stream))
+                                          (length (bin-read-u32-be stream)))
+                                      (list type offset length)))))
+        ;; Record the start of section data area
+        (let ((data-start (file-position stream)))
+          ;; Process each section
+          (dolist (sec sections)
+            (destructuring-bind (type offset length) sec
+              (file-position stream (+ data-start offset))
+              (let ((end-pos (+ data-start offset length)))
+                (case type
+                  (#.+section-instructions+
+                   (let* ((n (bin-read-u32-be stream))
+                          (exec-vec (make-array n :adjustable t :fill-pointer n))
+                          (src-vec (make-array n :adjustable t :fill-pointer n)))
+                     (loop for i below n do
+                           (multiple-value-bind (resolved source)
+                               (bin-deserialize-instruction stream symbols)
+                             (setf (aref exec-vec i) resolved)
+                             (setf (aref src-vec i) source)))
+                     (setf *global-instruction-vector* exec-vec)
+                     (setf *global-instruction-source* src-vec)))
+                  (#.+section-labels+
+                   (let ((alist (bin-deserialize-data-stream stream symbols end-pos)))
+                     (setf *global-label-table* (alist-to-hash-table alist :test 'eq))))
+                  (#.+section-env+
+                   (setf *global-env*
+                         (bin-deserialize-data-stream stream symbols end-pos)))
+                  (#.+section-macros+
+                   (let ((alist (bin-deserialize-data-stream stream symbols end-pos)))
+                     (setf *compile-time-macros* (alist-to-hash-table alist :test 'eq))))
+                  (#.+section-names+
+                   (let ((alist (bin-deserialize-data-stream stream symbols end-pos)))
+                     (setf *procedure-name-table* (alist-to-hash-table alist))))
+                  (#.+section-params+
+                   (let ((alist (bin-deserialize-data-stream stream symbols end-pos)))
+                     (when alist
+                       (setf *parameter-table* (alist-to-hash-table alist :test 'eq)))))
+                  (#.+section-param-counter+
+                   (let ((val (bin-deserialize-data-stream stream symbols end-pos)))
+                     (when val
+                       (setf *parameter-counter* val))))
+                  (t (warn "binary-image-deserialize: unknown section type ~X" type)))))))))))
+
+;;; Disassembler
+
+(defun ece-disassemble-image (filename &optional (output *standard-output*))
+  "Read a binary image file and produce human-readable instruction listing."
+  (with-open-file (stream filename :direction :input :element-type '(unsigned-byte 8))
+    ;; Read and verify magic
+    (let ((m0 (read-byte stream))
+          (m1 (read-byte stream))
+          (m2 (read-byte stream)))
+      (unless (and (= m0 (char-code #\E)) (= m1 (char-code #\C)) (= m2 (char-code #\E)))
+        (error "Not a binary ECE image: ~A" filename)))
+    (let ((version (bin-read-u8 stream))
+          (sym-count (bin-read-u32-be stream))
+          (section-count (bin-read-u32-be stream)))
+      ;; Read symbol table
+      (let ((symbols (bin-read-symbol-table sym-count stream)))
+        ;; Read section directory
+        (let ((sections (loop repeat section-count
+                              collect (list (bin-read-u8 stream)
+                                            (bin-read-u32-be stream)
+                                            (bin-read-u32-be stream)))))
+          (let ((data-start (file-position stream))
+                (instructions nil)
+                (labels-alist nil)
+                (env nil)
+                (instr-count 0))
+            ;; Process sections
+            (dolist (sec sections)
+              (destructuring-bind (type offset length) sec
+                (file-position stream (+ data-start offset))
+                (let ((end-pos (+ data-start offset length)))
+                  (case type
+                    (#.+section-instructions+
+                     (setf instr-count (bin-read-u32-be stream))
+                     (setf instructions
+                           (loop repeat instr-count
+                                 collect (multiple-value-bind (resolved source)
+                                             (bin-deserialize-instruction stream symbols)
+                                           (declare (ignore resolved))
+                                           source))))
+                    (#.+section-labels+
+                     (setf labels-alist
+                           (bin-deserialize-data-stream stream symbols end-pos)))
+                    (#.+section-env+
+                     (setf env
+                           (bin-deserialize-data-stream stream symbols end-pos)))))))
+            ;; Print header
+            (format output ";; ECE Image v~D — ~D instructions, ~D symbols~%"
+                    version instr-count sym-count)
+            (format output ";;~%")
+            ;; Build PC → label reverse map
+            (let ((pc-to-labels (make-hash-table)))
+              (dolist (pair labels-alist)
+                (push (car pair) (gethash (cdr pair) pc-to-labels)))
+              ;; Print instructions
+              (format output ";; === Instructions ===~%")
+              (format output ";;  PC    Instruction~%")
+              (format output ";; ----  ------------------------------------------------~%")
+              (loop for instr in instructions
+                    for pc from 0 do
+                    ;; Print labels at this PC
+                    (let ((lbls (gethash pc pc-to-labels)))
+                      (when lbls
+                        (dolist (l (reverse lbls))
+                          (format output ";;~%")
+                          (format output "~A:~%" l))))
+                    (format output ";;~4,' D  ~S~%" pc instr)))
+            ;; Print label summary
+            (format output ";;~%;; === Labels (~D) ===~%" (length labels-alist))
+            (dolist (pair (sort (copy-list labels-alist) #'< :key #'cdr))
+              (format output ";;   ~30A → PC ~D~%" (car pair) (cdr pair)))
+            ;; Print environment summary
+            (format output ";;~%;; === Environment ===~%")
+            (when env
+              (let ((frame (car env)))
+                (when (consp frame)
+                  (loop for var in (car frame)
+                        for val in (cdr frame) do
+                        (format output ";;   ~30A → ~A~%" var
+                                (cond
+                                  ((and (consp val) (eq (car val) 'compiled-procedure))
+                                   (format nil "<compiled-procedure @~D>" (cadr val)))
+                                  ((and (consp val) (eq (car val) 'primitive))
+                                   (format nil "<primitive ~A>" (cadr val)))
+                                  ((and (consp val) (eq (car val) 'continuation))
+                                   "<continuation>")
+                                  ((stringp val) (format nil "~S" val))
+                                  (t (let ((s (format nil "~S" val)))
+                                       (if (> (length s) 50)
+                                           (concatenate 'string (subseq s 0 47) "...")
+                                           s)))))))))))))))
+
+;;; ece-load-image / ece-%write-image — updated for binary format
+
+(defun ece-%write-image (filename data)
+  "Serialize DATA to FILENAME in binary image format.
+DATA should be the 7-element image format list."
+  (with-open-file (out filename :direction :output
+                       :if-exists :supersede
+                       :if-does-not-exist :create
+                       :element-type '(unsigned-byte 8))
+    (binary-image-serialize data out))
+  t)
+
 (defun ece-load-image (filename)
-  "Load ECE system state from FILENAME in flat image format.
-Rebuilds the execution vector by resolving operations on each instruction."
-  (let ((data (with-open-file (stream filename :direction :input)
-                (flat-image-deserialize stream))))
-    (let ((source-list (first data))
-          (label-alist (second data))
-          (env (third data))
-          (macro-alist (fourth data))
-          (name-alist (fifth data))
-          (param-alist (sixth data))
-          (param-counter (seventh data)))
-      ;; Rebuild instruction source vector
-      (setf *global-instruction-source*
-            (make-array (length source-list) :adjustable t :fill-pointer (length source-list)))
-      (loop for instr in source-list
-            for i from 0
-            do (setf (aref *global-instruction-source* i) instr))
-      ;; Rebuild execution vector with resolved operations
-      (setf *global-instruction-vector*
-            (make-array (length source-list) :adjustable t :fill-pointer (length source-list)))
-      (loop for instr in source-list
-            for i from 0
-            do (setf (aref *global-instruction-vector* i) (resolve-operations instr)))
-      ;; Rebuild label table
-      (setf *global-label-table* (alist-to-hash-table label-alist :test 'eq))
-      ;; Restore environment and macros
-      (setf *global-env* env)
-      (setf *compile-time-macros* (alist-to-hash-table macro-alist :test 'eq))
-      ;; Restore procedure name table
-      (setf *procedure-name-table* (alist-to-hash-table name-alist))
-      ;; Restore parameter table and counter
-      (when param-alist
-        (setf *parameter-table* (alist-to-hash-table param-alist :test 'eq)))
-      (when param-counter
-        (setf *parameter-counter* param-counter))))
+  "Load ECE system state from FILENAME.
+Auto-detects binary vs text format by checking for 'ECE' magic header."
+  (with-open-file (stream filename :direction :input :element-type '(unsigned-byte 8))
+    (let ((b0 (read-byte stream))
+          (b1 (read-byte stream))
+          (b2 (read-byte stream)))
+      (if (and (= b0 (char-code #\E)) (= b1 (char-code #\C)) (= b2 (char-code #\E)))
+          ;; Binary format
+          (binary-image-deserialize stream)
+          ;; Text format fallback — reopen as character stream
+          (with-open-file (text-stream filename :direction :input)
+            (let ((data (flat-image-deserialize text-stream)))
+              (let ((source-list (first data))
+                    (label-alist (second data))
+                    (env (third data))
+                    (macro-alist (fourth data))
+                    (name-alist (fifth data))
+                    (param-alist (sixth data))
+                    (param-counter (seventh data)))
+                (setf *global-instruction-source*
+                      (make-array (length source-list) :adjustable t
+                                  :fill-pointer (length source-list)))
+                (loop for instr in source-list
+                      for i from 0
+                      do (setf (aref *global-instruction-source* i) instr))
+                (setf *global-instruction-vector*
+                      (make-array (length source-list) :adjustable t
+                                  :fill-pointer (length source-list)))
+                (loop for instr in source-list
+                      for i from 0
+                      do (setf (aref *global-instruction-vector* i)
+                               (resolve-operations instr)))
+                (setf *global-label-table* (alist-to-hash-table label-alist :test 'eq))
+                (setf *global-env* env)
+                (setf *compile-time-macros* (alist-to-hash-table macro-alist :test 'eq))
+                (setf *procedure-name-table* (alist-to-hash-table name-alist))
+                (when param-alist
+                  (setf *parameter-table* (alist-to-hash-table param-alist :test 'eq)))
+                (when param-counter
+                  (setf *parameter-counter* param-counter))))))))
   t)
 
 (defun mc-eval (expr &optional (env nil env-supplied-p))

@@ -107,18 +107,13 @@
 
 ;;; Mark reachable blocks: for each reachable PC, find its block.
 ;;; Returns list of (start . end) ranges for live blocks.
-(define (mark-reachable-blocks all-ranges reachable-pcs)
-  (let ((result (%eq-hash-table)))  ;; start-pc -> range, deduplicates
+(define (mark-reachable-blocks all-ranges reachable-pcs pc-to-block)
+  (let ((result (%eq-hash-table)))   ;; start-pc -> range, deduplicates
     (for-each
      (lambda (pc)
-       ;; Find which range contains this PC
-       (define (find-range ranges)
-         (when (pair? ranges)
-           (let ((range (car ranges)))
-             (if (and (>= pc (car range)) (< pc (cdr range)))
-                 (%eq-hash-set! result (car range) range)
-                 (find-range (cdr ranges))))))
-       (find-range all-ranges))
+       (let ((range (find-block-for-pc-fast pc pc-to-block)))
+         (when (pair? range)
+           (%eq-hash-set! result (car range) range))))
      (%eq-hash-keys reachable-pcs))
     ;; Collect values
     (map (lambda (k) (%eq-hash-ref result k))
@@ -146,6 +141,26 @@
             range
             (find-block-for-pc target-pc (cdr all-ranges))))))
 
+;;; Build a hash table mapping every PC in every range to its block.
+;;; This pre-computes the answer for all possible target PCs, making
+;;; subsequent lookups O(1). With ~50K instructions this is affordable.
+(define (build-pc-to-block-table all-ranges)
+  (let ((table (%eq-hash-table)))
+    (for-each
+     (lambda (range)
+       (define (fill pc)
+         (when (< pc (cdr range))
+           (%eq-hash-set! table pc range)
+           (fill (+ pc 1))))
+       (fill (car range)))
+     all-ranges)
+    table))
+
+;;; O(1) block lookup using pre-built table.
+(define (find-block-for-pc-fast target-pc pc-to-block)
+  (let ((result (%eq-hash-ref pc-to-block target-pc)))
+    (if result result '())))
+
 ;;; Build a label-to-pc lookup hash table from label-table entries.
 ;;; Uses %eq-hash for O(1) lookup.
 (define (build-label-lookup)
@@ -156,35 +171,75 @@
      (%label-table-entries))
     lookup))
 
-;;; Transitively retain blocks referenced by labels in already-retained blocks.
-(define (transitively-retain-blocks initial-ranges all-ranges label-lookup)
+;;; Add edges from one block to all blocks it references via labels.
+;;; Scans instructions in [start, end) for label references.
+;;; Only ASSIGN, GOTO, and BRANCH instructions can contain label references;
+;;; SAVE, RESTORE, TEST, and PERFORM never do.
+(define (add-block-edges! graph src-start start end pc-to-block label-lookup)
+  (define (scan-pc pc)
+    (when (< pc end)
+      (let ((instr (%instruction-source-ref pc)))
+        (when (pair? instr)
+          (let ((opcode (car instr)))
+            (when (or (eq? opcode 'assign)
+                      (eq? opcode 'goto)
+                      (eq? opcode 'branch))
+              (for-each
+               (lambda (label-name)
+                 (let ((target-pc (%eq-hash-ref label-lookup label-name)))
+                   (when target-pc
+                     (let ((target-block (find-block-for-pc-fast target-pc pc-to-block)))
+                       (when (pair? target-block)
+                         (let ((target-start (car target-block))
+                               (existing (%eq-hash-ref graph src-start)))
+                           (%eq-hash-set! graph src-start
+                                          (cons target-start
+                                                (if existing existing '())))))))))
+               (collect-label-refs instr))))))
+      (scan-pc (+ pc 1))))
+  (scan-pc start))
+
+;;; Build a block adjacency graph: block-start -> list of referenced block-starts.
+;;; Does a single pass over all instructions, collecting label references and
+;;; mapping them to target blocks. This moves the expensive instruction scanning
+;;; out of the transitive retention loop.
+(define (build-block-adjacency-graph all-ranges pc-to-block label-lookup)
+  (let ((graph (%eq-hash-table)))
+    (for-each
+     (lambda (range)
+       (add-block-edges! graph (car range) (car range) (cdr range)
+                         pc-to-block label-lookup))
+     all-ranges)
+    graph))
+
+;;; Transitively retain blocks using pre-built adjacency graph.
+;;; BFS from initial live blocks following graph edges.
+;;; START-TO-RANGE maps block-start -> (start . end).
+(define (transitively-retain-blocks initial-ranges block-graph start-to-range)
   (let ((retained (%eq-hash-table))   ;; start-pc -> (start . end)
-        (worklist initial-ranges))
+        (worklist '()))
     ;; Seed with initial ranges
     (for-each
-     (lambda (range) (%eq-hash-set! retained (car range) range))
+     (lambda (range)
+       (%eq-hash-set! retained (car range) range)
+       (set worklist (cons (car range) worklist)))
      initial-ranges)
-    ;; Process worklist
+    ;; BFS: follow adjacency edges
     (define (process)
       (when (pair? worklist)
-        (let ((range (car worklist)))
+        (let ((block-start (car worklist)))
           (set worklist (cdr worklist))
-          ;; Scan this block for label references
-          (define (scan-pc pc)
-            (when (< pc (cdr range))
-              (let ((instr (%instruction-source-ref pc)))
-                (for-each
-                 (lambda (label-name)
-                   (let ((target-pc (%eq-hash-ref label-lookup label-name)))
-                     (when target-pc
-                       (let ((block (find-block-for-pc target-pc all-ranges)))
-                         (when (and (pair? block)
-                                    (not (%eq-hash-has-key? retained (car block))))
-                           (%eq-hash-set! retained (car block) block)
-                           (set worklist (cons block worklist)))))))
-                 (collect-label-refs instr)))
-              (scan-pc (+ pc 1))))
-          (scan-pc (car range)))
+          ;; Visit all blocks referenced by this block
+          (let ((neighbors (%eq-hash-ref block-graph block-start)))
+            (when neighbors
+              (for-each
+               (lambda (target-start)
+                 (unless (%eq-hash-has-key? retained target-start)
+                   (let ((target-range (%eq-hash-ref start-to-range target-start)))
+                     (when target-range
+                       (%eq-hash-set! retained target-start target-range)
+                       (set worklist (cons target-start worklist))))))
+               neighbors))))
         (process)))
     (process)
     ;; Return sorted ranges
@@ -329,10 +384,16 @@
               (%macro-table-entries)
               (%procedure-name-entries))
         (let* ((all-ranges (build-all-block-ranges boundaries vec-len))
-               (initial-ranges (mark-reachable-blocks all-ranges reachable-pcs))
+               (pc-to-block (build-pc-to-block-table all-ranges))
+               (initial-ranges (mark-reachable-blocks all-ranges reachable-pcs pc-to-block))
                (label-lookup (build-label-lookup))
+               (block-graph (build-block-adjacency-graph all-ranges pc-to-block label-lookup))
+               (start-to-range (let ((tbl (%eq-hash-table)))
+                                 (for-each (lambda (r) (%eq-hash-set! tbl (car r) r))
+                                           all-ranges)
+                                 tbl))
                (ranges (transitively-retain-blocks
-                        initial-ranges all-ranges label-lookup))
+                        initial-ranges block-graph start-to-range))
                (result (compact-instruction-vector ranges))
                (new-source (car result))
                (remap (cdr result)))
