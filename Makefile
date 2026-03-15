@@ -1,4 +1,4 @@
-.PHONY: test test-ece repl run image fmt check-fmt setup clean
+.PHONY: test test-ece repl run image disasm fmt check-fmt setup clean
 
 BOOTSTRAP_IMAGE := bootstrap/ece.image
 
@@ -17,6 +17,9 @@ image:
 	@mkdir -p bootstrap
 	qlot exec sbcl --dynamic-space-size 4096 --load ece.asd --eval '(asdf:load-system :ece/cold)' --eval '(ece::ece-save-image "$(BOOTSTRAP_IMAGE)")' --quit
 	@echo "Bootstrap image saved to $(BOOTSTRAP_IMAGE)"
+
+disasm:
+	@qlot exec sbcl --noinform --dynamic-space-size 4096 --load ece.asd --eval '(asdf:load-system :ece)' --eval '(ece:ece-disassemble-image "$(BOOTSTRAP_IMAGE)")' --quit
 
 run:
 	qlot exec sbcl --load ece.asd --eval '(asdf:load-system :ece)' --eval '(ece:repl)'
