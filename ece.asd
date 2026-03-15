@@ -2,12 +2,6 @@
 
 (in-package :asdf-user)
 
-
-(initialize-source-registry
- '(:source-registry
-   (:tree (:here))
-   :inherit-configuration))
-
 (defsystem "ece"
     :version "0.1.0"
     :author "Anthony Fairchild"
