@@ -25,4 +25,4 @@ jobs:
         run: qlot install
 
       - name: Run tests
-        run: qlot exec sbcl --eval '(asdf:test-system :ece)' --quit
+        run: qlot exec sbcl --disable-debugger --eval '(asdf:load-system :ece)' --eval '(asdf:load-system :ece/tests)' --eval '(unless (rove:run :ece/tests) (uiop:quit 1))' --quit

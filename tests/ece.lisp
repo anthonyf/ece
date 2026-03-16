@@ -2117,13 +2117,11 @@
              (ece-runtime-error (e)
                (let ((env (ece-error-environment e)))
                  (ok (consp env))
-                 ;; innermost frame should have x=5
-                 (let* ((frame (car env))
-                        (vars (car frame))
-                        (vals (cdr frame))
-                        (pos (position 'ece::x vars)))
-                   (ok pos)
-                   (when pos (ok (= (nth pos vals) 5))))))))
+                 ;; innermost frame is a vector containing the value 5
+                 ;; (compiler uses vector frames — no variable names at runtime)
+                 (let ((frame (car env)))
+                   (ok (simple-vector-p frame))
+                   (ok (= (svref frame 0) 5)))))))
 
   (testing "original error is accessible"
            (handler-case
