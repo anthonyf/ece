@@ -254,7 +254,10 @@
            (format nil "~A" name)
            (format nil "<compiled-procedure entry=~A>" (cadr proc)))))
     ((and (listp proc) (eq (car proc) 'primitive))
-     (format nil "<primitive ~A>" (cadr proc)))
+     (let ((id-or-name (cadr proc)))
+       (if (integerp id-or-name)
+           (format nil "<primitive ~A>" (aref *primitive-name-table* id-or-name))
+           (format nil "<primitive ~A>" id-or-name))))
     (t (format nil "~S" proc))))
 
 (defun truncate-value (val)
@@ -445,6 +448,10 @@ Dispatches on frame type: hash-table or list-based."
 
 ;;; Primitives and global environment
 
+;;; --- Legacy primitive lists (used to build dispatch table) ---
+;;; These map ECE names to CL function symbols.
+;;; Direct mappings: ECE name = CL function name, or (ece-name . cl-name)
+
 (defparameter *primitive-procedures*
   '(+ - * / car cdr cons list
     (modulo . mod)
@@ -464,6 +471,7 @@ Dispatches on frame type: hash-table or list-based."
 (defun ece-null? (x) (scheme-bool (null x)))
 (defun ece-pair? (x) (scheme-bool (consp x)))
 (defun ece-number? (x) (scheme-bool (numberp x)))
+(defun ece-boolean-p (x) (scheme-bool (or (eq x 't) (eq x nil))))
 (defun ece-string? (x) (scheme-bool (stringp x)))
 (defun ece-symbol? (x) (scheme-bool (symbolp x)))
 (defun ece-integer? (x) (scheme-bool (integerp x)))
@@ -476,13 +484,98 @@ Dispatches on frame type: hash-table or list-based."
 (defun ece-string<? (x y) (scheme-bool (if (string< x y) t nil)))
 (defun ece-string>? (x y) (scheme-bool (if (string> x y) t nil)))
 
-(defparameter *primitive-procedure-names*
-  (mapcar (lambda (p) (if (listp p) (car p) p))
-          *primitive-procedures*))
+;;; --- Manifest-based dispatch tables ---
 
-(defparameter *primitive-procedure-objects*
-  (mapcar (lambda (p) (list 'primitive (if (listp p) (cdr p) p)))
-          *primitive-procedures*))
+(defun parse-primitives-manifest (filename)
+  "Parse primitives.def and return a list of (id name arity platform) entries."
+  (let ((entries nil))
+    (with-open-file (stream filename :direction :input)
+      (loop for form = (cl:read stream nil :eof)
+            until (eq form :eof)
+            when (and (listp form) (>= (length form) 4))
+            do (push (list (first form)   ; id
+                           (second form)  ; name
+                           (third form)   ; arity
+                           (fourth form)) ; platform
+                     entries)))
+    (nreverse entries)))
+
+(defparameter *manifest-path*
+  (asdf:system-relative-pathname :ece "primitives.def"))
+
+(defparameter *manifest-entries*
+  (parse-primitives-manifest *manifest-path*))
+
+(defparameter *primitive-max-id*
+  (reduce #'max *manifest-entries* :key #'first))
+
+;; Dispatch table: vector indexed by primitive ID → CL function
+(defparameter *primitive-dispatch-table*
+  (make-array (1+ *primitive-max-id*) :initial-element nil))
+
+;; Name table: vector indexed by primitive ID → ECE name symbol
+(defparameter *primitive-name-table*
+  (make-array (1+ *primitive-max-id*) :initial-element nil))
+
+;; Reverse lookup: ECE name symbol → primitive ID
+(defparameter *primitive-name-to-id*
+  (make-hash-table :test 'eq))
+
+;; Set of IDs that this platform actually implements (not stubs)
+(defparameter *primitive-available-ids*
+  (make-hash-table :test 'eql))
+
+(defun build-cl-function-map ()
+  "Build a hash table mapping ECE name symbols to CL functions.
+Combines *primitive-procedures* and *wrapper-primitives*."
+  (let ((ht (make-hash-table :test 'eq)))
+    ;; Direct CL mappings
+    (dolist (p *primitive-procedures*)
+      (if (listp p)
+          (setf (gethash (car p) ht) (symbol-function (cdr p)))
+          (setf (gethash p ht) (symbol-function p))))
+    ;; Wrapper mappings
+    (dolist (entry *wrapper-primitives*)
+      (setf (gethash (car entry) ht) (symbol-function (cdr entry))))
+    ht))
+
+(defun init-primitive-dispatch-tables ()
+  "Initialize dispatch tables from manifest + CL function map."
+  (let ((cl-fns (build-cl-function-map)))
+    (dolist (entry *manifest-entries*)
+      (destructuring-bind (id name arity platform) entry
+        (declare (ignore arity))
+        (let ((name-sym (intern (string-upcase (symbol-name name)) :ece)))
+          ;; Populate name table
+          (setf (aref *primitive-name-table* id) name-sym)
+          ;; Populate reverse lookup
+          (setf (gethash name-sym *primitive-name-to-id*) id)
+          ;; Populate dispatch table
+          (let ((cl-fn (gethash name-sym cl-fns)))
+            (cond
+              (cl-fn
+               (setf (aref *primitive-dispatch-table* id) cl-fn)
+               (setf (gethash id *primitive-available-ids*) t))
+              ;; Platform primitives not available on CL get a stub
+              ((member platform '(browser))
+               (let ((captured-name name-sym)
+                     (captured-platform platform))
+                 (setf (aref *primitive-dispatch-table* id)
+                       (lambda (&rest args)
+                         (declare (ignore args))
+                         (error "Primitive ~A requires ~A platform"
+                                captured-name captured-platform)))))
+              ;; Core/CL primitive with no implementation — warn
+              (t
+               (warn "Manifest entry ~A (id ~D) has no CL implementation" name id)
+               (let ((captured-name name-sym))
+                 (setf (aref *primitive-dispatch-table* id)
+                       (lambda (&rest args)
+                         (declare (ignore args))
+                         (error "Primitive ~A is not implemented" captured-name))))))))))))
+
+;; Dispatch table initialization deferred until after *wrapper-primitives*
+;; and platform discovery functions are defined (see below).
 
 (defun make-hash-frame (names objects)
   "Build a hash-table frame (:hash-frame . ht) from parallel name/object lists."
@@ -492,9 +585,24 @@ Dispatches on frame type: hash-table or list-based."
           do (setf (gethash name ht) obj))
     (cons :hash-frame ht)))
 
-(defparameter *global-env*
-  (list (make-hash-frame *primitive-procedure-names*
-                         *primitive-procedure-objects*)))
+(defun build-global-env-from-manifest ()
+  "Build the initial *global-env* with primitives stored as (primitive <id>)."
+  (let ((names nil)
+        (objects nil))
+    (dolist (entry *manifest-entries*)
+      (destructuring-bind (id name arity platform) entry
+        (declare (ignore arity))
+        ;; Only register primitives that this platform implements
+        (when (or (gethash id *primitive-available-ids*)
+                  ;; Also register stubs so they error with good messages
+                  (member platform '(browser)))
+          (let ((name-sym (intern (string-upcase (symbol-name name)) :ece)))
+            (push name-sym names)
+            (push (list 'primitive id) objects)))))
+    (list (make-hash-frame (nreverse names) (nreverse objects)))))
+
+;; *global-env* initialization deferred until after dispatch tables are built.
+;; See init call after platform discovery primitives.
 
 ;; EOF sentinel for safe read
 (defvar *eof-sentinel* (gensym "EOF"))
@@ -960,10 +1068,43 @@ Returns EOF sentinel at end of input."
     (%write-image . ece-%write-image)
     (set-car! . rplaca)
     (set-cdr! . rplacd)
-    (extend-environment . extend-environment)))
+    (extend-environment . extend-environment)
+    (platform-has? . ece-platform-has-p)
+    (%platform-primitives . ece-%platform-primitives)
+    ;; Compiler-support primitives (previously registered implicitly)
+    (boolean? . ece-boolean-p)
+    (execute-from-pc . ece-execute-from-pc)
+    (get-macro . ece-get-macro)
+    (set-macro! . ece-set-macro!)
+    (make-parameter . ece-make-parameter)
+    (apply-compiled-procedure . ece-apply-compiled-procedure)))
 
-(dolist (entry *wrapper-primitives*)
-  (define-variable! (car entry) (list 'primitive (cdr entry)) *global-env*))
+;;; Wrapper primitives are now registered via the manifest-based dispatch table.
+;;; *wrapper-primitives* is still used by build-cl-function-map to map names to CL functions.
+
+;;; --- Platform discovery primitives ---
+
+(defun ece-platform-has-p (name)
+  "Check if the named primitive is available on this platform.
+Returns ECE #t if the primitive exists and has a non-stub implementation, #f otherwise."
+  (let ((id (gethash name *primitive-name-to-id*)))
+    (if (and id (gethash id *primitive-available-ids*))
+        't
+        'nil)))
+
+(defun ece-%platform-primitives ()
+  "Return a list of all primitive names available on this platform."
+  (let ((result '()))
+    (maphash (lambda (id available)
+               (declare (ignore available))
+               (let ((name (aref *primitive-name-table* id)))
+                 (when name
+                   (push name result))))
+             *primitive-available-ids*)
+    result))
+
+;;; Dispatch table initialization and *global-env* are deferred to end of file,
+;;; after all wrapper functions are defined (see BOOT section).
 
 ;;;; ========================================================================
 ;;;; INSTRUCTION EXECUTOR (SICP 5.5)
@@ -993,33 +1134,48 @@ Returns EOF sentinel at end of input."
 (defstruct ece-error-sentinel message irritants)
 
 (defun apply-primitive-procedure (proc argl)
-  (let* ((name (cadr proc))
-         (param-cell (gethash name *parameter-table*)))
-    (if param-cell
-        ;; Parameter dispatch: 0 args = get, 1 arg = set, 2 args = raw set
-        (cond
-          ((null argl) (car param-cell))
-          ((null (cdr argl))
-           (let ((old (car param-cell)))
-             (setf (car param-cell)
-                   (if (cdr param-cell)
-                       (apply-primitive-procedure (cdr param-cell) argl)
-                       (car argl)))
-             old))
-          (t ;; 2 args: raw set (bypass converter)
-           (let ((old (car param-cell)))
-             (setf (car param-cell) (car argl))
-             old)))
-        (handler-case
-            (apply (symbol-function name) argl)
-          (division-by-zero ()
-            (make-ece-error-sentinel
-             :message (format nil "~(~A~): division by zero" name)
-             :irritants nil))
-          (type-error (e)
-            (make-ece-error-sentinel
-             :message (format nil "~(~A~): ~A" name e)
-             :irritants (list (type-error-datum e))))))))
+  (let ((id-or-name (cadr proc)))
+    (if (symbolp id-or-name)
+        ;; Dynamic primitive (parameter object) — dispatch via parameter table
+        (let ((param-cell (gethash id-or-name *parameter-table*)))
+          (if param-cell
+              (cond
+                ((null argl) (car param-cell))
+                ((null (cdr argl))
+                 (let ((old (car param-cell)))
+                   (setf (car param-cell)
+                         (if (cdr param-cell)
+                             (apply-primitive-procedure (cdr param-cell) argl)
+                             (car argl)))
+                   old))
+                (t ;; 2 args: raw set (bypass converter)
+                 (let ((old (car param-cell)))
+                   (setf (car param-cell) (car argl))
+                   old)))
+              ;; Fallback for legacy symbol-based primitives (e.g. trace wrappers)
+              (handler-case
+                  (apply (symbol-function id-or-name) argl)
+                (division-by-zero ()
+                  (make-ece-error-sentinel
+                   :message (format nil "~(~A~): division by zero" id-or-name)
+                   :irritants nil))
+                (type-error (e)
+                  (make-ece-error-sentinel
+                   :message (format nil "~(~A~): ~A" id-or-name e)
+                   :irritants (list (type-error-datum e)))))))
+        ;; Numeric ID — dispatch via table
+        (let ((fn (aref *primitive-dispatch-table* id-or-name))
+              (prim-name (aref *primitive-name-table* id-or-name)))
+          (handler-case
+              (apply fn argl)
+            (division-by-zero ()
+              (make-ece-error-sentinel
+               :message (format nil "~(~A~): division by zero" prim-name)
+               :irritants nil))
+            (type-error (e)
+              (make-ece-error-sentinel
+               :message (format nil "~(~A~): ~A" prim-name e)
+               :irritants (list (type-error-datum e)))))))))
 
 ;;; Continuation helpers for compiled code
 
@@ -1565,6 +1721,7 @@ State is stored in *parameter-table* so parameters survive image round-trips."
 (defconstant +data-ref+     #x0D)
 (defconstant +data-vec+     #x0E)
 (defconstant +data-gsym+    #x0F)
+(defconstant +data-prim+    #x11)  ;; Primitive by numeric ID (uint16)
 (defconstant +data-hash-frame+ #x10)
 
 ;; Symbol table package tags
@@ -1846,6 +2003,10 @@ Fully iterative to avoid stack overflow."
                         (dolist (entry entries)
                           (schedule-emit (cdr entry))
                           (schedule-emit (car entry)))))
+                     ;; Primitive with numeric ID — compact encoding
+                     ((and (consp val) (eq (car val) 'primitive) (integerp (cadr val)))
+                      (format stream "prim ~D~%" (cadr val))
+                      (mark-emitted val))
                      ;; Cons cell
                      ((consp val)
                       (schedule-cons-structure val))
@@ -2040,6 +2201,9 @@ backpatched after deserialization."
                              (setf (gethash placeholder forward-refs) id)
                              (setf has-forward-refs t)
                              (push placeholder stack))))))
+                  ;; prim N (primitive by numeric ID)
+                  ((string= opcode "prim")
+                   (push (list 'primitive (parse-integer arg)) stack))
                   ;; Unknown opcode
                   (t (warn "flat-image-deserialize: unknown opcode ~S" opcode)))))))
     (let ((result (first stack)))
@@ -2414,6 +2578,11 @@ Fully iterative using a work stack to avoid stack overflow on circular structure
                         (dolist (entry (reverse entries))
                           (schedule-emit (cdr entry))
                           (schedule-emit (car entry)))))
+                     ;; Primitive with numeric ID — compact encoding
+                     ((and (consp val) (eq (car val) 'primitive) (integerp (cadr val)))
+                      (bin-write-u8 +data-prim+ stream)
+                      (bin-write-u16-be (cadr val) stream)
+                      (mark-emitted val))
                      ;; Cons cell
                      ((consp val) (schedule-cons-structure val))
                      ;; Atoms
@@ -2454,6 +2623,10 @@ Fully iterative using a work stack to avoid stack overflow on circular structure
     ((and (symbolp obj) (null (symbol-package obj)))
      (bin-write-u8 +data-gsym+ stream) (bin-write-u16-be (gethash obj sym-to-idx) stream))
     ((symbolp obj) (bin-write-u8 +data-sym+ stream) (bin-write-u16-be (gethash obj sym-to-idx) stream))
+    ;; Primitive with numeric ID — compact encoding
+    ((and (consp obj) (eq (car obj) 'primitive) (integerp (cadr obj)))
+     (bin-write-u8 +data-prim+ stream)
+     (bin-write-u16-be (cadr obj) stream))
     ((consp obj)
      ;; Tree-order encoding for inline consts: tag first, then children
      ;; Check for proper list (list-length errors on dotted lists, so catch it)
@@ -2616,6 +2789,8 @@ Tree-order encoding: tag first, then children (for inline instruction constants)
            (loop for i below n
                  do (setf (aref v i) (bin-deserialize-data-value stream symbols)))
            v)))
+      (#.+data-prim+
+       (list 'primitive (bin-read-u16-be stream)))
       (t (error "bin-deserialize-data-value: unknown tag ~X" tag)))))
 
 (defun bin-deserialize-data-stream (stream symbols end-pos)
@@ -2679,6 +2854,8 @@ Supports forward references via placeholder gensyms and backpatching."
                              (key (pop stack)))
                          (setf (gethash key ht) val)))
                  (push (cons :hash-frame ht) stack)))
+              (#.+data-prim+
+               (push (list 'primitive (bin-read-u16-be stream)) stack))
               (t (error "bin-deserialize-data-stream: unknown tag ~X" tag)))))
     (let ((result (first stack)))
       (if has-forward-refs
@@ -2994,12 +3171,30 @@ When ENV is supplied, it is passed to mc-compile-and-go."
         (execute-compiled-call mc-cag (list expr env))
         (execute-compiled-call mc-cag (list expr)))))
 
+;;; Now that all primitives and wrapper functions are defined, initialize
+;;; the dispatch tables from the manifest, then build *global-env*.
+(init-primitive-dispatch-tables)
+(defparameter *global-env* (build-global-env-from-manifest))
+
 ;;;; ========================================================================
 ;;;; BOOT — Load bootstrap image and provide evaluate/repl
 ;;;; ========================================================================
 
 ;;; Load the bootstrap image at ASDF load time
 (ece-load-image (asdf:system-relative-pathname :ece "bootstrap/ece.image"))
+
+;;; Ensure all manifest primitives are in *global-env*.
+;;; The image may predate new manifest entries (e.g., platform-has?).
+(dolist (entry *manifest-entries*)
+  (destructuring-bind (id name arity platform) entry
+    (declare (ignore arity))
+    (let ((name-sym (intern (string-upcase (symbol-name name)) :ece)))
+      (when (or (gethash id *primitive-available-ids*)
+                (member platform '(browser)))
+        (handler-case
+            (lookup-variable-value name-sym *global-env*)
+          (error ()
+            (define-variable! name-sym (list 'primitive id) *global-env*)))))))
 
 ;;; Expose *global-env* as an ECE variable so mc-compile-define-macro can reference it.
 ;;; The CL compiler handled define-macro directly using the CL defvar; the mc-compiler
@@ -3023,6 +3218,13 @@ When ENV is supplied, it is passed to mc-compile-and-go."
       (format t "Error: ~A~%" c)
       (finish-output)
       *eof-sentinel*)))
+
+;;; Register try-eval in dispatch table now that it's defined
+;;; (can't be in *wrapper-primitives* because it depends on evaluate → image boot)
+(let ((id (gethash 'try-eval *primitive-name-to-id*)))
+  (when id
+    (setf (aref *primitive-dispatch-table* id) #'ece-try-eval)
+    (setf (gethash id *primitive-available-ids*) t)))
 
 ;;; REPL: compile and run the REPL loop via the metacircular compiler.
 (defun repl ()
