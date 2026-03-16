@@ -146,13 +146,22 @@
                      (list (list 'assign target (list 'const expr))))))
 
 (define (mc-compile-variable expr target linkage)
-  (end-with-linkage linkage
-                    (make-instruction-sequence
-                     '(env) (list target)
-                     (list (list 'assign target
-                                 '(op lookup-variable-value)
-                                 (list 'const expr)
-                                 '(reg env))))))
+  (let ((addr (mc-find-variable expr (*mc-compile-lexical-env*))))
+    (end-with-linkage linkage
+                      (if addr
+                          (make-instruction-sequence
+                           '(env) (list target)
+                           (list (list 'assign target
+                                       '(op lexical-ref)
+                                       (list 'const (car addr))
+                                       (list 'const (cdr addr))
+                                       '(reg env))))
+                          (make-instruction-sequence
+                           '(env) (list target)
+                           (list (list 'assign target
+                                       '(op lookup-variable-value)
+                                       (list 'const expr)
+                                       '(reg env))))))))
 
 (define (mc-compile-quoted expr target linkage)
   (end-with-linkage linkage
@@ -182,20 +191,38 @@
                      after-if))))))
 
 (define (mc-extract-define-names body)
-  (filter (lambda (x) x)
-          (map (lambda (form)
-                 (if (and (pair? form) (eq? (car form) 'define))
-                     (let ((name-spec (cadr form)))
-                       (if (pair? name-spec) (car name-spec) name-spec))
-                     #f))
-               body)))
+  "Extract names bound by define forms in a body, expanding macros to find all defines."
+  (define (extract forms)
+    (if (null? forms)
+        '()
+        (let ((form (car forms))
+              (rest (cdr forms)))
+          (if (pair? form)
+              (cond
+               ((eq? (car form) 'define)
+                (let ((name-spec (cadr form)))
+                  (cons (if (pair? name-spec) (car name-spec) name-spec)
+                        (extract rest))))
+               ((eq? (car form) 'begin)
+                (append (extract (cdr form)) (extract rest)))
+               ((eq? (car form) 'if)
+                (append (extract (cddr form)) (extract rest)))
+               ((and (symbol? (car form))
+                     (not (mc-lexically-shadows-macro? (car form)))
+                     (get-macro (car form)))
+                (let ((expanded (mc-expand-macro-at-compile-time
+                                 (get-macro (car form)) (cdr form))))
+                  (append (extract (list expanded)) (extract rest))))
+               (else (extract rest)))
+              (extract rest)))))
+  (extract body))
 
 (define (mc-compile-begin expr target linkage)
   (let ((body (cdr expr)))
     (let ((defined-names (mc-extract-define-names body)))
       (if (not (null? defined-names))
-          (parameterize ((*mc-compile-lexical-env*
-                          (append defined-names (*mc-compile-lexical-env*))))
+          (parameterize ((*mc-compile-macro-shadows*
+                          (append defined-names (*mc-compile-macro-shadows*))))
             (mc-compile-sequence body target linkage))
           (mc-compile-sequence body target linkage)))))
 
@@ -219,16 +246,21 @@
         ((pair? params) (cons (car params) (mc-flatten-params (cdr params))))))
 
 (define (mc-compile-lambda-body params body proc-entry)
-  (parameterize ((*mc-compile-lexical-env*
-                  (append (mc-flatten-params params) (*mc-compile-lexical-env*))))
-    (append-instruction-sequences
-     (make-instruction-sequence
-      '(env proc argl) '(env)
-      (list proc-entry
-            '(assign env (op compiled-procedure-env) (reg proc))
-            (list 'assign 'env '(op extend-environment)
-                  (list 'const params) '(reg argl) '(reg env))))
-     (mc-compile-sequence body 'val 'return))))
+  (let* ((param-names (mc-flatten-params params))
+         (define-names (mc-extract-define-names body))
+         (frame (append param-names define-names))
+         (extra-slots (length define-names)))
+    (parameterize ((*mc-compile-lexical-env*
+                    (cons frame (*mc-compile-lexical-env*))))
+      (append-instruction-sequences
+       (make-instruction-sequence
+        '(env proc argl) '(env)
+        (list proc-entry
+              '(assign env (op compiled-procedure-env) (reg proc))
+              (list 'assign 'env '(op extend-environment)
+                    (list 'const params) '(reg argl) '(reg env)
+                    (list 'const extra-slots))))
+       (mc-compile-sequence body 'val 'return)))))
 
 (define (mc-compile-lambda expr target linkage)
   (let ((proc-entry (mc-make-label 'entry))
@@ -354,16 +386,25 @@
 ;;; Remaining special forms
 
 (define (mc-compile-assignment expr target linkage)
-  (let ((variable (cadr expr))
-        (value-code (mc-compile (caddr expr) 'val 'next)))
+  (let* ((variable (cadr expr))
+         (value-code (mc-compile (caddr expr) 'val 'next))
+         (addr (mc-find-variable variable (*mc-compile-lexical-env*))))
     (end-with-linkage linkage
                       (preserving '(env)
                                   value-code
-                                  (make-instruction-sequence
-                                   '(env val) (list target)
-                                   (list (list 'perform '(op set-variable-value!)
-                                               (list 'const variable) '(reg val) '(reg env))
-                                         (list 'assign target '(reg val))))))))
+                                  (if addr
+                                      (make-instruction-sequence
+                                       '(env val) (list target)
+                                       (list (list 'perform '(op lexical-set!)
+                                                   (list 'const (car addr))
+                                                   (list 'const (cdr addr))
+                                                   '(reg val) '(reg env))
+                                             (list 'assign target '(reg val))))
+                                      (make-instruction-sequence
+                                       '(env val) (list target)
+                                       (list (list 'perform '(op set-variable-value!)
+                                                   (list 'const variable) '(reg val) '(reg env))
+                                             (list 'assign target '(reg val)))))))))
 
 (define (mc-find-entry-label instruction-list)
   "Find the entry label from a compiled lambda's instruction list."
@@ -382,29 +423,40 @@
             (mc-find-entry-label (cdr instruction-list))))))
 
 (define (mc-compile-define expr target linkage)
-  (let ((variable (if (pair? (cadr expr)) (car (cadr expr)) (cadr expr)))
-        (value-expr (if (pair? (cadr expr))
-                        (cons 'lambda (cons (cdr (cadr expr)) (cddr expr)))
-                        (caddr expr))))
-    (let ((value-code (mc-compile value-expr 'val 'next)))
-      (let ((define-code (preserving '(env)
-                                     value-code
-                                     (make-instruction-sequence
-                                      '(env val) (list target)
-                                      (list (list 'perform '(op define-variable!)
-                                                  (list 'const variable) '(reg val) '(reg env))
-                                            (list 'assign target '(reg val))))))
-            (entry-label (if (and (pair? value-expr) (eq? (car value-expr) 'lambda))
-                             (mc-find-entry-label (mc-instructions value-code))
-                             #f)))
-        (end-with-linkage linkage
-                          (if entry-label
-                              (append-instruction-sequences
-                               define-code
-                               (make-instruction-sequence
-                                '() '()
-                                (list (list 'procedure-name entry-label variable))))
-                              define-code))))))
+  (let* ((variable (if (pair? (cadr expr)) (car (cadr expr)) (cadr expr)))
+         (value-expr (if (pair? (cadr expr))
+                         (cons 'lambda (cons (cdr (cadr expr)) (cddr expr)))
+                         (caddr expr)))
+         (value-code (mc-compile value-expr 'val 'next))
+         (addr (mc-find-variable variable (*mc-compile-lexical-env*)))
+         (define-code (preserving '(env)
+                                  value-code
+                                  (if addr
+                                      ;; Internal define: use lexical-set! to pre-allocated slot
+                                      (make-instruction-sequence
+                                       '(env val) (list target)
+                                       (list (list 'perform '(op lexical-set!)
+                                                   (list 'const (car addr))
+                                                   (list 'const (cdr addr))
+                                                   '(reg val) '(reg env))
+                                             (list 'assign target '(reg val))))
+                                      ;; Top-level define: use define-variable!
+                                      (make-instruction-sequence
+                                       '(env val) (list target)
+                                       (list (list 'perform '(op define-variable!)
+                                                   (list 'const variable) '(reg val) '(reg env))
+                                             (list 'assign target '(reg val)))))))
+         (entry-label (if (and (pair? value-expr) (eq? (car value-expr) 'lambda))
+                          (mc-find-entry-label (mc-instructions value-code))
+                          #f)))
+    (end-with-linkage linkage
+                      (if entry-label
+                          (append-instruction-sequences
+                           define-code
+                           (make-instruction-sequence
+                            '() '()
+                            (list (list 'procedure-name entry-label variable))))
+                          define-code))))
 
 (define (mc-compile-callcc expr target linkage)
   (let ((receiver-code (mc-compile (cadr expr) 'proc 'next))
@@ -479,9 +531,33 @@
   (let ((expanded (mc-qq-expand (cadr expr) 0)))
     (mc-compile expanded target linkage)))
 
-;;; Main compile dispatch
+;;; Lexical addressing (SICP 5.41-5.43)
 
 (define *mc-compile-lexical-env* (make-parameter '()))
+
+(define *mc-compile-macro-shadows* (make-parameter '()))
+
+(define (mc-find-variable var env)
+  "Return (depth . offset) if VAR is in compile-time ENV, or #f."
+  (define (scan-frame frame offset)
+    (cond ((null? frame) #f)
+          ((eq? (car frame) var) offset)
+          (else (scan-frame (cdr frame) (+ offset 1)))))
+  (define (env-loop frames depth)
+    (if (null? frames)
+        #f
+        (let ((offset (scan-frame (car frames) 0)))
+          (if offset
+              (cons depth offset)
+              (env-loop (cdr frames) (+ depth 1))))))
+  (env-loop env 0))
+
+(define (mc-lexically-shadows-macro? name)
+  "Check if NAME is lexically bound or shadows a macro at top level."
+  (or (mc-find-variable name (*mc-compile-lexical-env*))
+      (member name (*mc-compile-macro-shadows*))))
+
+;;; Main compile dispatch
 
 (define (mc-compile expr target linkage)
   (cond
@@ -499,7 +575,7 @@
    ((mc-begin? expr) (mc-compile-begin expr target linkage))
    ((mc-application? expr)
     ;; Check for compile-time macro (skip if operator is lexically shadowed)
-    (let ((macro-def (if (member (car expr) (*mc-compile-lexical-env*))
+    (let ((macro-def (if (mc-lexically-shadows-macro? (car expr))
                          #f
                          (get-macro (car expr)))))
       (if macro-def
