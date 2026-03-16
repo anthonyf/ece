@@ -1,0 +1,200 @@
+;;; ECE Primitive Manifest
+;;; Canonical registry of all built-in primitives with stable numeric IDs.
+;;;
+;;; Format: (id name arity platform description)
+;;;   id       - Stable numeric ID (never reused once assigned)
+;;;   name     - ECE symbol name
+;;;   arity    - Exact argument count, or -1 for variadic
+;;;   platform - core (all runtimes), cl (CL only), browser (browser only)
+;;;   description - Human-readable description
+;;;
+;;; ID ranges:
+;;;   0-99     Core primitives (all runtimes must implement)
+;;;   100-199  CL platform primitives
+;;;   200-299  Browser platform primitives (reserved, future)
+;;;   300+     Future platforms
+;;;
+;;; IMPORTANT: IDs are permanent. Never reuse an ID for a different primitive.
+;;; Gaps are allowed for future insertion within a range.
+
+;;; ═══════════════════════════════════════════════════════════════════════
+;;; CORE PRIMITIVES (0-99) — All runtimes must implement
+;;; ═══════════════════════════════════════════════════════════════════════
+
+;;; --- Arithmetic ---
+(0   +                 -1   core   "Addition")
+(1   -                 -1   core   "Subtraction")
+(2   *                 -1   core   "Multiplication")
+(3   /                 -1   core   "Division")
+(4   modulo             2   core   "Modulo/remainder")
+
+;;; --- Pair operations ---
+(5   car                1   core   "First element of pair")
+(6   cdr                1   core   "Rest of pair")
+(7   cons               2   core   "Construct pair")
+(8   list              -1   core   "Construct list from arguments")
+(9   set-car!           2   core   "Mutate car of pair")
+(10  set-cdr!           2   core   "Mutate cdr of pair")
+
+;;; --- Type predicates ---
+(11  null?              1   core   "Test for empty list")
+(12  pair?              1   core   "Test for pair/cons cell")
+(13  number?            1   core   "Test for number")
+(14  string?            1   core   "Test for string")
+(15  symbol?            1   core   "Test for symbol")
+(16  integer?           1   core   "Test for integer")
+(17  char?              1   core   "Test for character")
+(18  vector?            1   core   "Test for vector")
+(19  boolean?           1   core   "Test for boolean")
+
+;;; --- Equality and comparison ---
+(20  eq?                2   core   "Identity equality")
+(21  equal?             2   core   "Structural equality")
+(22  =                 -1   core   "Numeric equality")
+(23  <                 -1   core   "Numeric less-than")
+(24  >                 -1   core   "Numeric greater-than")
+
+;;; --- String operations ---
+(25  string-length      1   core   "Length of string")
+(26  string-ref         2   core   "Character at index in string")
+(27  string-append     -1   core   "Concatenate strings")
+(28  substring          3   core   "Extract substring")
+(29  string->number     1   core   "Parse number from string")
+(30  number->string     1   core   "Convert number to string")
+(31  string->symbol     1   core   "Intern symbol from string")
+(32  symbol->string     1   core   "Symbol name as string")
+(33  string=?           2   core   "String equality")
+(34  string<?           2   core   "String less-than")
+(35  string>?           2   core   "String greater-than")
+(36  string-downcase    1   core   "Lowercase string")
+(37  string-upcase      1   core   "Uppercase string")
+(38  string-split       2   core   "Split string by delimiter")
+(39  string-trim        1   core   "Trim whitespace from string")
+(40  string-contains?   2   core   "Test if string contains substring")
+(41  string-join        2   core   "Join list of strings with separator")
+(42  string             1   core   "Convert character to string")
+
+;;; --- Character operations ---
+(43  char->integer      1   core   "Character to integer code point")
+(44  integer->char      1   core   "Integer code point to character")
+(45  char=?             2   core   "Character equality")
+(46  char<?             2   core   "Character less-than")
+(47  char-whitespace?   1   core   "Test for whitespace character")
+(48  char-alphabetic?   1   core   "Test for alphabetic character")
+(49  char-numeric?      1   core   "Test for numeric character")
+
+;;; --- Vector operations ---
+(50  make-vector        -1  core   "Create vector of given size")
+(51  vector             -1  core   "Create vector from arguments")
+(52  vector-ref          2  core   "Element at index in vector")
+(53  vector-set!         3  core   "Set element at index in vector")
+(54  vector-length       1  core   "Length of vector")
+(55  vector->list        1  core   "Convert vector to list")
+(56  list->vector        1  core   "Convert list to vector")
+
+;;; --- I/O operations ---
+(57  display            -1  core   "Display object to port")
+(58  write              -1  core   "Write object in readable form")
+(59  newline            -1  core   "Write newline to port")
+(60  read-char          -1  core   "Read character from port")
+(61  peek-char          -1  core   "Peek at next character from port")
+(62  write-char         -1  core   "Write character to port")
+(63  read-line          -1  core   "Read line from port")
+(64  char-ready?        -1  core   "Test if character available on port")
+(65  eof?                1  core   "Test for end-of-file sentinel")
+(66  print               1  core   "Print object with newline")
+(67  write-to-string     1  core   "Convert object to string representation")
+
+;;; --- Port operations ---
+(68  input-port?         1  core   "Test for input port")
+(69  output-port?        1  core   "Test for output port")
+(70  port?               1  core   "Test for any port")
+(71  current-input-port  0  core   "Get current default input port")
+(72  current-output-port 0  core   "Get current default output port")
+(73  open-input-string   1  core   "Create input port from string")
+(74  close-input-port    1  core   "Close input port")
+(75  close-output-port   1  core   "Close output port")
+
+;;; --- Bitwise operations ---
+(76  bitwise-and        -1  core   "Bitwise AND")
+(77  bitwise-or         -1  core   "Bitwise OR")
+(78  bitwise-xor        -1  core   "Bitwise XOR")
+(79  bitwise-not         1  core   "Bitwise NOT")
+(80  arithmetic-shift    2  core   "Arithmetic shift left/right")
+
+;;; --- Error handling ---
+(81  %raw-error         -1  core   "Signal error with message")
+
+;;; --- Miscellaneous ---
+(82  gensym             -1  core   "Generate unique uninterned symbol")
+(83  sleep               1  core   "Pause execution for milliseconds")
+(84  clear-screen        0  core   "Clear terminal/display")
+
+;;; --- Compiler support primitives ---
+(85  execute-from-pc    -1  core   "Execute instructions from program counter")
+(86  get-macro           1  core   "Look up compile-time macro")
+(87  set-macro!          2  core   "Set compile-time macro")
+(88  make-parameter     -1  core   "Create parameter object (R7RS)")
+(89  apply-compiled-procedure 2 core "Call compiled procedure with args")
+(90  try-eval            1  core   "Evaluate with error handling")
+(91  extend-environment -1  core   "Extend environment with new frame")
+
+;;; --- Instruction vector / assembler support ---
+(92  %intern-ece         1  core   "Intern string as ECE symbol")
+(93  %instruction-vector-length 0 core "Length of global instruction vector")
+(94  %instruction-vector-push!  1 core "Append instruction to global vector")
+(95  %label-table-set!   2  core   "Set label in global label table")
+(96  %label-table-ref    1  core   "Look up label in global label table")
+(97  %procedure-name-set! 2 core   "Set procedure name for PC")
+
+;;; --- Platform discovery ---
+(98  platform-has?       1  core   "Test if named primitive is available")
+(99  %platform-primitives 0 core   "List all available primitive names")
+
+;;; ═══════════════════════════════════════════════════════════════════════
+;;; CL PLATFORM PRIMITIVES (100-199) — CL runtime only
+;;; ═══════════════════════════════════════════════════════════════════════
+
+;;; --- File I/O ---
+(100 open-input-file     1  cl     "Open file for reading")
+(101 open-output-file    1  cl     "Open file for writing")
+(102 with-input-from-file  2 cl    "Scoped input redirection from file")
+(103 with-output-to-file   2 cl    "Scoped output redirection to file")
+
+;;; --- Continuation persistence ---
+(104 save-continuation!  2  cl     "Save continuation to file")
+(105 load-continuation   1  cl     "Load continuation from file")
+
+;;; --- Debugging ---
+(106 trace               1  cl     "Enable tracing for procedure")
+(107 untrace             1  cl     "Disable tracing for procedure")
+
+;;; --- Image support ---
+(108 %write-image        2  cl     "Write image data to file")
+
+;;; --- Compaction / introspection support ---
+(109 %instruction-source-ref     1 cl "Read source instruction at index")
+(110 %instruction-source-length  0 cl "Length of source instruction vector")
+(111 %procedure-name-entries     0 cl "All procedure name table entries")
+(112 %label-table-entries        0 cl "All label table entries")
+(113 %macro-table-entries        0 cl "All macro table entries")
+(114 %parameter-table-entries    0 cl "All parameter table entries")
+(115 %parameter-counter          0 cl "Current parameter counter value")
+
+;;; --- Hash table (CL-backed eq hash) ---
+(116 %eq-hash-table      0  cl     "Create empty eq hash table")
+(117 %eq-hash-ref         2  cl     "Look up key in eq hash table")
+(118 %eq-hash-set!        3  cl     "Set key in eq hash table")
+(119 %eq-hash-has-key?    2  cl     "Test if key exists in eq hash table")
+(120 %eq-hash-keys        1  cl     "List all keys in eq hash table")
+(121 %hash-frame?         1  cl     "Test for hash-table frame")
+(122 %hash-frame-entries  1  cl     "All entries in hash-table frame")
+(123 %make-hash-frame     0  cl     "Create empty hash-table frame")
+(124 %hash-frame-set!     3  cl     "Set key in hash-table frame")
+
+;;; ═══════════════════════════════════════════════════════════════════════
+;;; BROWSER PLATFORM PRIMITIVES (200-299) — Reserved for future use
+;;; ═══════════════════════════════════════════════════════════════════════
+
+;;; Reserved. Browser primitives will be defined when the WASM/JS runtime
+;;; is implemented. Examples: %create-element, %canvas-context, etc.
