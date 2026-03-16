@@ -15,7 +15,15 @@ repl:
 
 image:
 	@mkdir -p bootstrap
-	qlot exec sbcl --dynamic-space-size 4096 --load ece.asd --eval '(asdf:load-system :ece/cold)' --eval '(ece::ece-save-image "$(BOOTSTRAP_IMAGE)")' --quit
+	qlot exec sbcl --dynamic-space-size 4096 --load ece.asd \
+	  --eval '(asdf:load-system :ece)' \
+	  --eval '(ece:evaluate (list (quote ece:load) "src/prelude.scm"))' \
+	  --eval '(ece:evaluate (list (quote ece:load) "src/compiler.scm"))' \
+	  --eval '(ece:evaluate (list (quote ece:load) "src/reader.scm"))' \
+	  --eval '(ece:evaluate (list (quote ece:load) "src/assembler.scm"))' \
+	  --eval '(ece:evaluate (list (quote ece:load) "src/compaction.scm"))' \
+	  --eval '(ece::ece-save-image "$(BOOTSTRAP_IMAGE)")' \
+	  --quit
 	@echo "Bootstrap image saved to $(BOOTSTRAP_IMAGE)"
 
 disasm:

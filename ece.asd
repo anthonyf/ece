@@ -14,17 +14,6 @@
                           ((:file "runtime"))))
     :in-order-to ((test-op (test-op "ece/tests"))))
 
-(defsystem "ece/cold"
-    :description "Cold-boot ECE from source (for bootstrap image generation)"
-    :serial t
-    :components ((:module "src"
-                          :components
-                          ((:file "runtime")
-                           (:file "readtable" :depends-on ("runtime"))
-                           (:file "compiler" :depends-on ("runtime" "readtable"))
-                           (:static-file "prelude.scm")
-                           (:static-file "compaction.scm")))))
-
 (defsystem "ece/tests"
     :author ""
     :license ""
