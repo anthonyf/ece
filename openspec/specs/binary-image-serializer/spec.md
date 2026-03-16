@@ -67,7 +67,12 @@ The instruction section SHALL encode register machine instructions using typed o
 - **THEN** the output SHALL be: branch-opcode(1B), followed by the label symbol in data encoding
 
 ### Requirement: data section uses binary stack-machine encoding
-Non-instruction sections (environment, macros, parameters, labels, procedure names, parameter counter) SHALL be encoded using a binary version of the stack-machine format with single-byte type tags and binary values.
+Non-instruction sections (environment, macros, parameters, labels, procedure names, parameter counter) SHALL be encoded using a binary version of the stack-machine format with single-byte type tags and binary values. The data section SHALL additionally support hash-table frame encoding using a dedicated type tag.
+
+#### Scenario: Encode hash-table frame
+- **WHEN** the environment data contains a hash-table frame `(:hash-frame . <hash-table>)`
+- **THEN** the serializer SHALL emit a hash-frame type tag followed by the entry count as big-endian u16, then each entry as a key-value pair (symbol encoding followed by value encoding) in stack-machine order
+- **AND** the frame SHALL participate in the def/ref shared-reference mechanism
 
 #### Scenario: Encode integer
 - **WHEN** the data contains integer `42`

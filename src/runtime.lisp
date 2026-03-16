@@ -220,11 +220,20 @@
                (when (and env (consp env) (consp (car env)))
                  (let ((frame (car env)))
                    (format stream "~%  bindings:")
-                   (loop for var in (car frame)
-                         for val in (cdr frame)
-                         for i below 10
-                         do (format stream "~%    ~A = ~S"
-                                    var (truncate-value val))))))
+                   (if (hash-frame-p frame)
+                       (let ((i 0))
+                         (block done
+                           (maphash (lambda (k v)
+                                      (when (>= i 10) (return-from done))
+                                      (format stream "~%    ~A = ~S"
+                                              k (truncate-value v))
+                                      (incf i))
+                                    (cdr frame))))
+                       (loop for var in (car frame)
+                             for val in (cdr frame)
+                             for i below 10
+                             do (format stream "~%    ~A = ~S"
+                                        var (truncate-value val)))))))
              (let ((bt (ece-error-backtrace c)))
                (when bt
                  (format stream "~%  backtrace:")
@@ -291,11 +300,18 @@ a nearby proc gives a named frame; a lone continue gives an anonymous frame."
                      i (format-ece-proc (car entry)) (cdr entry)))))
 
 ;;; Frame-based environment (SICP Section 4.1.3)
-;;; A frame is (cons vars vals) — parallel lists of variable names and values
+;;; A frame is one of:
+;;;   - list-based: (cons vars vals) — parallel lists of variable names and values
+;;;   - vector-based: #(val1 val2 ...) — O(1) lexical access (no variable names)
+;;;   - hash-table-based: (:hash-frame . <hash-table>) — O(1) named access for globals
 ;;; An environment is a list of frames
 
 (defun make-frame (vars vals)
   (cons vars vals))
+
+(defun hash-frame-p (frame)
+  "Return T if FRAME is a hash-table-backed frame (:hash-frame . ht)."
+  (and (consp frame) (eq (car frame) :hash-frame)))
 
 (defun frame-variables (frame)
   (car frame))
@@ -352,7 +368,7 @@ When EXTRA-SLOTS is nil (3-arg call), creates list-based frames for name-based l
           (cons (make-frame (list vars) (list vals)) base-env))))
 
 (defun lookup-variable-value (var env)
-  "Look up VAR by name, skipping vector frames (lexical-only)."
+  "Look up VAR by name. Dispatches on frame type: hash-table O(1), list O(n), skip vectors."
   (labels ((scan-frame (vars vals)
              (cond
                ((null vars) nil)
@@ -362,18 +378,23 @@ When EXTRA-SLOTS is nil (3-arg call), creates list-based frames for name-based l
              (if (null env)
                  (error "Unbound variable: ~A" var)
                  (let ((frame (car env)))
-                   (if (vectorp frame)
-                       ;; Skip vector frames — no variable names
-                       (env-loop (cdr env))
-                       (let ((result (scan-frame (frame-variables frame)
-                                                 (frame-values frame))))
-                         (if result
-                             (cdr result)
-                             (env-loop (cdr env)))))))))
+                   (cond
+                     ((vectorp frame)
+                      (env-loop (cdr env)))
+                     ((hash-frame-p frame)
+                      (multiple-value-bind (val found)
+                          (gethash var (cdr frame))
+                        (if found val (env-loop (cdr env)))))
+                     (t
+                      (let ((result (scan-frame (frame-variables frame)
+                                                (frame-values frame))))
+                        (if result
+                            (cdr result)
+                            (env-loop (cdr env))))))))))
     (env-loop env)))
 
 (defun set-variable-value! (var val env)
-  "Set VAR by name, skipping vector frames (lexical-only)."
+  "Set VAR by name. Dispatches on frame type: hash-table O(1), list O(n), skip vectors."
   (labels ((scan (vars vals)
              (cond
                ((null vars) nil)
@@ -385,30 +406,42 @@ When EXTRA-SLOTS is nil (3-arg call), creates list-based frames for name-based l
              (if (null env)
                  (error "Unbound variable: ~A" var)
                  (let ((frame (car env)))
-                   (if (vectorp frame)
-                       (env-loop (cdr env))
-                       (if (scan (frame-variables frame)
-                                 (frame-values frame))
-                           val
-                           (env-loop (cdr env))))))))
+                   (cond
+                     ((vectorp frame)
+                      (env-loop (cdr env)))
+                     ((hash-frame-p frame)
+                      (multiple-value-bind (old found)
+                          (gethash var (cdr frame))
+                        (declare (ignore old))
+                        (if found
+                            (progn (setf (gethash var (cdr frame)) val) val)
+                            (env-loop (cdr env)))))
+                     (t
+                      (if (scan (frame-variables frame)
+                                (frame-values frame))
+                          val
+                          (env-loop (cdr env)))))))))
     (env-loop env)))
 
 (defun define-variable! (var val env)
-  "Define VAR in the first list-based frame in ENV, skipping vector frames."
-  (labels ((find-list-frame (e)
-             (cond ((null e) (error "No list-based frame found for define-variable!"))
-                   ((vectorp (car e)) (find-list-frame (cdr e)))
+  "Define VAR in the first named frame in ENV, skipping vector frames.
+Dispatches on frame type: hash-table or list-based."
+  (labels ((find-named-frame (e)
+             (cond ((null e) (error "No named frame found for define-variable!"))
+                   ((vectorp (car e)) (find-named-frame (cdr e)))
                    (t (car e)))))
-    (let ((frame (find-list-frame env)))
-      (labels ((scan (vars vals)
-                 (cond
-                   ((null vars)
-                    (setf (car frame) (cons var (car frame)))
-                    (setf (cdr frame) (cons val (cdr frame))))
-                   ((eq var (car vars))
-                    (setf (car vals) val))
-                   (t (scan (cdr vars) (cdr vals))))))
-        (scan (frame-variables frame) (frame-values frame))))))
+    (let ((frame (find-named-frame env)))
+      (if (hash-frame-p frame)
+          (setf (gethash var (cdr frame)) val)
+          (labels ((scan (vars vals)
+                     (cond
+                       ((null vars)
+                        (setf (car frame) (cons var (car frame)))
+                        (setf (cdr frame) (cons val (cdr frame))))
+                       ((eq var (car vars))
+                        (setf (car vals) val))
+                       (t (scan (cdr vars) (cdr vals))))))
+            (scan (frame-variables frame) (frame-values frame)))))))
 
 ;;; Primitives and global environment
 
@@ -451,9 +484,17 @@ When EXTRA-SLOTS is nil (3-arg call), creates list-based frames for name-based l
   (mapcar (lambda (p) (list 'primitive (if (listp p) (cdr p) p)))
           *primitive-procedures*))
 
+(defun make-hash-frame (names objects)
+  "Build a hash-table frame (:hash-frame . ht) from parallel name/object lists."
+  (let ((ht (make-hash-table :test 'eq :size (length names))))
+    (loop for name in names
+          for obj in objects
+          do (setf (gethash name ht) obj))
+    (cons :hash-frame ht)))
+
 (defparameter *global-env*
-  (list (make-frame (copy-list *primitive-procedure-names*)
-                    (copy-list *primitive-procedure-objects*))))
+  (list (make-hash-frame *primitive-procedure-names*
+                         *primitive-procedure-objects*)))
 
 ;; EOF sentinel for safe read
 (defvar *eof-sentinel* (gensym "EOF"))
@@ -912,6 +953,10 @@ Returns EOF sentinel at end of input."
     (%eq-hash-set! . ece-%eq-hash-set!)
     (%eq-hash-has-key? . ece-%eq-hash-has-key-p)
     (%eq-hash-keys . ece-%eq-hash-keys)
+    (%hash-frame? . ece-%hash-frame-p)
+    (%hash-frame-entries . ece-%hash-frame-entries)
+    (%make-hash-frame . ece-%make-hash-frame)
+    (%hash-frame-set! . ece-%hash-frame-set!)
     (%write-image . ece-%write-image)
     (set-car! . rplaca)
     (set-cdr! . rplacd)
@@ -1311,6 +1356,30 @@ Returns a raw CL hash table — use %eq-hash-ref/set!/has-key? to access."
     (maphash (lambda (k v) (declare (ignore v)) (push k keys)) ht)
     keys))
 
+;;; Hash-table frame primitives (for compaction.scm)
+
+(defun ece-%hash-frame-p (frame)
+  "Test if FRAME is a hash-table-backed environment frame."
+  (scheme-bool (hash-frame-p frame)))
+
+(defun ece-%hash-frame-entries (frame)
+  "Return an alist of (symbol . value) pairs from a hash-table frame."
+  (unless (and (consp frame) (hash-table-p (cdr frame)))
+    (error "ece-%hash-frame-entries: expected (:hash-frame . <hash-table>), got ~S (type ~A)"
+           frame (type-of frame)))
+  (let ((entries nil))
+    (maphash (lambda (k v) (push (cons k v) entries)) (cdr frame))
+    entries))
+
+(defun ece-%make-hash-frame ()
+  "Create an empty hash-table frame."
+  (cons :hash-frame (make-hash-table :test 'eq)))
+
+(defun ece-%hash-frame-set! (frame key val)
+  "Set KEY to VAL in a hash-table frame."
+  (setf (gethash key (cdr frame)) val)
+  frame)
+
 ;;; Metacircular compiler support primitives
 
 (defun ece-execute-from-pc (start-pc &optional (env *global-env*))
@@ -1496,6 +1565,7 @@ State is stored in *parameter-table* so parameters survive image round-trips."
 (defconstant +data-ref+     #x0D)
 (defconstant +data-vec+     #x0E)
 (defconstant +data-gsym+    #x0F)
+(defconstant +data-hash-frame+ #x10)
 
 ;; Symbol table package tags
 (defconstant +pkg-ece+        #x00)
@@ -1597,6 +1667,10 @@ Uses an explicit work stack to avoid CL stack overflow."
                 (when (= n 0)
                   ;; First visit — push children (symbols have none)
                   (cond
+                    ((hash-frame-p obj)
+                     (maphash (lambda (k v)
+                                (push v work) (push k work))
+                              (cdr obj)))
                     ((consp obj)
                      (push (cdr obj) work)
                      (push (car obj) work))
@@ -1756,6 +1830,22 @@ Fully iterative to avoid stack overflow."
                       (mark-emitted val)
                       (let ((id (gethash val def-ids)))
                         (when id (format stream "def ~D~%" id))))
+                     ;; Hash-table frame — must come before consp
+                     ((hash-frame-p val)
+                      (mark-emitted val)
+                      (let ((entries nil)
+                            (n 0))
+                        (maphash (lambda (k v)
+                                   (push (cons k v) entries)
+                                   (incf n))
+                                 (cdr val))
+                        (when (gethash val def-ids)
+                          (wpush (cons :def val)))
+                        (wpush (cons :hash-frame n))
+                        ;; Push entries in reverse so they pop in order
+                        (dolist (entry entries)
+                          (schedule-emit (cdr entry))
+                          (schedule-emit (car entry)))))
                      ;; Cons cell
                      ((consp val)
                       (schedule-cons-structure val))
@@ -1767,6 +1857,8 @@ Fully iterative to avoid stack overflow."
                    (format stream "list ~D~%" val))
                   (:vec
                    (format stream "vec ~D~%" val))
+                  (:hash-frame
+                   (format stream "hash-frame ~D~%" val))
                   (:conses
                    (loop repeat val
                          do (write-string "cons" stream)
@@ -1826,6 +1918,15 @@ FORWARD-REFS maps placeholder symbols to def IDs."
              (walk (obj)
                (when (and obj (not (gethash obj visited)))
                  (cond
+                   ((hash-frame-p obj)
+                    (setf (gethash obj visited) t)
+                    (let ((ht (cdr obj)))
+                      (maphash (lambda (k v)
+                                 (let ((patched (patch-value v)))
+                                   (unless (eq patched v)
+                                     (setf (gethash k ht) patched))
+                                   (walk patched)))
+                               ht)))
                    ((consp obj)
                     (setf (gethash obj visited) t)
                     (setf (car obj) (patch-value (car obj)))
@@ -1919,6 +2020,15 @@ backpatched after deserialization."
                   ((string= opcode "def")
                    (let ((id (parse-integer arg)))
                      (setf (gethash id defs) (first stack))))
+                  ;; hash-frame N
+                  ((string= opcode "hash-frame")
+                   (let* ((n (parse-integer arg))
+                          (ht (make-hash-table :test 'eq :size n)))
+                     (loop repeat n do
+                           (let ((val (pop stack))
+                                 (key (pop stack)))
+                             (setf (gethash key ht) val)))
+                     (push (cons :hash-frame ht) stack)))
                   ;; ref N
                   ((string= opcode "ref")
                    (let ((id (parse-integer arg)))
@@ -1960,8 +2070,13 @@ DATA is the 7-element image list. Uses explicit work stack to avoid CL stack ove
                          ((consp obj)
                           (unless (gethash obj seen)
                             (setf (gethash obj seen) t)
-                            (wpush (cdr obj))
-                            (wpush (car obj))))
+                            (if (hash-frame-p obj)
+                                ;; Walk hash-table frame entries
+                                (maphash (lambda (k v) (wpush v) (wpush k))
+                                         (cdr obj))
+                                (progn
+                                  (wpush (cdr obj))
+                                  (wpush (car obj))))))
                          ((and (vectorp obj) (not (stringp obj)))
                           (unless (gethash obj seen)
                             (setf (gethash obj seen) t)
@@ -2285,6 +2400,20 @@ Fully iterative using a work stack to avoid stack overflow on circular structure
                         (when id
                           (bin-write-u8 +data-def+ stream)
                           (bin-write-u16-be id stream))))
+                     ;; Hash-table frame
+                     ((hash-frame-p val)
+                      (mark-emitted val)
+                      (let ((entries nil))
+                        (maphash (lambda (k v)
+                                   (push (cons k v) entries))
+                                 (cdr val))
+                        ;; Emit: values first (stack order), then keys, then tag+count
+                        (when (gethash val def-ids) (wpush (cons :def val)))
+                        (wpush (cons :hash-frame (length entries)))
+                        ;; Schedule key-value pairs in reverse so they come out in order
+                        (dolist (entry (reverse entries))
+                          (schedule-emit (cdr entry))
+                          (schedule-emit (car entry)))))
                      ;; Cons cell
                      ((consp val) (schedule-cons-structure val))
                      ;; Atoms
@@ -2299,7 +2428,10 @@ Fully iterative using a work stack to avoid stack overflow on circular structure
                    (bin-write-u8 +data-vec+ stream)
                    (bin-write-u16-be val stream))
                   (:conses
-                   (loop repeat val do (bin-write-u8 +data-cons+ stream))))))))))
+                   (loop repeat val do (bin-write-u8 +data-cons+ stream)))
+                  (:hash-frame
+                   (bin-write-u8 +data-hash-frame+ stream)
+                   (bin-write-u16-be val stream)))))))))
 
 ;;; bin-serialize-data-value — simple recursive version for inline const values
 ;;; in instructions. These are always small atoms/lists, no circular structures.
@@ -2539,6 +2671,14 @@ Supports forward references via placeholder gensyms and backpatching."
                          (setf (gethash placeholder forward-refs) id)
                          (setf has-forward-refs t)
                          (push placeholder stack))))))
+              (#.+data-hash-frame+
+               (let* ((n (bin-read-u16-be stream))
+                      (ht (make-hash-table :test 'eq :size n)))
+                 (loop repeat n do
+                       (let ((val (pop stack))
+                             (key (pop stack)))
+                         (setf (gethash key ht) val)))
+                 (push (cons :hash-frame ht) stack)))
               (t (error "bin-deserialize-data-stream: unknown tag ~X" tag)))))
     (let ((result (first stack)))
       (if has-forward-refs
@@ -2768,21 +2908,27 @@ Builds resolved instructions (with op-fn) directly — no resolve-operations pas
             (when env
               (let ((frame (car env)))
                 (when (consp frame)
-                  (loop for var in (car frame)
-                        for val in (cdr frame) do
-                        (format output ";;   ~30A → ~A~%" var
-                                (cond
-                                  ((and (consp val) (eq (car val) 'compiled-procedure))
-                                   (format nil "<compiled-procedure @~D>" (cadr val)))
-                                  ((and (consp val) (eq (car val) 'primitive))
-                                   (format nil "<primitive ~A>" (cadr val)))
-                                  ((and (consp val) (eq (car val) 'continuation))
-                                   "<continuation>")
-                                  ((stringp val) (format nil "~S" val))
-                                  (t (let ((s (format nil "~S" val)))
-                                       (if (> (length s) 50)
-                                           (concatenate 'string (subseq s 0 47) "...")
-                                           s)))))))))))))))
+                  (flet ((format-val (val)
+                           (cond
+                             ((and (consp val) (eq (car val) 'compiled-procedure))
+                              (format nil "<compiled-procedure @~D>" (cadr val)))
+                             ((and (consp val) (eq (car val) 'primitive))
+                              (format nil "<primitive ~A>" (cadr val)))
+                             ((and (consp val) (eq (car val) 'continuation))
+                              "<continuation>")
+                             ((stringp val) (format nil "~S" val))
+                             (t (let ((s (format nil "~S" val)))
+                                  (if (> (length s) 50)
+                                      (concatenate 'string (subseq s 0 47) "...")
+                                      s))))))
+                    (if (hash-frame-p frame)
+                        (maphash (lambda (var val)
+                                   (format output ";;   ~30A → ~A~%" var (format-val val)))
+                                 (cdr frame))
+                        (loop for var in (car frame)
+                              for val in (cdr frame) do
+                              (format output ";;   ~30A → ~A~%" var
+                                      (format-val val))))))))))))))
 
 ;;; ece-load-image / ece-%write-image — updated for binary format
 
