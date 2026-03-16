@@ -60,6 +60,12 @@
            (collect-entry-pcs-from-value (vector-ref frame i) pcs visited)
            (walk-vec (+ i 1))))
        (walk-vec 0))
+      ;; Hash-table frame — walk entries
+      ((%hash-frame? frame)
+       (for-each
+        (lambda (entry)
+          (collect-entry-pcs-from-value (cdr entry) pcs visited))
+        (%hash-frame-entries frame)))
       ;; List-based frame — walk values list
       ((pair? frame)
        (unless (%eq-hash-has-key? visited frame)
@@ -343,6 +349,16 @@
       copy))
    ;; primitive — immutable, no PCs
    ((eq? (car value) 'primitive) value)
+   ;; hash-table frame — deep-copy entries into a new hash-frame
+   ((%hash-frame? value)
+    (let ((copy (%make-hash-frame)))
+      (%eq-hash-set! visited value copy)
+      (for-each
+       (lambda (entry)
+         (%hash-frame-set! copy (car entry)
+                           (deep-copy-and-remap (cdr entry) remap visited)))
+       (%hash-frame-entries value))
+      copy))
    ;; generic cons cell
    (else
     (let ((copy (cons '() '())))
