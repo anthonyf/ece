@@ -21,6 +21,7 @@ image:
 	  --eval '(ece:evaluate (list (quote ece:load) "src/compiler.scm"))' \
 	  --eval '(ece:evaluate (list (quote ece:load) "src/reader.scm"))' \
 	  --eval '(ece:evaluate (list (quote ece:load) "src/assembler.scm"))' \
+	  --eval '(ece:evaluate (list (quote ece:load) "src/compilation-unit.scm"))' \
 	  --eval '(ece:evaluate (list (quote ece:load) "src/compaction.scm"))' \
 	  --eval '(ece::ece-save-image "$(BOOTSTRAP_IMAGE)")' \
 	  --quit

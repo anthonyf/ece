@@ -27,4 +27,7 @@
 (load "tests/ece/test-guard.scm")
 (load "tests/ece/test-error-messages.scm")
 
+;; Compilation units
+(load "tests/ece/test-compilation-units.scm")
+
 (run-tests)
