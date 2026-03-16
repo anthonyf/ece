@@ -74,8 +74,8 @@ When called from compiled code (lambda entry), `extend-environment` SHALL create
 - **WHEN** `(extend-environment 'args '(1 2 3) base-env)` is called
 - **THEN** the new frame SHALL be a vector `#((1 2 3))`
 
-### Requirement: global environment retains list-based frames
-The global environment frame SHALL continue to use the existing list-based `(cons vars vals)` structure. `define-variable!` and name-based `lookup-variable-value` SHALL continue to work unchanged on the global frame.
+### Requirement: global environment retains named frames
+The global environment frame SHALL use a hash-table frame (`(:hash-frame . <hash-table>)`). `define-variable!` and name-based `lookup-variable-value` SHALL continue to work unchanged on the global frame.
 
 #### Scenario: Global define still works
 - **WHEN** `(define x 42)` is evaluated at the top level
