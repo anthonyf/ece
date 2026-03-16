@@ -11,10 +11,7 @@
     :serial t
     :components ((:module "src"
                           :components
-                          ((:file "runtime")
-                           (:file "readtable" :depends-on ("runtime"))
-                           (:file "boot" :depends-on ("runtime"))
-                           (:static-file "prelude.scm"))))
+                          ((:file "runtime"))))
     :in-order-to ((test-op (test-op "ece/tests"))))
 
 (defsystem "ece/cold"

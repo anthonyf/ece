@@ -9,11 +9,8 @@
 (setf *print-circle* t *print-level* 10 *print-length* 10)
 
 (defun ece-eval-string (source)
-  "Read SOURCE with the ECE readtable, then evaluate the result."
-  (let* ((*readtable* ece::*ece-readtable*)
-         (*package* (find-package :ece))
-         (expr (read-from-string source)))
-    (evaluate expr)))
+  "Read and evaluate SOURCE using the ECE reader in the image."
+  (ece::mc-eval (list 'eval (list 'read (list 'open-input-string source)))))
 
 ;; NOTE: To run this test file, execute `(asdf:test-system :ece)' in your Lisp.
 
@@ -1032,18 +1029,12 @@
 
 (deftest test-hash-table-literals
     (testing "curly brace reader produces hash table"
-             (let ((*readtable* ece::*ece-readtable*))
-               (ok (equal (read-from-string "{}")
-                          '(:hash-table)))))
+             (ok (evaluate '(hash-table? (eval (read (open-input-string "{}")))))))
 
   (testing "curly brace reader with symbol keys"
-           (let* ((*readtable* ece::*ece-readtable*)
-                  (*package* (find-package :ece))
-                  (result (read-from-string "{name \"Alice\" age 30}")))
-             (ok (eq (car result) :hash-table))
-             (ok (= (length (cdr result)) 2))
-             (ok (equal (cdr (assoc (intern "NAME" :ece) (cdr result))) "Alice"))
-             (ok (= (cdr (assoc (intern "AGE" :ece) (cdr result))) 30))))
+           (ok (ece-eval-string "(hash-table? {name \"Alice\" age 30})"))
+           (ok (equal (ece-eval-string "(hash-ref {name \"Alice\" age 30} 'name)") "Alice"))
+           (ok (= (ece-eval-string "(hash-ref {name \"Alice\" age 30} 'age)") 30)))
 
   (testing "hash table is self-evaluating"
            (ok (equal (evaluate '(:hash-table (name . "Alice")))
@@ -1053,15 +1044,7 @@
            (ok (evaluate '(hash-table? (begin
                                         (define ht (hash-table 'a 1))
                                         ht))))
-           (ok (= (evaluate '(hash-ref ht 'a)) 1)))
-
-  (testing "serialization round-trip"
-           (let* ((*package* (find-package :ece))
-                  (ht (list :hash-table (cons (intern "NAME" :ece) "Alice") (cons (intern "AGE" :ece) 30)))
-                  (str (prin1-to-string ht))
-                  (result (let ((*readtable* ece::*ece-readtable*))
-                            (read-from-string str))))
-             (ok (equal result ht)))))
+           (ok (= (evaluate '(hash-ref ht 'a)) 1))))
 
 (deftest test-hash-table-ops
     (testing "hash-table constructor with symbol keys"
