@@ -53,7 +53,7 @@
 - [x] 7.2 Update generated code to handle space-qualified addresses — `goto (reg continue)` checks space-id, exits to dispatcher on mismatch
 - [x] 7.3 Generate a manifest file listing spaces in load order with metadata (name, instruction count, space-id)
 - [x] 7.4 Generate an operation table initialization file (shared across all spaces)
-- [ ] 7.5 Test: generate per-space files, compile each with `compile-file`, load in manifest order, run the test suite — requires per-file spaces (task 6) so each space is small enough for SBCL to compile
+- [ ] 7.5 Test: generate per-space files, compile each with `compile-file`, load in manifest order, run the test suite — space 0 still has ~120K instructions (prelude+compiler+reader+assembler), too large for SBCL. Needs full per-file bootstrap where all files get their own space from the start.
 
 ## 8. Image as Space Collection
 
@@ -64,7 +64,7 @@
 
 ## 9. Cleanup
 
-- [ ] 9.1 Remove `*global-instruction-vector*` and `*global-instruction-source*` once all code uses spaces
-- [ ] 9.2 Remove chunking logic from codegen-cl.lisp (no longer needed with per-space generation)
+- [ ] 9.1 Remove `*global-instruction-vector*` and `*global-instruction-source*` once all code uses spaces — blocked: space 0 still shares global vectors; needs full per-file bootstrap
+- [ ] 9.2 Remove chunking logic from codegen-cl.lisp — blocked: space 0 is still too large for single-chunk compilation
 - [x] 9.3 Update `*procedure-name-table*` to use space-qualified PCs natively — done: table uses `(space-id . local-pc)` keys with `:test 'equal`, `ece-%procedure-name-set!` normalizes bare integers
 - [ ] 9.4 Document the compilation space architecture and build workflow
