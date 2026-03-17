@@ -192,6 +192,19 @@
 (123 %make-hash-frame     0  cl     "Create empty hash-table frame")
 (124 %hash-frame-set!     3  cl     "Set key in hash-table frame")
 
+;;; --- Compilation spaces ---
+(125 %create-space             1  cl     "Create a new compilation space")
+(126 %space-instruction-length 1  cl     "Instruction count for a space")
+(127 %space-name               1  cl     "Name of a space")
+(128 %current-space-id         0  cl     "Current assembler target space ID")
+(129 %set-current-space-id!    1  cl     "Set current assembler target space ID")
+(130 %space-instruction-push!  2  cl     "Append instruction to a space")
+(131 %space-label-set!         3  cl     "Register label in a space")
+(132 %space-label-ref          2  cl     "Look up label in a space")
+(133 %space-count              0  cl     "Number of spaces in registry")
+(134 %space-source-ref         2  cl     "Get source instruction at index in a space")
+(135 %space-label-entries      1  cl     "Label table of a space as alist")
+
 ;;; ═══════════════════════════════════════════════════════════════════════
 ;;; BROWSER PLATFORM PRIMITIVES (200-299) — Reserved for future use
 ;;; ═══════════════════════════════════════════════════════════════════════

@@ -27,19 +27,12 @@
       start-pc
       (cons sid start-pc)))
 
-;; Switchover: rebind assemble-into-global to the ECE implementation.
-;; mc-compile-and-go calls assemble-into-global, so this makes it use
-;; the ECE assembler for all subsequent compilations.
-;; IMPORTANT: This must come BEFORE load redefinition — see note below.
-(define assemble-into-global ece-assemble-into-global)
-
 ;; Redefine load to use the ECE reader + ECE compiler pipeline.
 ;; Creates a new compilation space per file and compiles all forms into it.
-;; NOTE: Defined AFTER the assembler switchover because forms after
-;; (define assemble-into-global ...) in the same file don't execute
-;; when reloading assembler.scm (the ECE assembler takes over mid-file
-;; and the executor state becomes inconsistent). The load body calls
-;; mc-compile-and-go which calls assemble-into-global via env lookup,
+;; NOTE: Defined BEFORE the assembler switchover because forms after
+;; (define assemble-into-global ...) don't execute when reloading
+;; assembler.scm (the ECE assembler takes over mid-file). The load body
+;; calls mc-compile-and-go which calls assemble-into-global via env lookup,
 ;; so it picks up the ECE assembler after the switchover regardless.
 (define (load filename)
   (define port (open-input-file filename))
@@ -54,3 +47,9 @@
           (%set-current-space-id! prev-space)
           result)
         (loop (mc-compile-and-go expr)))))
+
+;; Switchover: rebind assemble-into-global to the ECE implementation.
+;; mc-compile-and-go calls assemble-into-global, so this makes it use
+;; the ECE assembler for all subsequent compilations.
+;; IMPORTANT: This must be the LAST form in the file.
+(define assemble-into-global ece-assemble-into-global)

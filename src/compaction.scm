@@ -484,4 +484,4 @@
                         (list-ref c 4)   ;; procedure names
                         (%parameter-table-entries)
                         (%parameter-counter)
-                        (if (null? spaces) #f spaces)))))
+                        spaces))))
