@@ -249,10 +249,14 @@
   "Format a procedure value for display in errors."
   (cond
     ((and (listp proc) (eq (car proc) 'compiled-procedure))
-     (let ((name (gethash (cadr proc) *procedure-name-table*)))
+     (let* ((entry (cadr proc))
+            (name (or (gethash entry *procedure-name-table*)
+                      ;; Backward compat: try bare local-pc if entry is qualified
+                      (when (consp entry)
+                        (gethash (cdr entry) *procedure-name-table*)))))
        (if name
            (format nil "~A" name)
-           (format nil "<compiled-procedure entry=~A>" (cadr proc)))))
+           (format nil "<compiled-procedure entry=~A>" entry))))
     ((and (listp proc) (eq (car proc) 'primitive))
      (let ((id-or-name (cadr proc)))
        (if (integerp id-or-name)
@@ -288,9 +292,9 @@ a nearby proc gives a named frame; a lone continue gives an anonymous frame."
               (or (eq (car item) 'compiled-procedure)
                   (eq (car item) 'primitive)))
          (setf last-proc item))
-        ;; An integer on the stack is likely a saved continue (return address)
-        ((integerp item)
-         (push (cons last-proc item) frames)
+        ;; An integer or qualified address on the stack is likely a saved continue
+        ((or (integerp item) (qualified-address-p item))
+         (push (cons last-proc (qualified-local-pc item)) frames)
          (setf last-proc nil))))
     (nreverse frames)))
 
@@ -1066,6 +1070,20 @@ Returns EOF sentinel at end of input."
     (%make-hash-frame . ece-%make-hash-frame)
     (%hash-frame-set! . ece-%hash-frame-set!)
     (%write-image . ece-%write-image)
+    (%extract-op-names . ece-%extract-op-names)
+    (%op-name-index . ece-%op-name-index)
+    (%create-space . ece-%create-space)
+    (%get-space . ece-%get-space)
+    (%space-instruction-length . ece-%space-instruction-length)
+    (%space-name . ece-%space-name)
+    (%current-space-id . ece-%current-space-id)
+    (%set-current-space-id! . ece-%set-current-space-id!)
+    (%space-instruction-push! . ece-%space-instruction-push!)
+    (%space-label-set! . ece-%space-label-set!)
+    (%space-label-ref . ece-%space-label-ref)
+    (%space-count . ece-%space-count)
+    (%space-source-ref . ece-%space-source-ref)
+    (%space-label-entries . ece-%space-label-entries)
     (set-car! . rplaca)
     (set-cdr! . rplacd)
     (extend-environment . extend-environment)
@@ -1113,7 +1131,11 @@ Returns ECE #t if the primitive exists and has a non-stub implementation, #f oth
 ;;; Compiled procedure representation
 
 (defun make-compiled-procedure (entry env)
-  (list 'compiled-procedure entry env))
+  (list 'compiled-procedure
+        (if (consp entry) entry
+            (if (zerop *executing-space-id*) entry
+                (cons *executing-space-id* entry)))
+        env))
 
 (defun compiled-procedure-p (proc)
   (and (listp proc) (eq (car proc) 'compiled-procedure)))
@@ -1123,6 +1145,26 @@ Returns ECE #t if the primitive exists and has a non-stub implementation, #f oth
 
 (defun compiled-procedure-env (proc)
   (caddr proc))
+
+;;; Space-qualified address helpers
+;;; A qualified address is (space-id . local-pc).
+;;; During migration, bare integers are treated as (0 . pc).
+
+(defun qualified-address-p (addr)
+  "Test if ADDR is a space-qualified address (cons pair)."
+  (consp addr))
+
+(defun qualified-space-id (addr)
+  "Extract space-id from a qualified address. Bare integers return 0."
+  (if (consp addr) (car addr) 0))
+
+(defun qualified-local-pc (addr)
+  "Extract local-pc from a qualified address. Bare integers return themselves."
+  (if (consp addr) (cdr addr) addr))
+
+(defun make-qualified-address (space-id local-pc)
+  "Create a space-qualified address."
+  (cons space-id local-pc))
 
 ;;; Predicate helpers for executor operations
 
@@ -1189,7 +1231,11 @@ Returns ECE #t if the primitive exists and has a non-stub implementation, #f oth
   (caddr cont))
 
 (defun capture-continuation (stack continue-reg)
-  (list 'continuation (copy-list stack) continue-reg))
+  (list 'continuation (copy-list stack)
+        (if (consp continue-reg)
+            continue-reg
+            (if (zerop *executing-space-id*) continue-reg
+                (cons *executing-space-id* continue-reg)))))
 
 ;;; Operations dispatch
 
@@ -1218,21 +1264,32 @@ Returns ECE #t if the primitive exists and has a non-stub implementation, #f oth
 
 ;;; Instruction executor
 
-(defun execute-instructions (instruction-vector label-table initial-env
-                             &optional (start-pc 0)
-                             &key initial-proc initial-argl initial-continue)
-  "Execute assembled instructions from START-PC, return val register.
-Optional INITIAL-PROC, INITIAL-ARGL, and INITIAL-CONTINUE pre-load registers
-for re-entering the executor to call a compiled procedure."
-  (let ((pc start-pc)
-        (flag nil)
-        (val nil)
-        (env initial-env)
-        (proc initial-proc)
-        (argl initial-argl)
-        (continue initial-continue)
-        (stack '())
-        (len (length instruction-vector)))
+(defvar *executing-space-id* 0
+  "The space-id of the currently executing space in the executor.
+Used by make-compiled-procedure and capture-continuation to qualify
+bare integer addresses. Distinct from *current-space-id* which is
+the assembler's target space.")
+
+(defun execute-instructions (initial-space-id initial-pc initial-env
+                             &key initial-proc initial-argl initial-continue
+                               initial-stack)
+  "Execute assembled instructions starting in INITIAL-SPACE-ID at INITIAL-PC.
+Single-loop executor: cross-space jumps update local space-id/instrs/ltab
+variables inline — no throw/catch, no dispatcher, no allocation per transition."
+  (let* ((space-id initial-space-id)
+         (cs (get-space space-id))
+         (instrs (compilation-space-resolved-instructions cs))
+         (ltab (compilation-space-label-table cs))
+         (*executing-space-id* space-id)
+         (pc initial-pc)
+         (flag nil)
+         (val nil)
+         (env initial-env)
+         (proc initial-proc)
+         (argl initial-argl)
+         (continue initial-continue)
+         (stack (or initial-stack '()))
+         (len (length instrs)))
     (labels ((get-reg (name)
                (ecase name
                  (val val) (env env) (proc proc) (argl argl)
@@ -1246,8 +1303,15 @@ for re-entering the executor to call a compiled procedure."
                  (continue (setf continue value))
                  (stack (setf stack value))))
              (resolve-label (label)
-               (or (gethash label label-table)
+               (or (gethash label ltab)
                    (error "Unknown label: ~A" label)))
+             (switch-space (target-space-id)
+               (setf space-id target-space-id)
+               (let ((target-cs (get-space target-space-id)))
+                 (setf instrs (compilation-space-resolved-instructions target-cs))
+                 (setf ltab (compilation-space-label-table target-cs))
+                 (setf len (length instrs))
+                 (setf *executing-space-id* target-space-id)))
              (eval-operand (operand)
                (ecase (car operand)
                  (const (cadr operand))
@@ -1279,7 +1343,7 @@ for re-entering the executor to call a compiled procedure."
                           :arguments argl
                           :environment env
                           :instruction (when (< pc len)
-                                         (aref instruction-vector pc))
+                                         (aref instrs pc))
                           :backtrace (extract-ece-backtrace stack)))))
                   (if wrapped
                       (error wrapped)
@@ -1287,7 +1351,7 @@ for re-entering the executor to call a compiled procedure."
         (tagbody
          loop-start
            (when (>= pc len) (go loop-end))
-           (let ((instr (aref instruction-vector pc)))
+           (let ((instr (aref instrs pc)))
              (case (car instr)
                (assign
                 (let ((target (cadr instr))
@@ -1295,20 +1359,27 @@ for re-entering the executor to call a compiled procedure."
                   (case (car source)
                     (const (set-reg target (cadr source)))
                     (reg (set-reg target (get-reg (cadr source))))
-                    (label (set-reg target (resolve-label (cadr source))))
+                    (label (let ((resolved-pc (resolve-label (cadr source))))
+                             (set-reg target
+                                      (if (and (eq target 'continue) (/= space-id 0))
+                                          (cons space-id resolved-pc)
+                                          resolved-pc))))
                     (op-fn
                      (let ((result (call-op (cadr source) (cdddr instr))))
                        (if (ece-error-sentinel-p result)
                            ;; Bridge CL error to ECE's error function
-                           ;; (error msg . irritants) creates a proper error-object and raises
                            (let ((error-fn (ignore-errors
                                              (lookup-variable-value 'error *global-env*))))
                              (if (and error-fn (compiled-procedure-p error-fn))
-                                 (progn
+                                 (let* ((err-entry (compiled-procedure-entry error-fn))
+                                        (err-space (qualified-space-id err-entry))
+                                        (err-pc (qualified-local-pc err-entry)))
                                    (setf proc error-fn)
                                    (setf argl (cons (ece-error-sentinel-message result)
                                                     (ece-error-sentinel-irritants result)))
-                                   (setf pc (compiled-procedure-entry error-fn))
+                                   (unless (eql err-space space-id)
+                                     (switch-space err-space))
+                                   (setf pc err-pc)
                                    (go loop-start))
                                  ;; Fallback: no error yet (cold boot) — signal CL error
                                  (error "~A" (ece-error-sentinel-message result))))
@@ -1332,7 +1403,17 @@ for re-entering the executor to call a compiled procedure."
                   (ecase (car dest)
                     (label (setf pc (resolve-label (cadr dest))))
                     (reg (let ((addr (get-reg (cadr dest))))
-                           (setf pc (if (numberp addr) addr (resolve-label addr))))))
+                           (cond
+                             ;; Cross-space qualified address
+                             ((and (consp addr) (not (eql (car addr) space-id)))
+                              (switch-space (car addr))
+                              (setf pc (cdr addr)))
+                             ;; Same-space qualified address
+                             ((consp addr) (setf pc (cdr addr)))
+                             ;; Bare integer (backward compat)
+                             ((numberp addr) (setf pc addr))
+                             ;; Symbol label
+                             (t (setf pc (resolve-label addr)))))))
                   (go loop-start)))
                (save
                 (push (get-reg (cadr instr)) stack))
@@ -1365,8 +1446,8 @@ Each index corresponds to the same index in *global-instruction-vector*.")
   (make-hash-table :test 'eq))
 
 (defvar *procedure-name-table*
-  (make-hash-table)
-  "Maps entry PCs (integers) to procedure name symbols.
+  (make-hash-table :test 'equal)
+  "Maps space-qualified entry addresses (space-id . local-pc) to procedure name symbols.
 Populated at assembly time from procedure-name pseudo-instructions.")
 
 (defvar *traced-procedures*
@@ -1375,6 +1456,200 @@ Populated at assembly time from procedure-name pseudo-instructions.")
 
 (defvar *trace-depth* 0
   "Current nesting depth for trace output indentation.")
+
+;;; ============================================================
+;;; Compilation Spaces
+;;; ============================================================
+;;; Each compilation space holds its own instruction array with local PCs.
+;;; Procedure entry points and continuation addresses are space-qualified:
+;;; (space-id . local-pc) instead of bare integers.
+
+(defstruct compilation-space
+  "A compilation space — an independent instruction array with local PCs."
+  (name "" :type string)
+  (instructions (make-array 256 :adjustable t :fill-pointer 0)
+                :type vector)
+  (resolved-instructions (make-array 256 :adjustable t :fill-pointer 0)
+                         :type vector)
+  (label-table (make-hash-table :test 'eq)
+               :type hash-table)
+  (compiled-fn nil))
+
+(defvar *space-registry* (make-array 16 :adjustable t :fill-pointer 0)
+  "Vector of space records, indexed by space-id.")
+
+(defvar *current-space-id* 0
+  "The space-id that the assembler currently targets.
+Set by (load ...) for per-file spaces, defaults to 0 (bootstrap space).")
+
+
+(defun create-space (name)
+  "Allocate a new space with NAME, register it, return its space-id."
+  (let ((cs (make-compilation-space :name name))
+        (id (fill-pointer *space-registry*)))
+    (vector-push-extend cs *space-registry*)
+    id))
+
+(defun get-space (space-id)
+  "Look up a space by its integer ID."
+  (aref *space-registry* space-id))
+
+(defun find-space-by-name (name)
+  "Find a space by name string. Returns the space record, or NIL."
+  (loop for i from 0 below (fill-pointer *space-registry*)
+        for cs = (aref *space-registry* i)
+        when (string= (compilation-space-name cs) name)
+        return cs))
+
+;;; ECE-accessible space primitives
+
+(defun ece-%create-space (name)
+  "ECE primitive: create a new compilation space."
+  (create-space name))
+
+(defun ece-%get-space (space-id)
+  "ECE primitive: get a space by ID."
+  (get-space space-id))
+
+(defun ece-%space-instruction-length (space-id)
+  "ECE primitive: get the instruction count for a space."
+  (fill-pointer (compilation-space-instructions (get-space space-id))))
+
+(defun ece-%space-name (space-id)
+  "ECE primitive: get the name of a space."
+  (compilation-space-name (get-space space-id)))
+
+(defun ece-%current-space-id ()
+  "ECE primitive: get the current space ID."
+  *current-space-id*)
+
+(defun ece-%set-current-space-id! (space-id)
+  "ECE primitive: set the current space ID."
+  (setf *current-space-id* space-id))
+
+(defun ece-%space-instruction-push! (space-id source-instr)
+  "ECE primitive: append instruction to a space's arrays."
+  (let* ((cs (get-space space-id))
+         (instrs (compilation-space-instructions cs))
+         (resolved (compilation-space-resolved-instructions cs)))
+    (vector-push-extend source-instr instrs)
+    (vector-push-extend (resolve-operations source-instr) resolved)
+    nil))
+
+(defun ece-%space-label-set! (space-id label local-pc)
+  "ECE primitive: register a label in a space's label table."
+  (setf (gethash label (compilation-space-label-table (get-space space-id))) local-pc)
+  nil)
+
+(defun ece-%space-label-ref (space-id label)
+  "ECE primitive: look up a label in a space's label table. Returns local-pc or ()."
+  (gethash label (compilation-space-label-table (get-space space-id))))
+
+(defun ece-%space-count ()
+  "ECE primitive: return the number of spaces in the registry."
+  (fill-pointer *space-registry*))
+
+(defun ece-%space-source-ref (space-id index)
+  "ECE primitive: get source instruction at INDEX in a space."
+  (aref (compilation-space-instructions (get-space space-id)) index))
+
+(defun ece-%space-label-entries (space-id)
+  "ECE primitive: return label table of a space as an alist of (label . local-pc)."
+  (let ((entries nil))
+    (maphash (lambda (label pc) (push (cons label pc) entries))
+             (compilation-space-label-table (get-space space-id)))
+    entries))
+
+;;; Create bootstrap space (space 0).
+;;; During the compatibility phase, the executor still uses the global vectors
+;;; directly. Space 0 is a record that provides access to the same data.
+;;; After image load, call (sync-bootstrap-space) to update space 0's references.
+(when (zerop (fill-pointer *space-registry*))
+  (vector-push-extend (make-compilation-space :name "bootstrap")
+                      *space-registry*))
+
+(defun sync-bootstrap-space ()
+  "Update space 0 to reference the current global vectors.
+Called after image load or any operation that replaces the global vectors."
+  (let ((cs (get-space 0)))
+    (setf (compilation-space-instructions cs) *global-instruction-source*)
+    (setf (compilation-space-resolved-instructions cs) *global-instruction-vector*)
+    (setf (compilation-space-label-table cs) *global-label-table*)))
+
+;; Initial sync (at file load time, before image load may replace them)
+(sync-bootstrap-space)
+
+;;; Compiled zone support (compile-to-host)
+;;; When a compiled zone is loaded, execution dispatches between native CL
+;;; code (compiled zone) and the interpreter (dynamic zone).
+
+(defvar *compiled-zone-function* nil
+  "The compiled zone function, or NIL if no compiled zone is loaded.
+When set, holds a function of (pc val env proc argl continue stack)
+that executes pre-compiled code and returns (values pc val env proc argl continue stack)
+on zone exit.")
+
+(defvar *compiled-zone-limit* 0
+  "PC boundary: PCs 0 to (1- limit) are in the compiled zone.
+PCs >= limit are in the dynamic/interpreter zone.")
+
+(defvar *compiled-zone-op-table* (make-array 0)
+  "Vector mapping operation index to CL function.
+Populated when a compiled zone is loaded. The codegen emits
+(aref *compiled-zone-op-table* N) references.")
+
+(defun build-compiled-zone-op-table (op-names)
+  "Build the operation table from a list of operation names.
+Returns the populated *compiled-zone-op-table*.
+OP-NAMES is a list of symbols in index order."
+  (let ((table (make-array (length op-names))))
+    (loop for name in op-names
+          for i from 0
+          do (setf (aref table i) (get-operation name)))
+    (setf *compiled-zone-op-table* table)))
+
+(defun resolve-operation-index (name op-name-to-index)
+  "Get or create an index for operation NAME in the op-name-to-index hash table.
+Returns the index."
+  (or (gethash name op-name-to-index)
+      (let ((idx (hash-table-count op-name-to-index)))
+        (setf (gethash name op-name-to-index) idx)
+        idx)))
+
+(defun extract-operation-names-from-source ()
+  "Walk *global-instruction-source* and collect unique operation names.
+Returns a list of operation name symbols in index order."
+  (let ((seen (make-hash-table :test 'eq))
+        (names nil))
+    (loop for i from 0 below (fill-pointer *global-instruction-source*)
+          for instr = (aref *global-instruction-source* i)
+          do (case (car instr)
+               (assign
+                (let ((source (caddr instr)))
+                  (when (and (consp source) (eq (car source) 'op))
+                    (let ((name (cadr source)))
+                      (unless (gethash name seen)
+                        (setf (gethash name seen) t)
+                        (push name names))))))
+               ((test perform)
+                (let ((op-spec (cadr instr)))
+                  (when (and (consp op-spec) (eq (car op-spec) 'op))
+                    (let ((name (cadr op-spec)))
+                      (unless (gethash name seen)
+                        (setf (gethash name seen) t)
+                        (push name names))))))))
+    (nreverse names)))
+
+(defun ece-%extract-op-names ()
+  "ECE-accessible: return a list of unique operation names from the source instruction vector."
+  (extract-operation-names-from-source))
+
+(defun ece-%op-name-index (name op-alist)
+  "ECE-accessible: look up the index for operation NAME in OP-ALIST.
+OP-ALIST is a list of (name . index) pairs."
+  (let ((pair (assoc name op-alist :test #'eq)))
+    (if pair (cdr pair)
+        (error "Unknown operation name: ~A" name))))
 
 (defun resolve-operations (instr)
   "Pre-resolve operation names to function pointers in an instruction."
@@ -1393,6 +1668,30 @@ Populated at assembly time from procedure-name pseudo-instructions.")
        `(perform (op-fn ,(get-operation (cadr op-spec))) ,@(cddr instr))))
     (t instr)))
 
+(defun assemble-into-space (space-id instruction-list)
+  "Append instructions to a space's arrays, register labels. Return local start PC."
+  (let* ((cs (get-space space-id))
+         (instrs (compilation-space-instructions cs))
+         (resolved (compilation-space-resolved-instructions cs))
+         (labels (compilation-space-label-table cs))
+         (start-pc (fill-pointer instrs)))
+    (dolist (item instruction-list)
+      (cond
+        ((symbolp item)
+         (setf (gethash item labels) (fill-pointer instrs)))
+        ((and (consp item) (eq (car item) 'procedure-name))
+         ;; Pseudo-instruction: (procedure-name <label> <name>)
+         ;; Resolve label to local PC and store in name table.
+         ;; Space 0 uses bare integers; other spaces use qualified addresses.
+         (let ((local-pc (gethash (cadr item) labels)))
+           (when local-pc
+             (let ((key (if (zerop space-id) local-pc (cons space-id local-pc))))
+               (setf (gethash key *procedure-name-table*) (caddr item))))))
+        (t
+         (vector-push-extend item instrs)
+         (vector-push-extend (resolve-operations item) resolved))))
+    start-pc))
+
 (defun assemble-into-global (instruction-list)
   "Append instructions to global vector, register labels. Return start PC."
   (let ((start-pc (fill-pointer *global-instruction-vector*)))
@@ -1403,7 +1702,8 @@ Populated at assembly time from procedure-name pseudo-instructions.")
                (fill-pointer *global-instruction-vector*)))
         ((and (consp item) (eq (car item) 'procedure-name))
          ;; Pseudo-instruction: (procedure-name <label> <name>)
-         ;; Resolve label to PC and store in name table
+         ;; Resolve label to PC and store in name table as bare integer
+         ;; (backward compat with old image compaction code)
          (let ((pc (gethash (cadr item) *global-label-table*)))
            (when pc
              (setf (gethash pc *procedure-name-table*) (caddr item)))))
@@ -1432,9 +1732,12 @@ Populated at assembly time from procedure-name pseudo-instructions.")
   (setf (gethash label *global-label-table*) pc)
   nil)
 
-(defun ece-%procedure-name-set! (pc name)
-  "Register procedure NAME at entry PC in the procedure name table."
-  (setf (gethash pc *procedure-name-table*) name)
+(defun ece-%procedure-name-set! (pc-or-qualified name)
+  "Register procedure NAME at entry PC in the procedure name table.
+PC-OR-QUALIFIED is either a space-qualified address (space-id . local-pc)
+or a bare integer. Bare integers stay bare for backward compat with old images."
+  (let ((key pc-or-qualified))
+    (setf (gethash key *procedure-name-table*) name))
   nil)
 
 (defun ece-%label-table-ref (label)
@@ -1539,11 +1842,11 @@ Returns a raw CL hash table — use %eq-hash-ref/set!/has-key? to access."
 ;;; Metacircular compiler support primitives
 
 (defun ece-execute-from-pc (start-pc &optional (env *global-env*))
-  "Execute instructions starting from START-PC in ENV (default: global)."
-  (execute-instructions *global-instruction-vector*
-                        *global-label-table*
-                        env
-                        start-pc))
+  "Execute instructions starting from START-PC in ENV (default: global).
+START-PC may be a bare integer (space 0) or a qualified address."
+  (execute-instructions (qualified-space-id start-pc)
+                        (qualified-local-pc start-pc)
+                        env))
 
 (defun ece-trace (name)
   "Enable tracing for procedure NAME in the global environment.
@@ -1578,19 +1881,19 @@ Replaces the binding with a primitive wrapper that logs entry/exit."
   name)
 
 (defun execute-compiled-call (compiled-proc args)
-  "Call a compiled procedure with ARGS by re-entering the executor.
+  "Call a compiled procedure with ARGS.
 Sets up proc and argl registers so the compiled code's entry point can
 extract its environment and extend it with arguments.
-Sets continue to past-end-of-vector so (goto (reg continue)) exits cleanly."
-  (let ((entry (compiled-procedure-entry compiled-proc))
-        (return-pc (length *global-instruction-vector*)))
-    (execute-instructions *global-instruction-vector*
-                          *global-label-table*
-                          *global-env*
-                          entry
+Sets continue to a past-end address so (goto (reg continue)) exits cleanly."
+  (let* ((entry (compiled-procedure-entry compiled-proc))
+         (space-id (qualified-space-id entry))
+         (local-pc (qualified-local-pc entry))
+         (cs (get-space space-id))
+         (return-pc (fill-pointer (compilation-space-resolved-instructions cs))))
+    (execute-instructions space-id local-pc *global-env*
                           :initial-proc compiled-proc
                           :initial-argl args
-                          :initial-continue return-pc)))
+                          :initial-continue (cons space-id return-pc))))
 
 (defun ece-apply-compiled-procedure (compiled-proc args)
   "Call a compiled procedure with ARGS. Thin wrapper around execute-compiled-call
@@ -1739,6 +2042,7 @@ State is stored in *parameter-table* so parameters survive image round-trips."
 (defconstant +section-names+        #x04)
 (defconstant +section-params+       #x05)
 (defconstant +section-param-counter+ #x06)
+(defconstant +section-spaces+        #x07)
 
 ;;; ---- Binary I/O helpers ----
 
@@ -2677,57 +2981,81 @@ Fully iterative using a work stack to avoid stack overflow on circular structure
 ;;; Full binary image serializer
 
 (defun binary-image-serialize (data stream)
-  "Serialize 7-element image DATA to binary STREAM."
+  "Serialize image DATA to binary STREAM.
+DATA is a list: (source-list label-alist env macro-alist name-alist param-alist param-counter
+                 &optional spaces-list).
+SPACES-LIST, when present, is a list of (name source-instr-list label-alist) for non-zero spaces."
   (let ((source-list (first data))
         (label-alist (second data))
         (env (third data))
         (macro-alist (fourth data))
         (name-alist (fifth data))
         (param-alist (sixth data))
-        (param-counter (seventh data)))
+        (param-counter (seventh data))
+        (spaces-list (eighth data)))
     ;; Collect all symbols from the entire image data
     (multiple-value-bind (symbols sym-to-idx)
         (bin-collect-symbols data)
       ;; Build section byte vectors
       (let* ((section-data
-              (list
-               ;; Section 0: Instructions
-               (cons +section-instructions+
-                     (let ((buf (make-byte-buffer-stream)))
-                       (bin-write-u32-be (length source-list) buf)
-                       (dolist (instr source-list)
-                         (bin-serialize-instruction instr sym-to-idx buf))
-                       (byte-buffer-contents buf)))
-               ;; Section 1: Labels
-               (cons +section-labels+
-                     (let ((buf (make-byte-buffer-stream)))
-                       (bin-serialize-data label-alist sym-to-idx buf)
-                       (byte-buffer-contents buf)))
-               ;; Section 2: Environment
-               (cons +section-env+
-                     (let ((buf (make-byte-buffer-stream)))
-                       (bin-serialize-data env sym-to-idx buf)
-                       (byte-buffer-contents buf)))
-               ;; Section 3: Macros
-               (cons +section-macros+
-                     (let ((buf (make-byte-buffer-stream)))
-                       (bin-serialize-data macro-alist sym-to-idx buf)
-                       (byte-buffer-contents buf)))
-               ;; Section 4: Procedure names
-               (cons +section-names+
-                     (let ((buf (make-byte-buffer-stream)))
-                       (bin-serialize-data name-alist sym-to-idx buf)
-                       (byte-buffer-contents buf)))
-               ;; Section 5: Parameters
-               (cons +section-params+
-                     (let ((buf (make-byte-buffer-stream)))
-                       (bin-serialize-data param-alist sym-to-idx buf)
-                       (byte-buffer-contents buf)))
-               ;; Section 6: Parameter counter
-               (cons +section-param-counter+
-                     (let ((buf (make-byte-buffer-stream)))
-                       (bin-serialize-data param-counter sym-to-idx buf)
-                       (byte-buffer-contents buf)))))
+              (append
+               (list
+                ;; Section 0: Instructions (space 0)
+                (cons +section-instructions+
+                      (let ((buf (make-byte-buffer-stream)))
+                        (bin-write-u32-be (length source-list) buf)
+                        (dolist (instr source-list)
+                          (bin-serialize-instruction instr sym-to-idx buf))
+                        (byte-buffer-contents buf)))
+                ;; Section 1: Labels (space 0)
+                (cons +section-labels+
+                      (let ((buf (make-byte-buffer-stream)))
+                        (bin-serialize-data label-alist sym-to-idx buf)
+                        (byte-buffer-contents buf)))
+                ;; Section 2: Environment
+                (cons +section-env+
+                      (let ((buf (make-byte-buffer-stream)))
+                        (bin-serialize-data env sym-to-idx buf)
+                        (byte-buffer-contents buf)))
+                ;; Section 3: Macros
+                (cons +section-macros+
+                      (let ((buf (make-byte-buffer-stream)))
+                        (bin-serialize-data macro-alist sym-to-idx buf)
+                        (byte-buffer-contents buf)))
+                ;; Section 4: Procedure names
+                (cons +section-names+
+                      (let ((buf (make-byte-buffer-stream)))
+                        (bin-serialize-data name-alist sym-to-idx buf)
+                        (byte-buffer-contents buf)))
+                ;; Section 5: Parameters
+                (cons +section-params+
+                      (let ((buf (make-byte-buffer-stream)))
+                        (bin-serialize-data param-alist sym-to-idx buf)
+                        (byte-buffer-contents buf)))
+                ;; Section 6: Parameter counter
+                (cons +section-param-counter+
+                      (let ((buf (make-byte-buffer-stream)))
+                        (bin-serialize-data param-counter sym-to-idx buf)
+                        (byte-buffer-contents buf))))
+               ;; Section 7: Non-zero spaces (if any)
+               (when spaces-list
+                 (list
+                  (cons +section-spaces+
+                        (let ((buf (make-byte-buffer-stream)))
+                          (bin-write-u32-be (length spaces-list) buf)
+                          (dolist (space-record spaces-list)
+                            (let ((name (first space-record))
+                                  (instrs (second space-record))
+                                  (labels (third space-record)))
+                              ;; Write space name
+                              (bin-serialize-data name sym-to-idx buf)
+                              ;; Write instruction count and instructions
+                              (bin-write-u32-be (length instrs) buf)
+                              (dolist (instr instrs)
+                                (bin-serialize-instruction instr sym-to-idx buf))
+                              ;; Write label table
+                              (bin-serialize-data labels sym-to-idx buf)))
+                          (byte-buffer-contents buf)))))))
              (num-sections (length section-data)))
         ;; Write header
         (write-byte (char-code #\E) stream)
@@ -2998,7 +3326,9 @@ Builds resolved instructions (with op-fn) directly — no resolve-operations pas
                      (setf *compile-time-macros* (alist-to-hash-table alist :test 'eq))))
                   (#.+section-names+
                    (let ((alist (bin-deserialize-data-stream stream symbols end-pos)))
-                     (setf *procedure-name-table* (alist-to-hash-table alist))))
+                     ;; Keep bare integer keys for backward compat with old image compaction code
+                     (setf *procedure-name-table*
+                           (alist-to-hash-table alist :test 'equal))))
                   (#.+section-params+
                    (let ((alist (bin-deserialize-data-stream stream symbols end-pos)))
                      (when alist
@@ -3007,6 +3337,27 @@ Builds resolved instructions (with op-fn) directly — no resolve-operations pas
                    (let ((val (bin-deserialize-data-stream stream symbols end-pos)))
                      (when val
                        (setf *parameter-counter* val))))
+                  (#.+section-spaces+
+                   ;; Restore non-zero spaces into the space registry
+                   (let ((num-spaces (bin-read-u32-be stream)))
+                     (loop repeat num-spaces do
+                           (let* ((name (bin-deserialize-data-value stream symbols))
+                                  (n (bin-read-u32-be stream))
+                                  (src-vec (make-array n :adjustable t :fill-pointer n))
+                                  (exec-vec (make-array n :adjustable t :fill-pointer n)))
+                             (loop for i below n do
+                                   (multiple-value-bind (resolved source)
+                                       (bin-deserialize-instruction stream symbols)
+                                     (setf (aref exec-vec i) resolved)
+                                     (setf (aref src-vec i) source)))
+                             (let* ((label-alist (bin-deserialize-data-value stream symbols))
+                                    (label-table (alist-to-hash-table label-alist :test 'eq))
+                                    (cs (make-compilation-space
+                                         :name name
+                                         :instructions src-vec
+                                         :resolved-instructions exec-vec
+                                         :label-table label-table)))
+                               (vector-push-extend cs *space-registry*))))))
                   (t (warn "binary-image-deserialize: unknown section type ~X" type)))))))))))
 
 ;;; Disassembler
@@ -3155,11 +3506,15 @@ Auto-detects binary vs text format by checking for 'ECE' magic header."
                 (setf *global-label-table* (alist-to-hash-table label-alist :test 'eq))
                 (setf *global-env* env)
                 (setf *compile-time-macros* (alist-to-hash-table macro-alist :test 'eq))
-                (setf *procedure-name-table* (alist-to-hash-table name-alist))
+                ;; Keep bare integer keys for backward compat with old image compaction code.
+                ;; Qualified (space-id . pc) keys are preserved as-is.
+                (setf *procedure-name-table*
+                      (alist-to-hash-table name-alist :test 'equal))
                 (when param-alist
                   (setf *parameter-table* (alist-to-hash-table param-alist :test 'eq)))
                 (when param-counter
                   (setf *parameter-counter* param-counter))))))))
+  (sync-bootstrap-space)
   t)
 
 (defun mc-eval (expr &optional (env nil env-supplied-p))

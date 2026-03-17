@@ -32,9 +32,10 @@
     (unless (%eq-hash-has-key? visited val)
       (%eq-hash-set! visited val t)
       (cond
-       ;; compiled-procedure: (compiled-procedure entry-pc env)
+       ;; compiled-procedure: (compiled-procedure entry env)
+       ;; entry is now (space-id . local-pc); extract local-pc for block tracking
        ((eq? (car val) 'compiled-procedure)
-        (%eq-hash-set! pcs (car (cdr val)) t)
+        (%eq-hash-set! pcs (entry-local-pc (car (cdr val))) t)
         (collect-entry-pcs-from-env (car (cdr (cdr val))) pcs visited))
        ;; continuation: (continuation stack continue-pc)
        ((eq? (car val) 'continuation)
@@ -76,10 +77,20 @@
           (cdr frame))))))
    env))
 
+;;; Extract the local-pc from a qualified address or bare integer.
+(define (entry-local-pc addr)
+  (if (pair? addr) (cdr addr) addr))
+
+;;; Extract the space-id from a qualified address or bare integer.
+(define (entry-space-id addr)
+  (if (pair? addr) (car addr) 0))
+
 ;;; Return sorted list of block boundary PCs from the procedure-name table.
+;;; Keys are now qualified addresses (space-id . local-pc); extract local-pc.
 (define (collect-block-boundaries)
   (sort-numbers
-   (map car (%procedure-name-entries))))
+   (map (lambda (entry) (entry-local-pc (car entry)))
+        (%procedure-name-entries))))
 
 ;;; Collect entry PCs reachable from roots: global env and macro table.
 ;;; Returns an %eq-hash-table (pc -> t).
@@ -292,14 +303,21 @@
                 '())))
         (%label-table-entries))))
 
-;;; Remap procedure-name table: produce new alist with remapped PCs.
+;;; Remap procedure-name table: produce new alist with remapped addresses.
+;;; Keys may be bare integers (space 0) or qualified (space-id . local-pc).
+;;; Preserves the key format: bare stays bare, qualified stays qualified.
 (define (remap-procedure-name-table remap)
   (filter
    (lambda (entry) (pair? entry))
    (map (lambda (entry)
-          (let ((new-pc (%eq-hash-ref remap (car entry))))
+          (let* ((old-key (car entry))
+                 (old-local-pc (entry-local-pc old-key))
+                 (new-pc (%eq-hash-ref remap old-local-pc)))
             (if new-pc
-                (cons new-pc (cdr entry))
+                (cons (if (pair? old-key)
+                          (cons (car old-key) new-pc)
+                          new-pc)
+                      (cdr entry))
                 '())))
         (%procedure-name-entries))))
 
@@ -322,11 +340,16 @@
    ((null? value) '())
    ((%eq-hash-has-key? visited value)
     (%eq-hash-ref visited value))
-   ;; compiled-procedure
+   ;; compiled-procedure: entry is (space-id . local-pc)
    ((eq? (car value) 'compiled-procedure)
-    (let* ((old-pc (car (cdr value)))
-           (new-pc (%eq-hash-ref remap old-pc))
-           (copy (list 'compiled-procedure (if new-pc new-pc old-pc) '())))
+    (let* ((old-entry (car (cdr value)))
+           (sid (entry-space-id old-entry))
+           (old-local-pc (entry-local-pc old-entry))
+           (new-local-pc (%eq-hash-ref remap old-local-pc))
+           (new-entry (if new-local-pc
+                          (cons sid new-local-pc)
+                          old-entry))
+           (copy (list 'compiled-procedure new-entry '())))
       (%eq-hash-set! visited value copy)
       ;; Deep-copy the environment (third element)
       (set-car! (cdr (cdr copy))
@@ -339,13 +362,22 @@
       ;; Deep-copy the stack (second element)
       (set-car! (cdr copy)
                 (deep-copy-and-remap (car (cdr value)) remap visited))
-      ;; Remap continue-pc (third element)
-      (let ((old-cont-pc (car (cdr (cdr value)))))
+      ;; Remap continue-pc (third element) — may be bare integer or qualified address
+      (let ((old-cont (car (cdr (cdr value)))))
         (set-car! (cdr (cdr copy))
-                  (if (number? old-cont-pc)
-                      (let ((new-pc (%eq-hash-ref remap old-cont-pc)))
-                        (if new-pc new-pc old-cont-pc))
-                      (deep-copy-and-remap old-cont-pc remap visited))))
+                  (cond
+                   ;; Qualified address (space-id . local-pc)
+                   ((pair? old-cont)
+                    (let* ((sid (entry-space-id old-cont))
+                           (old-local-pc (entry-local-pc old-cont))
+                           (new-pc (%eq-hash-ref remap old-local-pc)))
+                      (if new-pc (cons sid new-pc) old-cont)))
+                   ;; Bare integer (backward compat)
+                   ((number? old-cont)
+                    (let ((new-pc (%eq-hash-ref remap old-cont)))
+                      (if new-pc new-pc old-cont)))
+                   ;; Other (shouldn't happen, but safe)
+                   (else (deep-copy-and-remap old-cont remap visited)))))
       copy))
    ;; primitive — immutable, no PCs
    ((eq? (car value) 'primitive) value)
@@ -419,15 +451,37 @@
                 (deep-copy-and-remap-macros remap)
                 (remap-procedure-name-table remap))))))
 
+;;; Collect non-zero spaces for serialization.
+;;; Returns a list of (name source-instr-list label-alist) for each space > 0.
+(define (collect-non-zero-spaces)
+  (define count (%space-count))
+  (define (collect-space sid)
+    (when (< sid count)
+      (let ((name (%space-name sid))
+            (len (%space-instruction-length sid)))
+        (define (collect-instrs i acc)
+          (if (< i 0)
+              acc
+              (collect-instrs (- i 1) (cons (%space-source-ref sid i) acc))))
+        (cons (list name
+                    (collect-instrs (- len 1) '())
+                    (%space-label-entries sid))
+              (collect-space (+ sid 1))))))
+  (if (> count 1)
+      (collect-space 1)
+      '()))
+
 ;;; Save the ECE image to a file.
-;;; Compacts the instruction vector then serializes via CL primitive.
+;;; Compacts space 0, serializes all spaces via CL primitive.
 (define (save-image! filename)
-  (let ((c (compact-for-save)))
+  (let ((c (compact-for-save))
+        (spaces (collect-non-zero-spaces)))
     (%write-image filename
-                  (list (list-ref c 0)   ;; source instructions
-                        (list-ref c 1)   ;; label table
+                  (list (list-ref c 0)   ;; source instructions (space 0)
+                        (list-ref c 1)   ;; label table (space 0)
                         (list-ref c 2)   ;; environment
                         (list-ref c 3)   ;; macro table
                         (list-ref c 4)   ;; procedure names
                         (%parameter-table-entries)
-                        (%parameter-counter)))))
+                        (%parameter-counter)
+                        (if (null? spaces) #f spaces)))))
