@@ -91,11 +91,11 @@
     "(define cu-from-file 123)\n(define cu-from-file-2 (* cu-from-file 2))\n")
   ;; Compile it
   (let ((output (compile-file "/tmp/ece-cu-src.scm")))
-    (assert-equal output "/tmp/ece-cu-src.scm.ecec"))))
+    (assert-equal output "/tmp/ece-cu-src.ecec"))))
 
 (test "load-compiled executes compiled file" (lambda ()
   ;; Source file already compiled from previous test
-  (load-compiled "/tmp/ece-cu-src.scm.ecec")
+  (load-compiled "/tmp/ece-cu-src.ecec")
   (assert-equal cu-from-file 123)
   (assert-equal cu-from-file-2 246)))
 
@@ -105,7 +105,7 @@
     "(define-macro (cu-test-swap a b) (list b a))\n(define cu-swap-result (cu-test-swap 10 -))\n")
   ;; Compile and load
   (compile-file "/tmp/ece-cu-macro.scm")
-  (load-compiled "/tmp/ece-cu-macro.scm.ecec")
+  (load-compiled "/tmp/ece-cu-macro.ecec")
   (assert-equal cu-swap-result -10)))
 
 ;; --- 5.5 equivalence with load ---
@@ -116,7 +116,7 @@
     "(define cu-equiv-a 100)\n(define cu-equiv-b (+ cu-equiv-a 50))\n")
   ;; Compile and load
   (compile-file "/tmp/ece-cu-equiv.scm")
-  (load-compiled "/tmp/ece-cu-equiv.scm.ecec")
+  (load-compiled "/tmp/ece-cu-equiv.ecec")
   ;; Check same as what load would produce
   (assert-equal cu-equiv-a 100)
   (assert-equal cu-equiv-b 150)))

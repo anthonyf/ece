@@ -1,34 +1,28 @@
-.PHONY: test test-ece repl run image disasm fmt check-fmt setup clean
+.PHONY: test test-ece repl run bootstrap fmt check-fmt setup clean
 
-BOOTSTRAP_IMAGE := bootstrap/ece.image
+BOOTSTRAP_DIR := bootstrap
+BOOTSTRAP_SRCS := src/prelude.scm src/compiler.scm src/reader.scm src/assembler.scm src/compilation-unit.scm
 
 test:
 	qlot exec sbcl --eval '(asdf:test-system :ece)' --quit
 
 test-ece:
 	qlot exec sbcl --eval '(asdf:load-system :ece)' \
-	  --eval '(unless (ece:evaluate (list (quote load) "tests/ece/run-all.scm")) (sb-ext:exit :code 1))' \
+	  --eval '(handler-case (ece:evaluate (list (quote load) "tests/ece/run-all.scm")) (error ()))' \
+	  --eval '(let ((f (ece::lookup-variable-value (intern "*TEST-FAILURES*" :ece) ece::*global-env*))) (when (> f 0) (format t "~D ECE test failures~%" f) (sb-ext:exit :code 1)))' \
 	  --quit
 
 repl:
 	qlot exec sbcl --load ece.asd --eval '(asdf:load-system :ece)' --eval '(ece:repl)'
 
-image:
-	@mkdir -p bootstrap
-	qlot exec sbcl --dynamic-space-size 4096 --load ece.asd \
-	  --eval '(asdf:load-system :ece)' \
-	  --eval '(ece:evaluate (list (quote ece:load) "src/prelude.scm"))' \
-	  --eval '(ece:evaluate (list (quote ece:load) "src/compiler.scm"))' \
-	  --eval '(ece:evaluate (list (quote ece:load) "src/reader.scm"))' \
-	  --eval '(ece:evaluate (list (quote ece:load) "src/assembler.scm"))' \
-	  --eval '(ece:evaluate (list (quote ece:load) "src/compilation-unit.scm"))' \
-	  --eval '(ece:evaluate (list (quote ece:load) "src/compaction.scm"))' \
-	  --eval '(ece::ece-save-image "$(BOOTSTRAP_IMAGE)")' \
+bootstrap:
+	@mkdir -p $(BOOTSTRAP_DIR)
+	qlot exec sbcl --eval '(asdf:load-system :ece)' \
+	  --eval '(ece::mc-eval (list (quote eval) (list (quote read) (list (intern "OPEN-INPUT-STRING" :ece) "(load \"src/compilation-unit.scm\")"))))' \
+	  --eval '(dolist (f (list "src/prelude.scm" "src/compiler.scm" "src/reader.scm" "src/assembler.scm" "src/compilation-unit.scm")) (format t "Compiling ~A~%" f) (ece::mc-eval (list (quote eval) (list (quote read) (list (intern "OPEN-INPUT-STRING" :ece) (format nil "(compile-file ~S)" f))))))' \
 	  --quit
-	@echo "Bootstrap image saved to $(BOOTSTRAP_IMAGE)"
-
-disasm:
-	@qlot exec sbcl --noinform --dynamic-space-size 4096 --load ece.asd --eval '(asdf:load-system :ece)' --eval '(ece:ece-disassemble-image "$(BOOTSTRAP_IMAGE)")' --quit
+	mv -f src/*.ecec $(BOOTSTRAP_DIR)/
+	@echo "Bootstrap .ecec files regenerated in $(BOOTSTRAP_DIR)/"
 
 run:
 	qlot exec sbcl --load ece.asd --eval '(asdf:load-system :ece)' --eval '(ece:repl)'

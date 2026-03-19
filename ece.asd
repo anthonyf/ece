@@ -11,7 +11,8 @@
     :serial t
     :components ((:module "src"
                           :components
-                          ((:file "runtime"))))
+                          ((:file "runtime")
+                           (:file "codegen-cl" :depends-on ("runtime")))))
     :in-order-to ((test-op (test-op "ece/tests"))))
 
 (defsystem "ece/tests"

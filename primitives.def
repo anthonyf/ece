@@ -161,21 +161,9 @@
 (102 with-input-from-file  2 cl    "Scoped input redirection from file")
 (103 with-output-to-file   2 cl    "Scoped output redirection to file")
 
-;;; --- Continuation persistence ---
-(104 save-continuation!  2  cl     "Save continuation to file")
-(105 load-continuation   1  cl     "Load continuation from file")
-
 ;;; --- Debugging ---
 (106 trace               1  cl     "Enable tracing for procedure")
 (107 untrace             1  cl     "Disable tracing for procedure")
-
-;;; --- Image support ---
-(108 %write-image        2  cl     "Write image data to file")
-
-;;; --- Compaction / introspection support ---
-(109 %instruction-source-ref     1 cl "Read source instruction at index")
-(110 %instruction-source-length  0 cl "Length of source instruction vector")
-(111 %procedure-name-entries     0 cl "All procedure name table entries")
 (112 %label-table-entries        0 cl "All label table entries")
 (113 %macro-table-entries        0 cl "All macro table entries")
 (114 %parameter-table-entries    0 cl "All parameter table entries")
@@ -191,6 +179,21 @@
 (122 %hash-frame-entries  1  cl     "All entries in hash-table frame")
 (123 %make-hash-frame     0  cl     "Create empty hash-table frame")
 (124 %hash-frame-set!     3  cl     "Set key in hash-table frame")
+
+;;; --- Compilation spaces ---
+(125 %create-space             1  cl     "Create a new compilation space")
+(126 %space-instruction-length 1  cl     "Instruction count for a space")
+(127 %space-name               1  cl     "Name of a space")
+(128 %current-space-id         0  cl     "Current assembler target space ID")
+(129 %set-current-space-id!    1  cl     "Set current assembler target space ID")
+(130 %space-instruction-push!  2  cl     "Append instruction to a space")
+(131 %space-label-set!         3  cl     "Register label in a space")
+(132 %space-label-ref          2  cl     "Look up label in a space")
+(133 %space-count              0  cl     "Number of spaces in registry")
+(134 %space-source-ref         2  cl     "Get source instruction at index in a space")
+(135 %space-label-entries      1  cl     "Label table of a space as alist")
+(136 write-to-string-flat      1  cl     "Serialize to string without shared-structure markers")
+(137 keyword?                  1  core   "Test if value is a keyword symbol")
 
 ;;; ═══════════════════════════════════════════════════════════════════════
 ;;; BROWSER PLATFORM PRIMITIVES (200-299) — Reserved for future use

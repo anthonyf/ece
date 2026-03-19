@@ -113,6 +113,7 @@
       (null? expr)
       (eq? expr #t)
       (eq? expr #f)
+      (keyword? expr)
       (and (pair? expr) (eq? (car expr) :hash-table))))
 
 (define (mc-variable? expr)
