@@ -194,6 +194,9 @@
 (135 %space-label-entries      1  cl     "Label table of a space as alist")
 (136 write-to-string-flat      1  cl     "Serialize to string without shared-structure markers")
 (137 keyword?                  1  core   "Test if value is a keyword symbol")
+(138 %primitive-name            1  cl     "Get name symbol for primitive ID")
+(139 %primitive-id              1  cl     "Get numeric ID for primitive name")
+(140 %global-env-frame          0  cl     "First frame of *global-env* for identity check")
 
 ;;; ═══════════════════════════════════════════════════════════════════════
 ;;; BROWSER PLATFORM PRIMITIVES (200-299) — Reserved for future use

@@ -30,4 +30,7 @@
 ;; Compilation units
 (load "tests/ece/test-compilation-units.scm")
 
+;; Value serialization
+(load "tests/ece/test-serialization.scm")
+
 (run-tests)
