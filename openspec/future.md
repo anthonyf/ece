@@ -2,30 +2,31 @@
 
 Architectural items to revisit. Not blocking anything currently.
 
-## Instruction vector grows unboundedly on redefine
+## Per-space instruction vectors grow unboundedly on redefine
 
 **Status:** Documented, deferred.
 
-`*global-instruction-vector*` is append-only (SICP 5.5 design). Each `(define (f ...) ...)` appends new instructions. Redefining `f` appends a second copy — the old instructions become unreachable dead code but remain in the vector.
+Each compilation space has an append-only instruction vector. Each `(define (f ...) ...)` appends new instructions. Redefining `f` appends a second copy — the old instructions become unreachable dead code but remain in the vector.
 
-**Impact:** During long REPL sessions with many redefines, the vector grows. Each function is ~20-50 instructions, so thousands of redefines before it matters. Image save/load does NOT compact — `*global-instruction-source*` is also append-only.
+**Impact:** During long REPL sessions with many redefines, the bootstrap space's vector grows. Each function is ~20-50 instructions, so thousands of redefines before it matters. Per-file spaces (from `load`) are scoped and don't accumulate across sessions.
 
-**Where PCs live (why compaction is hard):**
-- `*global-label-table*` — label symbols to integer PCs (easy to update)
-- `*procedure-name-table*` — integer PCs to name symbols (easy to update)
-- Compiled procedure values `(compiled-procedure <entry-pc> <env>)` — scattered throughout the environment and captured in closures (hard to find all)
-- Saved `continue` register values on the stack — integers (hard to find)
-- Captured continuations from `call/cc` — contain stack copies with embedded PCs and compiled-procedure values (very hard to update, may be serialized to disk)
+**Why compaction is hard:**
+- Compiled procedure values `(compiled-procedure (space . entry-pc) env)` are scattered throughout the environment and captured in closures
+- Saved `continue` register values on the stack contain space-qualified addresses
+- Captured continuations from `call/cc` contain stack copies with embedded addresses and compiled-procedure values
 
-**Key insight:** Instructions store labels as symbols, resolved at runtime via `*global-label-table*`. The hard part is not the instructions themselves but the *escaped integer PCs* in compiled-procedure values, stack frames, and continuations.
+**Decision:** Accept the growth for now. Not a practical problem during normal development. Per-file spaces from `.ecec` boot keep each module's instructions separate and bounded.
 
-**Approaches explored:**
+## REPL error recovery after .ecec boot
 
-| Approach | Pros | Cons |
-|----------|------|------|
-| Full compaction (GC-style) | Recovers all space | Must rewrite every escaped PC; breaks saved continuations |
-| In-place rewrite (overwrite old slot) | No PC rewriting if new code fits | Larger redefines still append; need range tracking |
-| Compact on save only | No runtime complexity | Saved images still clean; breaks serialized continuations |
-| Symbolic entry PCs in compiled-procedure | Redefine just updates label table | Changes closure semantics (old closures see new code) |
+**Status:** Known issue.
 
-**Decision:** Accept the growth for now. Not a practical problem during normal development. Revisit if long-running sessions or large-scale code loading makes it noticeable.
+After .ecec boot, error recovery in the REPL can leave stale labels in the bootstrap space. If an expression causes an error during compilation/assembly, the next expression may fail with "Unknown label" because partially-assembled labels pollute the label table.
+
+**Workaround:** Single expressions work fine. The issue only manifests when an error occurs mid-compilation and the REPL tries to compile the next expression.
+
+## Continuation serialization
+
+**Status:** Removed, needs reimplementation.
+
+The old `save-continuation!` / `load-continuation` primitives depended on the flat-image serializer which was removed with the image machinery. Continuation serialization needs a new implementation that works with the per-space architecture (continuations capture space-qualified addresses).
