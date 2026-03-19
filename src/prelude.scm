@@ -1013,6 +1013,10 @@ shared structure, and global env sentinel."
                                    (string-append " (" (ser (car kv)) " " (ser (cdr kv)) ")"))
                                  entries))
                      ")"))
+     ;; Parameter
+     ((and (pair? obj) (eq? (car obj) 'parameter))
+      (define cell (cadr obj))
+      (string-append "(%ser/parameter " (ser (car cell)) " " (ser (cdr cell)) ")"))
      ;; Compiled procedure
      ((and (pair? obj) (eq? (car obj) 'compiled-procedure))
       (define entry (cadr obj))
@@ -1111,6 +1115,11 @@ Reconstructs tagged types and resolves #:def/#:ref references."
         (for-each (lambda (kv) (hash-set! ht (deser (car kv)) (deser (cadr kv))))
                   entries)
         ht)
+       ;; Parameter
+       ((string=? tag "%ser/parameter")
+        (define val (deser (cadr form)))
+        (define converter (deser (caddr form)))
+        (list 'parameter (cons val converter)))
        ;; Compiled procedure
        ((string=? tag "%ser/compiled-procedure")
         (define entry (cadr form))
@@ -1165,4 +1174,3 @@ Reconstructs tagged types and resolves #:def/#:ref references."
   (define form (ece-scheme-read port))
   (close-input-port port)
   (deserialize-value form))
-

@@ -1049,8 +1049,7 @@ Binds *package* to :ece so symbols print without package prefixes."
     (%procedure-name-set! . ece-%procedure-name-set!)
     (%label-table-entries . ece-%label-table-entries)
     (%macro-table-entries . ece-%macro-table-entries)
-    (%parameter-table-entries . ece-%parameter-table-entries)
-    (%parameter-counter . ece-%parameter-counter)
+    (parameter? . ece-parameter-p)
     (%eq-hash-table . ece-%eq-hash-table)
     (%eq-hash-ref . ece-%eq-hash-ref)
     (%eq-hash-set! . ece-%eq-hash-set!)
@@ -1085,7 +1084,7 @@ Binds *package* to :ece so symbols print without package prefixes."
     (execute-from-pc . ece-execute-from-pc)
     (get-macro . ece-get-macro)
     (set-macro! . ece-set-macro!)
-    (make-parameter . ece-make-parameter)
+    (make-parameter . ece-make-parameter-value)
     (apply-compiled-procedure . ece-apply-compiled-procedure)))
 
 ;;; Wrapper primitives are now registered via the manifest-based dispatch table.
@@ -1134,6 +1133,55 @@ Used by the serializer to detect the global environment sentinel."
 ;;;; INSTRUCTION EXECUTOR (SICP 5.5)
 ;;;; ========================================================================
 
+;;; Parameter representation — (parameter (<value> . <converter-or-nil>))
+;;; The inner cons cell is mutable: set-car! updates the value.
+
+(defun apply-ece-procedure (proc args)
+  "Apply an ECE procedure (primitive or compiled) to ARGS."
+  (cond
+    ((primitive-procedure-p proc) (apply-primitive-procedure proc args))
+    ((compiled-procedure-p proc) (execute-compiled-call proc args))
+    (t (error "Not a procedure: ~S" proc))))
+
+(defun ece-make-parameter-value (init &optional converter)
+  "Create a parameter object: (parameter (<value> . <converter>)).
+If CONVERTER is provided, applies it to INIT."
+  (let ((converted (if (and converter (not (null converter))
+                            (not (scheme-false-p converter)))
+                       (apply-ece-procedure converter (list init))
+                       init)))
+    (list 'parameter (cons converted converter))))
+
+(defun parameter-ref (param)
+  "Read the current value of a parameter."
+  (car (cadr param)))
+
+(defun parameter-set! (param new-val)
+  "Set a parameter's value, applying converter if present. Returns old value."
+  (let* ((cell (cadr param))
+         (old (car cell))
+         (converter (cdr cell)))
+    (setf (car cell)
+          (if (and converter (not (null converter))
+                   (not (scheme-false-p converter)))
+              (apply-ece-procedure converter (list new-val))
+              new-val))
+    old))
+
+(defun parameter-raw-set! (param new-val)
+  "Set a parameter's value without applying converter. Returns old value."
+  (let* ((cell (cadr param))
+         (old (car cell)))
+    (setf (car cell) new-val)
+    old))
+
+(defun apply-parameter (param argl)
+  "Apply a parameter object: 0 args = get, 1 arg = set with converter, 2 args = raw set."
+  (cond
+    ((null argl) (parameter-ref param))
+    ((null (cdr argl)) (parameter-set! param (car argl)))
+    (t (parameter-raw-set! param (car argl)))))
+
 ;;; Compiled procedure representation
 
 (defun make-compiled-procedure (entry env)
@@ -1181,30 +1229,43 @@ for backward compat with old images."
 (defun primitive-procedure-p (proc)
   (and (listp proc) (eq (car proc) 'primitive)))
 
+(defun parameter-p (proc)
+  "Test if PROC is a parameter object: (parameter (<value> . <converter>))"
+  (and (listp proc) (eq (car proc) 'parameter)))
+
+(defun ece-parameter-p (x)
+  "ECE-accessible: test if X is a parameter."
+  (scheme-bool (parameter-p x)))
+
 ;;; Error sentinel — returned by apply-primitive-procedure when CL signals
 ;;; a type-error or division-by-zero, so the executor can bridge to ECE's raise.
 (defstruct ece-error-sentinel message irritants)
 
 (defun apply-primitive-procedure (proc argl)
+  ;; Safety check: if a parameter object reaches here (compiled code without
+  ;; parameter? branch), handle it directly.
+  (when (parameter-p proc)
+    (return-from apply-primitive-procedure (apply-parameter proc argl)))
   (let ((id-or-name (cadr proc)))
     (if (symbolp id-or-name)
-        ;; Dynamic primitive (parameter object) — dispatch via parameter table
+        ;; Symbol-based dispatch: legacy parameters via *parameter-table*,
+        ;; or trace wrappers via symbol-function.
         (let ((param-cell (gethash id-or-name *parameter-table*)))
           (if param-cell
               (cond
                 ((null argl) (car param-cell))
                 ((null (cdr argl))
-                 (let ((old (car param-cell)))
+                 (let* ((old (car param-cell))
+                        (converter (cdr param-cell)))
                    (setf (car param-cell)
-                         (if (cdr param-cell)
-                             (apply-primitive-procedure (cdr param-cell) argl)
+                         (if (and converter (not (null converter))
+                                  (not (scheme-false-p converter)))
+                             (apply-ece-procedure converter argl)
                              (car argl)))
                    old))
-                (t ;; 2 args: raw set (bypass converter)
-                 (let ((old (car param-cell)))
-                   (setf (car param-cell) (car argl))
-                   old)))
-              ;; Fallback for legacy symbol-based primitives (e.g. trace wrappers)
+                (t (let ((old (car param-cell)))
+                     (setf (car param-cell) (car argl))
+                     old)))
               (handler-case
                   (apply (symbol-function id-or-name) argl)
                 (division-by-zero ()
@@ -1262,6 +1323,11 @@ for backward compat with old images."
     (compiled-procedure-env #'compiled-procedure-env)
     (primitive-procedure? #'primitive-procedure-p)
     (continuation? #'continuation-p)
+    (parameter? #'parameter-p)
+    (parameter-ref #'parameter-ref)
+    (parameter-set! #'parameter-set!)
+    (parameter-raw-set! #'parameter-raw-set!)
+    (apply-parameter #'apply-parameter)
     (apply-primitive-procedure #'apply-primitive-procedure)
     (capture-continuation #'capture-continuation)
     (continuation-stack #'continuation-stack)
@@ -1682,17 +1748,6 @@ Delegates to assemble-into-space with the bootstrap space."
              *compile-time-macros*)
     entries))
 
-(defun ece-%parameter-table-entries ()
-  "Return an alist of (name . cell) from the parameter table."
-  (let ((entries nil))
-    (maphash (lambda (name cell) (push (cons name cell) entries))
-             *parameter-table*)
-    entries))
-
-(defun ece-%parameter-counter ()
-  "Return the current parameter counter value."
-  *parameter-counter*)
-
 (defun ece-%eq-hash-table ()
   "Create an empty hash table with eq test (identity-based keys).
 Returns a raw CL hash table — use %eq-hash-ref/set!/has-key? to access."
@@ -1815,19 +1870,19 @@ for use as an ECE primitive."
   def)
 
 ;;; Parameter objects (R7RS / SRFI-39)
-
-(defvar *parameter-table* (make-hash-table :test 'eq)
-  "Maps parameter name symbols (PARAM1, PARAM2, ...) to (value . converter) cells.")
+;;; New-style: (parameter (<value> . <converter>)) in the ECE environment.
+;;; Legacy: (primitive PARAMN) via *parameter-table* — kept for bootstrap
+;;; transition from old .ecec files. The wrapper-primitives maps make-parameter
+;;; to the legacy version during first bootstrap. After rebuild with new
+;;; compiler (which has parameter? dispatch), switch to new version.
+(defvar *parameter-table* (make-hash-table :test 'eq))
 (defvar *parameter-counter* 0)
 
-(defun ece-make-parameter (init &optional converter)
-  "Create a parameter object. Returns a (primitive <name>) that dispatches
-through *parameter-table*: 0 args = get, 1 arg = set (with converter),
-2 args = raw set (bypass converter, used by parameterize restore).
-State is stored in *parameter-table* so parameters survive image round-trips."
-  (let* ((converted-init (if converter
-                             (apply-primitive-procedure
-                              converter (list init))
+(defun ece-make-parameter-legacy (init &optional converter)
+  "Legacy make-parameter: creates (primitive PARAMN) with *parameter-table* dispatch."
+  (let* ((converted-init (if (and converter (not (null converter))
+                                  (not (scheme-false-p converter)))
+                             (apply-ece-procedure converter (list init))
                              init))
          (name (intern (format nil "PARAM~D" (incf *parameter-counter*)) :ece)))
     (setf (gethash name *parameter-table*) (cons converted-init converter))
