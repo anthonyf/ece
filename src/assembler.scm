@@ -16,16 +16,12 @@
       ((and (pair? item) (eq? (car item) 'procedure-name))
        (let ((pc (%space-label-ref sid (cadr item))))
          (when pc
-           (if (= sid 0)
-               (%procedure-name-set! pc (caddr item))
-               (%procedure-name-set! (cons sid pc) (caddr item))))))
+           (%procedure-name-set! (cons sid pc) (caddr item)))))
       ;; Regular instruction — push to space's arrays
       (else
        (%space-instruction-push! sid item))))
    instruction-list)
-  (if (= sid 0)
-      start-pc
-      (cons sid start-pc)))
+  (cons sid start-pc))
 
 ;; Redefine load to use the ECE reader + ECE compiler pipeline.
 ;; Creates a new compilation space per file and compiles all forms into it.
