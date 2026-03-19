@@ -1072,6 +1072,9 @@ Binds *package* to :ece so symbols print without package prefixes."
     (%space-count . ece-%space-count)
     (%space-source-ref . ece-%space-source-ref)
     (%space-label-entries . ece-%space-label-entries)
+    (%primitive-name . ece-%primitive-name)
+    (%primitive-id . ece-%primitive-id)
+    (%global-env-frame . ece-%global-env-frame)
     (set-car! . rplaca)
     (set-cdr! . rplacd)
     (extend-environment . extend-environment)
@@ -1108,6 +1111,21 @@ Returns ECE #t if the primitive exists and has a non-stub implementation, #f oth
                    (push name result))))
              *primitive-available-ids*)
     result))
+
+(defun ece-%primitive-name (id)
+  "Return the symbol name of the primitive with numeric ID, or #f."
+  (if (and (integerp id) (< id (length *primitive-name-table*)))
+      (or (aref *primitive-name-table* id) *scheme-false*)
+      *scheme-false*))
+
+(defun ece-%primitive-id (name)
+  "Return the numeric ID for the named primitive, or #f."
+  (or (gethash name *primitive-name-to-id*) *scheme-false*))
+
+(defun ece-%global-env-frame ()
+  "Return the first frame of *global-env* for identity comparison.
+Used by the serializer to detect the global environment sentinel."
+  (car *global-env*))
 
 ;;; Dispatch table initialization and *global-env* are deferred to end of file,
 ;;; after all wrapper functions are defined (see BOOT section).

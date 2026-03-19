@@ -914,3 +914,255 @@
       `(if (not ,expr) (error "Assertion failed") ())
       `(if (not ,expr) (error ,(car rest)) ())))
 
+;; ---- Value Serialization ----
+;; Serialize/deserialize any ECE value to/from s-expression strings.
+;; Handles shared structure via %ser/def/%ser/ref tags.
+
+(define (serialize-value value)
+  "Serialize VALUE to an s-expression string. Handles all ECE types,
+shared structure, and global env sentinel."
+  ;; Pass 1: count object occurrences by identity for shared-structure detection.
+  ;; Uses an eq hash table mapping objects to visit counts.
+  (define seen (%eq-hash-table))
+  (define global-frame (%global-env-frame))
+
+  (define (scan obj)
+    (cond
+     ;; Skip atoms (numbers, strings, chars, booleans, symbols, nil)
+     ((or (number? obj) (string? obj) (char? obj)
+          (eq? obj #t) (eq? obj #f) (null? obj) (symbol? obj))
+      '())
+     ;; Compound: check if already visited
+     (else
+      (define count (%eq-hash-ref seen obj))
+      (if count
+          (%eq-hash-set! seen obj (+ count 1))
+          (begin
+            (%eq-hash-set! seen obj 1)
+            (cond
+             ;; Global env frame — don't scan into it
+             ((eq? obj global-frame) '())
+             ;; Hash frame — don't scan CL hash table internals
+             ((%hash-frame? obj) '())
+             ;; Vector
+             ((vector? obj)
+              (define len (vector-length obj))
+              (define (scan-vec i)
+                (when (< i len) (scan (vector-ref obj i)) (scan-vec (+ i 1))))
+              (scan-vec 0))
+             ;; Pair/list
+             ((pair? obj) (scan (car obj)) (scan (cdr obj)))
+             ;; Other compound (compiled-procedure, continuation, etc.)
+             ;; These are list-tagged, so the pair? branch handles them
+             (else '())))))))
+
+  (scan value)
+
+  ;; Pass 2: serialize with #:def/#:ref for shared objects.
+  (define next-id 0)
+  (define refs (%eq-hash-table))  ;; obj -> assigned ref ID (only for shared)
+
+  (define (ser obj)
+    (cond
+     ;; nil
+     ((null? obj) "()")
+     ;; booleans
+     ((eq? obj #t) "#t")
+     ((eq? obj #f) "#f")
+     ;; numbers
+     ((number? obj) (write-to-string-flat obj))
+     ;; characters
+     ((char? obj) (write-to-string-flat obj))
+     ;; strings — use write-to-string-flat for proper escaping
+     ((string? obj) (write-to-string-flat obj))
+     ;; symbols — print directly, reader will re-intern
+     ((symbol? obj) (write-to-string-flat obj))
+     ;; compound: check for shared structure
+     (else
+      (define existing-ref (%eq-hash-ref refs obj))
+      (if existing-ref
+          ;; Already emitted — back-reference
+          (string-append "(%ser/ref " (write-to-string-flat existing-ref) ")")
+          ;; First visit of compound object
+          (begin
+            (define count (%eq-hash-ref seen obj))
+            (define id (if (and count (> count 1))
+                           (begin
+                             (define this-id next-id)
+                             (set next-id (+ next-id 1))
+                             (%eq-hash-set! refs obj this-id)
+                             this-id)
+                           #f))
+            (define serialized (ser-compound obj))
+            (if id
+                (string-append "(%ser/def " (write-to-string-flat id) " " serialized ")")
+                serialized))))))
+
+  (define (ser-compound obj)
+    (cond
+     ;; Global env frame sentinel
+     ((eq? obj global-frame) "(%ser/global-env)")
+     ;; Hash frame sentinel — shouldn't normally be serialized directly
+     ((%hash-frame? obj) "(%ser/hash-frame)")
+     ;; Hash table (:hash-table count . root)
+     ((and (pair? obj) (eq? (car obj) :hash-table))
+      (define entries (map (lambda (k) (cons k (hash-ref obj k))) (hash-keys obj)))
+      (string-append "(%ser/hash-table"
+                     (apply string-append
+                            (map (lambda (kv)
+                                   (string-append " (" (ser (car kv)) " " (ser (cdr kv)) ")"))
+                                 entries))
+                     ")"))
+     ;; Compiled procedure
+     ((and (pair? obj) (eq? (car obj) 'compiled-procedure))
+      (define entry (cadr obj))
+      (define env (caddr obj))
+      (string-append "(%ser/compiled-procedure" (ser-entry entry) " " (ser env) ")"))
+     ;; Continuation
+     ((and (pair? obj) (eq? (car obj) 'continuation))
+      (define stack (cadr obj))
+      (define cont (caddr obj))
+      (string-append "(%ser/continuation" (ser stack) " " (ser-entry cont) ")"))
+     ;; Primitive
+     ((and (pair? obj) (eq? (car obj) 'primitive))
+      (define id-or-name (cadr obj))
+      (define name (if (number? id-or-name)
+                       (%primitive-name id-or-name)
+                       id-or-name))
+      (string-append "(%ser/primitive" (write-to-string-flat name) ")"))
+     ;; Vector
+     ((vector? obj)
+      (define len (vector-length obj))
+      (define (vec-items i)
+        (if (>= i len) ""
+            (string-append " " (ser (vector-ref obj i)) (vec-items (+ i 1)))))
+      (string-append "(%ser/vector" (vec-items 0) ")"))
+     ;; Regular pair/list
+     ((pair? obj) (ser-pair obj))
+     ;; Fallback
+     (else (write-to-string-flat obj))))
+
+  (define (ser-entry entry)
+    "Serialize a space-qualified entry address or bare integer."
+    (if (pair? entry)
+        (string-append "(" (write-to-string-flat (car entry))
+                       " . " (write-to-string-flat (cdr entry)) ")")
+        (write-to-string-flat entry)))
+
+  (define (ser-pair obj)
+    "Serialize a pair, detecting proper lists for compact output."
+    (define (proper-list? x)
+      (cond ((null? x) #t)
+            ((not (pair? x)) #f)
+            ;; If tail is shared, stop — don't follow into shared structure
+            ((and (%eq-hash-ref seen (cdr x))
+                  (> (%eq-hash-ref seen (cdr x)) 1)
+                  (%eq-hash-ref refs (cdr x)))
+             #f)
+            (else (proper-list? (cdr x)))))
+    (if (proper-list? obj)
+        ;; Proper list
+        (string-append "("
+                       (let loop ((xs obj) (first #t))
+                         (if (null? xs) ")"
+                             (string-append (if first "" " ")
+                                            (ser (car xs))
+                                            (loop (cdr xs) #f)))))
+        ;; Dotted pair
+        (string-append "(" (ser (car obj)) " . " (ser (cdr obj)) ")")))
+
+  ;; Run serialization
+  (ser value))
+
+(define (deserialize-value form)
+  "Deserialize a value from a parsed s-expression FORM (already read by ECE reader).
+Reconstructs tagged types and resolves #:def/#:ref references."
+  (define ref-table (%eq-hash-table))
+
+  (define (deser form)
+    (cond
+     ;; Atoms pass through
+     ((or (number? form) (string? form) (char? form)
+          (eq? form #t) (eq? form #f) (null? form) (symbol? form))
+      form)
+     ;; Tagged forms
+     ((and (pair? form) (symbol? (car form)))
+      (define tag (symbol->string (car form)))
+      (cond
+       ;; Back-reference
+       ((string=? tag "%ser/ref")
+        (%eq-hash-ref ref-table (cadr form)))
+       ;; Definition (shared structure)
+       ((string=? tag "%ser/def")
+        (define id (cadr form))
+        (define val (deser (caddr form)))
+        (%eq-hash-set! ref-table id val)
+        val)
+       ;; Global env sentinel
+       ((string=? tag "%ser/global-env")
+        (%global-env-frame))
+       ;; Hash frame sentinel
+       ((string=? tag "%ser/hash-frame")
+        (%global-env-frame))  ;; best approximation
+       ;; Hash table
+       ((string=? tag "%ser/hash-table")
+        (define entries (cdr form))
+        (define ht (hash-table))
+        (for-each (lambda (kv) (hash-set! ht (deser (car kv)) (deser (cadr kv))))
+                  entries)
+        ht)
+       ;; Compiled procedure
+       ((string=? tag "%ser/compiled-procedure")
+        (define entry (cadr form))
+        (define env (deser (caddr form)))
+        (list 'compiled-procedure entry env))
+       ;; Continuation
+       ((string=? tag "%ser/continuation")
+        (define stack (deser (cadr form)))
+        (define cont (caddr form))
+        (list 'continuation stack cont))
+       ;; Primitive by name
+       ((string=? tag "%ser/primitive")
+        (define name (cadr form))
+        (define id (%primitive-id name))
+        (if id
+            (list 'primitive id)
+            (list 'primitive name)))
+       ;; Vector
+       ((string=? tag "%ser/vector")
+        (list->vector (map deser (cdr form))))
+       ;; Regular list/pair — deser elements
+       (else (deser-pair form))))
+     ;; Non-tagged pair — deser elements
+     ((pair? form) (deser-pair form))
+     ;; Fallback
+     (else form)))
+
+  (define (deser-pair form)
+    (if (pair? form)
+        (cons (deser (car form)) (deser (cdr form)))
+        (deser form)))
+
+  (deser form))
+
+(define (save-continuation! filename value)
+  "Serialize VALUE to FILENAME. Returns #t."
+  (define port (open-output-file filename))
+  (define s (serialize-value value))
+  (define len (string-length s))
+  (define (write-loop i)
+    (when (< i len)
+      (write-char (string-ref s i) port)
+      (write-loop (+ i 1))))
+  (write-loop 0)
+  (write-char #\newline port)
+  (close-output-port port)
+  #t)
+
+(define (load-continuation filename)
+  "Deserialize a value from FILENAME. Returns the deserialized value."
+  (define port (open-input-file filename))
+  (define form (ece-scheme-read port))
+  (close-input-port port)
+  (deserialize-value form))
+
