@@ -85,23 +85,48 @@
   ;; Continuation with game state should stay under 1KB
   (assert (< size 1000) (string-append "continuation+state too large: " (number->string size) " bytes"))))
 
-(test "round-trip parameter" (lambda ()
+(test "round-trip parameter value" (lambda ()
   (define p (make-parameter 42))
   (p 99)
   (save-continuation! "/tmp/ece-rt-param.dat" p)
   (define loaded (load-continuation "/tmp/ece-rt-param.dat"))
-  (assert (parameter? loaded))
+  (assert (parameter? loaded) "loaded should be a parameter")
   (assert-equal (loaded) 99)))
 
-(test "parameter value in serialized continuation" (lambda ()
-  (define p (make-parameter "start"))
-  (p "dungeon")
-  (define k #f)
-  (%raw-call/cc (lambda (c) (set k c) 0))
-  (save-continuation! "/tmp/ece-rt-param-cont.dat" k)
-  (define loaded (load-continuation "/tmp/ece-rt-param-cont.dat"))
-  ;; The parameter should be captured in the continuation's env
-  ;; (it's in the global env which is sentinel'd, so this tests
-  ;; the parameter object itself, not the global binding)
-  (assert (pair? loaded))
-  (assert-equal (car loaded) 'continuation)))
+(test "round-trip parameter with converter" (lambda ()
+  (define p (make-parameter "hello" string-length))
+  (save-continuation! "/tmp/ece-rt-param-conv.dat" p)
+  (define loaded (load-continuation "/tmp/ece-rt-param-conv.dat"))
+  (assert (parameter? loaded) "loaded should be a parameter")
+  (assert-equal (loaded) 5)
+  ;; converter should also be preserved
+  (loaded "world")
+  (assert-equal (loaded) 5)))
+
+(test "parameter in lexical scope captured by continuation" (lambda ()
+  ;; Parameter in a let binding IS captured (unlike global define)
+  (define result
+    (let ((p (make-parameter "kitchen")))
+      (p "dungeon")
+      (define k #f)
+      (%raw-call/cc (lambda (c) (set k c) 0))
+      (save-continuation! "/tmp/ece-rt-param-lex.dat" k)
+      (define loaded (load-continuation "/tmp/ece-rt-param-lex.dat"))
+      ;; The continuation captured the env with p in lexical scope
+      (assert (pair? loaded))
+      (assert-equal (car loaded) 'continuation)
+      (p)))
+  (assert-equal result "dungeon")))
+
+(test "mutated parameter survives round-trip" (lambda ()
+  (define p (make-parameter 0))
+  (p 1)
+  (p 2)
+  (p 42)
+  (save-continuation! "/tmp/ece-rt-param-mut.dat" p)
+  (define loaded (load-continuation "/tmp/ece-rt-param-mut.dat"))
+  (assert-equal (loaded) 42)
+  ;; mutating loaded doesn't affect original
+  (loaded 999)
+  (assert-equal (loaded) 999)
+  (assert-equal (p) 42)))
