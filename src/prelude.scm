@@ -841,7 +841,7 @@
           `(let ((,old (,param)))
              (,param ,val)
              (let ((,result (parameterize ,rest ,@body)))
-               (,param ,old t)
+               (,param ,old #t)
                ,result))))))
 
 ;; ---- Error objects (R7RS) ----
@@ -975,8 +975,8 @@ shared structure, and global env sentinel."
      ((char? obj) (write-to-string-flat obj))
      ;; strings — use write-to-string-flat for proper escaping
      ((string? obj) (write-to-string-flat obj))
-     ;; symbols — print directly, reader will re-intern
-     ((symbol? obj) (write-to-string-flat obj))
+     ;; symbols — use symbol->string for case-preserving output
+     ((symbol? obj) (symbol->string obj))
      ;; compound: check for shared structure
      (else
       (define existing-ref (%eq-hash-ref refs obj))

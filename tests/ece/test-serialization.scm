@@ -14,7 +14,7 @@
   (assert-equal (serialize-value '()) "()")))
 
 (test "serialize symbol" (lambda ()
-  (assert-equal (serialize-value 'foo) "FOO")))
+  (assert-equal (serialize-value 'foo) "foo")))
 
 (test "round-trip plain values" (lambda ()
   (save-continuation! "/tmp/ece-rt-plain.dat" 42)

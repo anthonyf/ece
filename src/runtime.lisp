@@ -527,18 +527,22 @@ Dispatches on frame type: hash-table or list-based."
 (defparameter *primitive-available-ids*
   (make-hash-table :test 'eql))
 
+(defun ece-sym (cl-sym)
+  "Convert a CL symbol to its lowercase ECE equivalent."
+  (intern (string-downcase (symbol-name cl-sym)) :ece))
+
 (defun build-cl-function-map ()
-  "Build a hash table mapping ECE name symbols to CL functions.
+  "Build a hash table mapping ECE name symbols (lowercase) to CL functions.
 Combines *primitive-procedures* and *wrapper-primitives*."
   (let ((ht (make-hash-table :test 'eq)))
     ;; Direct CL mappings
     (dolist (p *primitive-procedures*)
       (if (listp p)
-          (setf (gethash (car p) ht) (symbol-function (cdr p)))
-          (setf (gethash p ht) (symbol-function p))))
+          (setf (gethash (ece-sym (car p)) ht) (symbol-function (cdr p)))
+          (setf (gethash (ece-sym p) ht) (symbol-function p))))
     ;; Wrapper mappings
     (dolist (entry *wrapper-primitives*)
-      (setf (gethash (car entry) ht) (symbol-function (cdr entry))))
+      (setf (gethash (ece-sym (car entry)) ht) (symbol-function (cdr entry))))
     ht))
 
 (defun init-primitive-dispatch-tables ()
@@ -547,7 +551,7 @@ Combines *primitive-procedures* and *wrapper-primitives*."
     (dolist (entry *manifest-entries*)
       (destructuring-bind (id name arity platform) entry
         (declare (ignore arity))
-        (let ((name-sym (intern (string-upcase (symbol-name name)) :ece)))
+        (let ((name-sym (intern (string-downcase (symbol-name name)) :ece)))
           ;; Populate name table
           (setf (aref *primitive-name-table* id) name-sym)
           ;; Populate reverse lookup
@@ -598,7 +602,7 @@ Combines *primitive-procedures* and *wrapper-primitives*."
         (when (or (gethash id *primitive-available-ids*)
                   ;; Also register stubs so they error with good messages
                   (member platform '(browser)))
-          (let ((name-sym (intern (string-upcase (symbol-name name)) :ece)))
+          (let ((name-sym (intern (string-downcase (symbol-name name)) :ece)))
             (push name-sym names)
             (push (list 'primitive id) objects)))))
     (list (make-hash-frame (nreverse names) (nreverse objects)))))
@@ -763,15 +767,15 @@ Supports integers and decimal floats. Returns #f on failure."
 
 (defun ece-string->symbol (s)
   "Intern a symbol from string s in the ECE package."
-  (intern (string-upcase s) :ece))
+  (intern s :ece))
 
 (defun ece-%intern-ece (s)
-  "Intern an already-upcased string S as a symbol in the ECE package."
+  "Intern string S as a symbol in the ECE package."
   (intern s :ece))
 
 (defun ece-symbol->string (s)
-  "Return the name of symbol s as a lowercase string."
-  (string-downcase (symbol-name s)))
+  "Return the name of symbol s."
+  (symbol-name s))
 
 (defun ece-vector-p (x)
   "Test if x is a vector (but not a string)."
@@ -824,8 +828,11 @@ Returns EOF sentinel at end of input."
 (defun ece-write-to-string-flat (x)
   "Serialize X to a string without *print-circle* shared-structure markers.
 Used for .ecec file serialization where the ECE reader needs to parse the output.
-Binds *package* to :ece so symbols print without package prefixes."
-  (let ((*print-circle* nil) (*print-pretty* nil) (*package* (find-package :ece)))
+Binds *package* to :ece and uses :downcase readtable-case so lowercase symbols
+print without CL pipe escaping."
+  (let ((*print-circle* nil) (*print-pretty* nil) (*package* (find-package :ece))
+        (*readtable* (copy-readtable)))
+    (setf (readtable-case *readtable*) :preserve)
     (prin1-to-string x)))
 
 (defun ece-sleep (seconds)
@@ -1209,12 +1216,12 @@ If CONVERTER is provided, applies it to INIT."
 
 (defun qualified-space-id (addr)
   "Extract space-id (symbol) from a qualified address.
-Bare integers and integer 0 in qualified addresses return 'bootstrap
+Bare integers and integer 0 in qualified addresses return '|bootstrap|
 for backward compat with old images."
   (if (consp addr)
       (let ((sid (car addr)))
-        (if (eql sid 0) 'bootstrap sid))
-      'bootstrap))
+        (if (eql sid 0) '|bootstrap| sid))
+      '|bootstrap|))
 
 (defun qualified-local-pc (addr)
   "Extract local-pc from a qualified address. Bare integers return themselves."
@@ -1293,7 +1300,7 @@ for backward compat with old images."
 ;;; Continuation helpers for compiled code
 
 (defun continuation-p (cont)
-  (and (listp cont) (eq (car cont) 'continuation)))
+  (and (listp cont) (eq (car cont) '|continuation|)))
 
 (defun continuation-stack (cont)
   (cadr cont))
@@ -1302,7 +1309,7 @@ for backward compat with old images."
   (caddr cont))
 
 (defun capture-continuation (stack continue-reg)
-  (list 'continuation (copy-list stack)
+  (list '|continuation| (copy-list stack)
         (if (consp continue-reg)
             continue-reg
             (cons *executing-space-id* continue-reg))))
@@ -1312,34 +1319,34 @@ for backward compat with old images."
 (defun get-operation (name)
   "Get the CL function for a compiled operation name."
   (ecase name
-    (lookup-variable-value #'lookup-variable-value)
-    (set-variable-value! #'set-variable-value!)
-    (define-variable! #'define-variable!)
-    (lexical-ref #'lexical-ref)
-    (lexical-set! #'lexical-set!)
-    (extend-environment #'extend-environment)
-    (make-compiled-procedure #'make-compiled-procedure)
-    (compiled-procedure-entry #'compiled-procedure-entry)
-    (compiled-procedure-env #'compiled-procedure-env)
-    (primitive-procedure? #'primitive-procedure-p)
-    (continuation? #'continuation-p)
-    (parameter? #'parameter-p)
-    (parameter-ref #'parameter-ref)
-    (parameter-set! #'parameter-set!)
-    (parameter-raw-set! #'parameter-raw-set!)
-    (apply-parameter #'apply-parameter)
-    (apply-primitive-procedure #'apply-primitive-procedure)
-    (capture-continuation #'capture-continuation)
-    (continuation-stack #'continuation-stack)
-    (continuation-conts #'continuation-conts)
-    (false? #'scheme-false-p)
-    (list #'list)
-    (cons #'cons)
-    (car #'car)))
+    (|lookup-variable-value| #'lookup-variable-value)
+    (|set-variable-value!| #'set-variable-value!)
+    (|define-variable!| #'define-variable!)
+    (|lexical-ref| #'lexical-ref)
+    (|lexical-set!| #'lexical-set!)
+    (|extend-environment| #'extend-environment)
+    (|make-compiled-procedure| #'make-compiled-procedure)
+    (|compiled-procedure-entry| #'compiled-procedure-entry)
+    (|compiled-procedure-env| #'compiled-procedure-env)
+    (|primitive-procedure?| #'primitive-procedure-p)
+    (|continuation?| #'continuation-p)
+    (|parameter?| #'parameter-p)
+    (|parameter-ref| #'parameter-ref)
+    (|parameter-set!| #'parameter-set!)
+    (|parameter-raw-set!| #'parameter-raw-set!)
+    (|apply-parameter| #'apply-parameter)
+    (|apply-primitive-procedure| #'apply-primitive-procedure)
+    (|capture-continuation| #'capture-continuation)
+    (|continuation-stack| #'continuation-stack)
+    (|continuation-conts| #'continuation-conts)
+    (|false?| #'scheme-false-p)
+    (|list| #'list)
+    (|cons| #'cons)
+    (|car| #'car)))
 
 ;;; Instruction executor
 
-(defvar *executing-space-id* 'bootstrap
+(defvar *executing-space-id* '|bootstrap|
   "The space-id (symbol) of the currently executing space in the executor.
 Used by make-compiled-procedure and capture-continuation to qualify
 addresses. Distinct from *current-space-id* which is the assembler's
@@ -1367,22 +1374,22 @@ variables inline — no throw/catch, no dispatcher, no allocation per transition
          (len (length instrs)))
     (labels ((get-reg (name)
                (ecase name
-                 (val val) (env env) (proc proc) (argl argl)
-                 (continue continue) (stack stack)))
+                 (|val| val) (|env| env) (|proc| proc) (|argl| argl)
+                 (|continue| continue) (|stack| stack)))
              (set-reg (name value)
                (ecase name
-                 (val (setf val value))
-                 (env (setf env value))
-                 (proc (setf proc value))
-                 (argl (setf argl value))
-                 (continue (setf continue value))
-                 (stack (setf stack value))))
+                 (|val| (setf val value))
+                 (|env| (setf env value))
+                 (|proc| (setf proc value))
+                 (|argl| (setf argl value))
+                 (|continue| (setf continue value))
+                 (|stack| (setf stack value))))
              (resolve-label (label)
                (or (gethash label ltab)
                    (error "Unknown label: ~A" label)))
              (norm-space (sid)
-               ;; Normalize integer 0 to 'bootstrap for old image compat
-               (if (eql sid 0) 'bootstrap sid))
+               ;; Normalize integer 0 to bootstrap for old image compat
+               (if (eql sid 0) '|bootstrap| sid))
              (switch-space (target-space-id)
                (let ((normalized (norm-space target-space-id)))
                  (setf space-id normalized)
@@ -1393,9 +1400,9 @@ variables inline — no throw/catch, no dispatcher, no allocation per transition
                    (setf *executing-space-id* normalized))))
              (eval-operand (operand)
                (ecase (car operand)
-                 (const (cadr operand))
-                 (reg (get-reg (cadr operand)))
-                 (label (resolve-label (cadr operand)))))
+                 (|const| (cadr operand))
+                 (|reg| (get-reg (cadr operand)))
+                 (|label| (resolve-label (cadr operand)))))
              (call-op (fn operands)
                ;; Call operation without allocating an argument list
                (if (null operands) (funcall fn)
@@ -1432,23 +1439,23 @@ variables inline — no throw/catch, no dispatcher, no allocation per transition
            (when (>= pc len) (go loop-end))
            (let ((instr (aref instrs pc)))
              (case (car instr)
-               (assign
+               (|assign|
                 (let ((target (cadr instr))
                       (source (caddr instr)))
                   (case (car source)
-                    (const (set-reg target (cadr source)))
-                    (reg (set-reg target (get-reg (cadr source))))
-                    (label (let ((resolved-pc (resolve-label (cadr source))))
-                             (set-reg target
-                                      (if (eq target 'continue)
-                                          (cons space-id resolved-pc)
-                                          resolved-pc))))
-                    (op-fn
+                    (|const| (set-reg target (cadr source)))
+                    (|reg| (set-reg target (get-reg (cadr source))))
+                    (|label| (let ((resolved-pc (resolve-label (cadr source))))
+                               (set-reg target
+                                        (if (eq target '|continue|)
+                                            (cons space-id resolved-pc)
+                                            resolved-pc))))
+                    (|op-fn|
                      (let ((result (call-op (cadr source) (cdddr instr))))
                        (if (ece-error-sentinel-p result)
                            ;; Bridge CL error to ECE's error function
                            (let ((error-fn (ignore-errors
-                                             (lookup-variable-value 'error *global-env*))))
+                                             (lookup-variable-value (intern "error" :ece) *global-env*))))
                              (if (and error-fn (compiled-procedure-p error-fn))
                                  (let* ((err-entry (compiled-procedure-entry error-fn))
                                         (err-space (qualified-space-id err-entry))
@@ -1463,45 +1470,45 @@ variables inline — no throw/catch, no dispatcher, no allocation per transition
                                  ;; Fallback: no error yet (cold boot) — signal CL error
                                  (error "~A" (ece-error-sentinel-message result))))
                            (set-reg target result))))
-                    (op (set-reg target
-                                 (call-op (get-operation (cadr source))
-                                          (cdddr instr))))
+                    (|op| (set-reg target
+                                   (call-op (get-operation (cadr source))
+                                            (cdddr instr))))
                     (t (error "Bad assign source: ~A" source)))))
-               (test
+               (|test|
                 (let ((op-spec (cadr instr)))
                   (case (car op-spec)
-                    (op-fn (setf flag (call-op (cadr op-spec) (cddr instr))))
+                    (|op-fn| (setf flag (call-op (cadr op-spec) (cddr instr))))
                     (t (setf flag (call-op (get-operation (cadr op-spec))
                                            (cddr instr)))))))
-               (branch
+               (|branch|
                 (when flag
                   (setf pc (resolve-label (cadr (cadr instr))))
                   (go loop-start)))
-               (goto
+               (|goto|
                 (let ((dest (cadr instr)))
                   (ecase (car dest)
-                    (label (setf pc (resolve-label (cadr dest))))
-                    (reg (let ((addr (get-reg (cadr dest))))
-                           (cond
-                             ;; Cross-space qualified address
-                             ((and (consp addr) (not (eq (norm-space (car addr)) space-id)))
-                              (switch-space (car addr))
-                              (setf pc (cdr addr)))
-                             ;; Same-space qualified address
-                             ((consp addr) (setf pc (cdr addr)))
-                             ;; Bare integer (backward compat)
-                             ((numberp addr) (setf pc addr))
-                             ;; Symbol label
-                             (t (setf pc (resolve-label addr)))))))
+                    (|label| (setf pc (resolve-label (cadr dest))))
+                    (|reg| (let ((addr (get-reg (cadr dest))))
+                             (cond
+                               ;; Cross-space qualified address
+                               ((and (consp addr) (not (eq (norm-space (car addr)) space-id)))
+                                (switch-space (car addr))
+                                (setf pc (cdr addr)))
+                               ;; Same-space qualified address
+                               ((consp addr) (setf pc (cdr addr)))
+                               ;; Bare integer (backward compat)
+                               ((numberp addr) (setf pc addr))
+                               ;; Symbol label
+                               (t (setf pc (resolve-label addr)))))))
                   (go loop-start)))
-               (save
+               (|save|
                 (push (get-reg (cadr instr)) stack))
-               (restore
+               (|restore|
                 (set-reg (cadr instr) (pop stack)))
-               (perform
+               (|perform|
                 (let ((op-spec (cadr instr)))
                   (case (car op-spec)
-                    (op-fn (call-op (cadr op-spec) (cddr instr)))
+                    (|op-fn| (call-op (cadr op-spec) (cddr instr)))
                     (t (call-op (get-operation (cadr op-spec)) (cddr instr))))))
                (t (error "Unknown instruction: ~A" instr))))
            (incf pc)
@@ -1542,27 +1549,27 @@ Populated at assembly time from procedure-name pseudo-instructions.")
 (defvar *space-registry* (make-hash-table :test 'eq)
   "Hash table of space records, keyed by symbol.")
 
-(defvar *current-space-id* 'bootstrap
+(defvar *current-space-id* '|bootstrap|
   "The space-id (symbol) that the assembler currently targets.
 Set by (load ...) for per-file spaces, defaults to bootstrap.")
 
 
 (defun create-space (name)
   "Allocate a new space with NAME (string), intern as symbol in :ece, return symbol."
-  (let* ((sym (intern (string-upcase name) :ece))
+  (let* ((sym (intern name :ece))
          (cs (make-compilation-space :name name)))
     (setf (gethash sym *space-registry*) cs)
     sym))
 
 (defun get-space (space-id)
   "Look up a space by its symbol ID. Integer 0 maps to bootstrap for backward compat."
-  (let ((key (if (eql space-id 0) 'bootstrap space-id)))
+  (let ((key (if (eql space-id 0) '|bootstrap| space-id)))
     (or (gethash key *space-registry*)
         (error "Unknown space: ~A" space-id))))
 
 (defun find-space-by-name (name)
   "Find a space by name string. Returns the space record, or NIL."
-  (let ((sym (find-symbol (string-upcase name) :ece)))
+  (let ((sym (find-symbol name :ece)))
     (when sym (gethash sym *space-registry*))))
 
 ;;; ECE-accessible space primitives
@@ -1624,9 +1631,9 @@ Set by (load ...) for per-file spaces, defaults to bootstrap.")
              (compilation-space-label-table (get-space space-id)))
     entries))
 
-;;; Create bootstrap space (keyed by symbol 'bootstrap).
-(unless (gethash 'bootstrap *space-registry*)
-  (setf (gethash 'bootstrap *space-registry*)
+;;; Create bootstrap space (keyed by symbol '|bootstrap|).
+(unless (gethash '|bootstrap| *space-registry*)
+  (setf (gethash '|bootstrap| *space-registry*)
         (make-compilation-space :name "bootstrap")))
 
 ;;; Compiled zone support (compile-to-host)
@@ -1670,18 +1677,18 @@ Returns the index."
 (defun resolve-operations (instr)
   "Pre-resolve operation names to function pointers in an instruction."
   (case (car instr)
-    (assign
+    (|assign|
      (let ((source (caddr instr)))
-       (if (and (consp source) (eq (car source) 'op))
-           `(assign ,(cadr instr) (op-fn ,(get-operation (cadr source)))
-                    ,@(cdddr instr))
+       (if (and (consp source) (eq (car source) '|op|))
+           `(|assign| ,(cadr instr) (|op-fn| ,(get-operation (cadr source)))
+                      ,@(cdddr instr))
            instr)))
-    (test
+    (|test|
      (let ((op-spec (cadr instr)))
-       `(test (op-fn ,(get-operation (cadr op-spec))) ,@(cddr instr))))
-    (perform
+       `(|test| (|op-fn| ,(get-operation (cadr op-spec))) ,@(cddr instr))))
+    (|perform|
      (let ((op-spec (cadr instr)))
-       `(perform (op-fn ,(get-operation (cadr op-spec))) ,@(cddr instr))))
+       `(|perform| (|op-fn| ,(get-operation (cadr op-spec))) ,@(cddr instr))))
     (t instr)))
 
 (defun assemble-into-space (space-id instruction-list)
@@ -1695,7 +1702,7 @@ Returns the index."
       (cond
         ((symbolp item)
          (setf (gethash item labels) (fill-pointer instrs)))
-        ((and (consp item) (eq (car item) 'procedure-name))
+        ((and (consp item) (eq (car item) '|procedure-name|))
          ;; Pseudo-instruction: (procedure-name <label> <name>)
          ;; Resolve label to local PC and store in name table with qualified key.
          (let ((local-pc (gethash (cadr item) labels)))
@@ -1710,7 +1717,7 @@ Returns the index."
 (defun assemble-into-global (instruction-list)
   "Append instructions to the bootstrap space. Return start PC.
 Delegates to assemble-into-space with the bootstrap space."
-  (assemble-into-space 'bootstrap instruction-list))
+  (assemble-into-space '|bootstrap| instruction-list))
 
 ;;; Assembler access primitives for ECE assembler
 ;;; These thin wrappers use the bootstrap space's instruction vector,
@@ -1718,15 +1725,15 @@ Delegates to assemble-into-space with the bootstrap space."
 
 (defun ece-%instruction-vector-length ()
   "Return the instruction count of the bootstrap space."
-  (fill-pointer (compilation-space-resolved-instructions (get-space 'bootstrap))))
+  (fill-pointer (compilation-space-resolved-instructions (get-space '|bootstrap|))))
 
 (defun ece-%instruction-vector-push! (source-instr)
   "Append SOURCE-INSTR to the bootstrap space's arrays."
-  (ece-%space-instruction-push! 'bootstrap source-instr))
+  (ece-%space-instruction-push! '|bootstrap| source-instr))
 
 (defun ece-%label-table-set! (label pc)
   "Register LABEL at PC in the bootstrap space's label table."
-  (ece-%space-label-set! 'bootstrap label pc))
+  (ece-%space-label-set! '|bootstrap| label pc))
 
 (defun ece-%procedure-name-set! (pc-or-qualified name)
   "Register procedure NAME at entry PC in the procedure name table."
@@ -1735,11 +1742,11 @@ Delegates to assemble-into-space with the bootstrap space."
 
 (defun ece-%label-table-ref (label)
   "Look up LABEL in the bootstrap space's label table."
-  (ece-%space-label-ref 'bootstrap label))
+  (ece-%space-label-ref '|bootstrap| label))
 
 (defun ece-%label-table-entries ()
   "Return an alist of (label . pc) from the bootstrap space's label table."
-  (ece-%space-label-entries 'bootstrap))
+  (ece-%space-label-entries '|bootstrap|))
 
 (defun ece-%macro-table-entries ()
   "Return an alist of (name . proc) from the compile-time macro table."
@@ -1892,7 +1899,7 @@ for use as an ECE primitive."
   "Evaluate EXPR using the metacircular compiler from the global env.
 Works with image-only startup (no compiler.lisp needed).
 When ENV is supplied, it is passed to mc-compile-and-go."
-  (let ((mc-cag (lookup-variable-value 'mc-compile-and-go *global-env*)))
+  (let ((mc-cag (lookup-variable-value (intern "mc-compile-and-go" :ece) *global-env*)))
     (if env-supplied-p
         (execute-compiled-call mc-cag (list expr env))
         (execute-compiled-call mc-cag (list expr)))))
@@ -1915,29 +1922,50 @@ struct instances that are not EQ to *scheme-false*."
                             (canonicalize-ecec-constants (cdr form))))
         (t form)))
 
+(defun downcase-ece-symbols (form)
+  "Walk FORM and downcase symbols for case-sensitive transition.
+Handles old .ecec files that have uppercase symbols from the legacy reader.
+Downcases both ECE-package and CL-package symbols into the ECE package
+(since old reader resolved names like LIST, CAR as CL symbols via inheritance).
+Preserves T, NIL, and symbols from other packages."
+  (cond ((null form) form)
+        ((eq form t) form)
+        ((symbolp form)
+         (let ((pkg (symbol-package form)))
+           (if (or (null pkg)  ; uninterned
+                   (and (not (eq pkg (find-package :ece)))
+                        (not (eq pkg (find-package :cl)))))
+               form
+               (intern (string-downcase (symbol-name form)) :ece))))
+        ((consp form) (cons (downcase-ece-symbols (car form))
+                            (downcase-ece-symbols (cdr form))))
+        (t form)))
+
 (defun load-ecec-file (pathname)
   "Load a .ecec file: read header, create named space, assemble and execute units.
 Uses the CL reader (not the ECE reader) so this works at boot before the ECE reader exists."
   (with-open-file (stream pathname)
-    (let* ((header (cl:read stream))
-           (space-sym (cadr (assoc 'space (cdr header))))
-           (sid (create-space (string-downcase (symbol-name space-sym)))))
+    (let* ((raw-header (cl:read stream))
+           (header (downcase-ece-symbols raw-header))
+           (space-sym (cadr (assoc '|space| (cdr header))))
+           (sid (create-space (symbol-name space-sym))))
       ;; Read and execute compiled units
       (let ((*current-space-id* sid))
         (loop for instrs = (cl:read stream nil :eof)
               until (eq instrs :eof)
-              do (let* ((fixed (canonicalize-ecec-constants instrs))
+              do (let* ((fixed (downcase-ece-symbols
+                                (canonicalize-ecec-constants instrs)))
                         (start-pc (assemble-into-space sid fixed)))
                    (execute-instructions sid start-pc *global-env*)))))))
 
 (defun boot-from-compiled ()
   "Boot ECE by loading .ecec files from bootstrap/ in fixed order."
   ;; Pre-define keyword symbols that ECE source code references as variables.
-  ;; The ECE reader interns :foo as a symbol named ":FOO" in the ECE package
+  ;; The ECE reader interns :foo as a symbol named ":foo" in the ECE package
   ;; (not a CL keyword). These must be in the environment for compiled code
   ;; that references them as variables (until the compiler treats them as
   ;; self-evaluating). The value is the ECE-interned symbol itself.
-  (dolist (name '(":HASH-TABLE" ":HAMT-NODE" ":HAMT-COLLISION"))
+  (dolist (name '(":hash-table" ":hamt-node" ":hamt-collision"))
     (let ((sym (intern name :ece)))
       (define-variable! sym sym *global-env*)))
   (dolist (name '("prelude" "compiler" "reader" "assembler"
@@ -1953,12 +1981,12 @@ Uses the CL reader (not the ECE reader) so this works at boot before the ECE rea
 ;;; Ensure all manifest primitives are in *global-env*.
 ;;; The image/ecec may predate new manifest entries (e.g., platform-has?, try-eval).
 ;;; Pre-register try-eval as available so it gets added to the env.
-(let ((id (gethash 'try-eval *primitive-name-to-id*)))
+(let ((id (gethash (intern "try-eval" :ece) *primitive-name-to-id*)))
   (when id (setf (gethash id *primitive-available-ids*) t)))
 (dolist (entry *manifest-entries*)
   (destructuring-bind (id name arity platform) entry
     (declare (ignore arity))
-    (let ((name-sym (intern (string-upcase (symbol-name name)) :ece)))
+    (let ((name-sym (intern (string-downcase (symbol-name name)) :ece)))
       (when (or (gethash id *primitive-available-ids*)
                 (member platform '(browser)))
         (handler-case
@@ -1969,14 +1997,16 @@ Uses the CL reader (not the ECE reader) so this works at boot before the ECE rea
 ;;; Expose *global-env* as an ECE variable so mc-compile-define-macro can reference it.
 ;;; The CL compiler handled define-macro directly using the CL defvar; the mc-compiler
 ;;; needs it as an ECE variable.
-(define-variable! '*global-env* *global-env* *global-env*)
+(define-variable! (intern "*global-env*" :ece) *global-env* *global-env*)
 
 ;;; evaluate: compile and execute EXPR via the metacircular compiler in the image.
 (defun evaluate (expr &optional (env *global-env* env-supplied-p))
-  "Compile and execute EXPR in ENV using the metacircular compiler."
-  (if env-supplied-p
-      (mc-eval expr env)
-      (mc-eval expr)))
+  "Compile and execute EXPR in ENV using the metacircular compiler.
+Downcases ECE-package symbols for CL→ECE boundary compatibility."
+  (let ((normalized (downcase-ece-symbols expr)))
+    (if env-supplied-p
+        (mc-eval normalized env)
+        (mc-eval normalized))))
 
 ;;; ece-try-eval: error-handling wrapper around evaluate.
 ;;; The image's (primitive ece-try-eval) binding resolves to this via symbol-function.
@@ -1990,7 +2020,7 @@ Uses the CL reader (not the ECE reader) so this works at boot before the ECE rea
       *eof-sentinel*)))
 
 ;;; Register try-eval dispatch now that ece-try-eval is defined
-(let ((id (gethash 'try-eval *primitive-name-to-id*)))
+(let ((id (gethash (intern "try-eval" :ece) *primitive-name-to-id*)))
   (when id
     (setf (aref *primitive-dispatch-table* id) #'ece-try-eval)))
 
@@ -1998,15 +2028,16 @@ Uses the CL reader (not the ECE reader) so this works at boot before the ECE rea
 (defun repl ()
   "Start the ECE REPL."
   (evaluate
-   '(begin
-     (define (repl-loop)
-      (display "ece> ")
-      (define input (read))
-      (if (eof? input)
-          (begin (newline) (display "Bye!") (newline))
-          (begin
-           (define result (try-eval input))
-           (if (not (eof? result)) (begin (write result) (newline)) (quote ()))
-           (repl-loop))))
-     (repl-loop))))
+   (downcase-ece-symbols
+    '(begin
+      (define (repl-loop)
+       (display "ece> ")
+       (define input (read))
+       (if (eof? input)
+           (begin (newline) (display "Bye!") (newline))
+           (begin
+            (define result (try-eval input))
+            (if (not (eof? result)) (begin (write result) (newline)) (quote ()))
+            (repl-loop))))
+      (repl-loop)))))
 
