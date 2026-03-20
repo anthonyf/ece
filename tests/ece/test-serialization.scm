@@ -211,3 +211,62 @@
     (assert (parameter? loaded))
     (assert-equal (loaded) 70))
   (run-game)))
+
+(test "loaded continuation reverts state to save time" (lambda ()
+  ;; The critical game-save test: save, mutate, load → state reverts
+  (define (run-game)
+    (define room (make-parameter "kitchen"))
+    (room "dungeon")
+
+    (define val
+      (call/cc (lambda (k)
+        ;; Save while room = "dungeon"
+        (save-continuation! "/tmp/ece-rt-revert.dat" k)
+        ;; Mutate AFTER save
+        (room "basement")
+        'first-pass)))
+
+    (cond
+     ((eq? val 'first-pass)
+      ;; room was mutated to "basement" after save
+      (assert-equal (room) "basement")
+      ;; Load and invoke — should revert to "dungeon"
+      (define loaded-k (load-continuation "/tmp/ece-rt-revert.dat"))
+      (loaded-k 'from-loaded))
+     ((eq? val 'from-loaded)
+      ;; Resumed from loaded continuation — room should be "dungeon"
+      (room))))
+
+  (assert-equal (run-game) "dungeon")))
+
+(test "loaded continuation reverts multiple parameters" (lambda ()
+  (define (run-game)
+    (define room (make-parameter "start"))
+    (define hp (make-parameter 100))
+    (define inventory (make-parameter '()))
+
+    (room "dungeon")
+    (hp 70)
+    (inventory (list "key"))
+
+    (define val
+      (call/cc (lambda (k)
+        (save-continuation! "/tmp/ece-rt-revert-multi.dat" k)
+        ;; Mutate all state after save
+        (room "final-boss")
+        (hp 1)
+        (inventory (list "key" "sword" "potion"))
+        'first-pass)))
+
+    (cond
+     ((eq? val 'first-pass)
+      (define loaded-k (load-continuation "/tmp/ece-rt-revert-multi.dat"))
+      (loaded-k 'from-loaded))
+     ((eq? val 'from-loaded)
+      ;; All state should revert to save-time values
+      (list (room) (hp) (inventory)))))
+
+  (define result (run-game))
+  (assert-equal (car result) "dungeon")
+  (assert-equal (cadr result) 70)
+  (assert-equal (caddr result) (list "key"))))
