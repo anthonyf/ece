@@ -68,6 +68,74 @@ String interpolation is supported at the reader level: `"Hello $name, you are $(
 
 `bitwise-and`, `bitwise-or`, `bitwise-xor`, `bitwise-not`, `arithmetic-shift`
 
+## Serializable Continuations
+
+ECE continuations can be saved to disk and restored later with `save-continuation!` / `load-continuation`. This enables save/restore for games, browser page refresh survival, and persistent workflows.
+
+### The Lexical State Pattern
+
+For reliable serialization, keep mutable state in **lexical scope** (inside a function), not in global `define`:
+
+```scheme
+;; Game logic — pure functions at the top level
+(define (describe-room room hp)
+  (string-append "You are in " room " with " (number->string hp) " hp"))
+
+(define (damage hp amount)
+  (- hp amount))
+
+;; Game state — all inside run-game's scope
+(define (run-game)
+  (define room (make-parameter "kitchen"))
+  (define hp (make-parameter 100))
+  (define inventory (make-parameter '()))
+
+  ;; Mutate state through gameplay
+  (room "dungeon")
+  (hp (damage (hp) 30))
+
+  ;; Save: captures room, hp, inventory automatically
+  (save-continuation! "save.dat"
+    (call/cc (lambda (k) k)))
+
+  ;; External functions work — pass values, not parameters
+  (display (describe-room (room) (hp)))
+  (newline))
+
+(run-game)
+```
+
+**Why this works:** `call/cc` captures the lexical environment — everything defined inside `run-game`. Parameters, local variables, and closures are all included. External functions (`describe-room`, `damage`) live in the global scope and are always available after boot — they don't need to be serialized.
+
+**Why global `define` doesn't work for saved state:** The global environment is shared with the runtime (300+ bindings for the compiler, reader, prelude). The serializer uses a sentinel to skip it, so global state is not captured. This is the same limitation [Racket's stateless servlets](https://docs.racket-lang.org/web-server/stateless.html) have — "the store is not serialized."
+
+### Restoring a Save
+
+```scheme
+;; Load the saved continuation and invoke it
+(define k (load-continuation "save.dat"))
+(k 'resume)  ;; resumes inside run-game with room="dungeon", hp=70
+```
+
+### Browser / Page Refresh Pattern
+
+For single-page apps, save the continuation to localStorage after every user action:
+
+```scheme
+(define (game-loop)
+  (define state (make-parameter {room "start" hp 100}))
+
+  (let loop ()
+    ;; Save checkpoint after every choice
+    (save-continuation! "autosave"
+      (call/cc (lambda (k) k)))
+
+    ;; Present choices, get input, update state...
+    (loop)))
+```
+
+On page load, check for an autosave and restore it instead of starting fresh.
+
 ## Use Cases
 
 ECE's first-class continuations make it well-suited for applications that need complex control flow — such as interactive fiction engines, where save/restore and goto/gosub map naturally to `call/cc`.
