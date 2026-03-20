@@ -276,6 +276,15 @@
     (hash-set! new key val)
     new))
 
+;; make-parameter wrapper: apply optional converter to initial value.
+;; The raw primitive (ID 88) just stores the value. This wrapper calls
+;; the converter before passing the result to the primitive.
+(define %raw-make-parameter make-parameter)
+(define (make-parameter init . rest)
+  (if (null? rest)
+      (%raw-make-parameter init)
+      (%raw-make-parameter ((car rest) init) (car rest))))
+
 ;; xorshift32 PRNG
 (define *random-state* 12345)
 
