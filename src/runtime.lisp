@@ -1159,12 +1159,9 @@ Used by the serializer to detect the global environment sentinel."
 
 (defun ece-make-parameter-value (init &optional converter)
   "Create a parameter object: (parameter (<value> . <converter>)).
-If CONVERTER is provided, applies it to INIT."
-  (let ((converted (if (and converter (not (null converter))
-                            (not (scheme-false-p converter)))
-                       (apply-ece-procedure converter (list init))
-                       init)))
-    (list 'parameter (cons converted converter))))
+The prelude wrapper applies the converter before calling this,
+so INIT is already converted. We just store it with the converter."
+  (list 'parameter (cons init converter)))
 
 (defun parameter-ref (param)
   "Read the current value of a parameter."
