@@ -10,7 +10,7 @@
 
 (defun ece-eval-string (source)
   "Read and evaluate SOURCE using the ECE reader in the image."
-  (ece::mc-eval (list 'eval (list 'read (list 'open-input-string source)))))
+  (ece::evaluate (list 'eval (list 'read (list 'open-input-string source)))))
 
 ;; NOTE: To run this test file, execute `(asdf:test-system :ece)' in your Lisp.
 
@@ -640,17 +640,20 @@
     (testing "inner unquote preserved at depth 2"
              (ok (equal (evaluate '(begin (define x 1)
                                     (quasiquote (a (quasiquote (b (unquote x)))))))
-                        '(a (quasiquote (b (unquote x)))))))
+                        (ece::downcase-ece-symbols
+                         '(a (quasiquote (b (unquote x))))))))
 
   (testing "outer unquote evaluated, inner preserved"
            (ok (equal (evaluate '(begin (define x 1)
                                   (quasiquote (a (unquote x) (quasiquote (b (unquote x)))))))
-                      '(a 1 (quasiquote (b (unquote x)))))))
+                      (ece::downcase-ece-symbols
+                       '(a 1 (quasiquote (b (unquote x))))))))
 
   (testing "nested unquote-splicing preserved at depth 2"
            (ok (equal (evaluate '(begin (define xs (quote (1 2)))
                                   (quasiquote (a (quasiquote (b (unquote-splicing xs)))))))
-                      '(a (quasiquote (b (unquote-splicing xs))))))))
+                      (ece::downcase-ece-symbols
+                       '(a (quasiquote (b (unquote-splicing xs)))))))))
 
 (deftest test-type-predicates
     (testing "number?"
@@ -799,7 +802,7 @@
            (ok (equal (evaluate '(number->string -7)) "-7")))
 
   (testing "string->symbol"
-           (ok (eq (ece-eval-string "(string->symbol \"hello\")") 'ece::hello)))
+           (ok (eq (ece-eval-string "(string->symbol \"hello\")") (intern "hello" :ece))))
 
   (testing "symbol->string"
            (ok (equal (ece-eval-string "(symbol->string 'hello)") "hello")))
@@ -923,8 +926,8 @@
                (unwind-protect
                     (progn
                       (evaluate `(load ,(namestring tmpfile)))
-                      (ok (= (evaluate (intern "LOAD-TEST-X" :ece)) 42))
-                      (ok (= (evaluate (intern "LOAD-TEST-Y" :ece)) 43)))
+                      (ok (= (evaluate (intern "load-test-x" :ece)) 42))
+                      (ok (= (evaluate (intern "load-test-y" :ece)) 43)))
                  (delete-file tmpfile))))
 
   (testing "load returns last value"
@@ -1041,7 +1044,7 @@
            (ok (= (ece-eval-string "(hash-ref {name \"Alice\" age 30} 'age)") 30)))
 
   (testing "hash table is self-evaluating"
-           (let ((ht-tag (intern ":HASH-TABLE" :ece)))
+           (let ((ht-tag (intern ":hash-table" :ece)))
              (ok (equal (evaluate (list ht-tag (cons 'name "Alice")))
                         (list ht-tag (cons 'name "Alice"))))))
 
@@ -1059,7 +1062,7 @@
              (ok (= (evaluate '(hash-ref (hash-table 'a 1 'b 2) 'b)) 2)))
 
   (testing "hash-table constructor empty"
-           (let ((ht-tag (intern ":HASH-TABLE" :ece)))
+           (let ((ht-tag (intern ":hash-table" :ece)))
              (ok (equal (evaluate (list ht-tag))
                         (list ht-tag)))))
 
@@ -1232,7 +1235,7 @@
                         20))
              (ok (equal (ece-eval-string "(begin (define-record point x y)
                                             (hash-ref (make-point 10 20) 'type))")
-                        'ece::point)))
+                        (intern "point" :ece))))
 
   (testing "constructor with no fields"
            (ok (equal (ece-eval-string "(begin (define-record empty)
@@ -1240,7 +1243,7 @@
                       1))
            (ok (equal (ece-eval-string "(begin (define-record empty)
                                           (hash-ref (make-empty) 'type))")
-                      'ece::empty)))
+                      (intern "empty" :ece))))
 
   (testing "predicate returns true for matching record"
            (ok (equal (ece-eval-string "(begin (define-record point x y)
@@ -1711,12 +1714,12 @@
                         ;; (call/cc now wraps in a lambda for dynamic-wind support)
                         (evaluate '(define img-k (%raw-call/cc (lambda (k) k))))
                         (ok (eq t (evaluate `(eq? (car img-k)
-                                                  ',(intern "CONTINUATION" :ece)))))
+                                                  ',(intern "continuation" :ece)))))
                         (ece::ece-save-image (namestring tmpfile))
                         (ece::ece-load-image (namestring tmpfile))
                         ;; After load, verify it's still a continuation
                         (ok (eq t (evaluate `(eq? (car img-k)
-                                                  ',(intern "CONTINUATION" :ece))))))
+                                                  ',(intern "continuation" :ece))))))
                    (when (probe-file tmpfile) (delete-file tmpfile)))))))
 
 (deftest test-image-compiler-works-after-load
@@ -1868,9 +1871,9 @@
            (ok (= (ece-eval-string "(mc-compile-and-go 'mc-test-var)") 99)))
   (testing "compile quoted expression"
            (ok (equal (ece-eval-string "(mc-compile-and-go '(quote (a b c)))")
-                      (list (intern "A" :ece) (intern "B" :ece) (intern "C" :ece)))))
+                      (list (intern "a" :ece) (intern "b" :ece) (intern "c" :ece)))))
   (testing "compile if true branch"
-           (ok (= (ece-eval-string "(mc-compile-and-go '(if t 1 2))") 1)))
+           (ok (= (ece-eval-string "(mc-compile-and-go '(if #t 1 2))") 1)))
   (testing "compile if false branch"
            (ok (= (ece-eval-string "(mc-compile-and-go '(if #f 1 2))") 2)))
   (testing "compile begin sequence"
@@ -1922,7 +1925,7 @@
            (ok (= (ece-eval-string "(mc-compile-and-go '(and 1 2 3))") 3))
            (ok (= (ece-eval-string "(mc-compile-and-go '(or #f #f 42))") 42)))
   (testing "compile when/unless macros"
-           (ok (= (ece-eval-string "(mc-compile-and-go '(when t 42))") 42))
+           (ok (= (ece-eval-string "(mc-compile-and-go '(when #t 42))") 42))
            (ok (= (ece-eval-string "(mc-compile-and-go '(unless #f 42))") 42)))
   ;; Recursion
   (testing "compile recursive function"
@@ -1951,7 +1954,7 @@
                          '(begin
                            (define mc-qq-val 42)
                            (quasiquote (a (unquote mc-qq-val) c))))")
-                      (list (intern "A" :ece) 42 (intern "C" :ece))))))
+                      (list (intern "a" :ece) 42 (intern "c" :ece))))))
 
 ;;;; ========================================================================
 ;;;; PARAMETER OBJECT TESTS
@@ -2117,14 +2120,14 @@
     (testing "format-ece-proc displays procedure name for defined function"
              (ece-eval-string "(define (my-test-fn x) (+ x 1))")
              ;; Find my-test-fn's entry PC in the environment
-             (let* ((proc (ece::lookup-variable-value 'ece::my-test-fn ece::*global-env*))
+             (let* ((proc (ece::lookup-variable-value (intern "my-test-fn" :ece) ece::*global-env*))
                     (entry-pc (cadr proc))
                     ;; Try qualified key first, then bare local-pc (old image compat)
                     (name (or (gethash entry-pc ece::*procedure-name-table*)
                               (when (consp entry-pc)
                                 (gethash (cdr entry-pc) ece::*procedure-name-table*)))))
-               (ok (eq name 'ece::my-test-fn))
-               (ok (search "MY-TEST-FN" (ece::format-ece-proc proc)))))
+               (ok (eq name (intern "my-test-fn" :ece)))
+               (ok (search "my-test-fn" (ece::format-ece-proc proc)))))
 
   (testing "error message shows procedure name in backtrace"
            (handler-case
@@ -2161,13 +2164,13 @@
 
   (testing "MC-compiled defines register procedure names"
            (ece-eval-string "(mc-compile-and-go '(define (mc-name-test x) (+ x 1)))")
-           (let* ((proc (ece::lookup-variable-value 'ece::mc-name-test ece::*global-env*))
+           (let* ((proc (ece::lookup-variable-value (intern "mc-name-test" :ece) ece::*global-env*))
                   (entry-pc (cadr proc))
                   ;; Try qualified key first, then bare local-pc (old image compat)
                   (name (or (gethash entry-pc ece::*procedure-name-table*)
                             (when (consp entry-pc)
                               (gethash (cdr entry-pc) ece::*procedure-name-table*)))))
-             (ok (eq name 'ece::mc-name-test)))))
+             (ok (eq name (intern "mc-name-test" :ece))))))
 
 (deftest test-tracing
     (testing "tracing a compiled procedure produces output and correct value"
@@ -2177,7 +2180,7 @@
                (let ((output (with-output-to-string (*standard-output*)
                                (setf result (ece-eval-string "(trace-add 3 4)")))))
                  (ok (eql 7 result))
-                 (ok (search "TRACE-ADD" output))
+                 (ok (search "trace-add" output))
                  (ok (search "3" output))
                  (ok (search "7" output))))
              (ece-eval-string "(untrace 'trace-add)"))
@@ -2333,16 +2336,16 @@
            (ok (= (ece-read-string "-0.5") -0.5)))
 
   (testing "symbols"
-           ;; Reader interns into ECE package; compare by name
-           (ok (string= (symbol-name (ece-read-string "hello")) "HELLO"))
-           (ok (string= (symbol-name (ece-read-string "null?")) "NULL?"))
-           (ok (string= (symbol-name (ece-read-string "set!")) "SET!"))
-           (ok (string= (symbol-name (ece-read-string "list->vector")) "LIST->VECTOR"))
-           ;; + and - are CL symbols, should still be eq
-           (ok (eq (ece-read-string "+") '+))
-           (ok (eq (ece-read-string "-") '-))
-           ;; define is exported from ECE via :use
-           (ok (eq (ece-read-string "define") 'define)))
+           ;; Reader interns into ECE package; case-preserving
+           (ok (string= (symbol-name (ece-read-string "hello")) "hello"))
+           (ok (string= (symbol-name (ece-read-string "null?")) "null?"))
+           (ok (string= (symbol-name (ece-read-string "set!")) "set!"))
+           (ok (string= (symbol-name (ece-read-string "list->vector")) "list->vector"))
+           ;; + and - are non-alpha, intern finds CL:+ via inheritance
+           (ok (eq (ece-read-string "+") (intern "+" :ece)))
+           (ok (eq (ece-read-string "-") (intern "-" :ece)))
+           ;; define is interned as lowercase in :ece
+           (ok (eq (ece-read-string "define") (intern "define" :ece))))
 
   (testing "strings with escapes"
            (ok (equal (ece-read-string "\"hello\"") "hello"))
@@ -2354,20 +2357,20 @@
 
   (testing "string interpolation"
            (ok (equal (ece-read-string "\"plain\"") "plain"))
-           ;; Interpolation produces (STRING-APPEND ... (WRITE-TO-STRING ...))
+           ;; Interpolation produces (string-append ... (write-to-string ...))
            (let ((result (ece-read-string "\"hello $name\"")))
-             (ok (eq (car result) 'string-append))
+             (ok (eq (car result) (intern "string-append" :ece)))
              (ok (equal (cadr result) "hello "))
-             (ok (eq (car (caddr result)) 'write-to-string))
-             (ok (string= (symbol-name (cadr (caddr result))) "NAME")))
+             (ok (eq (car (caddr result)) (intern "write-to-string" :ece)))
+             (ok (string= (symbol-name (cadr (caddr result))) "name")))
            (let ((result (ece-read-string "\"val: $(+ 1 2)\"")))
-             (ok (eq (car result) 'string-append))
+             (ok (eq (car result) (intern "string-append" :ece)))
              (ok (equal (cadr result) "val: "))
-             (ok (eq (car (caddr result)) 'write-to-string))
+             (ok (eq (car (caddr result)) (intern "write-to-string" :ece)))
              (ok (= (length (cadr (caddr result))) 3)))  ; (+ 1 2)
-           ;; Single interpolation without literals produces (WRITE-TO-STRING ...)
+           ;; Single interpolation without literals produces (write-to-string ...)
            (let ((result (ece-read-string "\"$name\"")))
-             (ok (eq (car result) 'write-to-string)))
+             (ok (eq (car result) (intern "write-to-string" :ece))))
            (ok (equal (ece-read-string "\"costs $$5\"") "costs $5")))
 
   (testing "lists"
@@ -2380,31 +2383,31 @@
            ;; Verify list structure
            (let ((result (ece-read-string "(a b c)")))
              (ok (= (length result) 3))
-             (ok (string= (symbol-name (car result)) "A"))))
+             (ok (string= (symbol-name (car result)) "a"))))
 
   (testing "dotted pairs"
            (ok (equal (ece-read-string "(1 . 2)") '(1 . 2)))
            (let ((result (ece-read-string "(a . b)")))
-             (ok (string= (symbol-name (car result)) "A"))
-             (ok (string= (symbol-name (cdr result)) "B"))))
+             (ok (string= (symbol-name (car result)) "a"))
+             (ok (string= (symbol-name (cdr result)) "b"))))
 
   (testing "quote"
            (let ((result (ece-read-string "'foo")))
-             (ok (eq (car result) 'quote))
-             (ok (string= (symbol-name (cadr result)) "FOO")))
+             (ok (eq (car result) (intern "quote" :ece)))
+             (ok (string= (symbol-name (cadr result)) "foo")))
            (let ((result (ece-read-string "'(1 2 3)")))
-             (ok (eq (car result) 'quote))
+             (ok (eq (car result) (intern "quote" :ece)))
              (ok (equal (cadr result) '(1 2 3)))))
 
   (testing "quasiquote, unquote, unquote-splicing"
            (let ((result (ece-read-string "`(a ,b)")))
-             (ok (eq (car result) 'quasiquote))
+             (ok (eq (car result) (intern "quasiquote" :ece)))
              (let ((inner (cadr result)))
-               (ok (string= (symbol-name (car inner)) "A"))
-               (ok (eq (car (cadr inner)) 'unquote))))
+               (ok (string= (symbol-name (car inner)) "a"))
+               (ok (eq (car (cadr inner)) (intern "unquote" :ece)))))
            (let ((result (ece-read-string "`(a ,@b)")))
-             (ok (eq (car result) 'quasiquote))
-             (ok (eq (car (cadr (cadr result))) 'unquote-splicing))))
+             (ok (eq (car result) (intern "quasiquote" :ece)))
+             (ok (eq (car (cadr (cadr result))) (intern "unquote-splicing" :ece)))))
 
   (testing "character literals"
            (ok (char= (ece-read-string "#\\a") #\a))
@@ -2422,15 +2425,15 @@
   (testing "hash table literals"
            (let ((ht (ece-read-string "{a 1 b 2}")))
              (ok (consp ht))
-             (ok (eq (car ht) (intern ":HASH-TABLE" :ece)))
+             (ok (eq (car ht) (intern ":hash-table" :ece)))
              ;; Count is second element in HAMT format (:hash-table count . root)
              (ok (= (cadr ht) 2))
              ;; Verify values via hash-ref (use ECE-interned symbols for keys)
              (ok (= (evaluate `(hash-ref (ece::ece-scheme-read (open-input-string "{a 1 b 2}"))
-                                         (quote ,(intern "A" :ece))))
+                                         (quote ,(intern "a" :ece))))
                     1))
              (ok (= (evaluate `(hash-ref (ece::ece-scheme-read (open-input-string "{a 1 b 2}"))
-                                         (quote ,(intern "B" :ece))))
+                                         (quote ,(intern "b" :ece))))
                     2))))
 
   (testing "booleans"
@@ -2480,7 +2483,7 @@
 
   (testing "define function (crash regression)"
            (let ((output (run-repl (format nil "(define (repl-test-plus a b) (+ a b))~%(repl-test-plus 3 4)"))))
-             (ok (search "REPL-TEST-PLUS" output))
+             (ok (search "repl-test-plus" output))
              (ok (search "7" output))))
 
   (testing "error recovery"
@@ -2534,7 +2537,7 @@
              (unwind-protect
                   (progn
                     (evaluate `(load ,(namestring tmpfile)))
-                    (ok (= (evaluate (intern "ROUND-TRIP-Z" :ece)) 777)))
+                    (ok (= (evaluate (intern "round-trip-z" :ece)) 777)))
                (delete-file tmpfile)))))
 
 (deftest test-eval
@@ -2706,7 +2709,7 @@
                (error ()))
              ;; Read failure count directly from the global environment
              (let ((failures (ece::lookup-variable-value
-                              (intern "*TEST-FAILURES*" :ece)
+                              (intern "*test-failures*" :ece)
                               ece::*global-env*)))
                (ok (= failures 0)
                    (format nil "ECE native suite: ~A failures" failures)))))

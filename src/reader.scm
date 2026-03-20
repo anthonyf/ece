@@ -60,7 +60,7 @@
             (read-char port)
             (set buf (string-append buf (string ch)))
             (loop))
-          (%intern-ece (string-upcase buf))))))
+          (%intern-ece buf)))))
 
 ;;; Read a number (integer or float)
 (define (read-number port initial-char)
@@ -77,7 +77,7 @@
           (let ((n (string->number buf)))
             (if n n
                 ;; Not a valid number — treat as symbol (e.g., just "+" or "-")
-                (%intern-ece (string-upcase buf))))))))
+                (%intern-ece buf)))))))
 
 ;;; Read a string with escape sequences
 (define (read-string-simple port)
@@ -166,7 +166,7 @@
                     (begin
                       (read-char port)
                       (iloop (string-append sym-buf (string sc))))
-                    (set segments (cons (%intern-ece (string-upcase sym-buf))
+                    (set segments (cons (%intern-ece sym-buf)
                                         segments)))))
             (loop))
            ;; $ followed by non-identifier → literal $

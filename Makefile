@@ -9,7 +9,7 @@ test:
 test-ece:
 	qlot exec sbcl --eval '(asdf:load-system :ece)' \
 	  --eval '(handler-case (ece:evaluate (list (quote load) "tests/ece/run-all.scm")) (error ()))' \
-	  --eval '(let ((f (ece::lookup-variable-value (intern "*TEST-FAILURES*" :ece) ece::*global-env*))) (when (> f 0) (format t "~D ECE test failures~%" f) (sb-ext:exit :code 1)))' \
+	  --eval '(let ((f (ece::lookup-variable-value (intern "*test-failures*" :ece) ece::*global-env*))) (when (> f 0) (format t "~D ECE test failures~%" f) (sb-ext:exit :code 1)))' \
 	  --quit
 
 repl:
@@ -18,8 +18,9 @@ repl:
 bootstrap:
 	@mkdir -p $(BOOTSTRAP_DIR)
 	qlot exec sbcl --eval '(asdf:load-system :ece)' \
-	  --eval '(ece::mc-eval (list (quote eval) (list (quote read) (list (intern "OPEN-INPUT-STRING" :ece) "(load \"src/compilation-unit.scm\")"))))' \
-	  --eval '(dolist (f (list "src/prelude.scm" "src/compiler.scm" "src/reader.scm" "src/assembler.scm" "src/compilation-unit.scm")) (format t "Compiling ~A~%" f) (ece::mc-eval (list (quote eval) (list (quote read) (list (intern "OPEN-INPUT-STRING" :ece) (format nil "(compile-file ~S)" f))))))' \
+	  --eval '(in-package :ece)' \
+	  --eval '(evaluate (list (quote eval) (list (quote read) (list (quote open-input-string) "(load \"src/compilation-unit.scm\")"))))' \
+	  --eval '(dolist (f (list "src/prelude.scm" "src/compiler.scm" "src/reader.scm" "src/assembler.scm" "src/compilation-unit.scm")) (format t "Compiling ~A~%" f) (evaluate (list (quote eval) (list (quote read) (list (quote open-input-string) (format nil "(compile-file ~S)" f))))))' \
 	  --quit
 	mv -f src/*.ecec $(BOOTSTRAP_DIR)/
 	@echo "Bootstrap .ecec files regenerated in $(BOOTSTRAP_DIR)/"
