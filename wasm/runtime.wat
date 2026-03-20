@@ -2295,6 +2295,29 @@
     (local.get $result)
   )
 
+  ;; --- hash-ref with optional default ---
+  (func $prim-hash-ref-with-default (param $args (ref null eq)) (result (ref null eq))
+    (local $ht (ref $hash-table))
+    (local $key (ref null eq))
+    (local $result (ref null eq))
+    (local $rest (ref null eq))
+    (local.set $ht (ref.cast (ref $hash-table) (call $arg1 (local.get $args))))
+    (local.set $key (call $arg2 (local.get $args)))
+    (local.set $result (call $hash-ref-impl (local.get $ht) (local.get $key)))
+    ;; If found (not #f), return it
+    (if (i32.eqz (call $is-false (local.get $result)))
+      (then (return (local.get $result))))
+    ;; Not found — check for 3rd arg (default)
+    (local.set $rest (call $cdr (ref.cast (ref $pair)
+      (call $cdr (ref.cast (ref $pair) (local.get $args))))))
+    (if (i32.and
+          (i32.eqz (ref.is_null (local.get $rest)))
+          (i32.eqz (call $is-null (local.get $rest))))
+      (then (return (call $car (ref.cast (ref $pair) (local.get $rest))))))
+    ;; No default — return #f
+    (global.get $false)
+  )
+
   ;; --- Gensym counter ---
   (global $gensym-counter (mut i32) (i32.const 0))
 
@@ -2909,12 +2932,7 @@
         (then (global.get $true)) (else (global.get $false))))))
     ;; 143 = hash-ref (ht key [default])
     (if (i32.eq (local.get $id) (i32.const 143))
-      (then
-        (local.set $id (i32.const 0))  ;; reuse $id as temp
-        ;; Check for default arg (3rd element)
-        (return (call $hash-ref-impl
-          (ref.cast (ref $hash-table) (call $arg1 (local.get $args)))
-          (call $arg2 (local.get $args))))))
+      (then (return (call $prim-hash-ref-with-default (local.get $args)))))
     ;; 144 = hash-set! (ht key val)
     (if (i32.eq (local.get $id) (i32.const 144))
       (then

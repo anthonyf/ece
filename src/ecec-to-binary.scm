@@ -140,12 +140,16 @@
               (write-value (vector-ref val i) port)
               (write-elems (+ i 1)))))
       (write-elems 0)))
+   ;; float bytes from CL bridge (:ece-float-bytes b0 b1 ... b7)
+   ((and (pair? val) (eq? (car val) ':ece-float-bytes))
+    (write-u8 8 port)
+    (for-each (lambda (b) (write-u8 b port)) (cdr val)))
    ;; pair
    ((pair? val)
     (write-u8 10 port)
     (write-value (car val) port)
     (write-value (cdr val) port))
-   ;; float
+   ;; float (fallback — integer floats)
    ((number? val)
     (write-u8 8 port)
     (write-f64-le val port))
