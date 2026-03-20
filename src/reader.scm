@@ -261,19 +261,17 @@
        ((eof? ch) (error "Unexpected EOF in hash table literal"))
        ((char=? ch #\})
         (read-char port)
-        ;; Build HAMT from flat key-value list
-        (let build ((lst (reverse items)) (root '()) (count 0))
-          (if (null? lst)
-              (cons :hash-table (cons count root))
-              (if (null? (cdr lst))
-                  (error "Odd number of elements in hash table literal")
-                  (let* ((key (car lst))
-                         (val (cadr lst))
-                         (result (hamt-insert root key val (hash-code key) 0))
-                         (new-root (car result))
-                         (added? (cdr result)))
-                    (build (cddr lst) new-root
-                           (if added? (+ count 1) count)))))))
+        ;; Return (hash-table 'key1 val1 'key2 val2 ...) form for the compiler
+        ;; Keys are quoted so symbols evaluate to themselves.
+        (let ((elems (reverse items)))
+          (if (odd? (length elems))
+              (error "Odd number of elements in hash table literal")
+              (cons 'hash-table
+                    (let quote-keys ((lst elems) (is-key #t))
+                      (if (null? lst)
+                          '()
+                          (cons (if is-key (list 'quote (car lst)) (car lst))
+                                (quote-keys (cdr lst) (not is-key)))))))))
        (else
         (set! items (cons (ece-scheme-read port) items))
         (loop))))))

@@ -455,6 +455,10 @@ const ECE = {
       [97,"%procedure-name-set!"],
       [98,"platform-has?"], [99,"%platform-primitives"],
       [114,"parameter?"], [137,"keyword?"],
+      // Platform hash table primitives (core)
+      [141,"%make-hash-table"], [142,"hash-table?"],
+      [143,"hash-ref"], [144,"hash-set!"], [145,"hash-remove!"],
+      [146,"hash-has-key?"], [147,"hash-keys"], [148,"hash-values"], [149,"hash-count"],
     ];
 
     for (const [id, name] of prims) {
