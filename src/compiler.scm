@@ -312,6 +312,7 @@
   (let ((primitive-branch (mc-make-label 'primitive-branch))
         (compiled-branch (mc-make-label 'compiled-branch))
         (continuation-branch (mc-make-label 'continuation-branch))
+        (parameter-branch (mc-make-label 'parameter-branch))
         (after-call (mc-make-label 'after-call)))
     (let ((compiled-linkage (if (eq? linkage 'next) after-call linkage)))
       (append-instruction-sequences
@@ -320,7 +321,9 @@
         (list '(test (op primitive-procedure?) (reg proc))
               (list 'branch (list 'label primitive-branch))
               '(test (op continuation?) (reg proc))
-              (list 'branch (list 'label continuation-branch))))
+              (list 'branch (list 'label continuation-branch))
+              '(test (op parameter?) (reg proc))
+              (list 'branch (list 'label parameter-branch))))
        (parallel-instruction-sequences
         ;; Compiled branch
         (append-instruction-sequences
@@ -336,14 +339,23 @@
              (assign stack (op continuation-stack) (reg proc))
              (assign continue (op continuation-conts) (reg proc))
              (goto (reg continue)))))
-         ;; Primitive branch
-         (append-instruction-sequences
-          primitive-branch
-          (end-with-linkage linkage
-                            (make-instruction-sequence
-                             '(proc argl) (list target)
-                             (list (list 'assign target '(op apply-primitive-procedure)
-                                         '(reg proc) '(reg argl))))))))
+         (parallel-instruction-sequences
+          ;; Parameter branch (uses compiled-linkage to add goto after-call)
+          (append-instruction-sequences
+           parameter-branch
+           (end-with-linkage compiled-linkage
+                             (make-instruction-sequence
+                              '(proc argl) (list target)
+                              (list (list 'assign target '(op apply-parameter)
+                                          '(reg proc) '(reg argl))))))
+          ;; Primitive branch
+          (append-instruction-sequences
+           primitive-branch
+           (end-with-linkage linkage
+                             (make-instruction-sequence
+                              '(proc argl) (list target)
+                              (list (list 'assign target '(op apply-primitive-procedure)
+                                          '(reg proc) '(reg argl)))))))))
        after-call))))
 
 (define (mc-code-to-get-rest-args operand-codes)
@@ -589,10 +601,16 @@
 ;;; Integration: compile-and-go via metacircular compiler
 
 (define (mc-compile-and-go expr . env-args)
-  (let ((compiled (mc-compile expr 'val 'next)))
-    (let ((start-pc (assemble-into-global (mc-instructions compiled))))
-      (if (null? env-args)
-          (execute-from-pc start-pc)
-          (execute-from-pc start-pc (car env-args))))))
+  ;; Inline mc-compile + mc-instructions into assemble-into-global so the
+  ;; instruction sequence is a temporary, not captured in a let binding.
+  ;; This prevents the instruction list from leaking into continuations
+  ;; captured inside execute-from-pc (the env frame for a let binding
+  ;; persists while execute-from-pc runs, and call/cc inside it would
+  ;; capture the entire env chain including the instruction list).
+  (let ((start-pc (assemble-into-global
+                   (mc-instructions (mc-compile expr 'val 'next)))))
+    (if (null? env-args)
+        (execute-from-pc start-pc)
+        (execute-from-pc start-pc (car env-args)))))
 
 (define (eval expr) (mc-compile-and-go expr))

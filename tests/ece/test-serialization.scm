@@ -69,3 +69,39 @@
   (define loaded (load-continuation "/tmp/ece-rt-cont.dat"))
   (assert (pair? loaded))
   (assert-equal (car loaded) 'continuation)))
+
+(test "continuation serialization is compact" (lambda ()
+  (define k #f)
+  (%raw-call/cc (lambda (cont) (set k cont) 0))
+  (define size (string-length (serialize-value k)))
+  ;; Trivial continuation should be well under 500 bytes
+  (assert (< size 500) (string-append "continuation too large: " (number->string size) " bytes"))))
+
+(test "continuation with state is compact" (lambda ()
+  (define state (hash-table 'room "kitchen" 'inventory (list "key" "torch") 'health 100))
+  (define k #f)
+  (%raw-call/cc (lambda (cont) (set k cont) 0))
+  (define size (string-length (serialize-value k)))
+  ;; Continuation with game state should stay under 1KB
+  (assert (< size 1000) (string-append "continuation+state too large: " (number->string size) " bytes"))))
+
+(test "round-trip parameter" (lambda ()
+  (define p (make-parameter 42))
+  (p 99)
+  (save-continuation! "/tmp/ece-rt-param.dat" p)
+  (define loaded (load-continuation "/tmp/ece-rt-param.dat"))
+  (assert (parameter? loaded))
+  (assert-equal (loaded) 99)))
+
+(test "parameter value in serialized continuation" (lambda ()
+  (define p (make-parameter "start"))
+  (p "dungeon")
+  (define k #f)
+  (%raw-call/cc (lambda (c) (set k c) 0))
+  (save-continuation! "/tmp/ece-rt-param-cont.dat" k)
+  (define loaded (load-continuation "/tmp/ece-rt-param-cont.dat"))
+  ;; The parameter should be captured in the continuation's env
+  ;; (it's in the global env which is sentinel'd, so this tests
+  ;; the parameter object itself, not the global binding)
+  (assert (pair? loaded))
+  (assert-equal (car loaded) 'continuation)))

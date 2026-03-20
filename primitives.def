@@ -166,8 +166,7 @@
 (107 untrace             1  cl     "Disable tracing for procedure")
 (112 %label-table-entries        0 cl "All label table entries")
 (113 %macro-table-entries        0 cl "All macro table entries")
-(114 %parameter-table-entries    0 cl "All parameter table entries")
-(115 %parameter-counter          0 cl "Current parameter counter value")
+(114 parameter?                  1 core "Test if value is a parameter object")
 
 ;;; --- Hash table (CL-backed eq hash) ---
 (116 %eq-hash-table      0  cl     "Create empty eq hash table")
