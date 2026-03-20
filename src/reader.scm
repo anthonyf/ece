@@ -58,7 +58,7 @@
       (if (and (not (eof? ch)) (reader-identifier-char? ch))
           (begin
             (read-char port)
-            (set buf (string-append buf (string ch)))
+            (set! buf (string-append buf (string ch)))
             (loop))
           (%intern-ece buf)))))
 
@@ -72,7 +72,7 @@
                    (char=? ch #\.)))
           (begin
             (read-char port)
-            (set buf (string-append buf (string ch)))
+            (set! buf (string-append buf (string ch)))
             (loop))
           (let ((n (string->number buf)))
             (if n n
@@ -107,8 +107,8 @@
   (define buf "")
   (define (flush-buf!)
     (when (> (string-length buf) 0)
-      (set segments (cons buf segments))
-      (set buf "")))
+      (set! segments (cons buf segments))
+      (set! buf "")))
   (let loop ()
     (let ((ch (read-char port)))
       (cond
@@ -137,11 +137,11 @@
         (let ((next (read-char port)))
           (cond
            ((eof? next) (error "Unexpected EOF in string escape"))
-           ((char=? next #\n) (set buf (string-append buf (string #\newline))))
-           ((char=? next #\t) (set buf (string-append buf (string #\tab))))
-           ((char=? next #\\) (set buf (string-append buf "\\")))
-           ((char=? next #\") (set buf (string-append buf "\"")))
-           (else (set buf (string-append buf (string next))))))
+           ((char=? next #\n) (set! buf (string-append buf (string #\newline))))
+           ((char=? next #\t) (set! buf (string-append buf (string #\tab))))
+           ((char=? next #\\) (set! buf (string-append buf "\\")))
+           ((char=? next #\") (set! buf (string-append buf "\"")))
+           (else (set! buf (string-append buf (string next))))))
         (loop))
        ;; Dollar interpolation
        ((char=? ch #\$)
@@ -150,12 +150,12 @@
            ;; $$ → literal $
            ((and (not (eof? next)) (char=? next #\$))
             (read-char port)
-            (set buf (string-append buf "$"))
+            (set! buf (string-append buf "$"))
             (loop))
            ;; $(expr) → read s-expression
            ((and (not (eof? next)) (char=? next #\())
             (flush-buf!)
-            (set segments (cons (ece-scheme-read port) segments))
+            (set! segments (cons (ece-scheme-read port) segments))
             (loop))
            ;; $identifier → read symbol name
            ((and (not (eof? next)) (reader-interp-identifier-char? next))
@@ -166,16 +166,16 @@
                     (begin
                       (read-char port)
                       (iloop (string-append sym-buf (string sc))))
-                    (set segments (cons (%intern-ece sym-buf)
-                                        segments)))))
+                    (set! segments (cons (%intern-ece sym-buf)
+                                         segments)))))
             (loop))
            ;; $ followed by non-identifier → literal $
            (else
-            (set buf (string-append buf "$"))
+            (set! buf (string-append buf "$"))
             (loop)))))
        ;; Regular character
        (else
-        (set buf (string-append buf (string ch)))
+        (set! buf (string-append buf (string ch)))
         (loop))))))
 
 ;;; Read a list (after opening paren has been consumed)
@@ -232,7 +232,7 @@
             (if (and (not (eof? nc)) (char-alphabetic? nc))
                 (begin
                   (read-char port)
-                  (set name (string-append name (string nc)))
+                  (set! name (string-append name (string nc)))
                   (loop))
                 (let ((lower-name (string-downcase name)))
                   (cond
@@ -275,7 +275,7 @@
                     (build (cddr lst) new-root
                            (if added? (+ count 1) count)))))))
        (else
-        (set items (cons (ece-scheme-read port) items))
+        (set! items (cons (ece-scheme-read port) items))
         (loop))))))
 
 ;;; Hash dispatch (after # has been consumed)

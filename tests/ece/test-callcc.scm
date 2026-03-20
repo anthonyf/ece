@@ -25,5 +25,5 @@
   (assert-equal
    (loop
     (if (= x 0) (break x))
-    (set x (- x 1)))
+    (set! x (- x 1)))
    0)))

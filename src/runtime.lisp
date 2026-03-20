@@ -5,6 +5,7 @@
            #:lambda
            #:var
            #:set
+           #:set!
            #:if
            #:begin
            #:quote

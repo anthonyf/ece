@@ -64,7 +64,7 @@
 
 (test "round-trip continuation" (lambda ()
   (define k #f)
-  (%raw-call/cc (lambda (cont) (set k cont)))
+  (%raw-call/cc (lambda (cont) (set! k cont)))
   (save-continuation! "/tmp/ece-rt-cont.dat" k)
   (define loaded (load-continuation "/tmp/ece-rt-cont.dat"))
   (assert (pair? loaded))
@@ -72,7 +72,7 @@
 
 (test "continuation serialization is compact" (lambda ()
   (define k #f)
-  (%raw-call/cc (lambda (cont) (set k cont) 0))
+  (%raw-call/cc (lambda (cont) (set! k cont) 0))
   (define size (string-length (serialize-value k)))
   ;; Trivial continuation should be well under 500 bytes
   (assert (< size 500) (string-append "continuation too large: " (number->string size) " bytes"))))
@@ -80,7 +80,7 @@
 (test "continuation with state is compact" (lambda ()
   (define state (hash-table 'room "kitchen" 'inventory (list "key" "torch") 'health 100))
   (define k #f)
-  (%raw-call/cc (lambda (cont) (set k cont) 0))
+  (%raw-call/cc (lambda (cont) (set! k cont) 0))
   (define size (string-length (serialize-value k)))
   ;; Continuation with game state should stay under 1KB
   (assert (< size 1000) (string-append "continuation+state too large: " (number->string size) " bytes"))))
@@ -109,7 +109,7 @@
     (let ((p (make-parameter "kitchen")))
       (p "dungeon")
       (define k #f)
-      (%raw-call/cc (lambda (c) (set k c) 0))
+      (%raw-call/cc (lambda (c) (set! k c) 0))
       (save-continuation! "/tmp/ece-rt-param-lex.dat" k)
       (define loaded (load-continuation "/tmp/ece-rt-param-lex.dat"))
       ;; The continuation captured the env with p in lexical scope
@@ -150,7 +150,7 @@
 
     ;; Capture continuation
     (define k #f)
-    (%raw-call/cc (lambda (c) (set k c) 0))
+    (%raw-call/cc (lambda (c) (set! k c) 0))
 
     ;; Return state + continuation for testing
     (list (room) (hp) (inventory) k))
@@ -171,7 +171,7 @@
     (room "dungeon")
     (hp 70)
     (define k #f)
-    (%raw-call/cc (lambda (c) (set k c) 0))
+    (%raw-call/cc (lambda (c) (set! k c) 0))
     ;; Save continuation
     (save-continuation! "/tmp/ece-rt-lexical-game.dat" k)
     ;; Return current state for verification
