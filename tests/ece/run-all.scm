@@ -33,4 +33,11 @@
 ;; Value serialization
 (load "tests/ece/test-serialization.scm")
 
+;; Comprehensive coverage
+(load "tests/ece/test-cross-space.scm")
+(load "tests/ece/test-mutation.scm")
+(load "tests/ece/test-file-io.scm")
+(load "tests/ece/test-advanced-continuations.scm")
+(load "tests/ece/test-misc.scm")
+
 (run-tests)
