@@ -2086,8 +2086,9 @@ Downcases ECE-package symbols for CL→ECE boundary compatibility."
         (*package* (find-package :ece))
         (header nil)
         (units nil))
-    ;; Use preserve case for reading ecec
+    ;; Use preserve case for reading ecec, read floats as double
     (setf (readtable-case *readtable*) :preserve)
+    (setf *read-default-float-format* 'double-float)
     (with-open-file (in input-path :direction :input)
       ;; Read header
       (setf header (read in nil :eof))
@@ -2108,6 +2109,26 @@ Downcases ECE-package symbols for CL→ECE boundary compatibility."
                          :test (lambda (a b)
                                  (declare (ignore a))
                                  (scheme-false-p b))))
+      ;; Convert CL floats to tagged byte lists for the ECE converter
+      ;; (ECE can't do IEEE 754 bit manipulation, so CL extracts the bytes)
+      (labels ((float-to-bytes (f)
+                 (let* ((d (coerce f 'double-float))
+                        (hi (sb-kernel:double-float-high-bits d))
+                        (lo (sb-kernel:double-float-low-bits d)))
+                   (list (intern ":ece-float-bytes" :ece)
+                         (ldb (byte 8 0) lo) (ldb (byte 8 8) lo)
+                         (ldb (byte 8 16) lo) (ldb (byte 8 24) lo)
+                         (ldb (byte 8 0) hi) (ldb (byte 8 8) hi)
+                         (ldb (byte 8 16) hi) (ldb (byte 8 24) hi))))
+               (convert-floats (tree)
+                 (cond
+                   ((and (numberp tree) (not (integerp tree)))
+                    (float-to-bytes tree))
+                   ((consp tree)
+                    (cons (convert-floats (car tree))
+                          (convert-floats (cdr tree))))
+                   (t tree))))
+        (setf units (convert-floats units)))
       ;; Call ECE converter
       (evaluate (list (intern "ecec-to-binary-unit" :ece)
                       (list 'quote header-info)
