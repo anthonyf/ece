@@ -130,3 +130,84 @@
   (loaded 999)
   (assert-equal (loaded) 999)
   (assert-equal (p) 42)))
+
+;; --- Lexical State Pattern (game-like save/load) ---
+
+(test "lexical state pattern: multiple params in function scope" (lambda ()
+  ;; External pure function — not serialized
+  (define (apply-damage hp amount) (- hp amount))
+
+  (define (run-game)
+    ;; All mutable state is lexical
+    (define room (make-parameter "kitchen"))
+    (define hp (make-parameter 100))
+    (define inventory (make-parameter '()))
+
+    ;; Mutate state
+    (room "dungeon")
+    (hp (apply-damage (hp) 30))
+    (inventory (list "key" "torch"))
+
+    ;; Capture continuation
+    (define k #f)
+    (%raw-call/cc (lambda (c) (set k c) 0))
+
+    ;; Return state + continuation for testing
+    (list (room) (hp) (inventory) k))
+
+  (define result (run-game))
+  (assert-equal (car result) "dungeon")
+  (assert-equal (cadr result) 70)
+  (assert-equal (caddr result) (list "key" "torch"))
+  ;; Continuation is compact (lexical state only)
+  (define k (cadddr result))
+  (assert (< (string-length (serialize-value k)) 1000)
+          "lexical state continuation should be compact")))
+
+(test "lexical state pattern: save and load preserves all state" (lambda ()
+  (define (run-game)
+    (define room (make-parameter "kitchen"))
+    (define hp (make-parameter 100))
+    (room "dungeon")
+    (hp 70)
+    (define k #f)
+    (%raw-call/cc (lambda (c) (set k c) 0))
+    ;; Save continuation
+    (save-continuation! "/tmp/ece-rt-lexical-game.dat" k)
+    ;; Return current state for verification
+    (list (room) (hp)))
+
+  (define result (run-game))
+  (assert-equal (car result) "dungeon")
+  (assert-equal (cadr result) 70)
+
+  ;; Load the saved continuation
+  (define loaded (load-continuation "/tmp/ece-rt-lexical-game.dat"))
+  (assert (pair? loaded))
+  (assert-equal (car loaded) 'continuation)))
+
+(test "lexical state pattern: external functions work with lexical params" (lambda ()
+  ;; External function receives values, not parameters
+  (define (format-status room hp)
+    (string-append room ":" (number->string hp)))
+
+  (define (run-game)
+    (define room (make-parameter "start"))
+    (define hp (make-parameter 100))
+    (room "cave")
+    (hp 50)
+    ;; Pass parameter VALUES to external function
+    (format-status (room) (hp)))
+
+  (assert-equal (run-game) "cave:50")))
+
+(test "lexical state pattern: parameter with converter in function scope" (lambda ()
+  (define (run-game)
+    ;; Parameter with converter ensures hp is always integer
+    (define hp (make-parameter 100))
+    (hp 70)
+    (save-continuation! "/tmp/ece-rt-lexical-conv.dat" hp)
+    (define loaded (load-continuation "/tmp/ece-rt-lexical-conv.dat"))
+    (assert (parameter? loaded))
+    (assert-equal (loaded) 70))
+  (run-game)))
