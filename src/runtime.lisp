@@ -85,6 +85,7 @@
            #:random
            #:random-seed!
            #:*random-state*
+           #:%make-hash-table
            #:hash-table
            #:hash-table?
            #:hash-ref
@@ -618,42 +619,22 @@ Combines *primitive-procedures* and *wrapper-primitives*."
 ;;; Custom readtable for ECE: ` → quasiquote, , → unquote, ,@ → unquote-splicing
 ;;; I/O primitives with custom wrappers
 
-(defun hamt-collect-entries (root)
-  "Walk a HAMT trie and collect all (key . val) pairs into a list."
-  (cond
-    ((null root) nil)
-    ((and (consp root) (eq (car root) :hamt-node))
-     (let ((vec (caddr root))
-           (entries nil))
-       (dotimes (i (length vec))
-         (let ((entry (aref vec i)))
-           (cond
-             ((and (consp entry) (member (car entry) '(:hamt-node :hamt-collision)))
-              (setf entries (nconc entries (hamt-collect-entries entry))))
-             ((consp entry)
-              (push entry entries)))))
-       entries))
-    ((and (consp root) (eq (car root) :hamt-collision))
-     (copy-list (cadr root)))
-    (t nil)))
-
 (defun ece-hash-table-p (obj)
-  "Check if obj is an ECE hash table (HAMT-backed)."
-  (and (consp obj) (eq (car obj) :hash-table)))
+  "ECE primitive: returns scheme bool. Use hash-table-p for CL-side checks."
+  (scheme-bool (hash-table-p obj)))
 
 (defun format-ece-hash-table (obj stream writer)
-  "Format an ECE HAMT hash table as {k1 v1 k2 v2 ...}."
-  (let ((root (cddr obj))
-        (entries (hamt-collect-entries (cddr obj))))
-    (write-char #\{ stream)
-    (loop for (pair . rest) on entries
-          for key = (car pair)
-          for val = (cdr pair)
-          do (funcall writer key stream)
-          (write-char #\Space stream)
-          (funcall writer val stream)
-          when rest do (write-char #\Space stream))
-    (write-char #\} stream)))
+  "Format a platform hash table as {k1 v1 k2 v2 ...}."
+  (write-char #\{ stream)
+  (let ((first t))
+    (maphash (lambda (key val)
+               (unless first (write-char #\Space stream))
+               (setf first nil)
+               (funcall writer key stream)
+               (write-char #\Space stream)
+               (funcall writer val stream))
+             obj))
+  (write-char #\} stream))
 
 (defun ece-display (obj)
   "Write obj without leading newline (princ)."
@@ -663,7 +644,7 @@ Combines *primitive-procedures* and *wrapper-primitives*."
     ((null obj) (write-string "()"))
     ((and (listp obj) (member (car obj) '(compiled-procedure primitive)))
      (princ (format-ece-proc obj)))
-    ((ece-hash-table-p obj)
+    ((hash-table-p obj)
      (format-ece-hash-table obj *standard-output*
                             (lambda (v s) (ece-display-to-stream v s))))
     (t (let ((*print-circle* t))
@@ -687,7 +668,7 @@ Combines *primitive-procedures* and *wrapper-primitives*."
     ((null obj) (write-string "()"))
     ((and (listp obj) (member (car obj) '(compiled-procedure primitive)))
      (princ (format-ece-proc obj)))
-    ((ece-hash-table-p obj)
+    ((hash-table-p obj)
      (format-ece-hash-table obj *standard-output*
                             (lambda (v s) (ece-write-to-stream v s))))
     (t (let ((*print-circle* t))
@@ -820,7 +801,7 @@ Returns EOF sentinel at end of input."
     ((null x) "()")
     ((and (listp x) (member (car x) '(compiled-procedure primitive)))
      (format-ece-proc x))
-    ((ece-hash-table-p x)
+    ((hash-table-p x)
      (with-output-to-string (s)
        (format-ece-hash-table x s
                               (lambda (v str) (ece-display-to-stream v str)))))
@@ -1108,7 +1089,17 @@ print without CL pipe escaping."
     (get-macro . ece-get-macro)
     (set-macro! . ece-set-macro!)
     (make-parameter . ece-make-parameter-value)
-    (apply-compiled-procedure . ece-apply-compiled-procedure)))
+    (apply-compiled-procedure . ece-apply-compiled-procedure)
+    ;; Platform hash table primitives (core IDs 141-149)
+    (%make-hash-table . ece-%make-hash-table)
+    (hash-table? . ece-hash-table-p)
+    (hash-ref . ece-hash-ref)
+    (hash-set! . ece-hash-set!)
+    (hash-remove! . ece-hash-remove!)
+    (hash-has-key? . ece-hash-has-key-p)
+    (hash-keys . ece-hash-keys)
+    (hash-values . ece-hash-values)
+    (hash-count . ece-hash-count)))
 
 ;;; Wrapper primitives are now registered via the manifest-based dispatch table.
 ;;; *wrapper-primitives* is still used by build-cl-function-map to map names to CL functions.
@@ -1797,6 +1788,51 @@ Returns a raw CL hash table — use %eq-hash-ref/set!/has-key? to access."
   (let ((keys nil))
     (maphash (lambda (k v) (declare (ignore v)) (push k keys)) ht)
     keys))
+
+;;; User-facing hash table primitives (platform-native, core IDs 141-149)
+;;; These back the ECE-level hash-table API on all hosts.
+
+(defun ece-%make-hash-table ()
+  "Create a new empty mutable hash table."
+  (make-hash-table :test 'eq))
+
+(defun ece-hash-ref (ht key &rest default)
+  "Look up KEY in hash table. Returns default (or #f) if not found."
+  (multiple-value-bind (val found) (gethash key ht)
+    (if found val
+        (if default (car default) *scheme-false*))))
+
+(defun ece-hash-set! (ht key val)
+  "Set KEY to VAL in hash table (mutating)."
+  (setf (gethash key ht) val)
+  val)
+
+(defun ece-hash-remove! (ht key)
+  "Remove KEY from hash table."
+  (remhash key ht)
+  *scheme-false*)
+
+(defun ece-hash-has-key-p (ht key)
+  "Test if KEY exists in hash table."
+  (multiple-value-bind (val found) (gethash key ht)
+    (declare (ignore val))
+    (scheme-bool found)))
+
+(defun ece-hash-keys (ht)
+  "Return list of all keys in hash table."
+  (let ((keys nil))
+    (maphash (lambda (k v) (declare (ignore v)) (push k keys)) ht)
+    keys))
+
+(defun ece-hash-values (ht)
+  "Return list of all values in hash table."
+  (let ((vals nil))
+    (maphash (lambda (k v) (declare (ignore k)) (push v vals)) ht)
+    vals))
+
+(defun ece-hash-count (ht)
+  "Return number of entries in hash table."
+  (hash-table-count ht))
 
 ;;; Hash-table frame primitives (for compaction.scm)
 

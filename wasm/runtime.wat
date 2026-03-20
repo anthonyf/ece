@@ -2223,6 +2223,58 @@
     (global.get $false)
   )
 
+  (func $hash-remove-impl (param $ht (ref $hash-table)) (param $key (ref null eq))
+    (local $keys (ref $hash-keys))
+    (local $vals (ref $hash-vals))
+    (local $count i32)
+    (local $i i32)
+    (local $last i32)
+    (local.set $keys (struct.get $hash-table $keys (local.get $ht)))
+    (local.set $vals (struct.get $hash-table $vals (local.get $ht)))
+    (local.set $count (struct.get $hash-table $count (local.get $ht)))
+    ;; Find the key
+    (local.set $i (i32.const 0))
+    (block $done
+      (loop $scan
+        (br_if $done (i32.ge_u (local.get $i) (local.get $count)))
+        (if (ref.eq (array.get $hash-keys (local.get $keys) (local.get $i)) (local.get $key))
+          (then
+            ;; Found — swap with last element and decrement count
+            (local.set $last (i32.sub (local.get $count) (i32.const 1)))
+            (if (i32.ne (local.get $i) (local.get $last))
+              (then
+                (array.set $hash-keys (local.get $keys) (local.get $i)
+                  (array.get $hash-keys (local.get $keys) (local.get $last)))
+                (array.set $hash-vals (local.get $vals) (local.get $i)
+                  (array.get $hash-vals (local.get $vals) (local.get $last)))))
+            (array.set $hash-keys (local.get $keys) (local.get $last) (ref.null eq))
+            (array.set $hash-vals (local.get $vals) (local.get $last) (ref.null eq))
+            (struct.set $hash-table $count (local.get $ht) (local.get $last))
+            (return)))
+        (local.set $i (i32.add (local.get $i) (i32.const 1)))
+        (br $scan)))
+  )
+
+  (func $hash-values-impl (param $ht (ref $hash-table)) (result (ref null eq))
+    (local $vals (ref $hash-vals))
+    (local $count i32)
+    (local $i i32)
+    (local $result (ref null eq))
+    (local.set $vals (struct.get $hash-table $vals (local.get $ht)))
+    (local.set $count (struct.get $hash-table $count (local.get $ht)))
+    (local.set $result (global.get $nil))
+    (local.set $i (i32.sub (local.get $count) (i32.const 1)))
+    (block $done
+      (loop $scan
+        (br_if $done (i32.lt_s (local.get $i) (i32.const 0)))
+        (local.set $result (call $cons
+          (array.get $hash-vals (local.get $vals) (local.get $i))
+          (local.get $result)))
+        (local.set $i (i32.sub (local.get $i) (i32.const 1)))
+        (br $scan)))
+    (local.get $result)
+  )
+
   (func $hash-keys-impl (param $ht (ref $hash-table)) (result (ref null eq))
     (local $keys (ref $hash-keys))
     (local $count i32)
@@ -2842,6 +2894,60 @@
     ;; 137 = keyword?
     (if (i32.eq (local.get $id) (i32.const 137))
       (then (return (global.get $false))))  ;; stub
+
+    ;; --- Platform hash table primitives (core IDs 141-149) ---
+    ;; 141 = %make-hash-table
+    (if (i32.eq (local.get $id) (i32.const 141))
+      (then (return (struct.new $hash-table
+        (array.new_default $hash-keys (i32.const 16))
+        (array.new_default $hash-vals (i32.const 16))
+        (i32.const 0)))))
+    ;; 142 = hash-table?
+    (if (i32.eq (local.get $id) (i32.const 142))
+      (then (return (if (result (ref null eq))
+        (ref.test (ref $hash-table) (call $arg1 (local.get $args)))
+        (then (global.get $true)) (else (global.get $false))))))
+    ;; 143 = hash-ref (ht key [default])
+    (if (i32.eq (local.get $id) (i32.const 143))
+      (then
+        (local.set $id (i32.const 0))  ;; reuse $id as temp
+        ;; Check for default arg (3rd element)
+        (return (call $hash-ref-impl
+          (ref.cast (ref $hash-table) (call $arg1 (local.get $args)))
+          (call $arg2 (local.get $args))))))
+    ;; 144 = hash-set! (ht key val)
+    (if (i32.eq (local.get $id) (i32.const 144))
+      (then
+        (call $hash-set-impl
+          (ref.cast (ref $hash-table) (call $arg1 (local.get $args)))
+          (call $arg2 (local.get $args))
+          (call $arg3 (local.get $args)))
+        (return (global.get $void))))
+    ;; 145 = hash-remove! (ht key)
+    (if (i32.eq (local.get $id) (i32.const 145))
+      (then
+        (call $hash-remove-impl
+          (ref.cast (ref $hash-table) (call $arg1 (local.get $args)))
+          (call $arg2 (local.get $args)))
+        (return (global.get $void))))
+    ;; 146 = hash-has-key? (ht key)
+    (if (i32.eq (local.get $id) (i32.const 146))
+      (then (return (call $hash-has-key-impl
+        (ref.cast (ref $hash-table) (call $arg1 (local.get $args)))
+        (call $arg2 (local.get $args))))))
+    ;; 147 = hash-keys (ht)
+    (if (i32.eq (local.get $id) (i32.const 147))
+      (then (return (call $hash-keys-impl
+        (ref.cast (ref $hash-table) (call $arg1 (local.get $args)))))))
+    ;; 148 = hash-values (ht)
+    (if (i32.eq (local.get $id) (i32.const 148))
+      (then (return (call $hash-values-impl
+        (ref.cast (ref $hash-table) (call $arg1 (local.get $args)))))))
+    ;; 149 = hash-count (ht)
+    (if (i32.eq (local.get $id) (i32.const 149))
+      (then (return (call $make-fixnum
+        (struct.get $hash-table $count
+          (ref.cast (ref $hash-table) (call $arg1 (local.get $args))))))))
 
     ;; Unknown primitive — return void
     (global.get $void)

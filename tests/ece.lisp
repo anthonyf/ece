@@ -1043,10 +1043,9 @@
            (ok (equal (ece-eval-string "(hash-ref {name \"Alice\" age 30} 'name)") "Alice"))
            (ok (= (ece-eval-string "(hash-ref {name \"Alice\" age 30} 'age)") 30)))
 
-  (testing "hash table is self-evaluating"
-           (let ((ht-tag (intern ":hash-table" :ece)))
-             (ok (equal (evaluate (list ht-tag (cons 'name "Alice")))
-                        (list ht-tag (cons 'name "Alice"))))))
+  (testing "hash table creation and access"
+           (ok (evaluate '(hash-table? (hash-table 'name "Alice"))))
+           (ok (equal (evaluate '(hash-ref (hash-table 'name "Alice") 'name)) "Alice")))
 
   (testing "hash table stored in variable"
            (ok (evaluate '(hash-table? (begin
@@ -1062,9 +1061,8 @@
              (ok (= (evaluate '(hash-ref (hash-table 'a 1 'b 2) 'b)) 2)))
 
   (testing "hash-table constructor empty"
-           (let ((ht-tag (intern ":hash-table" :ece)))
-             (ok (equal (evaluate (list ht-tag))
-                        (list ht-tag)))))
+           (ok (evaluate '(hash-table? (hash-table))))
+           (ok (= (evaluate '(hash-count (hash-table))) 0)))
 
   (testing "hash-table constructor with computed key"
            (ok (equal (evaluate '(begin (define k 'name)
@@ -2423,18 +2421,13 @@
              (ok (= (aref v 2) 3))))
 
   (testing "hash table literals"
-           (let ((ht (ece-read-string "{a 1 b 2}")))
-             (ok (consp ht))
-             (ok (eq (car ht) (intern ":hash-table" :ece)))
-             ;; Count is second element in HAMT format (:hash-table count . root)
-             (ok (= (cadr ht) 2))
-             ;; Verify values via hash-ref (use ECE-interned symbols for keys)
-             (ok (= (evaluate `(hash-ref (ece::ece-scheme-read (open-input-string "{a 1 b 2}"))
-                                         (quote ,(intern "a" :ece))))
-                    1))
-             (ok (= (evaluate `(hash-ref (ece::ece-scheme-read (open-input-string "{a 1 b 2}"))
-                                         (quote ,(intern "b" :ece))))
-                    2))))
+           ;; Reader returns (hash-table 'a 1 'b 2) form for the compiler
+           (let ((form (ece-read-string "{a 1 b 2}")))
+             (ok (consp form))
+             (ok (eq (car form) (intern "hash-table" :ece)))
+             ;; Test via ece-eval-string which compiles and runs the expression
+             (ok (= (ece-eval-string "(hash-ref {a 1 b 2} 'a)") 1))
+             (ok (= (ece-eval-string "(hash-ref {a 1 b 2} 'b)") 2))))
 
   (testing "booleans"
            (ok (eq (ece-read-string "#t") t))
