@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>ECE — WebAssembly Runtime</title>
+  <style>
+    body { font-family: monospace; background: #1e1e1e; color: #d4d4d4; margin: 2em; }
+    h1 { color: #569cd6; font-size: 1.2em; }
+    #output { white-space: pre-wrap; padding: 1em; background: #0d0d0d; border: 1px solid #333; min-height: 200px; }
+    #status { color: #808080; margin-bottom: 1em; }
+    .ok { color: #6a9955; }
+    .error { color: #f44747; }
+    .timing { color: #dcdcaa; }
+  </style>
+</head>
+<body>
+  <h1>ECE WebAssembly Runtime</h1>
+  <div id="status">Loading...</div>
+  <pre id="output"></pre>
+  <script src="glue.js"></script>
+  <script>
+    (async () => {
+      const status = document.getElementById("status");
+      const output = document.getElementById("output");
+
+      function log(msg, cls) {
+        const span = document.createElement("span");
+        span.className = cls || "";
+        span.textContent = msg + "\n";
+        output.appendChild(span);
+      }
+
+      try {
+        // Load WASM module
+        status.textContent = "Loading WASM module...";
+        await ECE.init("runtime.wasm", "output");
+        log("WASM module loaded.", "ok");
+
+        // Build global environment
+        status.textContent = "Building environment...";
+        ECE.globalEnvHandle = ECE.buildGlobalEnv();
+        log("Global environment ready.", "ok");
+
+        // Load prelude
+        status.textContent = "Loading prelude...";
+        const t0 = performance.now();
+        const parsed = await ECE.loadEcecb("../bootstrap/prelude.ececb");
+        ECE.loadParsed(parsed);
+        const t1 = performance.now();
+        log(`Prelude loaded: ${parsed.units.length} units, ${parsed.units.reduce((s,u) => s+u.instrs.length, 0)} instructions`, "ok");
+
+        // Execute prelude
+        status.textContent = "Booting prelude...";
+        const w = ECE.wasm;
+        const spaceId = w.sym_id(ECE.internSym(parsed.spaceName));
+        const t2 = performance.now();
+        w.run(spaceId, 0, ECE.globalEnvHandle);
+        const t3 = performance.now();
+        log(`Prelude booted in ${(t3-t2).toFixed(1)}ms (load: ${(t1-t0).toFixed(1)}ms)`, "timing");
+
+        // Run test: (display (+ 10 20)) (newline)
+        log("\n--- Test: (display (+ 10 20)) (newline) ---");
+        const nil = w.h_nil();
+        function oc(v) { return w.h_cons(w.h_fixnum(0), v); }
+        function or_(r) { return w.h_cons(w.h_fixnum(1), w.h_fixnum(r)); }
+        function ol(...o) { let l=nil; for(let i=o.length-1;i>=0;i--) l=w.h_cons(o[i],l); return l; }
+
+        const testSym = ECE.internSym("browser-test");
+        const testId = w.sym_id(testSym);
+        const testH = w.create_space(testSym, 12);
+        let pc = 0;
+
+        const plusSym = ECE.internSym("+");
+        w.space_set_instr(testH, pc++, w.make_instr(0, 2, 3, 0, ol(oc(plusSym), or_(1))));
+        w.space_set_instr(testH, pc++, w.make_instr(0, 0, 0, 0, w.h_fixnum(20)));
+        w.space_set_instr(testH, pc++, w.make_instr(0, 3, 3, 13, ol(or_(0))));
+        w.space_set_instr(testH, pc++, w.make_instr(0, 0, 0, 0, w.h_fixnum(10)));
+        w.space_set_instr(testH, pc++, w.make_instr(0, 3, 3, 14, ol(or_(0), or_(3))));
+        w.space_set_instr(testH, pc++, w.make_instr(0, 0, 3, 6, ol(or_(2), or_(3))));
+
+        const displaySym = ECE.internSym("display");
+        w.space_set_instr(testH, pc++, w.make_instr(0, 2, 3, 0, ol(oc(displaySym), or_(1))));
+        w.space_set_instr(testH, pc++, w.make_instr(0, 3, 3, 13, ol(or_(0))));
+        w.space_set_instr(testH, pc++, w.make_instr(0, 0, 3, 6, ol(or_(2), or_(3))));
+
+        const newlineSym = ECE.internSym("newline");
+        w.space_set_instr(testH, pc++, w.make_instr(0, 2, 3, 0, ol(oc(newlineSym), or_(1))));
+        w.space_set_instr(testH, pc++, w.make_instr(0, 3, 0, 0, nil));
+        w.space_set_instr(testH, pc++, w.make_instr(0, 0, 3, 6, ol(or_(2), or_(3))));
+
+        w.run(testId, 0, ECE.globalEnvHandle);
+
+        status.innerHTML = '<span class="ok">Ready.</span>';
+
+      } catch (e) {
+        status.innerHTML = '<span class="error">Error: ' + e.message + '</span>';
+        log("ERROR: " + e.message, "error");
+        log(e.stack, "error");
+        console.error(e);
+      }
+    })();
+  </script>
+</body>
+</html>

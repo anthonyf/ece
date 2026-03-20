@@ -1,4 +1,4 @@
-.PHONY: test test-ece repl run bootstrap fmt check-fmt setup clean
+.PHONY: test test-ece repl run bootstrap wasm fmt check-fmt setup clean
 
 BOOTSTRAP_DIR := bootstrap
 BOOTSTRAP_SRCS := src/prelude.scm src/compiler.scm src/reader.scm src/assembler.scm src/compilation-unit.scm
@@ -24,6 +24,17 @@ bootstrap:
 	  --quit
 	mv -f src/*.ecec $(BOOTSTRAP_DIR)/
 	@echo "Bootstrap .ecec files regenerated in $(BOOTSTRAP_DIR)/"
+	@echo "Converting .ecec to .ececb..."
+	qlot exec sbcl --eval '(asdf:load-system :ece)' \
+	  --eval '(ece:evaluate (list (quote load) "src/ecec-to-binary.scm"))' \
+	  --eval '(dolist (name (list "prelude" "compiler" "reader" "assembler" "compilation-unit")) (ece::convert-ecec-to-ececb (format nil "bootstrap/~A.ecec" name) (format nil "bootstrap/~A.ececb" name)))' \
+	  --quit
+	@echo "Bootstrap .ececb files generated."
+
+wasm: wasm/runtime.wasm
+
+wasm/runtime.wasm: wasm/runtime.wat
+	wasm-as --enable-gc --enable-reference-types wasm/runtime.wat -o wasm/runtime.wasm
 
 run:
 	qlot exec sbcl --load ece.asd --eval '(asdf:load-system :ece)' --eval '(ece:repl)'
