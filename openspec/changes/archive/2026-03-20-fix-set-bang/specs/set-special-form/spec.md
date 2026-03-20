@@ -1,4 +1,4 @@
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: set mutates an existing binding
 The evaluator SHALL support `(set! <variable> <expression>)` which evaluates `<expression>` and updates the existing binding of `<variable>` in the environment.

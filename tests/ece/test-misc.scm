@@ -100,7 +100,7 @@
 (test "loop macro with break" (lambda ()
   (define total 0)
   (loop
-   (set total (+ total 1))
+   (set! total (+ total 1))
    (when (= total 3) (break total)))
   (assert-equal total 3)))
 

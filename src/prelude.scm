@@ -663,7 +663,7 @@
 (define *random-state* 12345)
 
 (define (random-seed! seed)
-  (set *random-state* seed))
+  (set! *random-state* seed))
 
 (define (xorshift32 state)
   (let* ((s1 (bitwise-xor state (arithmetic-shift state 13)))
@@ -672,7 +672,7 @@
     (bitwise-and s3 4294967295)))
 
 (define (random n)
-  (set *random-state* (xorshift32 *random-state*))
+  (set! *random-state* (xorshift32 *random-state*))
   (modulo *random-state* n))
 
 ;; define-record macro: generate record type definitions backed by hash tables
@@ -773,7 +773,7 @@
         ;; Unwind: call after thunks for exited extents (innermost first)
         (define (unwind ws)
           (when (not (eq? ws common))
-            (set *winding-stack* (cdr ws))
+            (set! *winding-stack* (cdr ws))
             ((cdr (car ws)))  ;; after thunk
             (unwind (cdr ws))))
         (unwind from)
@@ -782,15 +782,15 @@
           (when (not (eq? ws common))
             (rewind (cdr ws))
             ((car (car ws)))  ;; before thunk
-            (set *winding-stack* (cons (car ws) *winding-stack*))))
+            (set! *winding-stack* (cons (car ws) *winding-stack*))))
         (rewind to))))
 
 (define (dynamic-wind before thunk after)
   "R7RS dynamic-wind: call before, thunk, after with proper winding."
   (before)
-  (set *winding-stack* (cons (cons before after) *winding-stack*))
+  (set! *winding-stack* (cons (cons before after) *winding-stack*))
   (let ((result (thunk)))
-    (set *winding-stack* (cdr *winding-stack*))
+    (set! *winding-stack* (cdr *winding-stack*))
     (after)
     result))
 
@@ -868,9 +868,9 @@
   "Install HANDLER as exception handler for the dynamic extent of THUNK."
   (let ((old-handler *current-exception-handler*))
     (dynamic-wind
-        (lambda () (set *current-exception-handler* handler))
+        (lambda () (set! *current-exception-handler* handler))
         thunk
-        (lambda () (set *current-exception-handler* old-handler)))))
+        (lambda () (set! *current-exception-handler* old-handler)))))
 
 (define (error msg . irritants)
   "Create an error object and raise it."
@@ -989,7 +989,7 @@ shared structure, and global env sentinel."
             (define id (if (and count (> count 1))
                            (begin
                              (define this-id next-id)
-                             (set next-id (+ next-id 1))
+                             (set! next-id (+ next-id 1))
                              (%eq-hash-set! refs obj this-id)
                              this-id)
                            #f))

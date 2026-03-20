@@ -24,7 +24,7 @@
 
 (test "cond multi-expr body" (lambda ()
   (define x 0)
-  (assert-equal (cond ((= 1 1) (set x 10) (+ x 5))) 15)))
+  (assert-equal (cond ((= 1 1) (set! x 10) (+ x 5))) 15)))
 
 (test "case basic" (lambda ()
   (assert-equal (case (+ 1 1) ((1) 10) ((2) 20) ((3) 30)) 20)

@@ -287,27 +287,27 @@
 
 (deftest test-set-eval
     (testing "update a defined variable"
-             (ok (= (evaluate '(begin (define x 1) (set x 2) x)) 2)))
+             (ok (= (evaluate '(begin (define x 1) (set! x 2) x)) 2)))
 
   (testing "update with a computed value"
-           (ok (= (evaluate '(begin (define x 1) (set x (+ x 10)) x)) 11)))
+           (ok (= (evaluate '(begin (define x 1) (set! x (+ x 10)) x)) 11)))
 
   (testing "set returns the new value"
-           (ok (= (evaluate '(begin (define x 1) (set x 42))) 42)))
+           (ok (= (evaluate '(begin (define x 1) (set! x 42))) 42)))
 
   (testing "unbound variable signals error"
-           (signals (evaluate '(set nonexistent 10))))
+           (signals (evaluate '(set! nonexistent 10))))
 
   (testing "update variable in enclosing scope"
            (ok (= (evaluate '(begin (define x 1)
-                              (define (f) (set x 99))
+                              (define (f) (set! x 99))
                               (f)
                               x)) 99)))
 
   (testing "closure mutation counter pattern"
            (ok (= (evaluate '(begin
                               (define counter 0)
-                              (define (inc) (set counter (+ counter 1)))
+                              (define (inc) (set! counter (+ counter 1)))
                               (inc)
                               (inc)
                               (inc)
@@ -454,7 +454,7 @@
 
   (testing "multi-expression clause body"
            (ok (= (evaluate '(begin (define x 0)
-                              (cond ((= 1 1) (set x 10) (+ x 5)))
+                              (cond ((= 1 1) (set! x 10) (+ x 5)))
                               x))
                   10)))
 
@@ -479,7 +479,7 @@
 
   (testing "key expression evaluated once"
            (ok (= (evaluate '(begin (define counter 0)
-                              (case (begin (set counter (+ counter 1)) counter)
+                              (case (begin (set! counter (+ counter 1)) counter)
                                 ((1) (quote one))
                                 ((2) (quote two)))
                               counter))
@@ -499,7 +499,7 @@
            (ok (equal (evaluate '(begin (define result (quote ()))
                                   (do ((i 0 (+ i 1)))
                                       ((= i 3) result)
-                                    (set result (cons i result)))))
+                                    (set! result (cons i result)))))
                       '(2 1 0))))
 
   (testing "variable without step expression stays constant"
@@ -765,7 +765,7 @@
 (deftest test-or-no-double-eval
     (testing "or does not double-evaluate truthy argument"
              (ok (= (evaluate '(begin (define counter 0)
-                                (or (begin (set counter (+ counter 1)) counter) 99)
+                                (or (begin (set! counter (+ counter 1)) counter) 99)
                                 counter))
                     1))))
 
@@ -1425,14 +1425,14 @@
            (ok (= (evaluate '(let ((x 5))
                               (loop
                                (if (= x 0) (break x))
-                               (set x (- x 1)))))
+                               (set! x (- x 1)))))
                   0)))
   (testing "loop accumulates then breaks"
            (ok (equal (evaluate '(let ((acc (list)) (i 0))
                                   (loop
                                    (if (= i 5) (break acc))
-                                   (set acc (cons i acc))
-                                   (set i (+ i 1)))))
+                                   (set! acc (cons i acc))
+                                   (set! i (+ i 1)))))
                       '(4 3 2 1 0)))))
 
 (deftest test-collect
@@ -1501,7 +1501,7 @@
                       (progn
                         (evaluate '(define img-test-num 42))
                         (ece::ece-save-image (namestring tmpfile))
-                        (evaluate '(set img-test-num 999))
+                        (evaluate '(set! img-test-num 999))
                         (ece::ece-load-image (namestring tmpfile))
                         (ok (= (evaluate 'img-test-num) 42)))
                    (when (probe-file tmpfile) (delete-file tmpfile)))))
@@ -1515,7 +1515,7 @@
                       (progn
                         (evaluate '(define img-test-str "hello world"))
                         (ece::ece-save-image (namestring tmpfile))
-                        (evaluate '(set img-test-str "overwritten"))
+                        (evaluate '(set! img-test-str "overwritten"))
                         (ece::ece-load-image (namestring tmpfile))
                         (ok (equal (evaluate 'img-test-str) "hello world")))
                    (when (probe-file tmpfile) (delete-file tmpfile)))))
@@ -1530,7 +1530,7 @@
                         (evaluate '(define img-test-bool t))
                         (evaluate '(define img-test-sym (quote hello)))
                         (ece::ece-save-image (namestring tmpfile))
-                        (evaluate '(set img-test-bool nil))
+                        (evaluate '(set! img-test-bool nil))
                         (ece::ece-load-image (namestring tmpfile))
                         (ok (eq (evaluate 'img-test-bool) t))
                         (ok (eq (evaluate 'img-test-sym) 'hello)))
@@ -1545,7 +1545,7 @@
                       (progn
                         (evaluate '(define img-test-lst (list 1 2 3)))
                         (ece::ece-save-image (namestring tmpfile))
-                        (evaluate '(set img-test-lst (list 9 9 9)))
+                        (evaluate '(set! img-test-lst (list 9 9 9)))
                         (ece::ece-load-image (namestring tmpfile))
                         (ok (equal (evaluate 'img-test-lst) '(1 2 3))))
                    (when (probe-file tmpfile) (delete-file tmpfile)))))))
@@ -1596,7 +1596,7 @@
                                        (begin
                                         (define count 0)
                                         (lambda ()
-                                          (set count (+ count 1))
+                                          (set! count (+ count 1))
                                           count))))
                                     (define img-counter (img-make-counter))))
                         ;; Increment twice before save
@@ -1908,7 +1908,7 @@
                   49)))
   (testing "compile set"
            (ok (= (ece-eval-string
-                   "(mc-compile-and-go '(begin (define mc-y-test 1) (set mc-y-test 42) mc-y-test))")
+                   "(mc-compile-and-go '(begin (define mc-y-test 1) (set! mc-y-test 42) mc-y-test))")
                   42)))
   (testing "compile call/cc"
            (ok (= (ece-eval-string "(mc-compile-and-go '(call/cc (lambda (k) (k 42))))") 42)))

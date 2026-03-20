@@ -12,16 +12,16 @@
 
 (define (test name thunk)
   "Register a named test thunk for later execution."
-  (set *tests* (append *tests* (list (list name thunk)))))
+  (set! *tests* (append *tests* (list (list name thunk)))))
 
 ;; --- Assertions ---
 
 (define (assert-equal actual expected)
   "Check that actual equals expected using equal?."
   (if (equal? actual expected)
-      (set *test-passes* (+ *test-passes* 1))
+      (set! *test-passes* (+ *test-passes* 1))
       (begin
-        (set *test-failures* (+ *test-failures* 1))
+        (set! *test-failures* (+ *test-failures* 1))
         (display "    FAIL: expected ")
         (write expected)
         (display " got ")
@@ -31,18 +31,18 @@
 (define (assert-true val)
   "Check that val is truthy (not false/nil)."
   (if val
-      (set *test-passes* (+ *test-passes* 1))
+      (set! *test-passes* (+ *test-passes* 1))
       (begin
-        (set *test-failures* (+ *test-failures* 1))
+        (set! *test-failures* (+ *test-failures* 1))
         (display "    FAIL: expected truthy value, got false")
         (newline))))
 
 (define-macro (assert-error expr)
   "Check that expr signals an error. Uses try-eval."
   `(if (eof? (try-eval ',expr))
-       (set *test-passes* (+ *test-passes* 1))
+       (set! *test-passes* (+ *test-passes* 1))
        (begin
-         (set *test-failures* (+ *test-failures* 1))
+         (set! *test-failures* (+ *test-failures* 1))
          (display "    FAIL: expected error from ")
          (display ',expr)
          (newline))))
@@ -60,19 +60,19 @@
        (cond
         ((eq? ,result ':no-error)
          (begin
-           (set *test-failures* (+ *test-failures* 1))
+           (set! *test-failures* (+ *test-failures* 1))
            (display "    FAIL: expected error but expression succeeded")
            (newline)))
         ((eq? ,result ':not-error-object)
          (begin
-           (set *test-failures* (+ *test-failures* 1))
+           (set! *test-failures* (+ *test-failures* 1))
            (display "    FAIL: raised value was not an error object")
            (newline)))
         ((equal? ,result ,expected-msg)
-         (set *test-passes* (+ *test-passes* 1)))
+         (set! *test-passes* (+ *test-passes* 1)))
         (else
          (begin
-           (set *test-failures* (+ *test-failures* 1))
+           (set! *test-failures* (+ *test-failures* 1))
            (display "    FAIL: expected error message ")
            (write ,expected-msg)
            (display " got ")
@@ -97,7 +97,7 @@
      (display name)
      (newline)
      ;; Run with error isolation via try-eval
-     (set *current-test-thunk* thunk)
+     (set! *current-test-thunk* thunk)
      (try-eval '(*current-test-thunk*)))
    *tests*)
   (newline)

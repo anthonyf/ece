@@ -72,7 +72,7 @@
 (test "with-exception-handler basic" (lambda ()
   (define caught '())
   (with-exception-handler
-   (lambda (e) (set caught e))
+   (lambda (e) (set! caught e))
    (lambda ()
      (guard (e (#t 'handled))
        (error "test"))))

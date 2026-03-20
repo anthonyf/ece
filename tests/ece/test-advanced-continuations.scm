@@ -4,8 +4,8 @@
 (test "invoke continuation multiple times" (lambda ()
   (define results '())
   (define k #f)
-  (define val (call/cc (lambda (c) (set k c) 0)))
-  (set results (cons val results))
+  (define val (call/cc (lambda (c) (set! k c) 0)))
+  (set! results (cons val results))
   (when (< val 3)
     (k (+ val 1)))
   ;; k was invoked with 1, 2, 3 — results accumulated in reverse
@@ -14,8 +14,8 @@
 (test "continuation as accumulator" (lambda ()
   (define total 0)
   (define k #f)
-  (define n (call/cc (lambda (c) (set k c) 1)))
-  (set total (+ total n))
+  (define n (call/cc (lambda (c) (set! k c) 1)))
+  (set! total (+ total n))
   (cond
    ((= n 1) (k 2))
    ((= n 2) (k 3))
@@ -27,7 +27,7 @@
   (define p (make-parameter "outside"))
   (define k #f)
   (parameterize ((p "inside"))
-    (call/cc (lambda (c) (set k c)))
+    (call/cc (lambda (c) (set! k c)))
     (assert-equal (p) "inside"))
   ;; After parameterize exits, p is restored
   (assert-equal (p) "outside")))
@@ -37,7 +37,7 @@
   (define k #f)
   (parameterize ((p 10))
     (parameterize ((p 20))
-      (set k (call/cc (lambda (c) c)))
+      (set! k (call/cc (lambda (c) c)))
       (assert-equal (p) 20))
     (assert-equal (p) 10))
   (assert-equal (p) 0)))
@@ -46,7 +46,7 @@
   ;; Mutable state via set-car!
   (define cell (cons 0 '()))
   (define k #f)
-  (set k (call/cc (lambda (c) c)))
+  (set! k (call/cc (lambda (c) c)))
   ;; After first capture, cell is (0), after invoke cell is (99)
   (when (= (car cell) 0)
     (set-car! cell 99)

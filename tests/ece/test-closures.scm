@@ -34,7 +34,7 @@
 
 (test "closure over mutable state" (lambda ()
   (define counter 0)
-  (define (inc) (set counter (+ counter 1)))
+  (define (inc) (set! counter (+ counter 1)))
   (inc) (inc) (inc)
   (assert-equal counter 3)))
 
@@ -80,7 +80,7 @@
 
 (test "set mutation" (lambda ()
   (define x 1)
-  (set x 2)
+  (set! x 2)
   (assert-equal x 2)
-  (set x (+ x 10))
+  (set! x (+ x 10))
   (assert-equal x 12)))
