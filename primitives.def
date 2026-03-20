@@ -160,6 +160,8 @@
 (101 open-output-file    1  cl     "Open file for writing")
 (102 with-input-from-file  2 cl    "Scoped input redirection from file")
 (103 with-output-to-file   2 cl    "Scoped output redirection to file")
+(104 write-byte            2  cl     "Write byte (0-255) to output port")
+(105 open-binary-output-file 1 cl   "Open file for binary writing")
 
 ;;; --- Debugging ---
 (106 trace               1  cl     "Enable tracing for procedure")

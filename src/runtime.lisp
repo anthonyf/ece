@@ -97,6 +97,7 @@
            #:hash-count
            #:sleep
            #:clear-screen
+           #:write-byte
            #:string-downcase
            #:string-upcase
            #:string-split
@@ -949,6 +950,18 @@ print without CL pipe escaping."
     (finish-output (ece-port-stream p))
     ch))
 
+(defun ece-open-binary-output-file (filename)
+  "Open FILENAME for binary writing. Returns an output port."
+  (ece-make-output-port (open filename :direction :output
+                              :element-type '(unsigned-byte 8)
+                              :if-exists :supersede
+                              :if-does-not-exist :create)))
+
+(defun ece-write-byte (byte port)
+  "Write BYTE (integer 0-255) to output PORT as a raw byte."
+  (write-byte byte (ece-port-stream port))
+  byte)
+
 (defun ece-char-ready-p (&optional port)
   (let ((p (or port *current-input-port*)))
     (scheme-bool (listen (ece-port-stream p)))))
@@ -1048,6 +1061,8 @@ print without CL pipe escaping."
     (char-numeric? . ece-char-numeric-p)
     (with-input-from-file . ece-with-input-from-file)
     (with-output-to-file . ece-with-output-to-file)
+    (write-byte . ece-write-byte)
+    (open-binary-output-file . ece-open-binary-output-file)
     (string . string)
     (%intern-ece . ece-%intern-ece)
     (%instruction-vector-length . ece-%instruction-vector-length)
@@ -2024,6 +2039,44 @@ Downcases ECE-package symbols for CL→ECE boundary compatibility."
 (let ((id (gethash (intern "try-eval" :ece) *primitive-name-to-id*)))
   (when id
     (setf (aref *primitive-dispatch-table* id) #'ece-try-eval)))
+
+;;; .ecec → .ececb binary conversion
+;;; CL reads the .ecec (handles #S(SCHEME-FALSE), NIL, etc.), then
+;;; calls the ECE converter function to emit binary.
+
+(defun convert-ecec-to-ececb (input-path output-path)
+  "Read INPUT-PATH with CL reader, pass to ECE converter, write OUTPUT-PATH."
+  (let ((*readtable* (copy-readtable nil))
+        (*package* (find-package :ece))
+        (header nil)
+        (units nil))
+    ;; Use preserve case for reading ecec
+    (setf (readtable-case *readtable*) :preserve)
+    (with-open-file (in input-path :direction :input)
+      ;; Read header
+      (setf header (read in nil :eof))
+      ;; Read all units
+      (loop for unit = (read in nil :eof)
+            until (eq unit :eof)
+            do (push (downcase-ece-symbols unit) units))
+      (setf units (nreverse units)))
+    ;; Parse header: (ecec-header (space <name>) (macros <list>))
+    (let* ((space-name (symbol-name (cadr (cadr header))))
+           (macros-raw (cadr (caddr header)))
+           (macros (if (or (null macros-raw) (eq macros-raw '|NIL|))
+                       '()
+                       (downcase-ece-symbols macros-raw)))
+           (header-info (cons space-name macros)))
+      ;; Replace all SCHEME-FALSE structs with ECE's actual #f singleton
+      (setf units (subst *scheme-false* *scheme-false* units
+                         :test (lambda (a b)
+                                 (declare (ignore a))
+                                 (scheme-false-p b))))
+      ;; Call ECE converter
+      (evaluate (list (intern "ecec-to-binary-unit" :ece)
+                      (list 'quote header-info)
+                      (list 'quote units)
+                      output-path)))))
 
 ;;; REPL: compile and run the REPL loop via the metacircular compiler.
 (defun repl ()

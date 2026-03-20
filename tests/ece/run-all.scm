@@ -1,43 +1,10 @@
 ;;; ECE Native Test Suite — Entry Point
-;;; Loads the test framework and all test files, then runs all tests.
+;;; Loads common (platform-independent) + CL-specific tests, then runs all.
 
-(load "tests/ece/test-framework.scm")
+;; Common tests (core primitives only — run on any host)
+(load "tests/ece/run-common.scm")
 
-;; Data types & operations
-(load "tests/ece/test-arithmetic.scm")
-(load "tests/ece/test-lists.scm")
-(load "tests/ece/test-strings.scm")
-(load "tests/ece/test-vectors.scm")
-(load "tests/ece/test-hash-tables.scm")
-(load "tests/ece/test-types.scm")
-
-;; Control flow & binding
-(load "tests/ece/test-control-flow.scm")
-(load "tests/ece/test-closures.scm")
-(load "tests/ece/test-macros.scm")
-(load "tests/ece/test-tco.scm")
-
-;; Advanced features
-(load "tests/ece/test-callcc.scm")
-(load "tests/ece/test-higher-order.scm")
-(load "tests/ece/test-records.scm")
-(load "tests/ece/test-errors.scm")
-(load "tests/ece/test-parameters.scm")
-(load "tests/ece/test-dynamic-wind.scm")
-(load "tests/ece/test-guard.scm")
-(load "tests/ece/test-error-messages.scm")
-
-;; Compilation units
-(load "tests/ece/test-compilation-units.scm")
-
-;; Value serialization
-(load "tests/ece/test-serialization.scm")
-
-;; Comprehensive coverage
-(load "tests/ece/test-cross-space.scm")
-(load "tests/ece/test-mutation.scm")
-(load "tests/ece/test-file-io.scm")
-(load "tests/ece/test-advanced-continuations.scm")
-(load "tests/ece/test-misc.scm")
+;; CL-only tests (file I/O, compilation units, serialization)
+(load "tests/ece/run-cl.scm")
 
 (run-tests)
