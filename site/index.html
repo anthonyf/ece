@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ECE — Sample Applications</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #1e1e1e; color: #d4d4d4; font-family: 'Menlo', 'Consolas', monospace; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 2rem; }
+  h1 { font-size: 2rem; margin-bottom: 0.5rem; color: #e0e0e0; }
+  .subtitle { color: #888; margin-bottom: 2.5rem; font-size: 0.9rem; }
+  .apps { display: flex; flex-direction: column; gap: 1rem; width: 100%; max-width: 400px; }
+  a.app { display: block; padding: 1rem 1.5rem; background: #2d2d2d; border: 1px solid #444; border-radius: 6px; color: #4ec9b0; text-decoration: none; transition: border-color 0.15s, background 0.15s; }
+  a.app:hover { border-color: #4ec9b0; background: #333; }
+  .app-name { font-size: 1.1rem; font-weight: bold; }
+  .app-desc { color: #999; font-size: 0.8rem; margin-top: 0.3rem; }
+  .footer { margin-top: 3rem; font-size: 0.8rem; color: #666; }
+  .footer a { color: #888; }
+</style>
+</head>
+<body>
+  <h1>ECE</h1>
+  <div class="subtitle">Sample Applications</div>
+  <div class="apps">
+    <a class="app" href="sandbox/">
+      <div class="app-name">Sandbox &amp; REPL</div>
+      <div class="app-desc">Editor, REPL, and canvas — write and run ECE in the browser</div>
+    </a>
+    <a class="app" href="tests/">
+      <div class="app-name">Test Suite</div>
+      <div class="app-desc">329 ECE tests running on the WASM runtime</div>
+    </a>
+  </div>
+  <div class="footer">
+    <a href="https://github.com/anthonyf/ece">github.com/anthonyf/ece</a>
+  </div>
+</body>
+</html>
