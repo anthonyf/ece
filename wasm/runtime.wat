@@ -35,6 +35,9 @@
   (import "canvas" "width" (func $js-canvas-width (result i32)))
   (import "canvas" "height" (func $js-canvas-height (result i32)))
 
+  ;; Timing — performance.now() for FPS etc.
+  (import "timing" "performance_now" (func $js-performance-now (result i32)))
+
   ;; localStorage — file I/O backing store
   ;; storage_read: filename (UTF-16 in linear memory, len chars) → content length
   ;;   JS reads localStorage[filename], writes content to linear memory at offset 0, returns char count
@@ -1007,6 +1010,8 @@
   ;; --- Pending registers for apply-compiled-procedure / call_ece_proc ---
   (global $execute-argl (mut (ref null eq)) (ref.null eq))
   (global $execute-proc (mut (ref null eq)) (ref.null eq))
+  (global $execute-val (mut (ref null eq)) (ref.null eq))
+  (global $execute-stack (mut (ref null eq)) (ref.null eq))
 
   ;; --- Pending instructions for deferred assembly ---
   ;; List of (space-id pc instr-list) triples, built during assembly.
@@ -1064,10 +1069,10 @@
     (local $i i32)
     (local.set $id (struct.get $symbol $id (local.get $sym)))
     (local.set $syms (ref.as_non_null (global.get $asm-sym-ids)))
-    ;; Linear scan slots 17-37
+    ;; Linear scan slots 17-38
     (local.set $i (i32.const 17))
     (block $done (loop $scan
-      (br_if $done (i32.gt_u (local.get $i) (i32.const 37)))
+      (br_if $done (i32.gt_u (local.get $i) (i32.const 38)))
       (if (i32.eq (local.get $id) (array.get $i32-array (local.get $syms) (local.get $i)))
         (then (return (i32.sub (local.get $i) (i32.const 17)))))
       (local.set $i (i32.add (local.get $i) (i32.const 1)))
@@ -1449,6 +1454,7 @@
   ;;  8 = continuation-stack        18 = lexical-set!
   ;;  9 = continuation-conts        19 = define-variable!
   ;;                                20 = set-variable-value!
+  ;;                                21 = capture-continuation
 
   ;; --- Evaluate a single operand ---
   ;; Operand is a pair: (type . value)
@@ -1563,6 +1569,15 @@
             (call $make-fixnum (local.get $init-space-id))
             (call $make-fixnum (struct.get $comp-space $len
               (call $get-space (local.get $init-space-id))))))))
+    ;; Check for pending val/stack (set by call_continuation)
+    (if (i32.eqz (ref.is_null (global.get $execute-val)))
+      (then
+        (local.set $val (global.get $execute-val))
+        (global.set $execute-val (ref.null eq))))
+    (if (i32.eqz (ref.is_null (global.get $execute-stack)))
+      (then
+        (local.set $stack (global.get $execute-stack))
+        (global.set $execute-stack (ref.null eq))))
     (local.set $space (call $get-space (local.get $space-id)))
     (local.set $instrs (struct.get $comp-space $instrs (local.get $space)))
     (local.set $len (struct.get $comp-space $len (local.get $space)))
@@ -2007,9 +2022,14 @@
           (local.get $c))
         (global.get $void))
 
+    ;; 21 = capture-continuation(stack, continue) → continuation struct
+    (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 21))
+      (then
+        (struct.new $continuation (local.get $a) (local.get $b)))
+
     ;; Unknown op — return void
     (else (global.get $void)
-    ))))))))))))))))))))))))))))))))))))))))))
+    ))))))))))))))))))))))))))))))))))))))))))))
   )
 
 
@@ -2444,7 +2464,14 @@
             (local.set $i (i32.add (local.get $i) (i32.const 1)))
             (br $rev)))
         (return (local.get $result))))
-    ;; Float — delegate to JS for now (TODO: implement in WAT)
+    ;; Float — truncate to integer and convert
+    (if (ref.test (ref $float-box) (local.get $v))
+      (then
+        (return (call $prim-number-to-string
+          (call $make-fixnum
+            (i32.trunc_f64_s
+              (struct.get $float-box $val
+                (ref.cast (ref $float-box) (local.get $v)))))))))
     (global.get $void)
   )
 
@@ -3150,6 +3177,22 @@
 
   ;; --- Display helper: write ECE value to JS output ---
   ;; Copies string content to linear memory, calls JS display_string.
+  ;; Copy a $string to linear memory (for canvas-draw-text, no console output)
+  (func $string-to-memory (param $str (ref $string))
+    (local $len i32)
+    (local $i i32)
+    (local.set $len (array.len (local.get $str)))
+    (local.set $i (i32.const 0))
+    (block $done
+      (loop $copy
+        (br_if $done (i32.ge_u (local.get $i) (local.get $len)))
+        (i32.store16 (i32.shl (local.get $i) (i32.const 1))
+          (array.get_u $string (local.get $str) (local.get $i)))
+        (local.set $i (i32.add (local.get $i) (i32.const 1)))
+        (br $copy)))
+    ;; Null-terminate for JS
+    (i32.store16 (i32.shl (local.get $len) (i32.const 1)) (i32.const 0)))
+
   (func $display-value (param $v (ref null eq))
     (local $str (ref $string))
     (local $len i32)
@@ -4095,6 +4138,10 @@
         (global.set $yield-flag (i32.const 1))
         (return (global.get $void))))
 
+    ;; 151 = current-milliseconds (ms since page load via performance.now)
+    (if (i32.eq (local.get $id) (i32.const 151))
+      (then (return (call $make-fixnum (call $js-performance-now)))))
+
     ;; --- Canvas primitives (browser IDs 200+) ---
     ;; 200 = canvas-clear
     (if (i32.eq (local.get $id) (i32.const 200))
@@ -4130,8 +4177,10 @@
     ;; 204 = canvas-draw-text (x y str)
     (if (i32.eq (local.get $id) (i32.const 204))
       (then
-        ;; Write string to linear memory for JS
-        (call $display-value (call $arg3 (local.get $args)))
+        ;; Write string to linear memory for JS (without console output)
+        (call $string-to-memory
+          (ref.cast (ref $string)
+            (call $write-to-string-impl (call $arg3 (local.get $args)))))
         (call $js-canvas-draw-text
           (call $to-f64 (call $arg1 (local.get $args)))
           (call $to-f64 (call $arg2 (local.get $args))))
@@ -4317,6 +4366,27 @@
           (ref.cast (ref $compiled-proc) (call $deref-handle (local.get $proc-handle))))
         (call $compiled-proc-env
           (ref.cast (ref $compiled-proc) (call $deref-handle (local.get $proc-handle)))))))
+
+  ;; Resume a captured continuation with a value (returns handle)
+  (func (export "call_continuation") (param $cont-handle i32) (param $val-handle i32) (result i32)
+    (local $cont (ref $continuation))
+    (local $conts (ref $pair))
+    (local $space-id i32)
+    (local $pc i32)
+    (local.set $cont (ref.cast (ref $continuation)
+      (call $deref-handle (local.get $cont-handle))))
+    ;; conts = saved continue register = (space-id . pc)
+    (local.set $conts (ref.cast (ref $pair)
+      (struct.get $continuation $conts (local.get $cont))))
+    (local.set $space-id
+      (call $fixnum-value (ref.cast (ref i31) (call $car (local.get $conts)))))
+    (local.set $pc
+      (call $fixnum-value (ref.cast (ref i31) (call $cdr (local.get $conts)))))
+    ;; Set up executor: val = resume value, stack = saved stack
+    (global.set $execute-val (call $deref-handle (local.get $val-handle)))
+    (global.set $execute-stack (struct.get $continuation $stack (local.get $cont)))
+    (call $alloc-handle
+      (call $execute (local.get $space-id) (local.get $pc) (global.get $global-env))))
 
   ;; Debug: inspect instruction at (space-id, pc)
   (func (export "dbg_instr") (param $space-id i32) (param $pc i32) (param $field i32) (result i32)
