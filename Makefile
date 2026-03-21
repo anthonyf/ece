@@ -1,4 +1,15 @@
-.PHONY: test test-ece repl run bootstrap wasm fmt check-fmt setup clean
+.PHONY: test test-ece test-wasm repl run bootstrap wasm fmt check-fmt setup clean
+
+# Test files for WASM (common tests that don't need try-eval)
+WASM_TEST_SRCS := tests/ece/test-framework.scm \
+	tests/ece/test-arithmetic.scm tests/ece/test-lists.scm \
+	tests/ece/test-strings.scm tests/ece/test-vectors.scm \
+	tests/ece/test-hash-tables.scm tests/ece/test-types.scm \
+	tests/ece/test-control-flow.scm tests/ece/test-closures.scm \
+	tests/ece/test-macros.scm tests/ece/test-tco.scm \
+	tests/ece/test-higher-order.scm tests/ece/test-records.scm \
+	tests/ece/test-parameters.scm tests/ece/test-mutation.scm \
+	wasm/wasm-test-runner.scm
 
 BOOTSTRAP_DIR := bootstrap
 BOOTSTRAP_SRCS := src/prelude.scm src/compiler.scm src/reader.scm src/assembler.scm src/compilation-unit.scm
@@ -30,6 +41,18 @@ bootstrap:
 	  --eval '(dolist (name (list "prelude" "compiler" "reader" "assembler" "compilation-unit")) (ece::convert-ecec-to-ececb (format nil "bootstrap/~A.ecec" name) (format nil "bootstrap/~A.ececb" name)))' \
 	  --quit
 	@echo "Bootstrap .ececb files generated."
+
+test-wasm: wasm
+	@echo "Compiling WASM test suite..."
+	@cat $(WASM_TEST_SRCS) > /tmp/ece-wasm-tests.scm
+	@echo '(run-tests)' >> /tmp/ece-wasm-tests.scm
+	@qlot exec sbcl --eval '(asdf:load-system :ece)' \
+	  --eval '(ece:evaluate (list (intern "compile-file" :ece) "/tmp/ece-wasm-tests.scm"))' \
+	  --eval '(ece:evaluate (list (quote load) "src/ecec-to-binary.scm"))' \
+	  --eval '(ece::convert-ecec-to-ececb "/tmp/ece-wasm-tests.ecec" "/tmp/ece-wasm-tests.ececb")' \
+	  --quit
+	@echo "Running WASM tests..."
+	@node --max-old-space-size=4096 wasm/test.js /tmp/ece-wasm-tests.ececb
 
 wasm: wasm/runtime.wasm
 
