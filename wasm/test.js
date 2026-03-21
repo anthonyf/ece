@@ -26,7 +26,8 @@ async function run() {
       trace_pc() {}
     },
     loader: { fetch_ececb() { return null; } },
-    storage: ECE.storage
+    storage: ECE.storage,
+    canvas: ECE.canvas
   };
 
   const { instance } = await WebAssembly.instantiate(wasmBytes, imports);

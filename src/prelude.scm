@@ -285,6 +285,12 @@
       (%raw-make-parameter init)
       (%raw-make-parameter ((car rest) init) (car rest))))
 
+;; yield: cooperative multitasking via continuations.
+;; Captures the current continuation, stores it for JS, and causes the
+;; executor to return. JS can resume by invoking the stored continuation.
+(define (yield)
+  (call/cc (lambda (k) (%yield! k))))
+
 ;; xorshift32 PRNG
 (define *random-state* 12345)
 

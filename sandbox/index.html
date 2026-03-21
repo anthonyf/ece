@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ECE Sandbox</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; font-family: 'Menlo', 'Consolas', monospace; font-size: 13px; background: #1e1e1e; color: #d4d4d4; }
+
+  /* Main split layout */
+  .main-container { display: flex; height: 100vh; }
+  .anchor-right  { flex-direction: row; }
+  .anchor-left   { flex-direction: row-reverse; }
+  .anchor-bottom { flex-direction: column; }
+  .anchor-top    { flex-direction: column-reverse; }
+
+  /* Sandbox area */
+  .sandbox-area { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
+  .canvas-container { flex: 1; background: #000; position: relative; overflow: hidden; }
+  .canvas-container canvas { display: block; width: 100%; height: 100%; }
+  #console-output { height: 120px; overflow-y: auto; padding: 8px; background: #0d0d0d; border-top: 1px solid #333; white-space: pre-wrap; font-size: 12px; color: #9cdcfe; }
+
+  /* Editor/REPL panel */
+  .panel { width: 420px; display: flex; flex-direction: column; border-left: 3px solid #333; background: #252526; }
+  .anchor-left .panel { border-left: none; border-right: 3px solid #333; }
+  .anchor-bottom .panel, .anchor-top .panel { width: auto; height: 300px; border-left: none; border-top: 3px solid #333; }
+  .anchor-top .panel { border-top: none; border-bottom: 3px solid #333; }
+
+  /* Tab bar */
+  .tab-bar { display: flex; background: #2d2d2d; border-bottom: 1px solid #333; align-items: center; }
+  .tab-btn { padding: 6px 16px; cursor: pointer; border: none; background: transparent; color: #888; font-family: inherit; font-size: 12px; }
+  .tab-btn.active { color: #fff; border-bottom: 2px solid #569cd6; }
+  .tab-btn:hover { color: #ccc; }
+  .tab-spacer { flex: 1; }
+  #anchor-btn { padding: 4px 8px; cursor: pointer; background: transparent; border: 1px solid #555; color: #888; font-size: 11px; margin-right: 6px; border-radius: 3px; }
+  #anchor-btn:hover { color: #fff; border-color: #888; }
+
+  /* Tab panels */
+  .tab-panel { display: none; flex: 1; flex-direction: column; overflow: hidden; }
+  .tab-panel.active { display: flex; }
+
+  /* Editor */
+  .editor-toolbar { display: flex; align-items: center; padding: 4px 8px; gap: 6px; background: #2d2d2d; border-bottom: 1px solid #333; }
+  #program-select { background: #3c3c3c; color: #d4d4d4; border: 1px solid #555; padding: 3px 6px; font-family: inherit; font-size: 12px; flex: 1; }
+  #run-btn { padding: 3px 12px; cursor: pointer; background: #388a34; color: #fff; border: none; font-family: inherit; font-size: 12px; border-radius: 3px; }
+  #run-btn:hover { background: #45a840; }
+  #run-btn.stop { background: #c33; }
+  #run-btn.stop:hover { background: #e44; }
+  #editor-textarea { flex: 1; resize: none; background: #1e1e1e; color: #d4d4d4; border: none; padding: 8px; font-family: inherit; font-size: 13px; outline: none; tab-size: 2; }
+
+  /* REPL */
+  .repl-container { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  #repl-output { flex: 1; overflow-y: auto; padding: 8px; }
+  .repl-entry { margin-bottom: 8px; }
+  .repl-input-echo { color: #569cd6; white-space: pre-wrap; }
+  .repl-input-echo::before { content: "ece> "; color: #6a9955; }
+  .repl-result { color: #dcdcaa; white-space: pre-wrap; padding-left: 6px; }
+  .repl-input-bar { display: flex; border-top: 1px solid #333; }
+  #repl-input { flex: 1; resize: none; background: #1e1e1e; color: #d4d4d4; border: none; padding: 8px; font-family: inherit; font-size: 13px; outline: none; min-height: 60px; }
+  #repl-eval-btn { padding: 8px 12px; cursor: pointer; background: #388a34; color: #fff; border: none; font-family: inherit; font-size: 12px; align-self: flex-end; }
+  #repl-eval-btn:hover { background: #45a840; }
+
+  /* Status bar */
+  #status-bar { padding: 2px 8px; font-size: 11px; color: #888; background: #007acc; color: #fff; }
+</style>
+</head>
+<body>
+  <div id="main-container" class="main-container anchor-right">
+    <!-- Sandbox area -->
+    <div class="sandbox-area">
+      <div class="canvas-container">
+        <canvas id="sandbox-canvas"></canvas>
+      </div>
+      <div id="console-output"></div>
+    </div>
+
+    <!-- Editor/REPL panel -->
+    <div class="panel">
+      <div class="tab-bar">
+        <button class="tab-btn active" data-tab="editor-panel">Editor</button>
+        <button class="tab-btn" data-tab="repl-panel">REPL</button>
+        <div class="tab-spacer"></div>
+        <button id="anchor-btn" title="Change panel position">&#8862;</button>
+      </div>
+
+      <!-- Editor tab -->
+      <div id="editor-panel" class="tab-panel active">
+        <div class="editor-toolbar">
+          <select id="program-select"></select>
+          <button id="run-btn">&#9654; Run</button>
+        </div>
+        <textarea id="editor-textarea" spellcheck="false" autocomplete="off" autocorrect="off"></textarea>
+      </div>
+
+      <!-- REPL tab -->
+      <div id="repl-panel" class="tab-panel">
+        <div class="repl-container">
+          <div id="repl-output"></div>
+          <div class="repl-input-bar">
+            <textarea id="repl-input" placeholder="Type ECE expression... (Ctrl+Enter to eval)" spellcheck="false"></textarea>
+            <button id="repl-eval-btn">Eval</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="status-bar">Loading...</div>
+
+  <!-- ECE Runtime (built by make sandbox) -->
+  <script src="ece-runtime.js"></script>
+  <script src="ece-bootstrap.js"></script>
+  <script src="ece-compiled.js"></script>
+  <script src="ece-programs.js"></script>
+  <script src="sandbox.js"></script>
+</body>
+</html>

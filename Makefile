@@ -1,4 +1,4 @@
-.PHONY: test test-ece test-wasm repl run bootstrap wasm fmt check-fmt setup clean
+.PHONY: test test-ece test-wasm repl run bootstrap wasm sandbox fmt check-fmt setup clean
 
 # Test files for WASM (common tests that don't need try-eval)
 WASM_TEST_SRCS := tests/ece/test-framework.scm \
@@ -53,6 +53,9 @@ test-wasm: wasm
 	  --quit
 	@echo "Running WASM tests..."
 	@node --max-old-space-size=4096 wasm/test.js /tmp/ece-wasm-tests.ececb
+
+sandbox: wasm
+	bash scripts/build-sandbox.sh
 
 wasm: wasm/runtime.wasm
 
