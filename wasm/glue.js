@@ -47,6 +47,37 @@ const ECE = {
     fetch_ececb() { return null; }  // placeholder
   },
 
+  // localStorage-backed file storage (browser) / Map fallback (Node.js)
+  _fileStore: new Map(),  // localStorage on browser, Map on Node.js
+  _hasLocalStorage: (typeof localStorage !== "undefined" && typeof localStorage.setItem === "function"),
+  _storeGet(key) {
+    if (ECE._hasLocalStorage) return localStorage.getItem(key) || "";
+    return ECE._fileStore.get(key) || "";
+  },
+  _storeSet(key, val) {
+    if (ECE._hasLocalStorage) localStorage.setItem(key, val);
+    else ECE._fileStore.set(key, val);
+  },
+  storage: {
+    read(fname_len) {
+      const mem = new Uint16Array(ECE.wasm.memory.buffer);
+      const fname = String.fromCharCode(...Array.from({length: fname_len}, (_, i) => mem[i]));
+      const content = ECE._storeGet(fname);
+      const offset = fname_len;
+      for (let i = 0; i < content.length; i++) {
+        mem[offset + i] = content.charCodeAt(i);
+      }
+      return content.length;
+    },
+    write(fname_len, content_offset_bytes, content_len) {
+      const mem = new Uint16Array(ECE.wasm.memory.buffer);
+      const fname = String.fromCharCode(...Array.from({length: fname_len}, (_, i) => mem[i]));
+      const content_offset = content_offset_bytes / 2;
+      const content = String.fromCharCode(...Array.from({length: content_len}, (_, i) => mem[content_offset + i]));
+      ECE._storeSet(fname, content);
+    }
+  },
+
   // ── .ececb binary parser ──
 
   parseBinary(bytes) {
@@ -389,7 +420,8 @@ const ECE = {
 
     const imports = {
       io: ECE.io,
-      loader: ECE.loader
+      loader: ECE.loader,
+      storage: ECE.storage
     };
 
     const { instance } = await WebAssembly.instantiate(wasmBytes, imports);
@@ -441,6 +473,9 @@ const ECE = {
       [68,"input-port?"], [69,"output-port?"], [70,"port?"],
       [71,"current-input-port"], [72,"current-output-port"],
       [73,"open-input-string"], [74,"close-input-port"], [75,"close-output-port"],
+      // File I/O (localStorage-backed on WASM)
+      [100,"open-input-file"], [101,"open-output-file"],
+      [102,"with-input-from-file"], [103,"with-output-to-file"],
       [76,"bitwise-and"], [77,"bitwise-or"], [78,"bitwise-xor"],
       [79,"bitwise-not"], [80,"arithmetic-shift"],
       [81,"%raw-error"], [82,"gensym"],

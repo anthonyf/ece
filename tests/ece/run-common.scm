@@ -31,3 +31,9 @@
 (load "tests/ece/test-mutation.scm")
 (load "tests/ece/test-advanced-continuations.scm")
 (load "tests/ece/test-misc.scm")
+
+;; File I/O (filesystem on CL, localStorage on WASM)
+(load "tests/ece/test-file-io.scm")
+
+;; Cross-space function calls
+(load "tests/ece/test-cross-space.scm")
