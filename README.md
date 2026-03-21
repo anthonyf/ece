@@ -3,6 +3,8 @@
 [![Tests](https://github.com/anthonyf/ece/actions/workflows/test.yml/badge.svg)](https://github.com/anthonyf/ece/actions/workflows/test.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/anthonyf/ece/blob/main/LICENSE)
 
+**Try it:** [Sandbox & REPL](https://anthonyf.github.io/ece/sandbox/) | [Test Suite](https://anthonyf.github.io/ece/tests/)
+
 A Scheme-like language implemented in Common Lisp. Inspired by SICP Section 5.5, ECE compiles expressions to register machine instructions and executes them with an explicit stack — no reliance on the host language's call stack. Zero external dependencies.
 
 ## Key Features

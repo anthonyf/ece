@@ -1,4 +1,4 @@
-.PHONY: test test-ece test-wasm repl run bootstrap wasm sandbox fmt check-fmt setup clean
+.PHONY: test test-ece test-wasm repl run bootstrap wasm sandbox site fmt check-fmt setup clean
 
 # Test files for WASM (common tests that don't need try-eval)
 WASM_TEST_SRCS := tests/ece/test-framework.scm \
@@ -56,6 +56,16 @@ test-wasm: wasm
 
 sandbox: wasm
 	bash scripts/build-sandbox.sh
+
+site: sandbox
+	@echo "Assembling site..."
+	@rm -rf _site
+	@mkdir -p _site/sandbox
+	@cp site/index.html _site/
+	@cp sandbox/index.html sandbox/sandbox.js sandbox/ece-programs.js _site/sandbox/
+	@cp sandbox/ece-runtime.js sandbox/ece-bootstrap.js sandbox/ece-compiled.js _site/sandbox/
+	@bash scripts/build-test-page.sh _site/tests
+	@echo "Site built at _site/"
 
 wasm: wasm/runtime.wasm
 

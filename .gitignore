@@ -4,3 +4,4 @@ wasm/runtime.wasm
 sandbox/ece-runtime.js
 sandbox/ece-bootstrap.js
 sandbox/ece-compiled.js
+_site/
