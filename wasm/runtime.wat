@@ -26,6 +26,14 @@
   (import "loader" "fetch_ececb" (func $js-fetch-ececb (param externref) (result externref)))
   (import "io" "trace_pc" (func $js-trace-pc (param i32 i32)))
 
+  ;; localStorage — file I/O backing store
+  ;; storage_read: filename (UTF-16 in linear memory, len chars) → content length
+  ;;   JS reads localStorage[filename], writes content to linear memory at offset 0, returns char count
+  (import "storage" "read" (func $js-storage-read (param i32) (result i32)))
+  ;; storage_write: filename len, content offset, content len → void
+  ;;   JS reads filename from mem[0..fname_len], content from mem[fname_len*2..], writes to localStorage
+  (import "storage" "write" (func $js-storage-write (param i32 i32 i32)))
+
 
   ;; ═══════════════════════════════════════════════════════════════════
   ;; Section 1: WasmGC Type Definitions
@@ -90,6 +98,20 @@
     (field $keys (mut (ref $hash-keys)))
     (field $vals (mut (ref $hash-vals)))
     (field $count (mut i32))))
+
+  ;; --- Port ---
+  ;; Buffer-based I/O port. Used for file I/O (localStorage backing),
+  ;; string ports, and console I/O.
+  ;; dir: 0=input, 1=output. For output ports, $pos tracks write length.
+  ;; For input ports, $pos tracks read position.
+  (type $port-buf (array (mut i16)))  ;; growable UTF-16 buffer
+  (type $port (struct
+    (field $buf  (mut (ref null $port-buf)))  ;; content buffer
+    (field $pos  (mut i32))                   ;; read pos (input) / write length (output)
+    (field $cap  (mut i32))                   ;; buffer capacity
+    (field $name (ref null $string))          ;; filename (null for string/console ports)
+    (field $dir  i32)                         ;; 0=input, 1=output
+    (field $open (mut i32))))                ;; 1=open, 0=closed
 
   ;; --- Environment frame ---
   ;; SICP-style: a frame holds variable values and a link to the
@@ -314,6 +336,202 @@
     (ref.eq (local.get $a) (local.get $b))
   )
 
+
+  ;; --- Port constructors and predicates ---
+
+  (func $make-input-port (param $buf (ref $port-buf)) (param $len i32)
+                         (param $name (ref null $string)) (result (ref $port))
+    (struct.new $port (local.get $buf) (i32.const 0) (local.get $len)
+                      (local.get $name) (i32.const 0) (i32.const 1))
+  )
+
+  (func $make-output-port (param $name (ref null $string)) (result (ref $port))
+    (struct.new $port
+      (array.new_default $port-buf (i32.const 1024))
+      (i32.const 0) (i32.const 1024)
+      (local.get $name) (i32.const 1) (i32.const 1))
+  )
+
+  (func $is-port (param $v (ref null eq)) (result i32)
+    (ref.test (ref $port) (local.get $v)))
+
+  (func $is-input-port (param $v (ref null eq)) (result i32)
+    (if (result i32) (ref.test (ref $port) (local.get $v))
+      (then (i32.eqz (struct.get $port $dir (ref.cast (ref $port) (local.get $v)))))
+      (else (i32.const 0))))
+
+  (func $is-output-port (param $v (ref null eq)) (result i32)
+    (if (result i32) (ref.test (ref $port) (local.get $v))
+      (then (struct.get $port $dir (ref.cast (ref $port) (local.get $v))))
+      (else (i32.const 0))))
+
+  ;; Read one char from an input port. Returns eof sentinel at end.
+  (func $port-read-char (param $p (ref $port)) (result (ref null eq))
+    (local $pos i32)
+    (local $buf (ref $port-buf))
+    (local.set $pos (struct.get $port $pos (local.get $p)))
+    (if (ref.is_null (struct.get $port $buf (local.get $p)))
+      (then (return (global.get $eof))))
+    (local.set $buf (ref.as_non_null (struct.get $port $buf (local.get $p))))
+    (if (i32.ge_u (local.get $pos) (array.len (local.get $buf)))
+      (then (return (global.get $eof))))
+    (struct.set $port $pos (local.get $p) (i32.add (local.get $pos) (i32.const 1)))
+    (call $make-char (array.get_u $port-buf (local.get $buf) (local.get $pos)))
+  )
+
+  ;; Peek one char without advancing.
+  (func $port-peek-char (param $p (ref $port)) (result (ref null eq))
+    (local $pos i32)
+    (local $buf (ref $port-buf))
+    (local.set $pos (struct.get $port $pos (local.get $p)))
+    (if (ref.is_null (struct.get $port $buf (local.get $p)))
+      (then (return (global.get $eof))))
+    (local.set $buf (ref.as_non_null (struct.get $port $buf (local.get $p))))
+    (if (i32.ge_u (local.get $pos) (array.len (local.get $buf)))
+      (then (return (global.get $eof))))
+    (call $make-char (array.get_u $port-buf (local.get $buf) (local.get $pos)))
+  )
+
+  ;; Write one char to an output port. Grows buffer if needed.
+  (func $port-write-char (param $p (ref $port)) (param $ch i32)
+    (local $pos i32)
+    (local $cap i32)
+    (local $buf (ref $port-buf))
+    (local $new-buf (ref $port-buf))
+    (local $i i32)
+    (local.set $pos (struct.get $port $pos (local.get $p)))
+    (local.set $cap (struct.get $port $cap (local.get $p)))
+    (local.set $buf (ref.as_non_null (struct.get $port $buf (local.get $p))))
+    ;; Grow if at capacity
+    (if (i32.ge_u (local.get $pos) (local.get $cap))
+      (then
+        (local.set $cap (i32.mul (local.get $cap) (i32.const 2)))
+        (local.set $new-buf (array.new_default $port-buf (local.get $cap)))
+        (local.set $i (i32.const 0))
+        (block $done (loop $copy
+          (br_if $done (i32.ge_u (local.get $i) (local.get $pos)))
+          (array.set $port-buf (local.get $new-buf) (local.get $i)
+            (array.get_u $port-buf (local.get $buf) (local.get $i)))
+          (local.set $i (i32.add (local.get $i) (i32.const 1)))
+          (br $copy)))
+        (struct.set $port $buf (local.get $p) (local.get $new-buf))
+        (struct.set $port $cap (local.get $p) (local.get $cap))
+        (local.set $buf (local.get $new-buf))))
+    (array.set $port-buf (local.get $buf) (local.get $pos) (local.get $ch))
+    (struct.set $port $pos (local.get $p) (i32.add (local.get $pos) (i32.const 1)))
+  )
+
+  ;; Read a line from an input port (scan for newline).
+  (func $port-read-line (param $p (ref $port)) (result (ref null eq))
+    (local $start i32) (local $pos i32) (local $len i32)
+    (local $buf (ref $port-buf)) (local $result (ref $string)) (local $i i32)
+    (if (ref.is_null (struct.get $port $buf (local.get $p)))
+      (then (return (global.get $eof))))
+    (local.set $buf (ref.as_non_null (struct.get $port $buf (local.get $p))))
+    (local.set $start (struct.get $port $pos (local.get $p)))
+    (local.set $pos (local.get $start))
+    (local.set $len (array.len (local.get $buf)))
+    (if (i32.ge_u (local.get $pos) (local.get $len))
+      (then (return (global.get $eof))))
+    ;; Scan for newline
+    (block $found (loop $scan
+      (br_if $found (i32.ge_u (local.get $pos) (local.get $len)))
+      (br_if $found (i32.eq (array.get_u $port-buf (local.get $buf) (local.get $pos)) (i32.const 10)))
+      (local.set $pos (i32.add (local.get $pos) (i32.const 1)))
+      (br $scan)))
+    ;; Build result string [start, pos)
+    (local.set $result (array.new_default $string (i32.sub (local.get $pos) (local.get $start))))
+    (local.set $i (i32.const 0))
+    (block $done (loop $copy
+      (br_if $done (i32.ge_u (local.get $i) (i32.sub (local.get $pos) (local.get $start))))
+      (array.set $string (local.get $result) (local.get $i)
+        (array.get_u $port-buf (local.get $buf) (i32.add (local.get $start) (local.get $i))))
+      (local.set $i (i32.add (local.get $i) (i32.const 1)))
+      (br $copy)))
+    ;; Advance past newline if present
+    (if (i32.and (i32.lt_u (local.get $pos) (local.get $len))
+                 (i32.eq (array.get_u $port-buf (local.get $buf) (local.get $pos)) (i32.const 10)))
+      (then (local.set $pos (i32.add (local.get $pos) (i32.const 1)))))
+    (struct.set $port $pos (local.get $p) (local.get $pos))
+    (local.get $result)
+  )
+
+  ;; Flush output port buffer to localStorage via JS.
+  (func $port-flush-to-storage (param $p (ref $port))
+    (local $name (ref $string))
+    (local $buf (ref $port-buf))
+    (local $name-len i32) (local $content-len i32) (local $i i32) (local $offset i32)
+    (if (ref.is_null (struct.get $port $name (local.get $p))) (then (return)))
+    (local.set $name (ref.as_non_null (struct.get $port $name (local.get $p))))
+    (local.set $buf (ref.as_non_null (struct.get $port $buf (local.get $p))))
+    (local.set $name-len (array.len (local.get $name)))
+    (local.set $content-len (struct.get $port $pos (local.get $p)))
+    ;; Write filename to linear memory at offset 0
+    (local.set $i (i32.const 0))
+    (block $d1 (loop $l1
+      (br_if $d1 (i32.ge_u (local.get $i) (local.get $name-len)))
+      (i32.store16 (i32.shl (local.get $i) (i32.const 1))
+        (array.get_u $string (local.get $name) (local.get $i)))
+      (local.set $i (i32.add (local.get $i) (i32.const 1)))
+      (br $l1)))
+    ;; Write content after filename
+    (local.set $offset (i32.shl (local.get $name-len) (i32.const 1)))
+    (local.set $i (i32.const 0))
+    (block $d2 (loop $l2
+      (br_if $d2 (i32.ge_u (local.get $i) (local.get $content-len)))
+      (i32.store16 (i32.add (local.get $offset) (i32.shl (local.get $i) (i32.const 1)))
+        (array.get_u $port-buf (local.get $buf) (local.get $i)))
+      (local.set $i (i32.add (local.get $i) (i32.const 1)))
+      (br $l2)))
+    ;; Call JS storage_write(filename_len, content_offset, content_len)
+    (call $js-storage-write (local.get $name-len) (local.get $offset) (local.get $content-len))
+  )
+
+  ;; Open input file: read from localStorage into a port buffer.
+  (func $open-input-file (param $filename (ref $string)) (result (ref $port))
+    (local $name-len i32) (local $content-len i32) (local $i i32)
+    (local $buf (ref $port-buf))
+    (local.set $name-len (array.len (local.get $filename)))
+    ;; Write filename to linear memory
+    (local.set $i (i32.const 0))
+    (block $d (loop $l
+      (br_if $d (i32.ge_u (local.get $i) (local.get $name-len)))
+      (i32.store16 (i32.shl (local.get $i) (i32.const 1))
+        (array.get_u $string (local.get $filename) (local.get $i)))
+      (local.set $i (i32.add (local.get $i) (i32.const 1)))
+      (br $l)))
+    ;; Call JS to read from localStorage — returns content length
+    ;; Content is written to linear memory at offset name_len*2
+    (local.set $content-len (call $js-storage-read (local.get $name-len)))
+    ;; Copy from linear memory into a port buffer
+    (local.set $buf (array.new_default $port-buf (local.get $content-len)))
+    (local.set $i (i32.const 0))
+    (block $d2 (loop $l2
+      (br_if $d2 (i32.ge_u (local.get $i) (local.get $content-len)))
+      (array.set $port-buf (local.get $buf) (local.get $i)
+        (i32.load16_u (i32.add
+          (i32.shl (local.get $name-len) (i32.const 1))
+          (i32.shl (local.get $i) (i32.const 1)))))
+      (local.set $i (i32.add (local.get $i) (i32.const 1)))
+      (br $l2)))
+    (call $make-input-port (local.get $buf) (local.get $content-len) (local.get $filename))
+  )
+
+  ;; Open input string: create port from ECE $string (no localStorage).
+  (func $open-input-string-port (param $str (ref $string)) (result (ref $port))
+    (local $len i32) (local $buf (ref $port-buf)) (local $i i32)
+    (local.set $len (array.len (local.get $str)))
+    (local.set $buf (array.new_default $port-buf (local.get $len)))
+    ;; Copy $string (i16 array) into $port-buf (i16 array)
+    (local.set $i (i32.const 0))
+    (block $d (loop $l
+      (br_if $d (i32.ge_u (local.get $i) (local.get $len)))
+      (array.set $port-buf (local.get $buf) (local.get $i)
+        (array.get_u $string (local.get $str) (local.get $i)))
+      (local.set $i (i32.add (local.get $i) (i32.const 1)))
+      (br $l)))
+    (call $make-input-port (local.get $buf) (local.get $len) (ref.null $string))
+  )
 
   ;; ═══════════════════════════════════════════════════════════════════
   ;; Section 5: Symbol Interning
@@ -2411,6 +2629,54 @@
     (local.get $vec)
   )
 
+  ;; --- Display to port: write ECE value to a port buffer ---
+  (func $display-to-port (param $v (ref null eq)) (param $p (ref $port))
+    (local $str (ref $string))
+    (local $i i32) (local $len i32)
+    ;; String: write each char to port
+    (if (call $is-string (local.get $v))
+      (then
+        (local.set $str (ref.cast (ref $string) (local.get $v)))
+        (local.set $len (array.len (local.get $str)))
+        (local.set $i (i32.const 0))
+        (block $d (loop $l
+          (br_if $d (i32.ge_u (local.get $i) (local.get $len)))
+          (call $port-write-char (local.get $p)
+            (array.get_u $string (local.get $str) (local.get $i)))
+          (local.set $i (i32.add (local.get $i) (i32.const 1)))
+          (br $l)))
+        (return)))
+    ;; Number: convert to string first, then write
+    (if (call $is-fixnum (local.get $v))
+      (then
+        (local.set $str (ref.cast (ref $string) (call $prim-number-to-string (local.get $v))))
+        (local.set $len (array.len (local.get $str)))
+        (local.set $i (i32.const 0))
+        (block $d (loop $l
+          (br_if $d (i32.ge_u (local.get $i) (local.get $len)))
+          (call $port-write-char (local.get $p)
+            (array.get_u $string (local.get $str) (local.get $i)))
+          (local.set $i (i32.add (local.get $i) (i32.const 1)))
+          (br $l)))
+        (return)))
+    ;; Char: write single char
+    (if (call $is-char (local.get $v))
+      (then
+        (call $port-write-char (local.get $p)
+          (call $char-codepoint (ref.cast (ref i31) (local.get $v))))
+        (return)))
+    ;; For other types, convert to string via write-to-string, then write
+    (local.set $str (ref.cast (ref $string) (call $write-to-string-impl (local.get $v))))
+    (local.set $len (array.len (local.get $str)))
+    (local.set $i (i32.const 0))
+    (block $d (loop $l
+      (br_if $d (i32.ge_u (local.get $i) (local.get $len)))
+      (call $port-write-char (local.get $p)
+        (array.get_u $string (local.get $str) (local.get $i)))
+      (local.set $i (i32.add (local.get $i) (i32.const 1)))
+      (br $l)))
+  )
+
   ;; --- Display helper: write ECE value to JS output ---
   ;; Copies string content to linear memory, calls JS display_string.
   (func $display-value (param $v (ref null eq))
@@ -2699,20 +2965,51 @@
       (then
         (local.set $id (call $char-codepoint (ref.cast (ref i31) (call $arg1 (local.get $args)))))
         (return (call $prim-char-to-string (local.get $id)))))
-    ;; 57 = display (delegate to JS)
+    ;; 57 = display (value [port])
     (if (i32.eq (local.get $id) (i32.const 57))
       (then
-        (call $display-value (call $arg1 (local.get $args)))
+        ;; Check for port as 2nd arg
+        (if (i32.and
+              (i32.eqz (ref.is_null (call $cdr (ref.cast (ref $pair) (local.get $args)))))
+              (i32.eqz (call $is-null (call $cdr (ref.cast (ref $pair) (local.get $args))))))
+          (then
+            (if (ref.test (ref $port) (call $arg2 (local.get $args)))
+              (then
+                (call $display-to-port
+                  (call $arg1 (local.get $args))
+                  (ref.cast (ref $port) (call $arg2 (local.get $args)))))))
+          (else
+            (call $display-value (call $arg1 (local.get $args)))))
         (return (global.get $void))))
-    ;; 58 = write
+    ;; 58 = write (value [port])
     (if (i32.eq (local.get $id) (i32.const 58))
       (then
-        (call $display-value (call $arg1 (local.get $args)))
+        (if (i32.and
+              (i32.eqz (ref.is_null (call $cdr (ref.cast (ref $pair) (local.get $args)))))
+              (i32.eqz (call $is-null (call $cdr (ref.cast (ref $pair) (local.get $args))))))
+          (then
+            (if (ref.test (ref $port) (call $arg2 (local.get $args)))
+              (then
+                (call $display-to-port
+                  (call $arg1 (local.get $args))
+                  (ref.cast (ref $port) (call $arg2 (local.get $args)))))))
+          (else
+            (call $display-value (call $arg1 (local.get $args)))))
         (return (global.get $void))))
-    ;; 59 = newline
+    ;; 59 = newline ([port])
     (if (i32.eq (local.get $id) (i32.const 59))
       (then
-        (call $js-newline)
+        (if (i32.and
+              (i32.eqz (ref.is_null (local.get $args)))
+              (i32.eqz (call $is-null (local.get $args))))
+          (then
+            (if (ref.test (ref $port) (call $arg1 (local.get $args)))
+              (then
+                (call $port-write-char
+                  (ref.cast (ref $port) (call $arg1 (local.get $args)))
+                  (i32.const 10)))  ;; newline char
+              (else (call $js-newline))))
+          (else (call $js-newline)))
         (return (global.get $void))))
     ;; 65 = eof?
     (if (i32.eq (local.get $id) (i32.const 65))
@@ -2728,30 +3025,123 @@
         (call $display-value (call $arg1 (local.get $args)))
         (call $js-newline)
         (return (global.get $void))))
-    ;; 73 = open-input-string → create a string port (for reader)
+    ;; 68 = input-port?
+    (if (i32.eq (local.get $id) (i32.const 68))
+      (then (return (if (result (ref null eq)) (call $is-input-port (call $arg1 (local.get $args)))
+        (then (global.get $true)) (else (global.get $false))))))
+    ;; 69 = output-port?
+    (if (i32.eq (local.get $id) (i32.const 69))
+      (then (return (if (result (ref null eq)) (call $is-output-port (call $arg1 (local.get $args)))
+        (then (global.get $true)) (else (global.get $false))))))
+    ;; 70 = port?
+    (if (i32.eq (local.get $id) (i32.const 70))
+      (then (return (if (result (ref null eq)) (call $is-port (call $arg1 (local.get $args)))
+        (then (global.get $true)) (else (global.get $false))))))
+    ;; 71 = current-input-port (stub — no console input yet)
+    (if (i32.eq (local.get $id) (i32.const 71))
+      (then (return (global.get $void))))
+    ;; 72 = current-output-port (stub — console output handled by display)
+    (if (i32.eq (local.get $id) (i32.const 72))
+      (then (return (global.get $void))))
+    ;; 73 = open-input-string → create proper $port from string
     (if (i32.eq (local.get $id) (i32.const 73))
+      (then (return (call $open-input-string-port
+        (ref.cast (ref $string) (call $arg1 (local.get $args)))))))
+    ;; 74 = close-input-port
+    (if (i32.eq (local.get $id) (i32.const 74))
       (then
-        ;; Stub: return the string itself as a "port"
-        ;; The reader will need read-char support
-        (return (call $arg1 (local.get $args)))))
-    ;; 60 = read-char
+        (if (ref.test (ref $port) (call $arg1 (local.get $args)))
+          (then (struct.set $port $open
+            (ref.cast (ref $port) (call $arg1 (local.get $args))) (i32.const 0))))
+        (return (global.get $void))))
+    ;; 75 = close-output-port (flush to localStorage if filename set)
+    (if (i32.eq (local.get $id) (i32.const 75))
+      (then
+        (if (ref.test (ref $port) (call $arg1 (local.get $args)))
+          (then
+            (call $port-flush-to-storage (ref.cast (ref $port) (call $arg1 (local.get $args))))
+            (struct.set $port $open
+              (ref.cast (ref $port) (call $arg1 (local.get $args))) (i32.const 0))))
+        (return (global.get $void))))
+    ;; 100 = open-input-file (localStorage)
+    (if (i32.eq (local.get $id) (i32.const 100))
+      (then (return (call $open-input-file
+        (ref.cast (ref $string) (call $arg1 (local.get $args)))))))
+    ;; 101 = open-output-file (localStorage)
+    (if (i32.eq (local.get $id) (i32.const 101))
+      (then (return (call $make-output-port
+        (ref.cast (ref $string) (call $arg1 (local.get $args)))))))
+    ;; 60 = read-char ([port])
     (if (i32.eq (local.get $id) (i32.const 60))
-      (then (return (global.get $eof))))  ;; stub
-    ;; 61 = peek-char
+      (then
+        (if (result (ref null eq))
+          (i32.and (i32.eqz (ref.is_null (local.get $args)))
+                   (i32.eqz (call $is-null (local.get $args))))
+          (then
+            (if (result (ref null eq)) (ref.test (ref $port) (call $arg1 (local.get $args)))
+              (then (return (call $port-read-char
+                (ref.cast (ref $port) (call $arg1 (local.get $args))))))
+              (else (return (global.get $eof)))))
+          (else (return (global.get $eof))))))
+    ;; 61 = peek-char ([port])
     (if (i32.eq (local.get $id) (i32.const 61))
-      (then (return (global.get $eof))))  ;; stub
-    ;; 62 = write-char
+      (then
+        (if (result (ref null eq))
+          (i32.and (i32.eqz (ref.is_null (local.get $args)))
+                   (i32.eqz (call $is-null (local.get $args))))
+          (then
+            (if (result (ref null eq)) (ref.test (ref $port) (call $arg1 (local.get $args)))
+              (then (return (call $port-peek-char
+                (ref.cast (ref $port) (call $arg1 (local.get $args))))))
+              (else (return (global.get $eof)))))
+          (else (return (global.get $eof))))))
+    ;; 62 = write-char (char [port])
     (if (i32.eq (local.get $id) (i32.const 62))
       (then
-        (if (call $is-char (call $arg1 (local.get $args)))
+        ;; Check for port as 2nd arg
+        (if (i32.and
+              (i32.eqz (ref.is_null (call $cdr (ref.cast (ref $pair) (local.get $args)))))
+              (i32.eqz (call $is-null (call $cdr (ref.cast (ref $pair) (local.get $args))))))
           (then
+            ;; Write to port
+            (if (ref.test (ref $port) (call $arg2 (local.get $args)))
+              (then
+                (call $port-write-char
+                  (ref.cast (ref $port) (call $arg2 (local.get $args)))
+                  (call $char-codepoint (ref.cast (ref i31) (call $arg1 (local.get $args))))))))
+          (else
+            ;; Write to console (no port arg)
             (i32.store16 (i32.const 0)
               (call $char-codepoint (ref.cast (ref i31) (call $arg1 (local.get $args)))))
             (call $js-display-string (i32.const 1))))
         (return (global.get $void))))
-    ;; 64 = char-ready?
+    ;; 63 = read-line ([port])
+    (if (i32.eq (local.get $id) (i32.const 63))
+      (then
+        (if (result (ref null eq))
+          (i32.and (i32.eqz (ref.is_null (local.get $args)))
+                   (i32.eqz (call $is-null (local.get $args))))
+          (then
+            (if (result (ref null eq)) (ref.test (ref $port) (call $arg1 (local.get $args)))
+              (then (return (call $port-read-line
+                (ref.cast (ref $port) (call $arg1 (local.get $args))))))
+              (else (return (global.get $eof)))))
+          (else (return (global.get $eof))))))
+    ;; 64 = char-ready? ([port])
     (if (i32.eq (local.get $id) (i32.const 64))
-      (then (return (global.get $true))))
+      (then
+        (return
+          (if (result (ref null eq))
+            (i32.and (i32.eqz (ref.is_null (local.get $args)))
+                     (ref.test (ref $port) (call $arg1 (local.get $args))))
+            (then
+              (if (result (ref null eq))
+                (i32.lt_u
+                  (struct.get $port $pos (ref.cast (ref $port) (call $arg1 (local.get $args))))
+                  (struct.get $port $cap (ref.cast (ref $port) (call $arg1 (local.get $args)))))
+                (then (global.get $true))
+                (else (global.get $false))))
+            (else (global.get $true))))))
     ;; 82 = gensym
     (if (i32.eq (local.get $id) (i32.const 82))
       (then

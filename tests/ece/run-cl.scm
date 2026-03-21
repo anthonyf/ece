@@ -1,15 +1,8 @@
-;;; ECE CL-Only Tests — Require CL platform primitives (IDs 100-199)
-;;; These tests use file I/O (open-input-file, open-output-file, etc.)
-;;; and are not expected to run on the WASM host.
+;;; ECE CL-Only Tests — Tests that need CL-specific features
+;;; (try-eval for error isolation, compile-file round-trips, etc.)
 
-;; Compilation units (uses file I/O for .ecec round-trips)
+;; Compilation units (uses compile-form/execute CL kernel functions)
 (load "tests/ece/test-compilation-units.scm")
 
-;; Value serialization (uses file I/O for save/load)
+;; Value serialization (uses save-continuation!/load-continuation)
 (load "tests/ece/test-serialization.scm")
-
-;; Cross-space loading (uses file I/O to load test files)
-(load "tests/ece/test-cross-space.scm")
-
-;; File I/O primitives
-(load "tests/ece/test-file-io.scm")
