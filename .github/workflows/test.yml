@@ -24,5 +24,24 @@ jobs:
       - name: Install dependencies
         run: qlot install
 
-      - name: Run tests
+      - name: Run CL rove tests
         run: qlot exec sbcl --disable-debugger --eval '(asdf:load-system :ece)' --eval '(asdf:load-system :ece/tests)' --eval '(unless (rove:run :ece/tests) (uiop:quit 1))' --quit
+
+      - name: Run ECE self-hosted tests
+        run: make test-ece
+
+      - name: Install binaryen
+        run: |
+          curl -L https://github.com/WebAssembly/binaryen/releases/download/version_128/binaryen-version_128-x86_64-linux.tar.gz | tar xz
+          echo "$PWD/binaryen-version_128/bin" >> $GITHUB_PATH
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build WASM runtime
+        run: make wasm
+
+      - name: Run WASM tests
+        run: make test-wasm
