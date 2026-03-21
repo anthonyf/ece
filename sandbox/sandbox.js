@@ -40,11 +40,12 @@ const Sandbox = {
         Sandbox.ctx.fill();
       },
       draw_text(x, y) {
-        // Text was written to linear memory by display_value
+        // Text was written to linear memory by string-to-memory
         const mem = new Uint16Array(ECE.wasm.memory.buffer, 0, 256);
         let len = 0;
         while (len < 256 && mem[len] !== 0) len++;
         const str = String.fromCharCode(...Array.from({length: len}, (_, i) => mem[i]));
+        Sandbox.ctx.font = "20px monospace";
         Sandbox.ctx.fillText(str, x, y);
       },
       width() { return Sandbox.canvas.width; },
@@ -83,7 +84,8 @@ const Sandbox = {
       io: ECE.io,
       loader: ECE.loader,
       storage: ECE.storage,
-      canvas: ECE.canvas
+      canvas: ECE.canvas,
+      timing: ECE.timing
     };
 
     const { instance } = await WebAssembly.instantiate(wasmBytes, imports);
@@ -247,22 +249,25 @@ const Sandbox = {
       return;
     }
 
+    const w = ECE.wasm;
     try {
-      // Resume the stored continuation
-      const contHandle = ECE.wasm.get_yield_cont();
-      ECE.wasm.clear_yield_cont();
-      // Invoke continuation by running it — the continuation is an ECE value
-      // We need to call it via the executor. Create a tiny space that invokes the continuation.
-      // Actually, simpler: use the handle to get the continuation, then call it.
-      // For now, just resume by running from the yield point.
-      // TODO: proper continuation resume mechanism
+      // Resume the stored yield proc (call/cc wrapper lambda) with void
+      const contHandle = w.get_yield_cont();
+      w.clear_yield_cont();
+      const args = w.h_cons(ECE._hVoid, ECE._hNil);
+      w.call_ece_proc(contHandle, args);
     } catch(e) {
       Sandbox.appendConsole("\nError: " + e.message + "\n");
       Sandbox.finishRun();
       return;
     }
 
-    requestAnimationFrame(Sandbox.animationLoop.bind(Sandbox));
+    // If the program yielded again, schedule another frame
+    if (Sandbox.hasYieldCont()) {
+      requestAnimationFrame(Sandbox.animationLoop.bind(Sandbox));
+    } else {
+      Sandbox.finishRun();
+    }
   },
 
   // ── Eval ──

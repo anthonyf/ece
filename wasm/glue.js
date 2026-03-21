@@ -58,6 +58,13 @@ const ECE = {
     height() { return 0; }
   },
 
+  // Timing (performance.now for FPS etc.)
+  timing: {
+    performance_now() {
+      return (typeof performance !== "undefined") ? Math.floor(performance.now()) : Date.now();
+    }
+  },
+
   // localStorage-backed file storage (browser) / Map fallback (Node.js)
   _fileStore: new Map(),  // localStorage on browser, Map on Node.js
   _hasLocalStorage: (typeof localStorage !== "undefined" && typeof localStorage.setItem === "function"),
@@ -433,7 +440,8 @@ const ECE = {
       io: ECE.io,
       loader: ECE.loader,
       storage: ECE.storage,
-      canvas: ECE.canvas
+      canvas: ECE.canvas,
+      timing: ECE.timing
     };
 
     const { instance } = await WebAssembly.instantiate(wasmBytes, imports);
@@ -513,8 +521,8 @@ const ECE = {
       [141,"%make-hash-table"], [142,"hash-table?"],
       [143,"hash-ref"], [144,"hash-set!"], [145,"hash-remove!"],
       [146,"hash-has-key?"], [147,"hash-keys"], [148,"hash-values"], [149,"hash-count"],
-      // Yield
-      [150,"%yield!"],
+      // Yield + timing
+      [150,"%yield!"], [151,"current-milliseconds"],
       // Canvas (browser platform)
       [200,"canvas-clear"], [201,"canvas-set-fill-color"],
       [202,"canvas-fill-rect"], [203,"canvas-fill-circle"],
@@ -587,6 +595,7 @@ const ECE = {
       'lexical-set!',                // 35 → op 18
       'define-variable!',            // 36 → op 19
       'set-variable-value!',         // 37 → op 20
+      'capture-continuation',        // 38 → op 21
     ];
     w.init_asm_syms(names.length);
     for (let i = 0; i < names.length; i++) {
