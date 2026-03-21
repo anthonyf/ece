@@ -31,7 +31,9 @@ jobs:
         run: make test-ece
 
       - name: Install binaryen
-        run: sudo apt-get install -y binaryen
+        run: |
+          curl -L https://github.com/WebAssembly/binaryen/releases/download/version_128/binaryen-version_128-x86_64-linux.tar.gz | tar xz
+          echo "$PWD/binaryen-version_128/bin" >> $GITHUB_PATH
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
