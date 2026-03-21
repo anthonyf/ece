@@ -47,6 +47,17 @@ const ECE = {
     fetch_ececb() { return null; }  // placeholder
   },
 
+  // Canvas stubs (overridden by sandbox.js when canvas is available)
+  canvas: {
+    clear() {},
+    set_fill_color(r, g, b) {},
+    fill_rect(x, y, w, h) {},
+    fill_circle(x, y, r) {},
+    draw_text(x, y) {},
+    width() { return 0; },
+    height() { return 0; }
+  },
+
   // localStorage-backed file storage (browser) / Map fallback (Node.js)
   _fileStore: new Map(),  // localStorage on browser, Map on Node.js
   _hasLocalStorage: (typeof localStorage !== "undefined" && typeof localStorage.setItem === "function"),
@@ -421,7 +432,8 @@ const ECE = {
     const imports = {
       io: ECE.io,
       loader: ECE.loader,
-      storage: ECE.storage
+      storage: ECE.storage,
+      canvas: ECE.canvas
     };
 
     const { instance } = await WebAssembly.instantiate(wasmBytes, imports);
@@ -490,10 +502,23 @@ const ECE = {
       [97,"%procedure-name-set!"],
       [98,"platform-has?"], [99,"%platform-primitives"],
       [114,"parameter?"], [137,"keyword?"],
+      // Compilation space primitives (core)
+      [125,"%create-space"], [126,"%space-instruction-length"],
+      [127,"%space-name"], [128,"%current-space-id"],
+      [129,"%set-current-space-id!"], [130,"%space-instruction-push!"],
+      [131,"%space-label-set!"], [132,"%space-label-ref"],
+      [133,"%space-count"], [134,"%space-source-ref"],
+      [135,"%space-label-entries"],
       // Platform hash table primitives (core)
       [141,"%make-hash-table"], [142,"hash-table?"],
       [143,"hash-ref"], [144,"hash-set!"], [145,"hash-remove!"],
       [146,"hash-has-key?"], [147,"hash-keys"], [148,"hash-values"], [149,"hash-count"],
+      // Yield
+      [150,"%yield!"],
+      // Canvas (browser platform)
+      [200,"canvas-clear"], [201,"canvas-set-fill-color"],
+      [202,"canvas-fill-rect"], [203,"canvas-fill-circle"],
+      [204,"canvas-draw-text"], [205,"canvas-width"], [206,"canvas-height"],
     ];
 
     for (const [id, name] of prims) {
@@ -516,7 +541,57 @@ const ECE = {
     // Mark permanent handles (env, symbols, primitives, singletons)
     w.mark_handles();
 
+    // Initialize assembler symbol table for runtime compilation
+    ECE.initAssemblerSymbols();
+
+    // Store global env for execute-from-pc
+    w.set_global_env(envHandle);
+
+    // Create default compilation space for REPL/eval
+    const replSym = ECE.internSym("repl");
+    w.create_space(replSym, 65536);
+    w.set_current_space(w.sym_id(replSym));
+
     return envHandle;
+  },
+
+  // Initialize assembler symbol ID table for runtime instruction conversion
+  initAssemblerSymbols() {
+    const w = ECE.wasm;
+    const names = [
+      // 0-6: instruction types
+      'assign', 'test', 'branch', 'goto', 'save', 'restore', 'perform',
+      // 7-12: register names
+      'val', 'env', 'proc', 'argl', 'continue', 'stack',
+      // 13-16: source/dest types
+      'const', 'reg', 'label', 'op',
+      // 17-37: operation names (op-id = slot - 17)
+      'lookup-variable-value',       // 17 → op 0
+      'compiled-procedure-entry',    // 18 → op 1
+      'compiled-procedure-env',      // 19 → op 2
+      'make-compiled-procedure',     // 20 → op 3
+      'extend-environment',          // 21 → op 4
+      'primitive-procedure?',        // 22 → op 5
+      'apply-primitive-procedure',   // 23 → op 6
+      'continuation?',               // 24 → op 7
+      'continuation-stack',          // 25 → op 8
+      'continuation-conts',          // 26 → op 9
+      'parameter?',                  // 27 → op 10
+      'apply-parameter',             // 28 → op 11
+      'false?',                      // 29 → op 12
+      'list',                        // 30 → op 13
+      'cons',                        // 31 → op 14
+      'car',                         // 32 → op 15
+      'cdr',                         // 33 → op 16
+      'lexical-ref',                 // 34 → op 17
+      'lexical-set!',                // 35 → op 18
+      'define-variable!',            // 36 → op 19
+      'set-variable-value!',         // 37 → op 20
+    ];
+    w.init_asm_syms(names.length);
+    for (let i = 0; i < names.length; i++) {
+      w.store_asm_sym(i, ECE.internSym(names[i]));
+    }
   },
 
   async bootstrap(baseUrl) {

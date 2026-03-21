@@ -182,17 +182,17 @@
 (124 %hash-frame-set!     3  cl     "Set key in hash-table frame")
 
 ;;; --- Compilation spaces ---
-(125 %create-space             1  cl     "Create a new compilation space")
-(126 %space-instruction-length 1  cl     "Instruction count for a space")
-(127 %space-name               1  cl     "Name of a space")
-(128 %current-space-id         0  cl     "Current assembler target space ID")
-(129 %set-current-space-id!    1  cl     "Set current assembler target space ID")
-(130 %space-instruction-push!  2  cl     "Append instruction to a space")
-(131 %space-label-set!         3  cl     "Register label in a space")
-(132 %space-label-ref          2  cl     "Look up label in a space")
-(133 %space-count              0  cl     "Number of spaces in registry")
-(134 %space-source-ref         2  cl     "Get source instruction at index in a space")
-(135 %space-label-entries      1  cl     "Label table of a space as alist")
+(125 %create-space             1  core   "Create a new compilation space")
+(126 %space-instruction-length 1  core   "Instruction count for a space")
+(127 %space-name               1  core   "Name of a space")
+(128 %current-space-id         0  core   "Current assembler target space ID")
+(129 %set-current-space-id!    1  core   "Set current assembler target space ID")
+(130 %space-instruction-push!  2  core   "Append instruction to a space")
+(131 %space-label-set!         3  core   "Register label in a space")
+(132 %space-label-ref          2  core   "Look up label in a space")
+(133 %space-count              0  core   "Number of spaces in registry")
+(134 %space-source-ref         2  core   "Get source instruction at index in a space")
+(135 %space-label-entries      1  core   "Label table of a space as alist")
 (136 write-to-string-flat      1  cl     "Serialize to string without shared-structure markers")
 (137 keyword?                  1  core   "Test if value is a keyword symbol")
 (138 %primitive-name            1  cl     "Get name symbol for primitive ID")
@@ -210,9 +210,18 @@
 (148 hash-values            1  core   "List all values in hash table")
 (149 hash-count             1  core   "Number of entries in hash table")
 
+;;; --- Yield (cooperative multitasking) ---
+(150 %yield!                 1  core   "Store continuation, set yield flag, return to JS")
+
 ;;; ═══════════════════════════════════════════════════════════════════════
-;;; BROWSER PLATFORM PRIMITIVES (200-299) — Reserved for future use
+;;; BROWSER PLATFORM PRIMITIVES (200-299) — Canvas and DOM
 ;;; ═══════════════════════════════════════════════════════════════════════
 
-;;; Reserved. Browser primitives will be defined when the WASM/JS runtime
-;;; is implemented. Examples: %create-element, %canvas-context, etc.
+;;; --- Canvas 2D drawing ---
+(200 canvas-clear            0  browser "Clear entire canvas")
+(201 canvas-set-fill-color   3  browser "Set fill color (r g b 0-255)")
+(202 canvas-fill-rect        4  browser "Fill rectangle (x y w h)")
+(203 canvas-fill-circle      3  browser "Fill circle (x y radius)")
+(204 canvas-draw-text        3  browser "Draw text (x y string)")
+(205 canvas-width            0  browser "Get canvas width in pixels")
+(206 canvas-height           0  browser "Get canvas height in pixels")
