@@ -29,7 +29,8 @@ async function run() {
     storage: ECE.storage,
     canvas: ECE.canvas,
     timing: ECE.timing,
-    math: ECE.math
+    math: ECE.math,
+    ffi: ECE.ffi
   };
 
   const { instance } = await WebAssembly.instantiate(wasmBytes, imports);
