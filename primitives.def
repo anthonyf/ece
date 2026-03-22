@@ -213,6 +213,9 @@
 ;;; --- Yield (cooperative multitasking) ---
 (150 %yield!                 1  core   "Store continuation, set yield flag, return to JS")
 (151 current-milliseconds    0  core   "Milliseconds since page load (performance.now)")
+(152 sin                     1  core   "Sine of angle in radians")
+(153 cos                     1  core   "Cosine of angle in radians")
+(154 wall-clock-ms           0  core   "Milliseconds since midnight local time")
 
 ;;; ═══════════════════════════════════════════════════════════════════════
 ;;; BROWSER PLATFORM PRIMITIVES (200-299) — Canvas and DOM

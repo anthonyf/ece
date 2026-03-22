@@ -28,7 +28,8 @@ async function run() {
     loader: { fetch_ececb() { return null; } },
     storage: ECE.storage,
     canvas: ECE.canvas,
-    timing: ECE.timing
+    timing: ECE.timing,
+    math: ECE.math
   };
 
   const { instance } = await WebAssembly.instantiate(wasmBytes, imports);

@@ -85,7 +85,8 @@ const Sandbox = {
       loader: ECE.loader,
       storage: ECE.storage,
       canvas: ECE.canvas,
-      timing: ECE.timing
+      timing: ECE.timing,
+      math: ECE.math
     };
 
     const { instance } = await WebAssembly.instantiate(wasmBytes, imports);
@@ -100,6 +101,8 @@ const Sandbox = {
       ECE.loadParsed(parsed);
       ECE.wasm.run(ECE.wasm.sym_id(ECE.internSym(parsed.spaceName)), 0, Sandbox.envHandle);
     }
+    // Mark all bootstrap handles as permanent so reset_handles() doesn't free them
+    ECE.wasm.mark_handles();
   },
 
   // ── Console output ──
@@ -285,8 +288,15 @@ const Sandbox = {
       w.run(w.sym_id(ECE.internSym(parsed.spaceName)), 0, Sandbox.envHandle);
       return;
     }
+    // Reset compilation state for fresh run
+    w.reset_current_space();
+
     // Runtime compilation: parse source in JS, eval each expression via ECE compiler
     const evalProc = w.env_lookup(Sandbox.envHandle, ECE.internSym("eval"));
+    const evalType = w.dbg_type(evalProc);
+    if (evalType !== 6) {
+      throw new Error("eval lookup returned type " + evalType + " (expected 6=compiled-proc), handle=" + evalProc);
+    }
     const exprs = Sandbox.parseScheme(source);
     for (const expr of exprs) {
       const eceExpr = Sandbox.buildECEValue(expr);
