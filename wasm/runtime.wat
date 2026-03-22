@@ -35,8 +35,13 @@
   (import "canvas" "width" (func $js-canvas-width (result i32)))
   (import "canvas" "height" (func $js-canvas-height (result i32)))
 
-  ;; Timing — performance.now() for FPS etc.
+  ;; Timing — performance.now() and wall clock
   (import "timing" "performance_now" (func $js-performance-now (result i32)))
+  (import "timing" "wall_clock_ms" (func $js-wall-clock-ms (result i32)))
+
+  ;; Math — trig functions
+  (import "math" "sin" (func $js-sin (param f64) (result f64)))
+  (import "math" "cos" (func $js-cos (param f64) (result f64)))
 
   ;; localStorage — file I/O backing store
   ;; storage_read: filename (UTF-16 in linear memory, len chars) → content length
@@ -563,9 +568,9 @@
   (global $sym-capacity (mut i32) (i32.const 1024))
   (global $sym-count    (mut i32) (i32.const 0))
   (global $sym-names    (mut (ref null $sym-name-array))
-    (array.new_default $sym-name-array (i32.const 1024)))
+    (array.new_default $sym-name-array (i32.const 65536)))
   (global $sym-refs     (mut (ref null $sym-ref-array))
-    (array.new_default $sym-ref-array (i32.const 1024)))
+    (array.new_default $sym-ref-array (i32.const 65536)))
 
   ;; --- String equality (UTF-16 code unit comparison) ---
   (func $string-eq (param $a (ref $string)) (param $b (ref $string)) (result i32)
@@ -1041,6 +1046,16 @@
 
   (func (export "set_current_space") (param $space-id i32)
     (global.set $current-space-id (local.get $space-id)))
+
+  ;; Reset current space for fresh run (discard compiled code, labels, pending instrs)
+  (func (export "reset_current_space")
+    (struct.set $comp-space $len
+      (call $get-space (global.get $current-space-id))
+      (i32.const 0))
+    (struct.set $comp-space $labels
+      (call $get-space (global.get $current-space-id))
+      (ref.null eq))
+    (global.set $pending-instrs (ref.null eq)))
 
   ;; --- Resolve register name symbol to register ID (0-5) ---
   (func $resolve-reg-name (param $sym (ref $symbol)) (result i32)
@@ -3981,7 +3996,7 @@
             (call $register-space
               (struct.new $comp-space
                 (call $intern (ref.cast (ref $string) (call $arg1 (local.get $args))))
-                (array.new_default $instr-vec (i32.const 16384))
+                (array.new_default $instr-vec (i32.const 131072))
                 (i32.const 0)
                 (ref.null eq)))
             (return (call $make-fixnum
@@ -3991,7 +4006,7 @@
             (call $register-space
               (struct.new $comp-space
                 (ref.cast (ref $symbol) (call $arg1 (local.get $args)))
-                (array.new_default $instr-vec (i32.const 16384))
+                (array.new_default $instr-vec (i32.const 131072))
                 (i32.const 0)
                 (ref.null eq)))
             (return (call $make-fixnum
@@ -4141,6 +4156,17 @@
     ;; 151 = current-milliseconds (ms since page load via performance.now)
     (if (i32.eq (local.get $id) (i32.const 151))
       (then (return (call $make-fixnum (call $js-performance-now)))))
+    ;; 154 = wall-clock-ms (ms since midnight for clock display)
+    (if (i32.eq (local.get $id) (i32.const 154))
+      (then (return (call $make-fixnum (call $js-wall-clock-ms)))))
+    ;; 152 = sin (radians → float)
+    (if (i32.eq (local.get $id) (i32.const 152))
+      (then (return (call $make-float
+        (call $js-sin (call $to-f64 (call $arg1 (local.get $args))))))))
+    ;; 153 = cos (radians → float)
+    (if (i32.eq (local.get $id) (i32.const 153))
+      (then (return (call $make-float
+        (call $js-cos (call $to-f64 (call $arg1 (local.get $args))))))))
 
     ;; --- Canvas primitives (browser IDs 200+) ---
     ;; 200 = canvas-clear

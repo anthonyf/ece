@@ -58,10 +58,20 @@ const ECE = {
     height() { return 0; }
   },
 
+  // Math (trig functions)
+  math: {
+    sin: Math.sin,
+    cos: Math.cos
+  },
+
   // Timing (performance.now for FPS etc.)
   timing: {
     performance_now() {
       return (typeof performance !== "undefined") ? Math.floor(performance.now()) : Date.now();
+    },
+    wall_clock_ms() {
+      const d = new Date();
+      return ((d.getHours() * 60 + d.getMinutes()) * 60 + d.getSeconds()) * 1000 + d.getMilliseconds();
     }
   },
 
@@ -441,7 +451,8 @@ const ECE = {
       loader: ECE.loader,
       storage: ECE.storage,
       canvas: ECE.canvas,
-      timing: ECE.timing
+      timing: ECE.timing,
+      math: ECE.math
     };
 
     const { instance } = await WebAssembly.instantiate(wasmBytes, imports);
@@ -521,8 +532,9 @@ const ECE = {
       [141,"%make-hash-table"], [142,"hash-table?"],
       [143,"hash-ref"], [144,"hash-set!"], [145,"hash-remove!"],
       [146,"hash-has-key?"], [147,"hash-keys"], [148,"hash-values"], [149,"hash-count"],
-      // Yield + timing
+      // Yield + timing + trig
       [150,"%yield!"], [151,"current-milliseconds"],
+      [152,"sin"], [153,"cos"], [154,"wall-clock-ms"],
       // Canvas (browser platform)
       [200,"canvas-clear"], [201,"canvas-set-fill-color"],
       [202,"canvas-fill-rect"], [203,"canvas-fill-circle"],
@@ -557,7 +569,7 @@ const ECE = {
 
     // Create default compilation space for REPL/eval
     const replSym = ECE.internSym("repl");
-    w.create_space(replSym, 65536);
+    w.create_space(replSym, 524288);
     w.set_current_space(w.sym_id(replSym));
 
     return envHandle;
