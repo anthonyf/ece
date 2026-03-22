@@ -86,7 +86,8 @@ const Sandbox = {
       storage: ECE.storage,
       canvas: ECE.canvas,
       timing: ECE.timing,
-      math: ECE.math
+      math: ECE.math,
+      ffi: ECE.ffi
     };
 
     const { instance } = await WebAssembly.instantiate(wasmBytes, imports);
@@ -95,7 +96,7 @@ const Sandbox = {
     Sandbox.envHandle = ECE.buildGlobalEnv();
 
     // Boot bootstrap from base64
-    for (const name of ["prelude", "compiler", "reader", "assembler", "compilation-unit"]) {
+    for (const name of ["prelude", "compiler", "reader", "assembler", "compilation-unit", "browser-lib"]) {
       const bytes = Uint8Array.from(atob(ECE_BOOTSTRAP[name]), c => c.charCodeAt(0));
       const parsed = ECE.parseBinary(bytes);
       ECE.loadParsed(parsed);

@@ -229,3 +229,17 @@
 (204 canvas-draw-text        3  browser "Draw text (x y string)")
 (205 canvas-width            0  browser "Get canvas width in pixels")
 (206 canvas-height           0  browser "Get canvas height in pixels")
+
+;;; --- JavaScript FFI ---
+(210 %js-eval              1  browser "Evaluate JS string, return js-ref")
+(211 %js-get               2  browser "Get property (obj-ref prop-name)")
+(212 %js-set!              3  browser "Set property (obj-ref prop-name val)")
+(213 %js-call              3  browser "Call method (obj-ref method-name args-list)")
+(214 %js-callback          1  browser "Wrap ECE proc as JS function")
+(215 %js-ref->number       1  browser "Extract number from js-ref")
+(216 %js-ref->string       1  browser "Extract string from js-ref")
+(217 %js-number            1  browser "Wrap ECE number as js-ref")
+(218 %js-string            1  browser "Wrap ECE string as js-ref")
+(219 %js-null?             1  browser "Check for null/undefined js-ref")
+(220 %js-release!          1  browser "Free a JS handle")
+(221 %js-ref?              1  browser "Type predicate for js-ref values")

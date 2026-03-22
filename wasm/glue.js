@@ -106,6 +106,154 @@ const ECE = {
     }
   },
 
+  // ── JavaScript FFI bridge ──
+  // JS handle table: maps i32 indices to JS values.
+  // Index 0 is reserved (null/undefined).
+
+  _jsHandles: [null],  // slot 0 = null
+  _jsFreeList: [],     // recycled indices
+
+  _jsAlloc(val) {
+    if (ECE._jsFreeList.length > 0) {
+      const idx = ECE._jsFreeList.pop();
+      ECE._jsHandles[idx] = val;
+      return idx;
+    }
+    const idx = ECE._jsHandles.length;
+    ECE._jsHandles.push(val);
+    return idx;
+  },
+
+  _jsGet(idx) {
+    return ECE._jsHandles[idx];
+  },
+
+  _jsFree(idx) {
+    if (idx > 0) {
+      ECE._jsHandles[idx] = null;
+      ECE._jsFreeList.push(idx);
+    }
+  },
+
+  // Read a UTF-16 string from WASM linear memory
+  _readMem(ptr, len) {
+    const mem = new Uint16Array(ECE.wasm.memory.buffer, ptr, len);
+    return String.fromCharCode(...mem);
+  },
+
+  // Convert an ECE value handle to a JS value (for FFI arg marshalling)
+  _eceToJs(handle) {
+    const w = ECE.wasm;
+    const t = w.dbg_type(handle);
+    switch (t) {
+      case 12: return ECE._jsGet(w.js_ref_idx(handle));  // js-ref → unwrap
+      case 1:  return w.fixnum_val(handle);               // fixnum → number
+      case 5:  return w.float_val(handle);                // float → number
+      case 4:  {                                          // string → JS string
+        const len = w.string_len(handle);
+        w.string_to_mem(handle);
+        return ECE._readMem(0, len);
+      }
+      case 0:  return null;                               // null/nil → null
+      default: {
+        // Check for booleans (i31 special tags)
+        if (t === 10) {
+          // other-i31: could be #t, #f, void, nil, eof
+          // Use handle comparison
+          if (handle === ECE._hTrue) return true;
+          if (handle === ECE._hFalse) return false;
+          return null;
+        }
+        return null;
+      }
+    }
+  },
+
+  // Walk an ECE list handle and convert each element to JS
+  _eceListToJsArray(listHandle) {
+    const w = ECE.wasm;
+    const result = [];
+    let cur = listHandle;
+    while (w.dbg_type(cur) === 2) {  // 2 = pair
+      const carH = w.pair_car(cur);
+      result.push(ECE._eceToJs(carH));
+      cur = w.pair_cdr(cur);
+    }
+    return result;
+  },
+
+  ffi: {
+    eval(ptr, len) {
+      const code = ECE._readMem(ptr, len);
+      const result = (0, eval)(code);  // indirect eval = global scope
+      return ECE._jsAlloc(result);
+    },
+
+    get(objIdx, propPtr, propLen) {
+      const obj = ECE._jsGet(objIdx);
+      const prop = ECE._readMem(propPtr, propLen);
+      return ECE._jsAlloc(obj[prop]);
+    },
+
+    set(objIdx, propPtr, propLen, valHandle) {
+      const obj = ECE._jsGet(objIdx);
+      const prop = ECE._readMem(propPtr, propLen);
+      obj[prop] = ECE._eceToJs(valHandle);
+    },
+
+    call(objIdx, methodPtr, methodLen, argsListHandle) {
+      const obj = ECE._jsGet(objIdx);
+      const method = ECE._readMem(methodPtr, methodLen);
+      const args = ECE._eceListToJsArray(argsListHandle);
+      const result = obj[method](...args);
+      return ECE._jsAlloc(result);
+    },
+
+    callback(procHandle) {
+      const w = ECE.wasm;
+      // Create a JS function that calls the ECE procedure
+      const fn = function(...jsArgs) {
+        // Convert JS args to js-refs and build ECE list
+        let argList = ECE._hNil;
+        for (let i = jsArgs.length - 1; i >= 0; i--) {
+          const jsRef = w.make_js_ref(ECE._jsAlloc(jsArgs[i]));
+          argList = w.h_cons(jsRef, argList);
+        }
+        return w.call_ece_proc(procHandle, argList);
+      };
+      return ECE._jsAlloc(fn);
+    },
+
+    // Type conversion helpers
+    to_number(idx) {
+      return Number(ECE._jsGet(idx));
+    },
+
+    to_string(idx) {
+      const s = String(ECE._jsGet(idx));
+      const mem = new Uint16Array(ECE.wasm.memory.buffer);
+      for (let i = 0; i < s.length; i++) mem[i] = s.charCodeAt(i);
+      return s.length;
+    },
+
+    from_number(val) {
+      return ECE._jsAlloc(val);
+    },
+
+    from_string(ptr, len) {
+      return ECE._jsAlloc(ECE._readMem(ptr, len));
+    },
+
+    release(idx) {
+      ECE._jsFree(idx);
+    },
+
+    is_null(idx) {
+      const v = ECE._jsGet(idx);
+      return (v === null || v === undefined) ? 1 : 0;
+    }
+  },
+
   // ── .ececb binary parser ──
 
   parseBinary(bytes) {
@@ -452,7 +600,8 @@ const ECE = {
       storage: ECE.storage,
       canvas: ECE.canvas,
       timing: ECE.timing,
-      math: ECE.math
+      math: ECE.math,
+      ffi: ECE.ffi
     };
 
     const { instance } = await WebAssembly.instantiate(wasmBytes, imports);
@@ -539,6 +688,11 @@ const ECE = {
       [200,"canvas-clear"], [201,"canvas-set-fill-color"],
       [202,"canvas-fill-rect"], [203,"canvas-fill-circle"],
       [204,"canvas-draw-text"], [205,"canvas-width"], [206,"canvas-height"],
+      // JavaScript FFI
+      [210,"%js-eval"], [211,"%js-get"], [212,"%js-set!"], [213,"%js-call"],
+      [214,"%js-callback"], [215,"%js-ref->number"], [216,"%js-ref->string"],
+      [217,"%js-number"], [218,"%js-string"], [219,"%js-null?"],
+      [220,"%js-release!"], [221,"%js-ref?"],
     ];
 
     for (const [id, name] of prims) {

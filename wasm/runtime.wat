@@ -43,6 +43,20 @@
   (import "math" "sin" (func $js-sin (param f64) (result f64)))
   (import "math" "cos" (func $js-cos (param f64) (result f64)))
 
+  ;; JavaScript FFI — generic JS interop
+  (import "ffi" "eval" (func $js-ffi-eval (param i32 i32) (result i32)))
+  (import "ffi" "get" (func $js-ffi-get (param i32 i32 i32) (result i32)))
+  (import "ffi" "set" (func $js-ffi-set (param i32 i32 i32 i32)))
+  (import "ffi" "call" (func $js-ffi-call (param i32 i32 i32 i32) (result i32)))
+  (import "ffi" "callback" (func $js-ffi-callback (param i32) (result i32)))
+  ;; Type conversion helpers
+  (import "ffi" "to_number" (func $js-ffi-to-number (param i32) (result f64)))
+  (import "ffi" "to_string" (func $js-ffi-to-string (param i32) (result i32)))
+  (import "ffi" "from_number" (func $js-ffi-from-number (param f64) (result i32)))
+  (import "ffi" "from_string" (func $js-ffi-from-string (param i32 i32) (result i32)))
+  (import "ffi" "release" (func $js-ffi-release (param i32)))
+  (import "ffi" "is_null" (func $js-ffi-is-null (param i32) (result i32)))
+
   ;; localStorage — file I/O backing store
   ;; storage_read: filename (UTF-16 in linear memory, len chars) → content length
   ;;   JS reads localStorage[filename], writes content to linear memory at offset 0, returns char count
@@ -115,6 +129,10 @@
     (field $keys (mut (ref $hash-keys)))
     (field $vals (mut (ref $hash-vals)))
     (field $count (mut i32))))
+
+  ;; --- JS FFI reference ---
+  ;; Opaque wrapper around an i32 index into the JS-side handle table.
+  (type $js-ref (struct (field $idx i32)))
 
   ;; --- Port ---
   ;; Buffer-based I/O port. Used for file I/O (localStorage backing),
@@ -335,6 +353,18 @@
 
   (func $is-parameter (param $v (ref null eq)) (result i32)
     (ref.test (ref $parameter) (local.get $v))
+  )
+
+  (func $is-js-ref (param $v (ref null eq)) (result i32)
+    (ref.test (ref $js-ref) (local.get $v))
+  )
+
+  (func $make-js-ref (param $idx i32) (result (ref $js-ref))
+    (struct.new $js-ref (local.get $idx))
+  )
+
+  (func $js-ref-idx (param $v (ref $js-ref)) (result i32)
+    (struct.get $js-ref $idx (local.get $v))
   )
 
   (func $is-eof (param $v (ref null eq)) (result i32)
@@ -3193,6 +3223,23 @@
   ;; --- Display helper: write ECE value to JS output ---
   ;; Copies string content to linear memory, calls JS display_string.
   ;; Copy a $string to linear memory (for canvas-draw-text, no console output)
+  ;; Read a string from linear memory (UTF-16, offset in bytes)
+  (func $memory-to-string (param $offset i32) (param $len i32) (result (ref null eq))
+    (local $str (ref $string))
+    (local $i i32)
+    (local.set $str (array.new_default $string (local.get $len)))
+    (block $done
+      (loop $copy
+        (br_if $done (i32.ge_u (local.get $i) (local.get $len)))
+        (array.set $string (local.get $str) (local.get $i)
+          (i32.load16_u
+            (i32.add (local.get $offset)
+              (i32.shl (local.get $i) (i32.const 1)))))
+        (local.set $i (i32.add (local.get $i) (i32.const 1)))
+        (br $copy)))
+    (local.get $str)
+  )
+
   (func $string-to-memory (param $str (ref $string))
     (local $len i32)
     (local $i i32)
@@ -3280,6 +3327,19 @@
         (call $js-display-string (i32.const 1))
         (call $display-value (call $car (ref.cast (ref $pair) (local.get $v))))
         (call $display-list-tail (call $cdr (ref.cast (ref $pair) (local.get $v))))
+        (return)))
+    ;; JS ref: display as #<js-ref N>
+    (if (call $is-js-ref (local.get $v))
+      (then
+        (i32.store16 (i32.const 0) (i32.const 35))   ;; '#'
+        (i32.store16 (i32.const 2) (i32.const 60))   ;; '<'
+        (i32.store16 (i32.const 4) (i32.const 106))  ;; 'j'
+        (i32.store16 (i32.const 6) (i32.const 115))  ;; 's'
+        (i32.store16 (i32.const 8) (i32.const 62))   ;; '>'
+        (call $js-display-string (i32.const 5))
+        (call $js-display-number
+          (f64.convert_i32_s
+            (call $js-ref-idx (ref.cast (ref $js-ref) (local.get $v)))))
         (return)))
     ;; Fallback: display as #<object>
     (i32.store16 (i32.const 0) (i32.const 35))  ;; '#'
@@ -4236,6 +4296,137 @@
     (if (i32.eq (local.get $id) (i32.const 206))
       (then (return (call $make-fixnum (call $js-canvas-height)))))
 
+    ;; ── JavaScript FFI primitives (210-221) ──
+
+    ;; 210 = %js-eval (string) → js-ref
+    (if (i32.eq (local.get $id) (i32.const 210))
+      (then
+        (local.set $id (i32.const 0))  ;; reuse $id as temp
+        (local.set $id (array.len (ref.cast (ref $string) (call $arg1 (local.get $args)))))
+        (call $string-to-memory (ref.cast (ref $string) (call $arg1 (local.get $args))))
+        (return (call $make-js-ref (call $js-ffi-eval (i32.const 0) (local.get $id))))))
+
+    ;; 211 = %js-get (js-ref prop-string) → js-ref
+    (if (i32.eq (local.get $id) (i32.const 211))
+      (then
+        (local.set $id
+          (array.len (ref.cast (ref $string) (call $arg2 (local.get $args)))))
+        (call $string-to-memory (ref.cast (ref $string) (call $arg2 (local.get $args))))
+        (return (call $make-js-ref
+          (call $js-ffi-get
+            (call $js-ref-idx (ref.cast (ref $js-ref) (call $arg1 (local.get $args))))
+            (i32.const 0) (local.get $id))))))
+
+    ;; 212 = %js-set! (js-ref prop-string val-handle) → void
+    (if (i32.eq (local.get $id) (i32.const 212))
+      (then
+        (local.set $id
+          (array.len (ref.cast (ref $string) (call $arg2 (local.get $args)))))
+        (call $string-to-memory (ref.cast (ref $string) (call $arg2 (local.get $args))))
+        (call $js-ffi-set
+          (call $js-ref-idx (ref.cast (ref $js-ref) (call $arg1 (local.get $args))))
+          (i32.const 0) (local.get $id)
+          (call $alloc-handle (call $arg3 (local.get $args))))
+        (return (global.get $void))))
+
+    ;; 213 = %js-call (js-ref method-string args-list) → js-ref
+    (if (i32.eq (local.get $id) (i32.const 213))
+      (then
+        (local.set $id
+          (array.len (ref.cast (ref $string) (call $arg2 (local.get $args)))))
+        (call $string-to-memory (ref.cast (ref $string) (call $arg2 (local.get $args))))
+        (return (call $make-js-ref
+          (call $js-ffi-call
+            (call $js-ref-idx (ref.cast (ref $js-ref) (call $arg1 (local.get $args))))
+            (i32.const 0) (local.get $id)
+            (call $alloc-handle (call $arg3 (local.get $args))))))))
+
+    ;; 214 = %js-callback (proc) → js-ref
+    (if (i32.eq (local.get $id) (i32.const 214))
+      (then
+        (return (call $make-js-ref
+          (call $js-ffi-callback
+            (call $alloc-handle (call $arg1 (local.get $args))))))))
+
+    ;; 215 = %js-ref->number (js-ref) → number
+    ;; JS side stores the number; we retrieve via ffi.get with special prop "__value__"
+    ;; Simpler: just use the js handle idx and let JS convert
+    ;; For now: export a helper that JS calls to set the value
+    ;; Actually simplest: add a dedicated import for number extraction
+    ;; But design says JS-side marshalling. Let's use js-ffi-get with a sentinel.
+    ;; DECISION: Add two more imports for number/string extraction.
+    ;; For MVP: implement via %js-call on a helper.
+    ;; Actually, we can reuse ffi.get with a null property to mean "valueOf":
+    ;; Simpler approach: these are handled entirely in JS via the handle table.
+    ;; The WASM side passes the js-ref idx to JS and JS returns the value.
+
+    ;; For 215-218: we need lightweight imports. Let me add them inline.
+    ;; 215 = %js-ref->number: pass js handle idx, JS returns f64
+    ;; 216 = %js-ref->string: pass js handle idx, JS writes to linear mem, returns len
+    ;; 217 = %js-number: pass f64, JS stores and returns handle idx
+    ;; 218 = %js-string: pass string ptr+len, JS creates string, returns handle idx
+    ;; These need additional imports. But the design says 5 imports total.
+    ;; Let's implement 215-218 by calling through ffi.eval with conversion expressions.
+    ;; Actually simplest: just add 4 more imports. The "5 imports" was an estimate.
+
+    ;; PUNT: For now return void for 215-218 and add imports in the JS bridge task.
+    ;; Actually let me just do it properly with inline conversion:
+
+    ;; 215 = %js-ref->number (js-ref) → ECE number
+    (if (i32.eq (local.get $id) (i32.const 215))
+      (then
+        (return (struct.new $float-box
+          (call $js-ffi-to-number
+            (call $js-ref-idx (ref.cast (ref $js-ref) (call $arg1 (local.get $args)))))))))
+
+    ;; 216 = %js-ref->string (js-ref) → ECE string
+    (if (i32.eq (local.get $id) (i32.const 216))
+      (then
+        ;; JS writes string to linear memory, returns char count
+        (local.set $id
+          (call $js-ffi-to-string
+            (call $js-ref-idx (ref.cast (ref $js-ref) (call $arg1 (local.get $args))))))
+        ;; Build ECE string from linear memory
+        (return (call $memory-to-string (i32.const 0) (local.get $id)))))
+
+    ;; 217 = %js-number (ECE number) → js-ref
+    (if (i32.eq (local.get $id) (i32.const 217))
+      (then
+        (return (call $make-js-ref
+          (call $js-ffi-from-number
+            (call $to-f64 (call $arg1 (local.get $args))))))))
+
+    ;; 218 = %js-string (ECE string) → js-ref
+    (if (i32.eq (local.get $id) (i32.const 218))
+      (then
+        (local.set $id
+          (array.len (ref.cast (ref $string) (call $arg1 (local.get $args)))))
+        (call $string-to-memory (ref.cast (ref $string) (call $arg1 (local.get $args))))
+        (return (call $make-js-ref
+          (call $js-ffi-from-string (i32.const 0) (local.get $id))))))
+
+    ;; 219 = %js-null? (js-ref) → boolean
+    (if (i32.eq (local.get $id) (i32.const 219))
+      (then
+        (return (if (result (ref null eq))
+          (call $js-ffi-is-null
+            (call $js-ref-idx (ref.cast (ref $js-ref) (call $arg1 (local.get $args)))))
+          (then (global.get $true)) (else (global.get $false))))))
+
+    ;; 220 = %js-release! (js-ref) → void
+    (if (i32.eq (local.get $id) (i32.const 220))
+      (then
+        (call $js-ffi-release
+          (call $js-ref-idx (ref.cast (ref $js-ref) (call $arg1 (local.get $args)))))
+        (return (global.get $void))))
+
+    ;; 221 = %js-ref? (value) → boolean
+    (if (i32.eq (local.get $id) (i32.const 221))
+      (then
+        (return (if (result (ref null eq))
+          (call $is-js-ref (call $arg1 (local.get $args)))
+          (then (global.get $true)) (else (global.get $false))))))
+
     ;; Unknown primitive — return void
     (global.get $void)
   )
@@ -4509,7 +4700,8 @@
 
   ;; Debug: check type of value at handle
   ;; Returns: 0=null, 1=fixnum, 2=pair, 3=symbol, 4=string, 5=float, 6=compiled-proc,
-  ;;          7=continuation, 8=primitive, 9=parameter, 10=other-i31, 99=unknown
+  ;;          7=continuation, 8=primitive, 9=parameter, 10=other-i31, 11=env-frame,
+  ;;          12=js-ref, 99=unknown
   (func (export "dbg_type") (param $handle i32) (result i32)
     (local $v (ref null eq))
     (local.set $v (call $deref-handle (local.get $handle)))
@@ -4524,6 +4716,7 @@
     (if (call $is-primitive (local.get $v)) (then (return (i32.const 8))))
     (if (call $is-parameter (local.get $v)) (then (return (i32.const 9))))
     (if (ref.test (ref $env-frame) (local.get $v)) (then (return (i32.const 11))))
+    (if (call $is-js-ref (local.get $v)) (then (return (i32.const 12))))
     (if (ref.test (ref i31) (local.get $v)) (then (return (i32.const 10))))
     (i32.const 99)
   )
@@ -4551,6 +4744,32 @@
       (ref.cast (ref $vector) (call $deref-handle (local.get $vec-handle)))
       (local.get $idx)
       (call $deref-handle (local.get $val-handle))))
+
+  ;; ── FFI support exports (for JS-side arg marshalling) ──
+
+  (func (export "js_ref_idx") (param $handle i32) (result i32)
+    (call $js-ref-idx (ref.cast (ref $js-ref) (call $deref-handle (local.get $handle)))))
+
+  (func (export "make_js_ref") (param $idx i32) (result i32)
+    (call $alloc-handle (call $make-js-ref (local.get $idx))))
+
+  (func (export "fixnum_val") (param $handle i32) (result i32)
+    (call $fixnum-value (ref.cast (ref i31) (call $deref-handle (local.get $handle)))))
+
+  (func (export "float_val") (param $handle i32) (result f64)
+    (call $float-value (ref.cast (ref $float-box) (call $deref-handle (local.get $handle)))))
+
+  (func (export "string_len") (param $handle i32) (result i32)
+    (array.len (ref.cast (ref $string) (call $deref-handle (local.get $handle)))))
+
+  (func (export "string_to_mem") (param $handle i32)
+    (call $string-to-memory (ref.cast (ref $string) (call $deref-handle (local.get $handle)))))
+
+  (func (export "pair_car") (param $handle i32) (result i32)
+    (call $alloc-handle (call $car (ref.cast (ref $pair) (call $deref-handle (local.get $handle))))))
+
+  (func (export "pair_cdr") (param $handle i32) (result i32)
+    (call $alloc-handle (call $cdr (ref.cast (ref $pair) (call $deref-handle (local.get $handle))))))
 
   ;; Execute from a space + PC with a given environment
   (func (export "run") (param $space-id i32) (param $pc i32)
