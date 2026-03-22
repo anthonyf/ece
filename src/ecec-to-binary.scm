@@ -29,13 +29,10 @@
 
 (define (write-utf8-string str port)
   ;; Write string as UTF-8 bytes (ASCII subset for now)
-  (let ((len (string-length str)))
-    (define (loop i)
-      (if (< i len)
-          (begin
-            (write-byte (char->integer (string-ref str i)) port)
-            (loop (+ i 1)))))
-    (loop 0)))
+  (let loop ((i 0))
+    (when (< i (string-length str))
+      (write-byte (char->integer (string-ref str i)) port)
+      (loop (+ i 1)))))
 
 (define (write-length-prefixed-string str port)
   ;; u16-le length + UTF-8 bytes
@@ -133,13 +130,10 @@
    ((vector? val)
     (write-u8 11 port)
     (write-u32-le (vector-length val) port)
-    (let ((len (vector-length val)))
-      (define (write-elems i)
-        (if (< i len)
-            (begin
-              (write-value (vector-ref val i) port)
-              (write-elems (+ i 1)))))
-      (write-elems 0)))
+    (let loop ((i 0))
+      (when (< i (vector-length val))
+        (write-value (vector-ref val i) port)
+        (loop (+ i 1)))))
    ;; float bytes from CL bridge (:ece-float-bytes b0 b1 ... b7)
    ((and (pair? val) (eq? (car val) ':ece-float-bytes))
     (write-u8 8 port)
@@ -272,28 +266,21 @@
 (define (separate-labels-and-instrs items)
   ;; Walk the flat list, separate labels (with their PCs) from instructions.
   ;; Returns (labels . instructions) where labels is ((name . pc) ...)
-  (let ((labels '())
-        (instrs '())
-        (pc 0))
-    (define (process items)
-      (if (null? items)
-          (cons (reverse labels) (reverse instrs))
-          (let ((item (car items)))
-            (cond
-             ;; Bare symbol = label
-             ((symbol? item)
-              (set! labels (cons (cons item pc) labels))
-              (process (cdr items)))
-             ;; procedure-name pseudo-instruction: don't count as instruction
-             ((and (pair? item) (eq? (car item) 'procedure-name))
-              (process (cdr items)))
-             ;; Regular instruction
-             ((pair? item)
-              (set! instrs (cons item instrs))
-              (set! pc (+ pc 1))
-              (process (cdr items)))
-             (else (process (cdr items)))))))
-    (process items)))
+  (let loop ((items items) (labels '()) (instrs '()) (pc 0))
+    (if (null? items)
+        (cons (reverse labels) (reverse instrs))
+        (let ((item (car items)))
+          (cond
+           ;; Bare symbol = label
+           ((symbol? item)
+            (loop (cdr items) (cons (cons item pc) labels) instrs pc))
+           ;; procedure-name pseudo-instruction: don't count as instruction
+           ((and (pair? item) (eq? (car item) 'procedure-name))
+            (loop (cdr items) labels instrs pc))
+           ;; Regular instruction
+           ((pair? item)
+            (loop (cdr items) labels (cons item instrs) (+ pc 1)))
+           (else (loop (cdr items) labels instrs pc)))))))
 
 (define (write-unit items port)
   ;; Emit unit marker

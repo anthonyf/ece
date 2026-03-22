@@ -195,7 +195,7 @@
 
 (define (mc-extract-define-names body)
   "Extract names bound by define forms in a body, expanding macros to find all defines."
-  (define (extract forms)
+  (let extract ((forms body))
     (if (null? forms)
         '()
         (let ((form (car forms))
@@ -217,8 +217,7 @@
                                  (get-macro (car form)) (cdr form))))
                   (append (extract (list expanded)) (extract rest))))
                (else (extract rest)))
-              (extract rest)))))
-  (extract body))
+              (extract rest))))))
 
 (define (mc-compile-begin expr target linkage)
   (let ((body (cdr expr)))
@@ -554,18 +553,13 @@
 
 (define (mc-find-variable var env)
   "Return (depth . offset) if VAR is in compile-time ENV, or #f."
-  (define (scan-frame frame offset)
-    (cond ((null? frame) #f)
-          ((eq? (car frame) var) offset)
-          (else (scan-frame (cdr frame) (+ offset 1)))))
-  (define (env-loop frames depth)
+  (let env-loop ((frames env) (depth 0))
     (if (null? frames)
         #f
-        (let ((offset (scan-frame (car frames) 0)))
-          (if offset
-              (cons depth offset)
-              (env-loop (cdr frames) (+ depth 1))))))
-  (env-loop env 0))
+        (let scan-frame ((frame (car frames)) (offset 0))
+          (cond ((null? frame) (env-loop (cdr frames) (+ depth 1)))
+                ((eq? (car frame) var) (cons depth offset))
+                (else (scan-frame (cdr frame) (+ offset 1))))))))
 
 (define (mc-lexically-shadows-macro? name)
   "Check if NAME is lexically bound or shadows a macro at top level."
