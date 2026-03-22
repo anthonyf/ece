@@ -32,6 +32,9 @@
 (load "tests/ece/test-advanced-continuations.scm")
 (load "tests/ece/test-misc.scm")
 
+;; String evaluation
+(load "tests/ece/test-eval-string.scm")
+
 ;; File I/O (filesystem on CL, localStorage on WASM)
 (load "tests/ece/test-file-io.scm")
 
