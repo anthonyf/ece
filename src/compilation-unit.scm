@@ -28,12 +28,10 @@
 
 (define (write-string-to-port str port)
   "Write each character of STR to PORT."
-  (define len (string-length str))
-  (define (loop i)
-    (when (< i len)
+  (let loop ((i 0))
+    (when (< i (string-length str))
       (write-char (string-ref str i) port)
-      (loop (+ i 1))))
-  (loop 0))
+      (loop (+ i 1)))))
 
 (define (write-compiled-unit unit port)
   "Write a compiled unit to PORT as an s-expression.
@@ -73,60 +71,60 @@ Uses write-to-string-flat to avoid CL shared-structure markers."
 Emits an ecec-header with space name and macro list, followed by compiled units.
 Macro definitions are executed at compile time so subsequent forms can use them.
 Returns the output filename."
-  (define space-name
-    (string->symbol (filename-strip-extension (filename-basename filename) ".scm")))
-  (define output-name
-    (string-append (filename-strip-extension filename ".scm") ".ecec"))
-  (define in (open-input-file filename))
-  ;; Phase 1: compile all forms, track macros
-  ;; Returns (units-reversed . macros-reversed)
-  ;; For define-macro forms, we:
-  ;;   1. Execute at compile time (so later forms can use the macro)
-  ;;   2. Compile a set-macro! + lambda expression for the .ecec file
-  ;;      (so macros are registered at load time, not just compile time)
-  (define (define-macro-to-set-macro expr)
-    "Transform (define-macro (name params...) body...) into
-     (begin (set-macro! 'name (lambda (params...) body...)) 'name)"
-    (define name (if (pair? (cadr expr)) (car (cadr expr)) (cadr expr)))
-    (define params (if (pair? (cadr expr)) (cdr (cadr expr)) (list (cadr expr))))
-    (define body (cddr expr))
-    (list 'begin
-          (list 'set-macro! (list 'quote name)
-                (cons 'lambda (cons params body)))
-          (list 'quote name)))
-  (define (read-loop units macros)
-    (define expr (ece-scheme-read in))
-    (if (eof? expr)
-        (begin (close-input-port in) (cons units macros))
-        (begin
-          ;; Track and execute macro definitions at compile time
-          (when (and (pair? expr) (eq? (car expr) 'define-macro))
-            (mc-compile-and-go expr))
-          (read-loop
-           (cons (compile-form
-                  (if (and (pair? expr) (eq? (car expr) 'define-macro))
-                      (define-macro-to-set-macro expr)
-                      expr))
-                 units)
-           (if (and (pair? expr) (eq? (car expr) 'define-macro))
-               (cons (if (pair? (cadr expr)) (car (cadr expr)) (cadr expr))
-                     macros)
-               macros)))))
-  (define result (read-loop '() '()))
-  (define units (reverse (car result)))
-  (define macros-defined (reverse (cdr result)))
-  ;; Phase 2: write header + units
-  (define out (open-output-file output-name))
-  (write-string-to-port
-   (write-to-string-flat
-    (list 'ecec-header
-          (list 'space space-name)
-          (list 'macros macros-defined)))
-   out)
-  (write-char #\newline out)
-  (for-each (lambda (unit) (write-compiled-unit unit out)) units)
-  (close-output-port out)
-  output-name)
+  (let* ((space-name
+          (string->symbol (filename-strip-extension (filename-basename filename) ".scm")))
+         (output-name
+          (string-append (filename-strip-extension filename ".scm") ".ecec"))
+         (in (open-input-file filename)))
+    ;; Phase 1: compile all forms, track macros
+    ;; Returns (units-reversed . macros-reversed)
+    ;; For define-macro forms, we:
+    ;;   1. Execute at compile time (so later forms can use the macro)
+    ;;   2. Compile a set-macro! + lambda expression for the .ecec file
+    ;;      (so macros are registered at load time, not just compile time)
+    (define (define-macro-to-set-macro expr)
+      "Transform (define-macro (name params...) body...) into
+       (begin (set-macro! 'name (lambda (params...) body...)) 'name)"
+      (let* ((name (if (pair? (cadr expr)) (car (cadr expr)) (cadr expr)))
+             (params (if (pair? (cadr expr)) (cdr (cadr expr)) (list (cadr expr))))
+             (body (cddr expr)))
+        (list 'begin
+              (list 'set-macro! (list 'quote name)
+                    (cons 'lambda (cons params body)))
+              (list 'quote name))))
+    (define (read-loop units macros)
+      (let ((expr (ece-scheme-read in)))
+        (if (eof? expr)
+            (begin (close-input-port in) (cons units macros))
+            (begin
+              ;; Track and execute macro definitions at compile time
+              (when (and (pair? expr) (eq? (car expr) 'define-macro))
+                (mc-compile-and-go expr))
+              (read-loop
+               (cons (compile-form
+                      (if (and (pair? expr) (eq? (car expr) 'define-macro))
+                          (define-macro-to-set-macro expr)
+                          expr))
+                     units)
+               (if (and (pair? expr) (eq? (car expr) 'define-macro))
+                   (cons (if (pair? (cadr expr)) (car (cadr expr)) (cadr expr))
+                         macros)
+                   macros))))))
+    (let* ((result (read-loop '() '()))
+           (units (reverse (car result)))
+           (macros-defined (reverse (cdr result)))
+           ;; Phase 2: write header + units
+           (out (open-output-file output-name)))
+      (write-string-to-port
+       (write-to-string-flat
+        (list 'ecec-header
+              (list 'space space-name)
+              (list 'macros macros-defined)))
+       out)
+      (write-char #\newline out)
+      (for-each (lambda (unit) (write-compiled-unit unit out)) units)
+      (close-output-port out)
+      output-name)))
 
 (define (load-compiled filename)
   "Load and execute compiled units from a .ecec file.

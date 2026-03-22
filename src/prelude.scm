@@ -260,13 +260,12 @@
 
 ;; hash-table constructor: create platform hash table from key-value pairs
 (define (hash-table . pairs)
-  (define (build remaining ht)
+  (let build ((remaining pairs) (ht (%make-hash-table)))
     (if (null? remaining)
         ht
         (begin
           (hash-set! ht (car remaining) (car (cdr remaining)))
-          (build (cdr (cdr remaining)) ht))))
-  (build pairs (%make-hash-table)))
+          (build (cdr (cdr remaining)) ht)))))
 
 ;; hash-set (functional): copy and mutate
 (define (hash-set ht key val)
@@ -809,21 +808,19 @@ Reconstructs tagged types and resolves #:def/#:ref references."
 
 (define (save-continuation! filename value)
   "Serialize VALUE to FILENAME. Returns #t."
-  (define port (open-output-file filename))
-  (define s (serialize-value value))
-  (define len (string-length s))
-  (define (write-loop i)
-    (when (< i len)
-      (write-char (string-ref s i) port)
-      (write-loop (+ i 1))))
-  (write-loop 0)
-  (write-char #\newline port)
-  (close-output-port port)
-  #t)
+  (let* ((port (open-output-file filename))
+         (s (serialize-value value)))
+    (let loop ((i 0))
+      (when (< i (string-length s))
+        (write-char (string-ref s i) port)
+        (loop (+ i 1))))
+    (write-char #\newline port)
+    (close-output-port port)
+    #t))
 
 (define (load-continuation filename)
   "Deserialize a value from FILENAME. Returns the deserialized value."
-  (define port (open-input-file filename))
-  (define form (ece-scheme-read port))
-  (close-input-port port)
-  (deserialize-value form))
+  (let* ((port (open-input-file filename))
+         (form (ece-scheme-read port)))
+    (close-input-port port)
+    (deserialize-value form)))
