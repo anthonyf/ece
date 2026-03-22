@@ -5,56 +5,67 @@
 
 **Try it:** [Sandbox & REPL](https://anthonyf.github.io/ece/sandbox/) | [Test Suite](https://anthonyf.github.io/ece/tests/)
 
-A Scheme-like language implemented in Common Lisp. Inspired by SICP Section 5.5, ECE compiles expressions to register machine instructions and executes them with an explicit stack — no reliance on the host language's call stack. Zero external dependencies.
+A Scheme-like language with two runtimes: Common Lisp and WebAssembly. Inspired by SICP Section 5.5, ECE compiles expressions to register machine instructions and executes them with an explicit stack — no reliance on the host language's call stack.
 
 ## Key Features
 
+- **Dual runtime** — runs on Common Lisp (desktop) and WebAssembly (browser), sharing the same compiler, reader, and standard library
 - **Full tail call optimization** — all tail positions (if, begin, cond, let, let*, when, unless, and, or, case, do) run in constant stack space
-- **First-class continuations** — `call/cc` captures the full continuation stack
+- **First-class continuations** — `call/cc` captures the full continuation stack; `yield` enables cooperative multitasking for game loops and animations
 - **Hygienic-ish macros** — `define-macro` with quasiquote, unquote, and unquote-splicing
 - **Record system** — `define-record` generates constructors, predicates, accessors, mutators, and copy functions
 - **Hash tables** — with `{}` literal syntax and functional update via `hash-set`
+- **Canvas 2D drawing** — `canvas-clear`, `canvas-fill-rect`, `canvas-fill-circle`, `canvas-draw-text` (WASM/browser)
 - **Self-hosting** — compiler, reader, assembler, and standard library are all written in ECE
-- **Per-file compiled boot** — bootstraps from `.ecec` files (pre-compiled s-expression instruction units), not a monolithic image
+- **Per-file compiled boot** — bootstraps from `.ececb` files (pre-compiled binary instruction units), not a monolithic image
 
 ## Architecture
 
-ECE has a small CL runtime (~1,900 lines) that provides the register machine executor, environment, and primitives. Everything else is written in ECE itself and loaded at boot from pre-compiled `.ecec` files:
+ECE has two runtimes that execute the same register machine instruction set. The compiler, reader, assembler, and standard library are written in ECE itself and shared between both runtimes via pre-compiled `.ececb` bootstrap files.
 
-| Module | Language | Role |
-|--------|----------|------|
-| `src/runtime.lisp` | CL | Executor, environment, primitives, boot loader |
-| `src/prelude.scm` | ECE | Standard library, macros, hash tables, error handling |
-| `src/compiler.scm` | ECE | SICP 5.5 compiler with lexical addressing |
-| `src/reader.scm` | ECE | S-expression reader |
-| `src/assembler.scm` | ECE | Instruction assembler, `load` function |
-| `src/compilation-unit.scm` | ECE | `compile-file`, `load-compiled` |
+### CL Runtime
+
+The Common Lisp runtime (~2,100 lines) provides the register machine executor, environment, and primitives. It's the development host — used for compiling ECE source, running tests, and bootstrapping.
+
+### WASM Runtime
+
+The WebAssembly runtime (~4,500 lines of hand-written WAT) uses WasmGC for memory management. It runs in the browser with a thin JS glue layer for I/O, canvas, and file storage (localStorage). The self-hosted compiler works on WASM, enabling runtime compilation in the browser REPL.
+
+### Shared ECE Modules
+
+| Module | Role |
+|--------|------|
+| `src/prelude.scm` | Standard library, macros, hash tables, parameters, error handling, dynamic-wind |
+| `src/compiler.scm` | SICP 5.5 compiler with lexical addressing |
+| `src/reader.scm` | S-expression reader with string interpolation |
+| `src/assembler.scm` | Instruction assembler, `load` function |
+| `src/compilation-unit.scm` | `compile-file`, multi-unit compilation |
 
 ## Language Overview
 
 ### Core Forms
 
-`lambda`, `if`, `begin`, `define`, `set`, `quote`, `call/cc`, `define-macro`
+`lambda`, `if`, `begin`, `define`, `set!`, `quote`, `call/cc`, `define-macro`, `apply`
 
 ### Derived Forms (via macros)
 
-`let`, `let*`, `letrec`, `cond`, `case`, `when`, `unless`, `and`, `or`, `do`, `assert`
+`let`, `let*`, `letrec`, `cond`, `case`, `when`, `unless`, `and`, `or`, `do`, `loop`, `collect`, `assert`, `parameterize`, `guard`
 
 ### Data Types
 
-Numbers, strings, characters, booleans (`#t`/`#f`), symbols, pairs/lists, vectors, hash tables, records, continuations
+Numbers (integer, float), strings, characters, booleans (`#t`/`#f`), symbols, pairs/lists, vectors, hash tables, records, continuations, parameters, ports
 
 ### Standard Library
 
-`map`, `filter`, `reduce`, `for-each`, `any`, `every`, `range`, `reverse`, `assoc`, `member`, `list-ref`, `list-tail`, `append`, `apply`, `compose`, `identity`, `fmt`, `lines`, `random`, `define-record`
+`map`, `filter`, `reduce`, `for-each`, `any`, `every`, `range`, `reverse`, `assoc`, `member`, `list-ref`, `list-tail`, `append`, `apply`, `compose`, `identity`, `fmt`, `lines`, `random`, `define-record`, `dynamic-wind`, `with-exception-handler`, `guard`
 
 ### I/O
 
-`display`, `print`, `newline`, `read`, `read-line`, `load`, `write-to-string`
+`display`, `print`, `newline`, `read`, `read-line`, `read-char`, `peek-char`, `write-char`, `load`, `write-to-string`, `open-input-file`, `open-output-file`, `open-input-string`, `current-input-port`, `current-output-port`
 
 ### Strings & Characters
 
-`string-append`, `substring`, `string-length`, `string-ref`, `string-split`, `string-join`, `string-contains?`, `string-upcase`, `string-downcase`, `string->number`, `number->string`, `string->symbol`, `symbol->string`, `string=?`, `string<?`, `string>?`, `char?`, `char=?`, `char<?`, `char->integer`, `integer->char`
+`string-append`, `substring`, `string-length`, `string-ref`, `string-split`, `string-join`, `string-contains?`, `string-upcase`, `string-downcase`, `string-trim`, `string->number`, `number->string`, `string->symbol`, `symbol->string`, `string=?`, `string<?`, `string>?`, `char?`, `char=?`, `char<?`, `char-whitespace?`, `char-alphabetic?`, `char-numeric?`, `char->integer`, `integer->char`
 
 String interpolation is supported at the reader level: `"Hello $name, you are $(+ age 1) years old"`. Use `$$` for a literal `$`.
 
@@ -66,77 +77,59 @@ String interpolation is supported at the reader level: `"Hello $name, you are $(
 
 `hash-table`, `hash-ref`, `hash-set!`, `hash-set`, `hash-remove!`, `hash-has-key?`, `hash-keys`, `hash-values`, `hash-count`, `hash-table?`
 
+Literal syntax: `{name "Alice" age 30}`
+
+### Parameters (R7RS)
+
+`make-parameter`, `parameterize`
+
 ### Bitwise Operations
 
 `bitwise-and`, `bitwise-or`, `bitwise-xor`, `bitwise-not`, `arithmetic-shift`
 
-## Serializable Continuations
+### Canvas (WASM/browser)
 
-ECE continuations can be saved to disk and restored later with `save-continuation!` / `load-continuation`. This enables save/restore for games, browser page refresh survival, and persistent workflows.
+`canvas-clear`, `canvas-set-fill-color`, `canvas-fill-rect`, `canvas-fill-circle`, `canvas-draw-text`, `canvas-width`, `canvas-height`
 
-### The Lexical State Pattern
+## Continuations and Cooperative Multitasking
 
-For reliable serialization, keep mutable state in **lexical scope** (inside a function), not in global `define`:
+ECE's first-class continuations support save/restore, cooperative multitasking, and complex control flow.
 
-```scheme
-;; Game logic — pure functions at the top level
-(define (describe-room room hp)
-  (string-append "You are in " room " with " (number->string hp) " hp"))
+### yield
 
-(define (damage hp amount)
-  (- hp amount))
-
-;; Game state — all inside run-game's scope
-(define (run-game)
-  (define room (make-parameter "kitchen"))
-  (define hp (make-parameter 100))
-  (define inventory (make-parameter '()))
-
-  ;; Mutate state through gameplay
-  (room "dungeon")
-  (hp (damage (hp) 30))
-
-  ;; Save: captures room, hp, inventory automatically
-  (save-continuation! "save.dat"
-    (call/cc (lambda (k) k)))
-
-  ;; External functions work — pass values, not parameters
-  (display (describe-room (room) (hp)))
-  (newline))
-
-(run-game)
-```
-
-**Why this works:** `call/cc` captures the lexical environment — everything defined inside `run-game`. Parameters, local variables, and closures are all included. External functions (`describe-room`, `damage`) live in the global scope and are always available after boot — they don't need to be serialized.
-
-**Why global `define` doesn't work for saved state:** The global environment is shared with the runtime (300+ bindings for the compiler, reader, prelude). The serializer uses a sentinel to skip it, so global state is not captured. This is the same limitation [Racket's stateless servlets](https://docs.racket-lang.org/web-server/stateless.html) have — "the store is not serialized."
-
-### Restoring a Save
-
-```scheme
-;; Load the saved continuation and invoke it
-(define k (load-continuation "save.dat"))
-(k 'resume)  ;; resumes inside run-game with room="dungeon", hp=70
-```
-
-### Browser / Page Refresh Pattern
-
-For single-page apps, save the continuation to localStorage after every user action:
+The `yield` function pauses execution and returns control to the browser. On the next animation frame, execution resumes where it left off:
 
 ```scheme
 (define (game-loop)
-  (define state (make-parameter {room "start" hp 100}))
-
-  (let loop ()
-    ;; Save checkpoint after every choice
-    (save-continuation! "autosave"
-      (call/cc (lambda (k) k)))
-
-    ;; Present choices, get input, update state...
-    (loop)))
+  (canvas-clear)
+  (canvas-set-fill-color 50 200 100)
+  (canvas-fill-circle x y 15)
+  (yield)         ;; pause until next frame
+  (game-loop))
 ```
 
-On page load, check for an autosave and restore it instead of starting fresh.
+### Serializable Continuations
+
+Continuations can be saved to disk and restored later with `save-continuation!` / `load-continuation`. This enables save/restore for games and persistent workflows.
+
+```scheme
+(define (run-game)
+  (define room (make-parameter "kitchen"))
+  (define hp (make-parameter 100))
+
+  ;; Save: captures room, hp automatically
+  (save-continuation! "save.dat"
+    (call/cc (lambda (k) k)))
+
+  (display (room))
+  (newline))
+
+;; Later: restore
+(define k (load-continuation "save.dat"))
+(k 'resume)  ;; resumes inside run-game
+```
+
+**Why lexical scope works for saves:** `call/cc` captures the lexical environment — everything defined inside the function. Parameters and closures are included. Global bindings (compiler, reader, prelude) are always available after boot and don't need to be serialized.
 
 ## Use Cases
 
@@ -174,6 +167,8 @@ ece> (map (lambda (x) (* x x)) (list 1 2 3 4 5))
 (1 4 9 16 25)
 ```
 
+Or try the [browser REPL](https://anthonyf.github.io/ece/sandbox/) — no install needed.
+
 ### Embedding
 
 ```sh
@@ -192,7 +187,15 @@ qlot exec sbcl --load ece.asd --eval '(asdf:load-system :ece)'
 ### Testing
 
 ```sh
-make test
+make test       # CL + ECE self-hosted tests
+make test-wasm  # WASM tests (requires binaryen + Node.js)
+```
+
+### Building the WASM Sandbox
+
+```sh
+make sandbox    # builds sandbox/ with embedded WASM + bootstrap
+make site       # builds full site with sandbox + test runner
 ```
 
 ### Rebuilding Bootstrap
