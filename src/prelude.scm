@@ -546,6 +546,27 @@
       `(if (not ,expr) (error "Assertion failed") ())
       `(if (not ,expr) (error ,(car rest)) ())))
 
+;; ---- String evaluation ----
+;; Evaluate all expressions from a source string using ECE's own reader.
+
+(define (eval-string str)
+  "Read and evaluate all expressions from STR for side effects."
+  (let ((port (open-input-string str)))
+    (let loop ()
+      (let ((expr (read port)))
+        (unless (eof? expr)
+          (eval expr)
+          (loop))))))
+
+(define (eval-string-last str)
+  "Read and evaluate all expressions from STR, return last value."
+  (let ((port (open-input-string str)))
+    (let loop ((result (if #f #f)))  ;; void initial
+      (let ((expr (read port)))
+        (if (eof? expr)
+            result
+            (loop (eval expr)))))))
+
 ;; ---- Value Serialization ----
 ;; Serialize/deserialize any ECE value to/from s-expression strings.
 ;; Handles shared structure via %ser/def/%ser/ref tags.

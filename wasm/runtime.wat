@@ -3750,6 +3750,24 @@
                   (i32.or (i32.eq (local.get $id) (i32.const 10))
                           (i32.eq (local.get $id) (i32.const 13))))
           (then (global.get $true)) (else (global.get $false))))))
+    ;; 48 = char-alphabetic?
+    (if (i32.eq (local.get $id) (i32.const 48))
+      (then
+        (local.set $id (call $char-codepoint (ref.cast (ref i31) (call $arg1 (local.get $args)))))
+        (return (if (result (ref null eq))
+          (i32.or (i32.and (i32.ge_u (local.get $id) (i32.const 65))
+                           (i32.le_u (local.get $id) (i32.const 90)))
+                  (i32.and (i32.ge_u (local.get $id) (i32.const 97))
+                           (i32.le_u (local.get $id) (i32.const 122))))
+          (then (global.get $true)) (else (global.get $false))))))
+    ;; 49 = char-numeric?
+    (if (i32.eq (local.get $id) (i32.const 49))
+      (then
+        (local.set $id (call $char-codepoint (ref.cast (ref i31) (call $arg1 (local.get $args)))))
+        (return (if (result (ref null eq))
+          (i32.and (i32.ge_u (local.get $id) (i32.const 48))
+                   (i32.le_u (local.get $id) (i32.const 57)))
+          (then (global.get $true)) (else (global.get $false))))))
     ;; 76 = bitwise-and (handles fixnum and float args)
     (if (i32.eq (local.get $id) (i32.const 76))
       (then (return (call $make-fixnum (i32.and

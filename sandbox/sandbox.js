@@ -291,104 +291,9 @@ const Sandbox = {
     // Reset compilation state for fresh run
     w.reset_current_space();
 
-    // Runtime compilation: parse source in JS, eval each expression via ECE compiler
-    const evalProc = w.env_lookup(Sandbox.envHandle, ECE.internSym("eval"));
-    const evalType = w.dbg_type(evalProc);
-    if (evalType !== 6) {
-      throw new Error("eval lookup returned type " + evalType + " (expected 6=compiled-proc), handle=" + evalProc);
-    }
-    const exprs = Sandbox.parseScheme(source);
-    for (const expr of exprs) {
-      const eceExpr = Sandbox.buildECEValue(expr);
-      w.call_ece_proc(evalProc, w.h_cons(eceExpr, ECE._hNil));
-    }
-  },
-
-  // Simple S-expression parser (JS side)
-  parseScheme(source) {
-    let pos = 0;
-    const exprs = [];
-    while (pos < source.length) {
-      skipWS();
-      if (pos >= source.length) break;
-      exprs.push(readExpr());
-    }
-    return exprs;
-
-    function skipWS() {
-      while (pos < source.length) {
-        if (source[pos] === ';') { while (pos < source.length && source[pos] !== '\n') pos++; continue; }
-        if (/\s/.test(source[pos])) { pos++; continue; }
-        break;
-      }
-    }
-    function readExpr() {
-      skipWS();
-      if (source[pos] === '(') return readList();
-      if (source[pos] === "'") { pos++; return { type: "list", elems: [{ type: "sym", val: "quote" }, readExpr()] }; }
-      if (source[pos] === '"') return readString();
-      if (source[pos] === '#') return readHash();
-      return readAtom();
-    }
-    function readList() {
-      pos++; // skip (
-      const elems = [];
-      while (pos < source.length) {
-        skipWS();
-        if (source[pos] === ')') { pos++; return { type: "list", elems }; }
-        elems.push(readExpr());
-      }
-      return { type: "list", elems };
-    }
-    function readString() {
-      pos++; // skip "
-      let s = "";
-      while (pos < source.length && source[pos] !== '"') {
-        if (source[pos] === '\\') { pos++; s += source[pos] === 'n' ? '\n' : source[pos] === 't' ? '\t' : source[pos]; }
-        else s += source[pos];
-        pos++;
-      }
-      pos++; // skip closing "
-      return { type: "str", val: s };
-    }
-    function readHash() {
-      pos++; // skip #
-      if (source[pos] === 't') { pos++; return { type: "bool", val: true }; }
-      if (source[pos] === 'f') { pos++; return { type: "bool", val: false }; }
-      if (source[pos] === '\\') { pos++; const c = source[pos++]; return { type: "char", val: c.charCodeAt(0) }; }
-      return { type: "sym", val: "#" + readAtomStr() };
-    }
-    function readAtomStr() {
-      let s = "";
-      while (pos < source.length && !/[\s()";]/.test(source[pos])) s += source[pos++];
-      return s;
-    }
-    function readAtom() {
-      const s = readAtomStr();
-      const n = Number(s);
-      if (!isNaN(n) && s !== "") return { type: "num", val: n };
-      return { type: "sym", val: s };
-    }
-  },
-
-  // Convert parsed JS AST to ECE WASM value (handle)
-  buildECEValue(ast) {
-    const w = ECE.wasm;
-    switch (ast.type) {
-      case "num": return Number.isInteger(ast.val) ? w.h_fixnum(ast.val) : w.h_float(ast.val);
-      case "sym": return ECE.internSym(ast.val);
-      case "str": return ECE.makeString(ast.val);
-      case "bool": return ast.val ? ECE._hTrue : ECE._hFalse;
-      case "char": return w.h_char(ast.val);
-      case "list": {
-        let result = ECE._hNil;
-        for (let i = ast.elems.length - 1; i >= 0; i--) {
-          result = w.h_cons(Sandbox.buildECEValue(ast.elems[i]), result);
-        }
-        return result;
-      }
-      default: return ECE._hNil;
-    }
+    // Use ECE's own reader and compiler via eval-string
+    const evalStrProc = w.env_lookup(Sandbox.envHandle, ECE.internSym("eval-string"));
+    w.call_ece_proc(evalStrProc, w.h_cons(ECE.makeString(source), ECE._hNil));
   },
 
   // ── REPL ──
@@ -422,20 +327,13 @@ const Sandbox = {
     };
 
     try {
-      // Parse and eval each expression, write the last result
-      const evalProc = w.env_lookup(Sandbox.envHandle, ECE.internSym("eval"));
-      const exprs = Sandbox.parseScheme(input);
-      let lastResult = null;
-      for (const expr of exprs) {
-        const eceExpr = Sandbox.buildECEValue(expr);
-        lastResult = w.call_ece_proc(evalProc, w.h_cons(eceExpr, ECE._hNil));
-      }
+      // Use ECE's own reader and compiler via eval-string-last
+      const evalStrLastProc = w.env_lookup(Sandbox.envHandle, ECE.internSym("eval-string-last"));
+      const lastResult = w.call_ece_proc(evalStrLastProc, w.h_cons(ECE.makeString(input), ECE._hNil));
       // Print the last result using write (Scheme readable form)
-      if (lastResult !== null) {
-        const rc = w.write_val(lastResult);
-        if (rc === 0) replOutput += "Error: unbound variable";
-        // rc===1 is void (silent), rc===2 means value was printed
-      }
+      const rc = w.write_val(lastResult);
+      if (rc === 0) replOutput += "Error: unbound variable";
+      // rc===1 is void (silent), rc===2 means value was printed
     } catch(e) {
       replOutput += "Error: " + e.message;
     }
