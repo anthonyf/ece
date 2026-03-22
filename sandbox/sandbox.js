@@ -29,28 +29,7 @@ const Sandbox = {
     Sandbox.resizeCanvas();
     window.addEventListener("resize", Sandbox.resizeCanvas);
 
-    // Wire canvas imports to real canvas
-    ECE.canvas = {
-      clear() { Sandbox.ctx.clearRect(0, 0, Sandbox.canvas.width, Sandbox.canvas.height); },
-      set_fill_color(r, g, b) { Sandbox.ctx.fillStyle = `rgb(${r},${g},${b})`; },
-      fill_rect(x, y, w, h) { Sandbox.ctx.fillRect(x, y, w, h); },
-      fill_circle(x, y, r) {
-        Sandbox.ctx.beginPath();
-        Sandbox.ctx.arc(x, y, r, 0, Math.PI * 2);
-        Sandbox.ctx.fill();
-      },
-      draw_text(x, y) {
-        // Text was written to linear memory by string-to-memory
-        const mem = new Uint16Array(ECE.wasm.memory.buffer, 0, 256);
-        let len = 0;
-        while (len < 256 && mem[len] !== 0) len++;
-        const str = String.fromCharCode(...Array.from({length: len}, (_, i) => mem[i]));
-        Sandbox.ctx.font = "20px monospace";
-        Sandbox.ctx.fillText(str, x, y);
-      },
-      width() { return Sandbox.canvas.width; },
-      height() { return Sandbox.canvas.height; }
-    };
+    // Canvas is now handled by browser-lib.scm via FFI
 
     // Wire display output to console div
     ECE.io.display_string = function(len) {

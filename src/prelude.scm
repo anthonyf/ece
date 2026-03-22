@@ -382,6 +382,89 @@
       init
       (f (car lst) (fold-right f init (cdr lst)))))
 
+;; ---- String operations ----
+;; Implemented in ECE using core string primitives.
+
+(define (string-downcase s)
+  (let* ((len (string-length s))
+         (result (make-vector len #\space)))
+    (let loop ((i 0))
+      (if (>= i len)
+          (let build ((j 0) (acc ""))
+            (if (>= j len) acc
+                (build (+ j 1) (string-append acc (string (vector-ref result j))))))
+          (let* ((ch (string-ref s i))
+                 (code (char->integer ch)))
+            (vector-set! result i
+                         (if (and (>= code 65) (<= code 90))
+                             (integer->char (+ code 32))
+                             ch))
+            (loop (+ i 1)))))))
+
+(define (string-upcase s)
+  (let* ((len (string-length s))
+         (result (make-vector len #\space)))
+    (let loop ((i 0))
+      (if (>= i len)
+          (let build ((j 0) (acc ""))
+            (if (>= j len) acc
+                (build (+ j 1) (string-append acc (string (vector-ref result j))))))
+          (let* ((ch (string-ref s i))
+                 (code (char->integer ch)))
+            (vector-set! result i
+                         (if (and (>= code 97) (<= code 122))
+                             (integer->char (- code 32))
+                             ch))
+            (loop (+ i 1)))))))
+
+(define (string-trim s)
+  (let ((len (string-length s)))
+    (let find-start ((i 0))
+      (cond
+       ((>= i len) "")
+       ((char-whitespace? (string-ref s i)) (find-start (+ i 1)))
+       (else
+        (let find-end ((j (- len 1)))
+          (cond
+           ((char-whitespace? (string-ref s j)) (find-end (- j 1)))
+           (else (substring s i (+ j 1))))))))))
+
+(define (string-contains? s sub)
+  (let ((slen (string-length s))
+        (sublen (string-length sub)))
+    (if (= sublen 0) #t
+        (let loop ((i 0))
+          (cond
+           ((> (+ i sublen) slen) #f)
+           ((string=? (substring s i (+ i sublen)) sub) #t)
+           (else (loop (+ i 1))))))))
+
+(define (string-split s . rest)
+  (let* ((delim (if (null? rest) " "
+                    (if (char? (car rest)) (string (car rest)) (car rest))))
+         (slen (string-length s))
+         (dlen (string-length delim)))
+    (if (= dlen 0) (list s)
+        (let loop ((i 0) (start 0) (acc '()))
+          (cond
+           ((> (+ i dlen) slen)
+            (reverse (cons (substring s start slen) acc)))
+           ((string=? (substring s i (+ i dlen)) delim)
+            (loop (+ i dlen) (+ i dlen)
+                  (cons (substring s start i) acc)))
+           (else (loop (+ i 1) start acc)))))))
+
+(define (string-join lst sep)
+  (if (null? lst) ""
+      (let loop ((rest (cdr lst)) (acc (car lst)))
+        (if (null? rest) acc
+            (loop (cdr rest)
+                  (string-append acc sep (car rest)))))))
+
+(define (print x)
+  (display x)
+  (newline))
+
 ;; ---- dynamic-wind (R7RS) ----
 ;; Winding stack: list of (before . after) pairs, innermost first.
 

@@ -26,22 +26,10 @@
   (import "loader" "fetch_ececb" (func $js-fetch-ececb (param externref) (result externref)))
   (import "io" "trace_pc" (func $js-trace-pc (param i32 i32)))
 
-  ;; Canvas — 2D drawing primitives
-  (import "canvas" "clear" (func $js-canvas-clear))
-  (import "canvas" "set_fill_color" (func $js-canvas-set-fill-color (param i32 i32 i32)))
-  (import "canvas" "fill_rect" (func $js-canvas-fill-rect (param f64 f64 f64 f64)))
-  (import "canvas" "fill_circle" (func $js-canvas-fill-circle (param f64 f64 f64)))
-  (import "canvas" "draw_text" (func $js-canvas-draw-text (param f64 f64)))
-  (import "canvas" "width" (func $js-canvas-width (result i32)))
-  (import "canvas" "height" (func $js-canvas-height (result i32)))
-
-  ;; Timing — performance.now() and wall clock
+  ;; Timing — performance.now() for current-milliseconds
   (import "timing" "performance_now" (func $js-performance-now (result i32)))
-  (import "timing" "wall_clock_ms" (func $js-wall-clock-ms (result i32)))
 
-  ;; Math — trig functions
-  (import "math" "sin" (func $js-sin (param f64) (result f64)))
-  (import "math" "cos" (func $js-cos (param f64) (result f64)))
+  ;; Canvas, math (sin/cos), and wall-clock-ms are now in browser-lib.scm via FFI
 
   ;; JavaScript FFI — generic JS interop
   (import "ffi" "eval" (func $js-ffi-eval (param i32 i32) (result i32)))
@@ -132,7 +120,9 @@
 
   ;; --- JS FFI reference ---
   ;; Opaque wrapper around an i32 index into the JS-side handle table.
-  (type $js-ref (struct (field $idx i32)))
+  ;; The $tag field distinguishes this from $primitive (which also has a single i32),
+  ;; preventing binaryen struct type deduplication.
+  (type $js-ref (struct (field $idx i32) (field $tag i32)))
 
   ;; --- Port ---
   ;; Buffer-based I/O port. Used for file I/O (localStorage backing),
@@ -360,11 +350,25 @@
   )
 
   (func $make-js-ref (param $idx i32) (result (ref $js-ref))
-    (struct.new $js-ref (local.get $idx))
+    (struct.new $js-ref (local.get $idx) (i32.const 0))
   )
 
   (func $js-ref-idx (param $v (ref $js-ref)) (result i32)
     (struct.get $js-ref $idx (local.get $v))
+  )
+
+  ;; Convert f64 to ECE number: fixnum if integer in range, float-box otherwise
+  (func $f64-to-ece-number (param $v f64) (result (ref null eq))
+    (local $i i32)
+    ;; Check if f64 is an integer: trunc(v) == v and not NaN/Inf
+    (if (f64.eq (f64.trunc (local.get $v)) (local.get $v))
+      (then
+        (local.set $i (i32.trunc_f64_s (local.get $v)))
+        ;; Check fixnum range: -2^30 to 2^30-1
+        (if (i32.and (i32.ge_s (local.get $i) (i32.const -1073741824))
+                     (i32.le_s (local.get $i) (i32.const 1073741823)))
+          (then (return (call $make-fixnum (local.get $i)))))))
+    (struct.new $float-box (local.get $v))
   )
 
   (func $is-eof (param $v (ref null eq)) (result i32)
@@ -2703,94 +2707,6 @@
     (local.get $s)
   )
 
-  ;; --- String case conversion ---
-  ;; mode: 0=upcase, 1=downcase
-  (func $prim-string-case (param $s (ref null eq)) (param $mode i32) (result (ref null eq))
-    (local $src (ref $string))
-    (local $len i32)
-    (local $result (ref $string))
-    (local $i i32)
-    (local $ch i32)
-    (local.set $src (ref.cast (ref $string) (local.get $s)))
-    (local.set $len (array.len (local.get $src)))
-    (local.set $result (array.new_default $string (local.get $len)))
-    (local.set $i (i32.const 0))
-    (block $done
-      (loop $loop
-        (br_if $done (i32.ge_u (local.get $i) (local.get $len)))
-        (local.set $ch (array.get_u $string (local.get $src) (local.get $i)))
-        (if (local.get $mode)
-          (then ;; downcase
-            (if (i32.and (i32.ge_u (local.get $ch) (i32.const 65))
-                         (i32.le_u (local.get $ch) (i32.const 90)))
-              (then (local.set $ch (i32.add (local.get $ch) (i32.const 32))))))
-          (else ;; upcase
-            (if (i32.and (i32.ge_u (local.get $ch) (i32.const 97))
-                         (i32.le_u (local.get $ch) (i32.const 122)))
-              (then (local.set $ch (i32.sub (local.get $ch) (i32.const 32)))))))
-        (array.set $string (local.get $result) (local.get $i) (local.get $ch))
-        (local.set $i (i32.add (local.get $i) (i32.const 1)))
-        (br $loop)))
-    (local.get $result)
-  )
-
-  ;; --- String split ---
-  (func $prim-string-split (param $s (ref null eq)) (param $delim (ref null eq)) (result (ref null eq))
-    (local $src (ref $string))
-    (local $dsrc (ref $string))
-    (local $slen i32) (local $dlen i32)
-    (local $i i32) (local $start i32)
-    (local $result (ref null eq))
-    (local $match i32) (local $j i32)
-    ;; Handle non-string delimiters (e.g., char)
-    (if (call $is-char (local.get $delim))
-      (then
-        (local.set $delim (call $prim-char-to-string
-          (call $char-codepoint (ref.cast (ref i31) (local.get $delim)))))))
-    (local.set $src (ref.cast (ref $string) (local.get $s)))
-    (local.set $dsrc (ref.cast (ref $string) (local.get $delim)))
-    (local.set $slen (array.len (local.get $src)))
-    (local.set $dlen (array.len (local.get $dsrc)))
-    (local.set $result (global.get $nil))
-    (local.set $start (i32.const 0))
-    (local.set $i (i32.const 0))
-    (block $done
-      (loop $scan
-        (br_if $done (i32.gt_u (i32.add (local.get $i) (local.get $dlen)) (local.get $slen)))
-        ;; Check if delimiter matches at position i
-        (local.set $match (i32.const 1))
-        (local.set $j (i32.const 0))
-        (block $no-match
-          (loop $cmp
-            (br_if $no-match (i32.ge_u (local.get $j) (local.get $dlen)))
-            (if (i32.ne (array.get_u $string (local.get $src) (i32.add (local.get $i) (local.get $j)))
-                        (array.get_u $string (local.get $dsrc) (local.get $j)))
-              (then (local.set $match (i32.const 0)) (br $no-match)))
-            (local.set $j (i32.add (local.get $j) (i32.const 1)))
-            (br $cmp)))
-        (if (local.get $match)
-          (then
-            ;; Add substring [start, i) to result
-            (local.set $result (call $cons
-              (call $prim-substring (local.get $s)
-                (call $make-fixnum (local.get $start))
-                (call $make-fixnum (local.get $i)))
-              (local.get $result)))
-            (local.set $start (i32.add (local.get $i) (local.get $dlen)))
-            (local.set $i (local.get $start)))
-          (else
-            (local.set $i (i32.add (local.get $i) (i32.const 1)))))
-        (br $scan)))
-    ;; Add final segment
-    (local.set $result (call $cons
-      (call $prim-substring (local.get $s)
-        (call $make-fixnum (local.get $start))
-        (call $make-fixnum (local.get $slen)))
-      (local.get $result)))
-    ;; Reverse the result
-    (call $prim-reverse (local.get $result))
-  )
-
   ;; Reverse a list
   (func $prim-reverse (param $lst (ref null eq)) (result (ref null eq))
     (local $cur (ref null eq))
@@ -2807,85 +2723,6 @@
         (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $cur))))
         (br $loop)))
     (local.get $result)
-  )
-
-  ;; --- String trim ---
-  (func $prim-string-trim (param $s (ref null eq)) (result (ref null eq))
-    (local $src (ref $string))
-    (local $len i32) (local $start i32) (local $end i32) (local $ch i32)
-    (local.set $src (ref.cast (ref $string) (local.get $s)))
-    (local.set $len (array.len (local.get $src)))
-    (local.set $start (i32.const 0))
-    (local.set $end (local.get $len))
-    ;; Skip leading whitespace
-    (block $done1 (loop $l1
-      (br_if $done1 (i32.ge_u (local.get $start) (local.get $end)))
-      (local.set $ch (array.get_u $string (local.get $src) (local.get $start)))
-      (br_if $done1 (i32.and (i32.ne (local.get $ch) (i32.const 32))
-                              (i32.ne (local.get $ch) (i32.const 9))))
-      (local.set $start (i32.add (local.get $start) (i32.const 1)))
-      (br $l1)))
-    ;; Skip trailing whitespace
-    (block $done2 (loop $l2
-      (br_if $done2 (i32.le_u (local.get $end) (local.get $start)))
-      (local.set $ch (array.get_u $string (local.get $src) (i32.sub (local.get $end) (i32.const 1))))
-      (br_if $done2 (i32.and (i32.ne (local.get $ch) (i32.const 32))
-                              (i32.ne (local.get $ch) (i32.const 9))))
-      (local.set $end (i32.sub (local.get $end) (i32.const 1)))
-      (br $l2)))
-    (call $prim-substring (local.get $s)
-      (call $make-fixnum (local.get $start))
-      (call $make-fixnum (local.get $end)))
-  )
-
-  ;; --- String contains? ---
-  (func $prim-string-contains (param $s (ref null eq)) (param $sub (ref null eq)) (result (ref null eq))
-    (local $src (ref $string)) (local $ssub (ref $string))
-    (local $slen i32) (local $sublen i32) (local $i i32) (local $j i32) (local $match i32)
-    (local.set $src (ref.cast (ref $string) (local.get $s)))
-    (local.set $ssub (ref.cast (ref $string) (local.get $sub)))
-    (local.set $slen (array.len (local.get $src)))
-    (local.set $sublen (array.len (local.get $ssub)))
-    (local.set $i (i32.const 0))
-    (block $done
-      (loop $scan
-        (br_if $done (i32.gt_u (i32.add (local.get $i) (local.get $sublen)) (local.get $slen)))
-        (local.set $match (i32.const 1))
-        (local.set $j (i32.const 0))
-        (block $no (loop $cmp
-          (br_if $no (i32.ge_u (local.get $j) (local.get $sublen)))
-          (if (i32.ne (array.get_u $string (local.get $src) (i32.add (local.get $i) (local.get $j)))
-                      (array.get_u $string (local.get $ssub) (local.get $j)))
-            (then (local.set $match (i32.const 0)) (br $no)))
-          (local.set $j (i32.add (local.get $j) (i32.const 1)))
-          (br $cmp)))
-        (if (local.get $match) (then (return (global.get $true))))
-        (local.set $i (i32.add (local.get $i) (i32.const 1)))
-        (br $scan)))
-    (global.get $false)
-  )
-
-  ;; --- String join ---
-  (func $prim-string-join (param $lst (ref null eq)) (param $sep (ref null eq)) (result (ref null eq))
-    (local $cur (ref null eq))
-    (local $first i32)
-    (local $parts (ref null eq))
-    (local.set $cur (local.get $lst))
-    (local.set $first (i32.const 1))
-    (local.set $parts (global.get $nil))
-    (block $done
-      (loop $loop
-        (br_if $done (ref.is_null (local.get $cur)))
-        (br_if $done (call $is-null (local.get $cur)))
-        (if (local.get $first)
-          (then (local.set $first (i32.const 0)))
-          (else (local.set $parts (call $cons (local.get $sep) (local.get $parts)))))
-        (local.set $parts (call $cons
-          (call $car (ref.cast (ref $pair) (local.get $cur)))
-          (local.get $parts)))
-        (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $cur))))
-        (br $loop)))
-    (call $prim-string-append (call $prim-reverse (local.get $parts)))
   )
 
   ;; --- Char to string ---
@@ -3519,36 +3356,9 @@
     (if (i32.eq (local.get $id) (i32.const 35))
       (then (return (call $prim-string-gt
         (call $arg1 (local.get $args)) (call $arg2 (local.get $args))))))
-    ;; 36 = string-downcase
-    (if (i32.eq (local.get $id) (i32.const 36))
-      (then (return (call $prim-string-case (call $arg1 (local.get $args)) (i32.const 1)))))
-    ;; 37 = string-upcase
-    (if (i32.eq (local.get $id) (i32.const 37))
-      (then (return (call $prim-string-case (call $arg1 (local.get $args)) (i32.const 0)))))
-    ;; 38 = string-split (str [delim]) — default delim is " "
-    (if (i32.eq (local.get $id) (i32.const 38))
-      (then
-        ;; Check if 2nd arg exists
-        (if (result (ref null eq))
-          (i32.and
-            (i32.eqz (ref.is_null (call $cdr (ref.cast (ref $pair) (local.get $args)))))
-            (i32.eqz (call $is-null (call $cdr (ref.cast (ref $pair) (local.get $args))))))
-          (then (return (call $prim-string-split
-            (call $arg1 (local.get $args)) (call $arg2 (local.get $args)))))
-          (else (return (call $prim-string-split
-            (call $arg1 (local.get $args))
-            (call $make-1char-string (i32.const 32))))))))
-    ;; 39 = string-trim
-    (if (i32.eq (local.get $id) (i32.const 39))
-      (then (return (call $prim-string-trim (call $arg1 (local.get $args))))))
-    ;; 40 = string-contains?
-    (if (i32.eq (local.get $id) (i32.const 40))
-      (then (return (call $prim-string-contains
-        (call $arg1 (local.get $args)) (call $arg2 (local.get $args))))))
-    ;; 41 = string-join
-    (if (i32.eq (local.get $id) (i32.const 41))
-      (then (return (call $prim-string-join
-        (call $arg1 (local.get $args)) (call $arg2 (local.get $args))))))
+    ;; 36-41: string-downcase, string-upcase, string-split, string-trim,
+    ;; string-contains?, string-join — now implemented in prelude.scm
+
     ;; 42 = string (char->string)
     (if (i32.eq (local.get $id) (i32.const 42))
       (then
@@ -3608,12 +3418,8 @@
     (if (i32.eq (local.get $id) (i32.const 67))
       (then (return (call $write-to-string-impl (call $arg1 (local.get $args))))))
 
-    ;; 66 = print (display + newline)
-    (if (i32.eq (local.get $id) (i32.const 66))
-      (then
-        (call $display-value (call $arg1 (local.get $args)))
-        (call $js-newline)
-        (return (global.get $void))))
+    ;; 66 = print — now implemented in prelude.scm
+
     ;; 68 = input-port?
     (if (i32.eq (local.get $id) (i32.const 68))
       (then (return (if (result (ref null eq)) (call $is-input-port (call $arg1 (local.get $args)))
@@ -4234,67 +4040,7 @@
     ;; 151 = current-milliseconds (ms since page load via performance.now)
     (if (i32.eq (local.get $id) (i32.const 151))
       (then (return (call $make-fixnum (call $js-performance-now)))))
-    ;; 154 = wall-clock-ms (ms since midnight for clock display)
-    (if (i32.eq (local.get $id) (i32.const 154))
-      (then (return (call $make-fixnum (call $js-wall-clock-ms)))))
-    ;; 152 = sin (radians → float)
-    (if (i32.eq (local.get $id) (i32.const 152))
-      (then (return (call $make-float
-        (call $js-sin (call $to-f64 (call $arg1 (local.get $args))))))))
-    ;; 153 = cos (radians → float)
-    (if (i32.eq (local.get $id) (i32.const 153))
-      (then (return (call $make-float
-        (call $js-cos (call $to-f64 (call $arg1 (local.get $args))))))))
-
-    ;; --- Canvas primitives (browser IDs 200+) ---
-    ;; 200 = canvas-clear
-    (if (i32.eq (local.get $id) (i32.const 200))
-      (then (call $js-canvas-clear) (return (global.get $void))))
-    ;; 201 = canvas-set-fill-color (r g b)
-    (if (i32.eq (local.get $id) (i32.const 201))
-      (then
-        (call $js-canvas-set-fill-color
-          (call $fixnum-value (ref.cast (ref i31) (call $arg1 (local.get $args))))
-          (call $fixnum-value (ref.cast (ref i31) (call $arg2 (local.get $args))))
-          (call $fixnum-value (ref.cast (ref i31) (call $arg3 (local.get $args)))))
-        (return (global.get $void))))
-    ;; 202 = canvas-fill-rect (x y w h)
-    (if (i32.eq (local.get $id) (i32.const 202))
-      (then
-        (call $js-canvas-fill-rect
-          (call $to-f64 (call $arg1 (local.get $args)))
-          (call $to-f64 (call $arg2 (local.get $args)))
-          (call $to-f64 (call $arg3 (local.get $args)))
-          (call $to-f64 (call $car (ref.cast (ref $pair)
-            (call $cdr (ref.cast (ref $pair)
-              (call $cdr (ref.cast (ref $pair)
-                (call $cdr (ref.cast (ref $pair) (local.get $args)))))))))))
-        (return (global.get $void))))
-    ;; 203 = canvas-fill-circle (x y r)
-    (if (i32.eq (local.get $id) (i32.const 203))
-      (then
-        (call $js-canvas-fill-circle
-          (call $to-f64 (call $arg1 (local.get $args)))
-          (call $to-f64 (call $arg2 (local.get $args)))
-          (call $to-f64 (call $arg3 (local.get $args))))
-        (return (global.get $void))))
-    ;; 204 = canvas-draw-text (x y str)
-    (if (i32.eq (local.get $id) (i32.const 204))
-      (then
-        ;; Write string to linear memory for JS (without console output)
-        (call $string-to-memory
-          (ref.cast (ref $string)
-            (call $write-to-string-impl (call $arg3 (local.get $args)))))
-        (call $js-canvas-draw-text
-          (call $to-f64 (call $arg1 (local.get $args)))
-          (call $to-f64 (call $arg2 (local.get $args))))
-        (return (global.get $void))))
-    ;; 205 = canvas-width
-    (if (i32.eq (local.get $id) (i32.const 205))
-      (then (return (call $make-fixnum (call $js-canvas-width)))))
-    ;; 206 = canvas-height
-    (if (i32.eq (local.get $id) (i32.const 206))
-      (then (return (call $make-fixnum (call $js-canvas-height)))))
+    ;; 152-154 (sin, cos, wall-clock-ms) and 200-206 (canvas) — now in browser-lib.scm via FFI
 
     ;; ── JavaScript FFI primitives (210-221) ──
 
@@ -4372,10 +4118,10 @@
     ;; PUNT: For now return void for 215-218 and add imports in the JS bridge task.
     ;; Actually let me just do it properly with inline conversion:
 
-    ;; 215 = %js-ref->number (js-ref) → ECE number
+    ;; 215 = %js-ref->number (js-ref) → ECE number (fixnum if integer, float otherwise)
     (if (i32.eq (local.get $id) (i32.const 215))
       (then
-        (return (struct.new $float-box
+        (return (call $f64-to-ece-number
           (call $js-ffi-to-number
             (call $js-ref-idx (ref.cast (ref $js-ref) (call $arg1 (local.get $args)))))))))
 

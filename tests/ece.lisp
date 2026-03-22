@@ -402,7 +402,7 @@
 
 (deftest test-io-primitives
     (testing "print is bound"
-             (ok (eq (car (evaluate 'print)) 'primitive)))
+             (ok (eq (car (evaluate 'print)) 'ece::compiled-procedure)))
 
   (testing "read is bound (ECE reader)"
            (ok (eq (car (evaluate 'read)) 'ece::compiled-procedure)))
