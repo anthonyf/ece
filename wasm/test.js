@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 // ECE WASM Test Runner
 // Loads the WASM runtime, boots bootstrap, runs compiled tests, reports results.
-// Usage: node wasm/test.js [path-to-test.ececb]
+// Usage: node wasm/test.js [path-to-test.ecec]
 
 const ECE = require("./glue.js");
 const fs = require("fs");
 const path = require("path");
 
-const testFile = process.argv[2] || path.join(__dirname, "..", "wasm-tests.ececb");
+const testFile = process.argv[2] || path.join(__dirname, "..", "wasm-tests.ecec");
 const bootstrapDir = path.join(__dirname, "..", "bootstrap");
 const wasmFile = path.join(__dirname, "runtime.wasm");
 
@@ -40,13 +40,13 @@ async function run() {
   // Build global environment
   const envH = ECE.buildGlobalEnv();
 
-  // Boot bootstrap files
+  // Boot bootstrap files via WAT-native .ecec reader
   const bootFiles = ["prelude", "compiler", "reader", "assembler", "compilation-unit"];
   for (const name of bootFiles) {
-    const bytes = new Uint8Array(fs.readFileSync(path.join(bootstrapDir, name + ".ececb")));
-    const parsed = ECE.parseBinary(bytes);
-    ECE.loadParsed(parsed);
-    w.run(w.sym_id(ECE.internSym(parsed.spaceName)), 0, envH);
+    const text = fs.readFileSync(path.join(bootstrapDir, name + ".ecec"), "utf-8");
+    const spaceId = ECE.loadEcecText(text);
+    w.run(spaceId, 0, envH);
+    console.log(`Loaded space "${name}"`);
   }
 
   // Load and run tests
@@ -55,13 +55,12 @@ async function run() {
     process.exit(1);
   }
 
-  const testBytes = new Uint8Array(fs.readFileSync(testFile));
-  const testParsed = ECE.parseBinary(testBytes);
-  ECE.loadParsed(testParsed);
+  const testText = fs.readFileSync(testFile, "utf-8");
+  const testSpaceId = ECE.loadEcecText(testText);
 
   const t0 = Date.now();
   try {
-    w.run(w.sym_id(ECE.internSym(testParsed.spaceName)), 0, envH);
+    w.run(testSpaceId, 0, envH);
   } catch (e) {
     // Some tests may crash — continue to parse output
   }

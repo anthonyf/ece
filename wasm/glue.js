@@ -254,156 +254,6 @@ const ECE = {
     }
   },
 
-  // ── .ececb binary parser ──
-
-  parseBinary(bytes) {
-    const view = new DataView(bytes.buffer || bytes);
-    let pos = 0;
-
-    function u8() { return view.getUint8(pos++); }
-    function u16() { const v = view.getUint16(pos, true); pos += 2; return v; }
-    function u32() { const v = view.getUint32(pos, true); pos += 4; return v; }
-    function i32() { const v = view.getInt32(pos, true); pos += 4; return v; }
-    function f64() { const v = view.getFloat64(pos, true); pos += 8; return v; }
-    function str(len) {
-      const s = new TextDecoder().decode(bytes.slice(pos, pos + len));
-      pos += len;
-      return s;
-    }
-    function lpStr() { return str(u16()); }      // u16-le prefixed
-    function lpStr32() { return str(u32()); }     // u32-le prefixed
-
-    // Read header
-    const magic = str(4);
-    if (magic !== "ECEB") throw new Error(`Bad magic: ${magic}`);
-    const version = u8();
-    if (version !== 1) throw new Error(`Unsupported version: ${version}`);
-    const spaceName = lpStr();
-    const macroCount = u16();
-    const macros = [];
-    for (let i = 0; i < macroCount; i++) macros.push(lpStr());
-
-    // Read units
-    const units = [];
-    while (pos < bytes.length) {
-      const marker = u8();
-      if (marker !== 0xFE) throw new Error(`Bad unit marker: ${marker} at ${pos - 1}`);
-
-      // Labels
-      const labelCount = u32();
-      const labels = {};
-      for (let i = 0; i < labelCount; i++) {
-        const name = lpStr();
-        const pc = u32();
-        labels[name] = pc;
-      }
-
-      // Instructions
-      const instrCount = u32();
-      const instrs = [];
-      for (let i = 0; i < instrCount; i++) {
-        instrs.push(readInstruction());
-      }
-
-      units.push({ labels, instrs });
-    }
-
-    function readInstruction() {
-      const opcode = u8();
-      switch (opcode) {
-        case 0: return readAssign();
-        case 1: return readTest();
-        case 2: return readBranch();
-        case 3: return readGoto();
-        case 4: return { op: "save", reg: u8() };
-        case 5: return { op: "restore", reg: u8() };
-        case 6: return readPerform();
-        default: throw new Error(`Unknown opcode: ${opcode}`);
-      }
-    }
-
-    function readAssign() {
-      const target = u8();
-      const srcType = u8();
-      switch (srcType) {
-        case 0: return { op: "assign", target, src: "const", val: readValue() };
-        case 1: return { op: "assign", target, src: "reg", srcReg: u8() };
-        case 2: return { op: "assign", target, src: "label", label: lpStr() };
-        case 3: {
-          const opId = u8();
-          const count = u8();
-          const operands = [];
-          for (let i = 0; i < count; i++) operands.push(readOperand());
-          return { op: "assign", target, src: "op", opId, operands };
-        }
-        default: throw new Error(`Unknown assign src type: ${srcType}`);
-      }
-    }
-
-    function readTest() {
-      const opId = u8();
-      const count = u8();
-      const operands = [];
-      for (let i = 0; i < count; i++) operands.push(readOperand());
-      return { op: "test", opId, operands };
-    }
-
-    function readBranch() {
-      return { op: "branch", label: lpStr() };
-    }
-
-    function readGoto() {
-      const destType = u8();
-      if (destType === 0) return { op: "goto", dest: "label", label: lpStr() };
-      if (destType === 1) return { op: "goto", dest: "reg", reg: u8() };
-      throw new Error(`Unknown goto dest type: ${destType}`);
-    }
-
-    function readPerform() {
-      const opId = u8();
-      const count = u8();
-      const operands = [];
-      for (let i = 0; i < count; i++) operands.push(readOperand());
-      return { op: "perform", opId, operands };
-    }
-
-    function readOperand() {
-      const type = u8();
-      switch (type) {
-        case 0: return { type: "const", val: readValue() };
-        case 1: return { type: "reg", reg: u8() };
-        case 2: return { type: "label", label: lpStr() };
-        default: throw new Error(`Unknown operand type: ${type}`);
-      }
-    }
-
-    function readValue() {
-      const type = u8();
-      switch (type) {
-        case 0: return { type: "fixnum", val: i32() };
-        case 1: return { type: "string", val: lpStr32() };
-        case 2: return { type: "symbol", val: lpStr() };
-        case 3: return { type: "true" };
-        case 4: return { type: "false" };
-        case 5: return { type: "nil" };
-        case 6: return { type: "eof" };
-        case 7: return { type: "char", val: u32() };
-        case 8: return { type: "float", val: f64() };
-        case 9: return { type: "void" };
-        case 10: return { type: "pair", car: readValue(), cdr: readValue() };
-        case 11: {
-          const vlen = u32();
-          const elems = [];
-          for (let i = 0; i < vlen; i++) elems.push(readValue());
-          return { type: "vector", elems };
-        }
-        default: throw new Error(`Unknown value type: ${type}`);
-      }
-    }
-
-    return { spaceName, version, macros, units };
-  },
-
   // ── Handle-based WASM interop ──
   // WASM stores GC refs in a handle table, JS gets i32 indices.
 
@@ -432,156 +282,21 @@ const ECE = {
     return ECE.wasm.make_string(offset, len);
   },
 
-  // Build a WASM value from parsed .ececb value (returns handle i32)
-  buildValue(val) {
+  // Load .ecec text via WAT-native reader
+  loadEcecText(text) {
     const w = ECE.wasm;
-    switch (val.type) {
-      case "fixnum":  return w.h_fixnum(val.val);
-      case "string":  return ECE.makeString(val.val);
-      case "symbol":  return ECE.internSym(val.val);
-      case "true":    return ECE._hTrue  || (ECE._hTrue  = w.h_true());
-      case "false":   return ECE._hFalse || (ECE._hFalse = w.h_false());
-      case "nil":     return ECE._hNil   || (ECE._hNil   = w.h_nil());
-      case "eof":     return ECE._hEof   || (ECE._hEof   = w.h_eof());
-      case "char":    return w.h_char(val.val);
-      case "float":   return w.h_float(val.val);
-      case "void":    return ECE._hVoid  || (ECE._hVoid  = w.h_void());
-      case "pair":    return w.h_cons(ECE.buildValue(val.car), ECE.buildValue(val.cdr));
-      case "vector": {
-        const vecH = w.h_vector(val.elems.length);
-        for (let i = 0; i < val.elems.length; i++) {
-          w.h_vector_set(vecH, i, ECE.buildValue(val.elems[i]));
-        }
-        return vecH;
-      }
-      default:        return ECE._hNil || (ECE._hNil = w.h_nil());
+    // Ensure linear memory is large enough for UTF-16 text
+    const needed = text.length * 2;
+    const currentBytes = w.memory.buffer.byteLength;
+    if (needed > currentBytes) {
+      const pages = Math.ceil((needed - currentBytes) / 65536);
+      w.memory.grow(pages);
     }
-  },
-
-  // Build an operand as a WASM pair (type . value) — handle i32
-  buildOperand(op, labelMap) {
-    const w = ECE.wasm;
-    const nil = ECE._hNil || (ECE._hNil = w.h_nil());
-    switch (op.type) {
-      case "const":
-        return w.h_cons(w.h_fixnum(0), ECE.buildValue(op.val));
-      case "reg":
-        return w.h_cons(w.h_fixnum(1), w.h_fixnum(op.reg));
-      case "label": {
-        const pc = labelMap[op.label];
-        if (pc === undefined) {
-          console.warn(`Unresolved label: ${op.label}`);
-          return w.h_cons(w.h_fixnum(2), w.h_fixnum(0));
-        }
-        return w.h_cons(w.h_fixnum(2), w.h_fixnum(pc));
-      }
-      default: return nil;
+    const mem = new Uint16Array(w.memory.buffer);
+    for (let i = 0; i < text.length; i++) {
+      mem[i] = text.charCodeAt(i);
     }
-  },
-
-  // Build an operand list (handle i32)
-  buildOperandList(operands, labelMap) {
-    const w = ECE.wasm;
-    const nil = ECE._hNil || (ECE._hNil = w.h_nil());
-    let list = nil;
-    for (let i = operands.length - 1; i >= 0; i--) {
-      list = w.h_cons(ECE.buildOperand(operands[i], labelMap), list);
-    }
-    return list;
-  },
-
-  // Build a $instr struct from a parsed instruction (handle i32)
-  buildInstruction(instr, labelMap) {
-    const w = ECE.wasm;
-    const nil = ECE._hNil || (ECE._hNil = w.h_nil());
-
-    switch (instr.op) {
-      case "assign": {
-        let b, c, val;
-        switch (instr.src) {
-          case "const": b = 0; c = 0; val = ECE.buildValue(instr.val); break;
-          case "reg":   b = 1; c = instr.srcReg; val = nil; break;
-          case "label": {
-            b = 2;
-            c = labelMap[instr.label] !== undefined ? labelMap[instr.label] : 0;
-            val = nil;
-            break;
-          }
-          case "op":
-            b = 3; c = instr.opId;
-            val = ECE.buildOperandList(instr.operands, labelMap);
-            break;
-        }
-        return w.make_instr(0, instr.target, b, c, val);
-      }
-      case "test":
-        return w.make_instr(1, 0, 0, instr.opId,
-          ECE.buildOperandList(instr.operands, labelMap));
-      case "branch": {
-        const pc = labelMap[instr.label] !== undefined ? labelMap[instr.label] : 0;
-        return w.make_instr(2, 0, 0, pc, nil);
-      }
-      case "goto":
-        if (instr.dest === "label") {
-          const pc = labelMap[instr.label] !== undefined ? labelMap[instr.label] : 0;
-          return w.make_instr(3, 0, 0, pc, nil);
-        } else {
-          return w.make_instr(3, 0, 1, instr.reg, nil);
-        }
-      case "save":
-        return w.make_instr(4, instr.reg, 0, 0, nil);
-      case "restore":
-        return w.make_instr(5, instr.reg, 0, 0, nil);
-      case "perform":
-        return w.make_instr(6, 0, 0, instr.opId,
-          ECE.buildOperandList(instr.operands, labelMap));
-      default:
-        console.warn(`Unknown instruction: ${instr.op}`);
-        return w.make_instr(7, 0, 0, 0, nil);
-    }
-  },
-
-  // Load a parsed .ececb into WASM compilation spaces
-  loadParsed(parsed) {
-    const w = ECE.wasm;
-    const spaceSym = ECE.internSym(parsed.spaceName);
-
-    // Count total instructions across all units
-    let totalInstrs = 0;
-    for (const unit of parsed.units) totalInstrs += unit.instrs.length;
-
-    // Create the compilation space (handle must survive reset_handles)
-    const spaceHandle = w.create_space(spaceSym, totalInstrs);
-    // Re-mark so the space handle is below the watermark
-    w.mark_handles();
-
-    // Global label map (labels from all units, offset by cumulative PC)
-    const labelMap = {};
-    let basePC = 0;
-    for (const unit of parsed.units) {
-      for (const [name, pc] of Object.entries(unit.labels)) {
-        labelMap[name] = basePC + pc;
-      }
-      basePC += unit.instrs.length;
-    }
-
-    // Build and set all instructions
-    // Reset temporary handles after each instruction to avoid overflow.
-    // The instruction GC struct is stored in the space's array, so it
-    // remains reachable even after the handle is freed.
-    let pc = 0;
-    for (const unit of parsed.units) {
-      for (const instr of unit.instrs) {
-        const instrHandle = ECE.buildInstruction(instr, labelMap);
-        w.space_set_instr(spaceHandle, pc, instrHandle);
-        // Handle recycling disabled for now — causes issues with operand values.
-        // TODO: optimize handle usage in a future pass
-        pc++;
-      }
-    }
-
-    console.log(`Loaded space "${parsed.spaceName}": ${pc} instructions, ${Object.keys(labelMap).length} labels`);
-    return spaceHandle;
+    return w.load_ecec(0, text.length);
   },
 
   // ── Bootstrap and run ──
@@ -608,14 +323,6 @@ const ECE = {
     ECE.wasm = instance.exports;
 
     return instance;
-  },
-
-  async loadEcecb(url) {
-    const response = await fetch(url);
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    const parsed = ECE.parseBinary(bytes);
-    console.log(`Loaded ${url}: space="${parsed.spaceName}", ${parsed.units.length} units`);
-    return parsed;
   },
 
   // Build global environment with all primitives

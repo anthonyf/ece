@@ -995,8 +995,8 @@
     (field $opcode i32)
     (field $a i32)              ;; target register or save/restore register
     (field $b i32)              ;; source type or dest type
-    (field $c i32)              ;; source reg/label-pc/op-id
-    (field $val (ref null eq))  ;; constant value or operand list
+    (field $c (mut i32))        ;; source reg/label-pc/op-id
+    (field $val (mut (ref null eq)))  ;; constant value or operand list
   ))
 
   ;; --- Instruction vector per space ---
@@ -1012,7 +1012,7 @@
   ;; --- Space registry (array of spaces, indexed by symbol ID) ---
   (type $space-array (array (mut (ref null $comp-space))))
   (global $spaces (mut (ref null $space-array))
-    (array.new_default $space-array (i32.const 4096)))  ;; room for many symbol IDs
+    (array.new_default $space-array (i32.const 65536)))  ;; indexed by symbol ID (labels inflate count)
   (global $space-count (mut i32) (i32.const 0))
 
   ;; --- Register a space ---
@@ -4175,6 +4175,866 @@
 
     ;; Unknown primitive — return void
     (global.get $void)
+  )
+
+
+  ;; ═══════════════════════════════════════════════════════════════════
+  ;; Section 10a: .ecec Text Reader (WAT-native s-expression loader)
+  ;; ═══════════════════════════════════════════════════════════════════
+  ;; Reads .ecec text from linear memory and loads instructions into
+  ;; compilation spaces. Handles the limited .ecec grammar only (no
+  ;; quasiquote, interpolation, hash literals, etc.).
+
+  ;; Cursor: position in linear memory (UTF-16 code units)
+  (global $ecec-pos (mut i32) (i32.const 0))
+  (global $ecec-end (mut i32) (i32.const 0))
+
+  ;; Parse-operand output (replaces multivalue return)
+  (global $ecec-op-type (mut i32) (i32.const 0))   ;; 0=const, 1=reg, 2=label, 3=op
+  (global $ecec-op-arg  (mut i32) (i32.const 0))   ;; reg-id or op-id
+  (global $ecec-op-val  (mut (ref null eq)) (ref.null eq)) ;; constant or label symbol
+
+  (func $ecec-peek (result i32)
+    (if (result i32) (i32.ge_u (global.get $ecec-pos) (global.get $ecec-end))
+      (then (i32.const -1))  ;; EOF
+      (else (i32.load16_u (i32.shl (global.get $ecec-pos) (i32.const 1))))))
+
+  (func $ecec-read (result i32)
+    (local $ch i32)
+    (if (result i32) (i32.ge_u (global.get $ecec-pos) (global.get $ecec-end))
+      (then (i32.const -1))
+      (else
+        (local.set $ch (i32.load16_u (i32.shl (global.get $ecec-pos) (i32.const 1))))
+        (global.set $ecec-pos (i32.add (global.get $ecec-pos) (i32.const 1)))
+        (local.get $ch))))
+
+  (func $ecec-skip-ws
+    (local $ch i32)
+    (block $done (loop $again
+      (local.set $ch (call $ecec-peek))
+      (br_if $done (i32.eq (local.get $ch) (i32.const -1)))
+      ;; Whitespace: space, tab, newline, CR
+      (if (i32.or (i32.or (i32.eq (local.get $ch) (i32.const 32))
+                           (i32.eq (local.get $ch) (i32.const 9)))
+                  (i32.or (i32.eq (local.get $ch) (i32.const 10))
+                           (i32.eq (local.get $ch) (i32.const 13))))
+        (then (drop (call $ecec-read)) (br $again)))
+      ;; Comment: ;
+      (if (i32.eq (local.get $ch) (i32.const 59))
+        (then
+          (block $eol (loop $skip
+            (local.set $ch (call $ecec-read))
+            (br_if $eol (i32.eq (local.get $ch) (i32.const -1)))
+            (br_if $eol (i32.eq (local.get $ch) (i32.const 10)))
+            (br $skip)))
+          (br $again))))))
+
+  ;; Read a symbol: accumulate chars until delimiter, intern the result
+  (func $ecec-read-symbol (param $first-ch i32) (result (ref null eq))
+    (local $buf (ref $string))
+    (local $len i32)
+    (local $cap i32)
+    (local $ch i32)
+    (local $new-buf (ref $string))
+    (local $i i32)
+    (local.set $cap (i32.const 32))
+    (local.set $buf (array.new_default $string (local.get $cap)))
+    ;; Store first char
+    (array.set $string (local.get $buf) (i32.const 0) (local.get $first-ch))
+    (local.set $len (i32.const 1))
+    ;; Read remaining chars
+    (block $done (loop $again
+      (local.set $ch (call $ecec-peek))
+      (br_if $done (i32.eq (local.get $ch) (i32.const -1)))
+      (br_if $done (i32.eq (local.get $ch) (i32.const 32)))   ;; space
+      (br_if $done (i32.eq (local.get $ch) (i32.const 9)))    ;; tab
+      (br_if $done (i32.eq (local.get $ch) (i32.const 10)))   ;; newline
+      (br_if $done (i32.eq (local.get $ch) (i32.const 13)))   ;; CR
+      (br_if $done (i32.eq (local.get $ch) (i32.const 40)))   ;; (
+      (br_if $done (i32.eq (local.get $ch) (i32.const 41)))   ;; )
+      (br_if $done (i32.eq (local.get $ch) (i32.const 34)))   ;; "
+      (br_if $done (i32.eq (local.get $ch) (i32.const 59)))   ;; ;
+      (drop (call $ecec-read))
+      ;; Grow buffer if needed
+      (if (i32.ge_u (local.get $len) (local.get $cap))
+        (then
+          (local.set $cap (i32.mul (local.get $cap) (i32.const 2)))
+          (local.set $new-buf (array.new_default $string (local.get $cap)))
+          (local.set $i (i32.const 0))
+          (block $d2 (loop $c2
+            (br_if $d2 (i32.ge_u (local.get $i) (local.get $len)))
+            (array.set $string (local.get $new-buf) (local.get $i)
+              (array.get_u $string (local.get $buf) (local.get $i)))
+            (local.set $i (i32.add (local.get $i) (i32.const 1)))
+            (br $c2)))
+          (local.set $buf (local.get $new-buf))))
+      (array.set $string (local.get $buf) (local.get $len) (local.get $ch))
+      (local.set $len (i32.add (local.get $len) (i32.const 1)))
+      (br $again)))
+    ;; Trim buffer to length and intern
+    (local.set $new-buf (array.new_default $string (local.get $len)))
+    (local.set $i (i32.const 0))
+    (block $d3 (loop $c3
+      (br_if $d3 (i32.ge_u (local.get $i) (local.get $len)))
+      (array.set $string (local.get $new-buf) (local.get $i)
+        (array.get_u $string (local.get $buf) (local.get $i)))
+      (local.set $i (i32.add (local.get $i) (i32.const 1)))
+      (br $c3)))
+    (call $intern (local.get $new-buf)))
+
+  ;; Read a string literal (opening " already consumed)
+  (func $ecec-read-string (result (ref null eq))
+    (local $buf (ref $string))
+    (local $len i32)
+    (local $cap i32)
+    (local $ch i32)
+    (local $new-buf (ref $string))
+    (local $i i32)
+    (local.set $cap (i32.const 64))
+    (local.set $buf (array.new_default $string (local.get $cap)))
+    (block $done (loop $again
+      (local.set $ch (call $ecec-read))
+      (br_if $done (i32.eq (local.get $ch) (i32.const -1)))
+      (br_if $done (i32.eq (local.get $ch) (i32.const 34)))  ;; closing "
+      ;; Escape sequences
+      (if (i32.eq (local.get $ch) (i32.const 92))  ;; backslash
+        (then
+          (local.set $ch (call $ecec-read))
+          (if (i32.eq (local.get $ch) (i32.const 110))   ;; \n
+            (then (local.set $ch (i32.const 10))))
+          (if (i32.eq (local.get $ch) (i32.const 116))   ;; \t
+            (then (local.set $ch (i32.const 9))))))
+      ;; Grow buffer if needed
+      (if (i32.ge_u (local.get $len) (local.get $cap))
+        (then
+          (local.set $cap (i32.mul (local.get $cap) (i32.const 2)))
+          (local.set $new-buf (array.new_default $string (local.get $cap)))
+          (local.set $i (i32.const 0))
+          (block $d2 (loop $c2
+            (br_if $d2 (i32.ge_u (local.get $i) (local.get $len)))
+            (array.set $string (local.get $new-buf) (local.get $i)
+              (array.get_u $string (local.get $buf) (local.get $i)))
+            (local.set $i (i32.add (local.get $i) (i32.const 1)))
+            (br $c2)))
+          (local.set $buf (local.get $new-buf))))
+      (array.set $string (local.get $buf) (local.get $len) (local.get $ch))
+      (local.set $len (i32.add (local.get $len) (i32.const 1)))
+      (br $again)))
+    ;; Trim to length
+    (local.set $new-buf (array.new_default $string (local.get $len)))
+    (local.set $i (i32.const 0))
+    (block $d3 (loop $c3
+      (br_if $d3 (i32.ge_u (local.get $i) (local.get $len)))
+      (array.set $string (local.get $new-buf) (local.get $i)
+        (array.get_u $string (local.get $buf) (local.get $i)))
+      (local.set $i (i32.add (local.get $i) (i32.const 1)))
+      (br $c3)))
+    (local.get $new-buf))
+
+  ;; Read a number (first char is digit or sign followed by digit)
+  (func $ecec-read-number (param $first-ch i32) (result (ref null eq))
+    (local $val i32)
+    (local $neg i32)
+    (local $ch i32)
+    (local $has-dot i32)
+    (local $fval f64)
+    (local $frac f64)
+    (local $fdiv f64)
+    ;; Handle sign
+    (if (i32.eq (local.get $first-ch) (i32.const 45))  ;; '-'
+      (then
+        (local.set $neg (i32.const 1))
+        (local.set $first-ch (call $ecec-read))))
+    ;; Parse integer part
+    (local.set $val (i32.sub (local.get $first-ch) (i32.const 48)))
+    (block $done (loop $again
+      (local.set $ch (call $ecec-peek))
+      (if (i32.and (i32.ge_u (local.get $ch) (i32.const 48))
+                   (i32.le_u (local.get $ch) (i32.const 57)))
+        (then
+          (drop (call $ecec-read))
+          (local.set $val (i32.add (i32.mul (local.get $val) (i32.const 10))
+                                   (i32.sub (local.get $ch) (i32.const 48))))
+          (br $again)))
+      ;; Check for decimal point
+      (if (i32.eq (local.get $ch) (i32.const 46))  ;; '.'
+        (then
+          (local.set $has-dot (i32.const 1))
+          (drop (call $ecec-read))))))
+    ;; If has decimal point, parse fractional part
+    (if (local.get $has-dot)
+      (then
+        (local.set $fval (f64.convert_i32_s (local.get $val)))
+        (local.set $fdiv (f64.const 10))
+        (block $done2 (loop $again2
+          (local.set $ch (call $ecec-peek))
+          (if (i32.and (i32.ge_u (local.get $ch) (i32.const 48))
+                       (i32.le_u (local.get $ch) (i32.const 57)))
+            (then
+              (drop (call $ecec-read))
+              (local.set $fval (f64.add (local.get $fval)
+                (f64.div (f64.convert_i32_u (i32.sub (local.get $ch) (i32.const 48)))
+                         (local.get $fdiv))))
+              (local.set $fdiv (f64.mul (local.get $fdiv) (f64.const 10)))
+              (br $again2)))))
+        (if (local.get $neg)
+          (then (local.set $fval (f64.neg (local.get $fval)))))
+        (return (struct.new $float-box (local.get $fval)))))
+    ;; Integer result
+    (if (local.get $neg)
+      (then (local.set $val (i32.sub (i32.const 0) (local.get $val)))))
+    (call $make-fixnum (local.get $val)))
+
+  ;; Read one s-expression from the ecec buffer
+  (func $ecec-read-sexp (result (ref null eq))
+    (local $ch i32)
+    (call $ecec-skip-ws)
+    (local.set $ch (call $ecec-peek))
+    ;; EOF
+    (if (i32.eq (local.get $ch) (i32.const -1))
+      (then (return (global.get $eof))))
+    ;; List
+    (if (i32.eq (local.get $ch) (i32.const 40))  ;; (
+      (then
+        (drop (call $ecec-read))
+        (return (call $ecec-read-list))))
+    ;; String
+    (if (i32.eq (local.get $ch) (i32.const 34))  ;; "
+      (then
+        (drop (call $ecec-read))
+        (return (call $ecec-read-string))))
+    ;; Hash dispatch: #t, #f, #\char
+    (if (i32.eq (local.get $ch) (i32.const 35))  ;; #
+      (then
+        (drop (call $ecec-read))
+        (return (call $ecec-read-hash))))
+    ;; Negative number
+    (if (i32.eq (local.get $ch) (i32.const 45))  ;; -
+      (then
+        (drop (call $ecec-read))
+        ;; Check if next char is digit
+        (local.set $ch (call $ecec-peek))
+        (if (i32.and (i32.ge_u (local.get $ch) (i32.const 48))
+                     (i32.le_u (local.get $ch) (i32.const 57)))
+          (then (return (call $ecec-read-number (i32.const 45)))))
+        ;; Otherwise it's the symbol -
+        (return (call $ecec-read-symbol (i32.const 45)))))
+    ;; Number
+    (if (i32.and (i32.ge_u (local.get $ch) (i32.const 48))
+                 (i32.le_u (local.get $ch) (i32.const 57)))
+      (then
+        (drop (call $ecec-read))
+        (return (call $ecec-read-number (local.get $ch)))))
+    ;; Symbol (anything else)
+    (drop (call $ecec-read))
+    (call $ecec-check-special (call $ecec-read-symbol (local.get $ch))))
+
+  ;; Check if a symbol is a special name (NIL) and convert to the actual value
+  (func $ecec-check-special (param $sym (ref null eq)) (result (ref null eq))
+    (local $s (ref $symbol))
+    (local $name (ref $string))
+    (if (i32.eqz (call $is-symbol (local.get $sym)))
+      (then (return (local.get $sym))))
+    (local.set $s (ref.cast (ref $symbol) (local.get $sym)))
+    (local.set $name (struct.get $symbol $name (local.get $s)))
+    ;; Check for "NIL" (3 chars: N=78, I=73, L=76)
+    (if (i32.eq (array.len (local.get $name)) (i32.const 3))
+      (then
+        (if (i32.and
+              (i32.and
+                (i32.eq (array.get_u $string (local.get $name) (i32.const 0)) (i32.const 78))
+                (i32.eq (array.get_u $string (local.get $name) (i32.const 1)) (i32.const 73)))
+              (i32.eq (array.get_u $string (local.get $name) (i32.const 2)) (i32.const 76)))
+          (then (return (global.get $nil))))))
+    ;; Check for "T" (1 char: T=84) — CL's true
+    (if (i32.eq (array.len (local.get $name)) (i32.const 1))
+      (then
+        (if (i32.eq (array.get_u $string (local.get $name) (i32.const 0)) (i32.const 84))
+          (then (return (global.get $true))))))
+    (local.get $sym))
+
+  ;; Read a list (opening paren already consumed)
+  (func $ecec-read-list (result (ref null eq))
+    (local $ch i32)
+    (local $first (ref null eq))
+    (call $ecec-skip-ws)
+    (local.set $ch (call $ecec-peek))
+    ;; Empty list
+    (if (i32.eq (local.get $ch) (i32.const 41))  ;; )
+      (then (drop (call $ecec-read)) (return (global.get $nil))))
+    ;; Read first element
+    (local.set $first (call $ecec-read-sexp))
+    ;; Check for dotted pair
+    (call $ecec-skip-ws)
+    (if (i32.eq (call $ecec-peek) (i32.const 46))  ;; .
+      (then
+        (drop (call $ecec-read))
+        ;; Check it's followed by whitespace (not a symbol starting with .)
+        (local.set $ch (call $ecec-peek))
+        (if (i32.or (i32.eq (local.get $ch) (i32.const 32))
+                    (i32.eq (local.get $ch) (i32.const 10)))
+          (then
+            ;; Dotted pair
+            (local.set $ch (i32.const 0))  ;; reuse as temp
+            (local.set $first (call $cons (local.get $first) (call $ecec-read-sexp)))
+            (call $ecec-skip-ws)
+            (drop (call $ecec-read))  ;; consume )
+            (return (local.get $first))))))
+    ;; Regular list: cons first with rest
+    (call $cons (local.get $first) (call $ecec-read-list)))
+
+  ;; Read a vector literal: #(elem1 elem2 ...) — opening #( already consumed
+  (func $ecec-read-vector (result (ref null eq))
+    (local $elems (ref null eq))
+    (local $len i32)
+    (local $vec (ref $vector))
+    (local $cur (ref null eq))
+    (local $i i32)
+    ;; Read elements into a list (then convert to vector)
+    (local.set $elems (global.get $nil))
+    (local.set $len (i32.const 0))
+    (block $done (loop $again
+      (call $ecec-skip-ws)
+      (br_if $done (i32.eq (call $ecec-peek) (i32.const 41)))  ;; )
+      (br_if $done (i32.eq (call $ecec-peek) (i32.const -1)))
+      (local.set $elems (call $cons (call $ecec-read-sexp) (local.get $elems)))
+      (local.set $len (i32.add (local.get $len) (i32.const 1)))
+      (br $again)))
+    (drop (call $ecec-read))  ;; consume )
+    ;; Reverse the list and build vector
+    (local.set $elems (call $prim-reverse (local.get $elems)))
+    (local.set $vec (array.new_default $vector (local.get $len)))
+    (local.set $cur (local.get $elems))
+    (local.set $i (i32.const 0))
+    (block $done2 (loop $fill
+      (br_if $done2 (i32.ge_u (local.get $i) (local.get $len)))
+      (array.set $vector (local.get $vec) (local.get $i)
+        (call $car (ref.cast (ref $pair) (local.get $cur))))
+      (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $cur))))
+      (local.set $i (i32.add (local.get $i) (i32.const 1)))
+      (br $fill)))
+    (local.get $vec))
+
+  ;; Read hash dispatch: #t, #f, #\char
+  (func $ecec-read-hash (result (ref null eq))
+    (local $ch i32)
+    (local $ch2 i32)
+    (local.set $ch (call $ecec-read))
+    ;; #t
+    (if (i32.eq (local.get $ch) (i32.const 116))  ;; t
+      (then (return (global.get $true))))
+    ;; #f
+    (if (i32.eq (local.get $ch) (i32.const 102))  ;; f
+      (then (return (global.get $false))))
+    ;; #( — vector literal
+    (if (i32.eq (local.get $ch) (i32.const 40))   ;; (
+      (then (return (call $ecec-read-vector))))
+    ;; #S(SCHEME-FALSE) — CL struct literal for boolean false
+    (if (i32.eq (local.get $ch) (i32.const 83))   ;; S
+      (then
+        ;; Skip everything until closing )
+        (block $sk-s (loop $skl-s
+          (local.set $ch (call $ecec-read))
+          (br_if $sk-s (i32.eq (local.get $ch) (i32.const -1)))
+          (br_if $sk-s (i32.eq (local.get $ch) (i32.const 41)))  ;; )
+          (br $skl-s)))
+        (return (global.get $false))))
+    ;; #\char
+    (if (i32.eq (local.get $ch) (i32.const 92))   ;; backslash
+      (then
+        (local.set $ch (call $ecec-read))
+        ;; Check for named characters
+        (if (i32.and (i32.ge_u (local.get $ch) (i32.const 65))  ;; A-Z uppercase = named char
+                     (i32.le_u (local.get $ch) (i32.const 90)))
+          (then
+            ;; Read the full name
+            (local.set $ch2 (call $ecec-peek))
+            (if (i32.and (i32.ge_u (local.get $ch2) (i32.const 97))
+                         (i32.le_u (local.get $ch2) (i32.const 122)))
+              (then
+                ;; Multi-char name: Newline, Tab, Space
+                ;; Check first two chars to distinguish
+                (if (i32.eq (local.get $ch) (i32.const 78))  ;; N = Newline
+                  (then
+                    ;; Skip remaining chars of "ewline"
+                    (block $sk (loop $skl
+                      (local.set $ch2 (call $ecec-peek))
+                      (br_if $sk (i32.lt_u (local.get $ch2) (i32.const 97)))
+                      (br_if $sk (i32.gt_u (local.get $ch2) (i32.const 122)))
+                      (drop (call $ecec-read)) (br $skl)))
+                    (return (call $make-char (i32.const 10)))))
+                (if (i32.eq (local.get $ch) (i32.const 84))  ;; T = Tab
+                  (then
+                    (block $sk2 (loop $skl2
+                      (local.set $ch2 (call $ecec-peek))
+                      (br_if $sk2 (i32.lt_u (local.get $ch2) (i32.const 97)))
+                      (br_if $sk2 (i32.gt_u (local.get $ch2) (i32.const 122)))
+                      (drop (call $ecec-read)) (br $skl2)))
+                    (return (call $make-char (i32.const 9)))))
+                (if (i32.eq (local.get $ch) (i32.const 83))  ;; S = Space
+                  (then
+                    (block $sk3 (loop $skl3
+                      (local.set $ch2 (call $ecec-peek))
+                      (br_if $sk3 (i32.lt_u (local.get $ch2) (i32.const 97)))
+                      (br_if $sk3 (i32.gt_u (local.get $ch2) (i32.const 122)))
+                      (drop (call $ecec-read)) (br $skl3)))
+                    (return (call $make-char (i32.const 32)))))
+                (if (i32.eq (local.get $ch) (i32.const 70))  ;; F = not used, but skip
+                  (then
+                    (block $sk4 (loop $skl4
+                      (local.set $ch2 (call $ecec-peek))
+                      (br_if $sk4 (i32.lt_u (local.get $ch2) (i32.const 97)))
+                      (br_if $sk4 (i32.gt_u (local.get $ch2) (i32.const 122)))
+                      (drop (call $ecec-read)) (br $skl4)))
+                    (return (call $make-char (local.get $ch)))))))))
+        (return (call $make-char (local.get $ch)))))
+    ;; Unknown hash — return as symbol
+    (call $ecec-read-symbol (local.get $ch)))
+
+  ;; ── .ecec loader: parse header, create space, load instructions ──
+
+  ;; Recognize register name symbol → register ID (0-5)
+  ;; Uses the assembler symbol table (same one used by runtime instruction conversion)
+  (func $ecec-reg-id (param $sym (ref $symbol)) (result i32)
+    (local $id i32)
+    (local.set $id (struct.get $symbol $id (local.get $sym)))
+    ;; Check against known register symbol IDs (slots 7-12 in asm-sym-ids)
+    (if (i32.eq (local.get $id) (array.get $i32-array (ref.as_non_null (global.get $asm-sym-ids)) (i32.const 7)))
+      (then (return (i32.const 0))))  ;; val
+    (if (i32.eq (local.get $id) (array.get $i32-array (ref.as_non_null (global.get $asm-sym-ids)) (i32.const 8)))
+      (then (return (i32.const 1))))  ;; env
+    (if (i32.eq (local.get $id) (array.get $i32-array (ref.as_non_null (global.get $asm-sym-ids)) (i32.const 9)))
+      (then (return (i32.const 2))))  ;; proc
+    (if (i32.eq (local.get $id) (array.get $i32-array (ref.as_non_null (global.get $asm-sym-ids)) (i32.const 10)))
+      (then (return (i32.const 3))))  ;; argl
+    (if (i32.eq (local.get $id) (array.get $i32-array (ref.as_non_null (global.get $asm-sym-ids)) (i32.const 11)))
+      (then (return (i32.const 4))))  ;; continue
+    (if (i32.eq (local.get $id) (array.get $i32-array (ref.as_non_null (global.get $asm-sym-ids)) (i32.const 12)))
+      (then (return (i32.const 5))))  ;; stack
+    (i32.const -1))
+
+  ;; Recognize operation name symbol → op ID
+  (func $ecec-op-id (param $sym (ref $symbol)) (result i32)
+    (local $id i32)
+    (local $i i32)
+    (local.set $id (struct.get $symbol $id (local.get $sym)))
+    ;; Op names are in asm-sym-ids slots 17-37 (op-id = slot - 17)
+    (local.set $i (i32.const 17))
+    (block $done (loop $scan
+      (br_if $done (i32.ge_u (local.get $i) (i32.const 38)))
+      (if (i32.eq (local.get $id) (array.get $i32-array (ref.as_non_null (global.get $asm-sym-ids)) (local.get $i)))
+        (then (return (i32.sub (local.get $i) (i32.const 17)))))
+      (local.set $i (i32.add (local.get $i) (i32.const 1)))
+      (br $scan)))
+    (i32.const -1))
+
+  ;; Parse an operand: (const val), (reg name), (label name), (op name)
+  ;; Sets globals: $ecec-op-type, $ecec-op-arg, $ecec-op-val
+  (func $ecec-parse-operand (param $sexp (ref null eq))
+    (local $tag (ref $symbol))
+    (local $tag-id i32)
+    (local.set $tag (ref.cast (ref $symbol)
+      (call $car (ref.cast (ref $pair) (local.get $sexp)))))
+    (local.set $tag-id (struct.get $symbol $id (local.get $tag)))
+    ;; const (slot 13)
+    (if (i32.eq (local.get $tag-id)
+          (array.get $i32-array (ref.as_non_null (global.get $asm-sym-ids)) (i32.const 13)))
+      (then
+        (global.set $ecec-op-type (i32.const 0))
+        (global.set $ecec-op-arg (i32.const 0))
+        (global.set $ecec-op-val
+          (call $car (ref.cast (ref $pair) (call $cdr-safe (local.get $sexp)))))
+        (return)))
+    ;; reg (slot 14)
+    (if (i32.eq (local.get $tag-id)
+          (array.get $i32-array (ref.as_non_null (global.get $asm-sym-ids)) (i32.const 14)))
+      (then
+        (global.set $ecec-op-type (i32.const 1))
+        (global.set $ecec-op-arg
+          (call $ecec-reg-id (ref.cast (ref $symbol)
+            (call $car (ref.cast (ref $pair) (call $cdr-safe (local.get $sexp)))))))
+        (global.set $ecec-op-val (global.get $nil))
+        (return)))
+    ;; label (slot 15)
+    (if (i32.eq (local.get $tag-id)
+          (array.get $i32-array (ref.as_non_null (global.get $asm-sym-ids)) (i32.const 15)))
+      (then
+        (global.set $ecec-op-type (i32.const 2))
+        (global.set $ecec-op-arg (i32.const 0))
+        (global.set $ecec-op-val
+          (call $car (ref.cast (ref $pair) (call $cdr-safe (local.get $sexp)))))
+        (return)))
+    ;; op (slot 16)
+    (if (i32.eq (local.get $tag-id)
+          (array.get $i32-array (ref.as_non_null (global.get $asm-sym-ids)) (i32.const 16)))
+      (then
+        (global.set $ecec-op-type (i32.const 3))
+        (global.set $ecec-op-arg
+          (call $ecec-op-id (ref.cast (ref $symbol)
+            (call $car (ref.cast (ref $pair) (call $cdr-safe (local.get $sexp)))))))
+        (global.set $ecec-op-val (global.get $nil))
+        (return)))
+    ;; Unknown
+    (global.set $ecec-op-type (i32.const -1))
+    (global.set $ecec-op-arg (i32.const 0))
+    (global.set $ecec-op-val (global.get $nil)))
+
+  ;; Safe cdr that handles nil
+  (func $cdr-safe (param $v (ref null eq)) (result (ref null eq))
+    (if (result (ref null eq)) (call $is-pair (local.get $v))
+      (then (call $cdr (ref.cast (ref $pair) (local.get $v))))
+      (else (global.get $nil))))
+
+  ;; Build operand list from s-exp list of operands
+  (func $ecec-build-operand-list (param $ops (ref null eq)) (result (ref null eq))
+    (local $cur (ref null eq))
+    (local $result (ref null eq))
+    (local.set $cur (local.get $ops))
+    (local.set $result (global.get $nil))
+    (block $done (loop $again
+      (br_if $done (ref.is_null (local.get $cur)))
+      (br_if $done (call $is-null (local.get $cur)))
+      (br_if $done (i32.eqz (call $is-pair (local.get $cur))))
+      (call $ecec-parse-operand
+        (call $car (ref.cast (ref $pair) (local.get $cur))))
+      (local.set $result (call $cons
+        (call $cons (call $make-fixnum (global.get $ecec-op-type))
+          (if (result (ref null eq)) (i32.eq (global.get $ecec-op-type) (i32.const 1))
+            (then (call $make-fixnum (global.get $ecec-op-arg)))  ;; reg
+            (else (global.get $ecec-op-val))))                     ;; const/label value
+        (local.get $result)))
+      (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $cur))))
+      (br $again)))
+    ;; Reverse
+    (call $prim-reverse (local.get $result)))
+
+  ;; Parse a single instruction s-expression into an $instr struct
+  ;; Returns null for labels (stores label in space label table instead)
+  (func $ecec-parse-instr (param $sexp (ref null eq)) (param $space-id i32) (param $pc i32)
+                           (result (ref null $instr))
+    (local $tag (ref $symbol))
+    (local $tag-id i32)
+    (local $rest (ref null eq))
+    (local $target-reg i32)
+    (local $src-type i32) (local $src-arg i32) (local $src-val (ref null eq))
+    ;; Bare symbol = label
+    (if (call $is-symbol (local.get $sexp))
+      (then (return (ref.null $instr))))
+    ;; Must be a list: (opcode ...)
+    (local.set $tag (ref.cast (ref $symbol)
+      (call $car (ref.cast (ref $pair) (local.get $sexp)))))
+    (local.set $tag-id (struct.get $symbol $id (local.get $tag)))
+    (local.set $rest (call $cdr (ref.cast (ref $pair) (local.get $sexp))))
+
+    ;; assign (slot 0): (assign reg source)
+    (if (i32.eq (local.get $tag-id)
+          (array.get $i32-array (ref.as_non_null (global.get $asm-sym-ids)) (i32.const 0)))
+      (then
+        (local.set $target-reg (call $ecec-reg-id (ref.cast (ref $symbol)
+          (call $car (ref.cast (ref $pair) (local.get $rest))))))
+        (local.set $rest (call $cdr (ref.cast (ref $pair) (local.get $rest))))
+        ;; Parse source operand
+        (call $ecec-parse-operand
+          (call $car (ref.cast (ref $pair) (local.get $rest))))
+        (local.set $src-type (global.get $ecec-op-type))
+        (local.set $src-arg (global.get $ecec-op-arg))
+        (local.set $src-val (global.get $ecec-op-val))
+        ;; For op sources, build operand list from remaining args
+        (if (i32.eq (local.get $src-type) (i32.const 3))
+          (then
+            (local.set $src-val (call $ecec-build-operand-list
+              (call $cdr (ref.cast (ref $pair) (local.get $rest)))))
+            (return (struct.new $instr
+              (i32.const 0) (local.get $target-reg) (i32.const 3) (local.get $src-arg)
+              (local.get $src-val)))))
+        ;; Non-op source: b=src-type, c=src-arg (reg-id or 0), val=src-val
+        (return (struct.new $instr
+          (i32.const 0) (local.get $target-reg) (local.get $src-type) (local.get $src-arg)
+          (local.get $src-val)))))
+
+    ;; test (slot 1): (test (op name) operands...)
+    (if (i32.eq (local.get $tag-id)
+          (array.get $i32-array (ref.as_non_null (global.get $asm-sym-ids)) (i32.const 1)))
+      (then
+        (call $ecec-parse-operand
+          (call $car (ref.cast (ref $pair) (local.get $rest))))
+        (local.set $src-arg (global.get $ecec-op-arg))  ;; op-id
+        (local.set $src-val (call $ecec-build-operand-list
+          (call $cdr (ref.cast (ref $pair) (local.get $rest)))))
+        (return (struct.new $instr
+          (i32.const 1) (i32.const 0) (i32.const 0) (local.get $src-arg)
+          (local.get $src-val)))))
+
+    ;; branch (slot 2): (branch (label name))
+    (if (i32.eq (local.get $tag-id)
+          (array.get $i32-array (ref.as_non_null (global.get $asm-sym-ids)) (i32.const 2)))
+      (then
+        (call $ecec-parse-operand
+          (call $car (ref.cast (ref $pair) (local.get $rest))))
+        (return (struct.new $instr
+          (i32.const 2) (i32.const 0) (i32.const 0) (i32.const 0)
+          (global.get $ecec-op-val)))))
+
+    ;; goto (slot 3): (goto (label name)) or (goto (reg name))
+    (if (i32.eq (local.get $tag-id)
+          (array.get $i32-array (ref.as_non_null (global.get $asm-sym-ids)) (i32.const 3)))
+      (then
+        (call $ecec-parse-operand
+          (call $car (ref.cast (ref $pair) (local.get $rest))))
+        (if (i32.eq (global.get $ecec-op-type) (i32.const 1))
+          (then
+            ;; goto reg
+            (return (struct.new $instr
+              (i32.const 3) (i32.const 0) (i32.const 1) (global.get $ecec-op-arg)
+              (global.get $nil)))))
+        ;; goto label
+        (return (struct.new $instr
+          (i32.const 3) (i32.const 0) (i32.const 0) (i32.const 0)
+          (global.get $ecec-op-val)))))
+
+    ;; save (slot 4): (save reg)
+    (if (i32.eq (local.get $tag-id)
+          (array.get $i32-array (ref.as_non_null (global.get $asm-sym-ids)) (i32.const 4)))
+      (then
+        (return (struct.new $instr
+          (i32.const 4)
+          (call $ecec-reg-id (ref.cast (ref $symbol)
+            (call $car (ref.cast (ref $pair) (local.get $rest)))))
+          (i32.const 0) (i32.const 0) (global.get $nil)))))
+
+    ;; restore (slot 5): (restore reg)
+    (if (i32.eq (local.get $tag-id)
+          (array.get $i32-array (ref.as_non_null (global.get $asm-sym-ids)) (i32.const 5)))
+      (then
+        (return (struct.new $instr
+          (i32.const 5)
+          (call $ecec-reg-id (ref.cast (ref $symbol)
+            (call $car (ref.cast (ref $pair) (local.get $rest)))))
+          (i32.const 0) (i32.const 0) (global.get $nil)))))
+
+    ;; perform (slot 6): (perform (op name) operands...)
+    (if (i32.eq (local.get $tag-id)
+          (array.get $i32-array (ref.as_non_null (global.get $asm-sym-ids)) (i32.const 6)))
+      (then
+        (call $ecec-parse-operand
+          (call $car (ref.cast (ref $pair) (local.get $rest))))
+        (local.set $src-arg (global.get $ecec-op-arg))  ;; op-id
+        (local.set $src-val (call $ecec-build-operand-list
+          (call $cdr (ref.cast (ref $pair) (local.get $rest)))))
+        (return (struct.new $instr
+          (i32.const 6) (i32.const 0) (i32.const 0) (local.get $src-arg)
+          (local.get $src-val)))))
+
+    ;; Unknown instruction type
+    (ref.null $instr))
+
+  ;; Load a complete .ecec file from linear memory
+  ;; Returns the space ID
+  (func (export "load_ecec") (param $offset i32) (param $len i32) (result i32)
+    (local $header (ref null eq))
+    (local $space-name (ref null eq))
+    (local $macros (ref null eq))
+    (local $space-id i32)
+    (local $unit (ref null eq))
+    (local $item (ref null eq))
+    (local $instr (ref null $instr))
+    (local $pc i32)
+    (local $labels (ref null eq))  ;; list of (symbol . pc) pairs for deferred resolution
+
+    ;; Set up cursor
+    (global.set $ecec-pos (local.get $offset))
+    (global.set $ecec-end (i32.add (local.get $offset) (local.get $len)))
+
+    ;; Read header: (ecec-header (space name) (macros (...)))
+    (local.set $header (call $ecec-read-sexp))
+    ;; Extract space name: (cadr (cadr header))
+    (local.set $space-name
+      (call $car (ref.cast (ref $pair)
+        (call $cdr (ref.cast (ref $pair)
+          (call $car (ref.cast (ref $pair)
+            (call $cdr (ref.cast (ref $pair) (local.get $header))))))))))
+    ;; Extract macros list: (cadr (caddr header))
+    (local.set $macros
+      (call $car (ref.cast (ref $pair)
+        (call $cdr (ref.cast (ref $pair)
+          (call $car (ref.cast (ref $pair)
+            (call $cdr (ref.cast (ref $pair)
+              (call $cdr (ref.cast (ref $pair) (local.get $header))))))))))))
+
+    ;; Create compilation space (large enough for any bootstrap file)
+    (local.set $space-id (call $create-space-internal
+      (ref.cast (ref $symbol) (local.get $space-name)) (i32.const 65536)))
+
+    ;; Read units: each is a list of instructions and labels
+    (local.set $labels (global.get $nil))
+    (local.set $pc (i32.const 0))
+    (block $eof (loop $next-unit
+      (local.set $unit (call $ecec-read-sexp))
+      (br_if $eof (call $is-eof (local.get $unit)))
+
+      ;; Walk the flat list of instructions/labels in this unit
+      (local.set $item (local.get $unit))
+      (block $end-unit (loop $next-item
+        (br_if $end-unit (ref.is_null (local.get $item)))
+        (br_if $end-unit (call $is-null (local.get $item)))
+        (br_if $end-unit (i32.eqz (call $is-pair (local.get $item))))
+
+        ;; Get current element
+        (local.set $instr (call $ecec-parse-instr
+          (call $car (ref.cast (ref $pair) (local.get $item)))
+          (local.get $space-id) (local.get $pc)))
+
+        (if (ref.is_null (local.get $instr))
+          (then
+            ;; Label: record (symbol . pc) for later resolution
+            (local.set $labels (call $cons
+              (call $cons
+                (call $car (ref.cast (ref $pair) (local.get $item)))
+                (call $make-fixnum (local.get $pc)))
+              (local.get $labels))))
+          (else
+            ;; Instruction: store in space
+            (call $space-set-instr (local.get $space-id) (local.get $pc)
+              (ref.as_non_null (local.get $instr)))
+            (local.set $pc (i32.add (local.get $pc) (i32.const 1)))))
+
+        (local.set $item (call $cdr (ref.cast (ref $pair) (local.get $item))))
+        (br $next-item)))
+      (br $next-unit)))
+
+    ;; Set final instruction count
+    (struct.set $comp-space $len
+      (call $get-space (local.get $space-id))
+      (local.get $pc))
+
+    ;; Resolve labels: iterate instructions, replace label symbols with PCs
+    (call $ecec-resolve-labels (local.get $space-id) (local.get $pc) (local.get $labels))
+
+    ;; Register macros in the macro table
+    (call $ecec-register-macros (local.get $macros) (local.get $space-id))
+
+    (local.get $space-id))
+
+  ;; Create a compilation space (internal, returns space-id = symbol-id)
+  (func $create-space-internal (param $name-sym (ref $symbol)) (param $cap i32) (result i32)
+    (local $space (ref $comp-space))
+    (local.set $space (struct.new $comp-space
+      (local.get $name-sym)
+      (array.new_default $instr-vec (local.get $cap))
+      (i32.const 0)
+      (ref.null eq)))
+    (call $register-space (local.get $space))
+    (struct.get $symbol $id (local.get $name-sym)))
+
+  ;; Store an instruction in a space at a given PC
+  (func $space-set-instr (param $space-id i32) (param $pc i32) (param $instr (ref $instr))
+    (array.set $instr-vec
+      (struct.get $comp-space $instrs (call $get-space (local.get $space-id)))
+      (local.get $pc)
+      (local.get $instr)))
+
+  ;; Resolve label references in instructions
+  ;; Labels are stored as symbol refs in instruction values. Replace with PC offsets.
+  (func $ecec-resolve-labels (param $space-id i32) (param $count i32) (param $labels (ref null eq))
+    (local $i i32)
+    (local $instr (ref $instr))
+    (local $opcode i32)
+    (local $val (ref null eq))
+    ;; Build a label lookup: walk the labels list
+    ;; For each instruction, if it references a label, resolve it
+    (local.set $i (i32.const 0))
+    (block $done (loop $scan
+      (br_if $done (i32.ge_u (local.get $i) (local.get $count)))
+      (local.set $instr (ref.as_non_null
+        (array.get $instr-vec
+          (struct.get $comp-space $instrs (call $get-space (local.get $space-id)))
+          (local.get $i))))
+      (local.set $opcode (struct.get $instr $opcode (local.get $instr)))
+
+      ;; assign with label source (b=2): resolve val (symbol → pc), clear val
+      (if (i32.and (i32.eqz (local.get $opcode))
+                   (i32.eq (struct.get $instr $b (local.get $instr)) (i32.const 2)))
+        (then
+          (struct.set $instr $c (local.get $instr)
+            (call $ecec-label-pc (struct.get $instr $val (local.get $instr)) (local.get $labels)))
+          (struct.set $instr $val (local.get $instr) (global.get $nil))))
+
+      ;; assign with op source (b=3): resolve labels in operand list
+      (if (i32.and (i32.eqz (local.get $opcode))
+                   (i32.eq (struct.get $instr $b (local.get $instr)) (i32.const 3)))
+        (then
+          (call $ecec-resolve-operand-labels (struct.get $instr $val (local.get $instr)) (local.get $labels))))
+
+      ;; branch (opcode 2): resolve val (symbol → pc), clear val
+      (if (i32.eq (local.get $opcode) (i32.const 2))
+        (then
+          (struct.set $instr $c (local.get $instr)
+            (call $ecec-label-pc (struct.get $instr $val (local.get $instr)) (local.get $labels)))
+          (struct.set $instr $val (local.get $instr) (global.get $nil))))
+
+      ;; goto label (opcode 3, b=0): resolve val, clear val
+      (if (i32.and (i32.eq (local.get $opcode) (i32.const 3))
+                   (i32.eqz (struct.get $instr $b (local.get $instr))))
+        (then
+          (struct.set $instr $c (local.get $instr)
+            (call $ecec-label-pc (struct.get $instr $val (local.get $instr)) (local.get $labels)))
+          (struct.set $instr $val (local.get $instr) (global.get $nil))))
+
+      ;; test (opcode 1): resolve labels in operand list
+      (if (i32.eq (local.get $opcode) (i32.const 1))
+        (then
+          (call $ecec-resolve-operand-labels (struct.get $instr $val (local.get $instr)) (local.get $labels))))
+
+      ;; perform (opcode 6): resolve labels in operand list
+      (if (i32.eq (local.get $opcode) (i32.const 6))
+        (then
+          (call $ecec-resolve-operand-labels (struct.get $instr $val (local.get $instr)) (local.get $labels))))
+
+      (local.set $i (i32.add (local.get $i) (i32.const 1)))
+      (br $scan))))
+
+  ;; Look up a label symbol in the labels alist, return the PC
+  (func $ecec-label-pc (param $sym (ref null eq)) (param $labels (ref null eq)) (result i32)
+    (local $cur (ref null eq))
+    (local $entry (ref $pair))
+    (local.set $cur (local.get $labels))
+    (block $done (loop $scan
+      (br_if $done (call $is-null (local.get $cur)))
+      (local.set $entry (ref.cast (ref $pair)
+        (call $car (ref.cast (ref $pair) (local.get $cur)))))
+      (if (ref.eq (struct.get $pair $car (local.get $entry)) (local.get $sym))
+        (then (return (call $fixnum-value
+          (ref.cast (ref i31) (struct.get $pair $cdr (local.get $entry)))))))
+      (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $cur))))
+      (br $scan)))
+    (i32.const 0))  ;; label not found — should not happen
+
+  ;; Resolve label references in an operand list
+  (func $ecec-resolve-operand-labels (param $ops (ref null eq)) (param $labels (ref null eq))
+    (local $cur (ref null eq))
+    (local $op (ref $pair))
+    (local $op-type i32)
+    (local.set $cur (local.get $ops))
+    (block $done (loop $scan
+      (br_if $done (call $is-null (local.get $cur)))
+      (br_if $done (i32.eqz (call $is-pair (local.get $cur))))
+      (local.set $op (ref.cast (ref $pair)
+        (call $car (ref.cast (ref $pair) (local.get $cur)))))
+      (local.set $op-type (call $fixnum-value
+        (ref.cast (ref i31) (struct.get $pair $car (local.get $op)))))
+      ;; Type 2 = label reference — resolve to PC
+      (if (i32.eq (local.get $op-type) (i32.const 2))
+        (then
+          (struct.set $pair $cdr (local.get $op)
+            (call $make-fixnum
+              (call $ecec-label-pc (struct.get $pair $cdr (local.get $op)) (local.get $labels))))))
+      (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $cur))))
+      (br $scan))))
+
+  ;; Register macros from the header's macro list
+  (func $ecec-register-macros (param $macros (ref null eq)) (param $space-id i32)
+    ;; Macros are registered by the compiled code itself (set-macro! calls).
+    ;; The header list is informational. No action needed here.
   )
 
 

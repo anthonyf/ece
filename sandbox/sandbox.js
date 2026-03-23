@@ -74,12 +74,13 @@ const Sandbox = {
 
     Sandbox.envHandle = ECE.buildGlobalEnv();
 
-    // Boot bootstrap from base64
+    // Boot bootstrap from base64-encoded .ecec text
     for (const name of ["prelude", "compiler", "reader", "assembler", "compilation-unit", "browser-lib"]) {
-      const bytes = Uint8Array.from(atob(ECE_BOOTSTRAP[name]), c => c.charCodeAt(0));
-      const parsed = ECE.parseBinary(bytes);
-      ECE.loadParsed(parsed);
-      ECE.wasm.run(ECE.wasm.sym_id(ECE.internSym(parsed.spaceName)), 0, Sandbox.envHandle);
+      const text = (typeof atob === "function")
+        ? atob(ECE_BOOTSTRAP[name])
+        : Buffer.from(ECE_BOOTSTRAP[name], "base64").toString("binary");
+      const spaceId = ECE.loadEcecText(text);
+      ECE.wasm.run(spaceId, 0, Sandbox.envHandle);
     }
     // Mark all bootstrap handles as permanent so reset_handles() doesn't free them
     ECE.wasm.mark_handles();
@@ -257,15 +258,16 @@ const Sandbox = {
 
   evalECE(source, progName) {
     const w = ECE.wasm;
-    // Try pre-compiled .ececb first (only if source hasn't been edited)
+    // Try pre-compiled .ecec first (only if source hasn't been edited)
     const key = progName || "";
     const edited = Sandbox._editorOriginal !== undefined && source !== Sandbox._editorOriginal;
     if (!edited && Sandbox._compiledPrograms && Sandbox._compiledPrograms[key]) {
       const progData = Sandbox._compiledPrograms[key];
-      const bytes = Uint8Array.from(atob(progData), c => c.charCodeAt(0));
-      const parsed = ECE.parseBinary(bytes);
-      ECE.loadParsed(parsed);
-      w.run(w.sym_id(ECE.internSym(parsed.spaceName)), 0, Sandbox.envHandle);
+      const text = (typeof atob === "function")
+        ? atob(progData)
+        : Buffer.from(progData, "base64").toString("binary");
+      const spaceId = ECE.loadEcecText(text);
+      w.run(spaceId, 0, Sandbox.envHandle);
       return;
     }
     // Reset compilation state for fresh run
