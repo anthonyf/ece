@@ -5267,6 +5267,61 @@
       (call $deref-handle (local.get $env-handle)))
   )
 
+  ;; ── Test validation exports ──
+
+  ;; Check if a symbol resolves to a valid op-id via $ecec-op-id.
+  ;; Returns the op-id (0-21) or -1 if unrecognized.
+  (func (export "check_op_id") (param $sym-handle i32) (result i32)
+    (call $ecec-op-id (ref.cast (ref $symbol)
+      (call $deref-handle (local.get $sym-handle)))))
+
+  ;; Validate all instructions in a space. Returns 0 on success,
+  ;; or -(pc+1) of first invalid instruction (negative = error).
+  (func (export "validate_space") (param $space-id i32) (result i32)
+    (local $space (ref $comp-space))
+    (local $instrs (ref $instr-vec))
+    (local $len i32)
+    (local $i i32)
+    (local $instr (ref $instr))
+    (local $op i32)
+    (local $b i32)
+    (local $c i32)
+    (local.set $space (call $get-space (local.get $space-id)))
+    (local.set $instrs (struct.get $comp-space $instrs (local.get $space)))
+    (local.set $len (struct.get $comp-space $len (local.get $space)))
+    (local.set $i (i32.const 0))
+    (block $done (loop $scan
+      (br_if $done (i32.ge_u (local.get $i) (local.get $len)))
+      (local.set $instr (ref.as_non_null
+        (array.get $instr-vec (local.get $instrs) (local.get $i))))
+      (local.set $op (struct.get $instr $opcode (local.get $instr)))
+      (local.set $b (struct.get $instr $b (local.get $instr)))
+      (local.set $c (struct.get $instr $c (local.get $instr)))
+      ;; Check: opcode must be 0-6
+      (if (i32.gt_u (local.get $op) (i32.const 6))
+        (then (return (i32.sub (i32.const 0) (i32.add (local.get $i) (i32.const 1))))))
+      ;; Check: for assign-op (op=0,b=3), test (op=1), perform (op=6): c (op-id) must be 0-21
+      (if (i32.or (i32.and (i32.eqz (local.get $op)) (i32.eq (local.get $b) (i32.const 3)))
+                  (i32.or (i32.eq (local.get $op) (i32.const 1))
+                          (i32.eq (local.get $op) (i32.const 6))))
+        (then
+          (if (i32.or (i32.lt_s (local.get $c) (i32.const 0))
+                      (i32.gt_s (local.get $c) (i32.const 21)))
+            (then (return (i32.sub (i32.const 0) (i32.add (local.get $i) (i32.const 1))))))))
+      ;; Check: for branch (op=2), goto-label (op=3,b=0), assign-label (op=0,b=2): c must be 0..len
+      (if (i32.or (i32.eq (local.get $op) (i32.const 2))
+                  (i32.or (i32.and (i32.eq (local.get $op) (i32.const 3))
+                                   (i32.eqz (local.get $b)))
+                          (i32.and (i32.eqz (local.get $op))
+                                   (i32.eq (local.get $b) (i32.const 2)))))
+        (then
+          (if (i32.or (i32.lt_s (local.get $c) (i32.const 0))
+                      (i32.ge_u (local.get $c) (local.get $len)))
+            (then (return (i32.sub (i32.const 0) (i32.add (local.get $i) (i32.const 1))))))))
+      (local.set $i (i32.add (local.get $i) (i32.const 1)))
+      (br $scan)))
+    (i32.const 0))
+
   ;; Yield flag and stored continuation for cooperative multitasking
   (global $yield-flag (mut i32) (i32.const 0))
   (global $yield-continuation (mut (ref null eq)) (ref.null eq))
