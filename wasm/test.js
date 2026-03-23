@@ -118,6 +118,34 @@ function runIntegrationTests(w, envH) {
     assert(hcVal === 101, `expected *hc* = 101, got ${hcVal}`);
   });
 
+  // ── runtime_error import fires with clear message ──
+  iTest("runtime_error produces readable exception", () => {
+    const sym = ECE.internSym("my-test-var");
+    try {
+      w.test_runtime_error(sym);
+      assert(false, "should have thrown");
+    } catch (e) {
+      assert(e.message === "Unbound variable: my-test-var",
+        `expected 'Unbound variable: my-test-var', got '${e.message}'`);
+    }
+  });
+
+  // ── Symbol table growth works beyond initial capacity ──
+  iTest("symbol intern survives past initial capacity", () => {
+    // Intern a large batch of unique symbols — should not crash
+    for (let i = 0; i < 1000; i++) {
+      ECE.internSym(`stress-test-sym-${i}`);
+    }
+    // Verify one of them round-trips
+    const h = ECE.internSym("stress-test-sym-500");
+    const id = w.sym_id(h);
+    assert(id > 0, `expected positive sym_id, got ${id}`);
+    // Intern the same one again — should get same ID
+    const h2 = ECE.internSym("stress-test-sym-500");
+    const id2 = w.sym_id(h2);
+    assert(id === id2, `expected same id ${id}, got ${id2}`);
+  });
+
   return { passed: iPassed, failed: iFailed };
 }
 

@@ -5363,6 +5363,11 @@
     (call $ecec-op-id (ref.cast (ref $symbol)
       (call $deref-handle (local.get $sym-handle)))))
 
+  ;; Test export: trigger runtime_error with "Unbound variable: <sym>"
+  (func (export "test_runtime_error") (param $sym-handle i32)
+    (call $signal-error-sym (global.get $err-unbound-var)
+      (ref.cast (ref $symbol) (call $deref-handle (local.get $sym-handle)))))
+
   ;; Validate all instructions in a space. Returns 0 on success,
   ;; or -(pc+1) of first invalid instruction (negative = error).
   (func (export "validate_space") (param $space-id i32) (result i32)
