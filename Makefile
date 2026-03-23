@@ -35,12 +35,6 @@ bootstrap:
 	  --quit
 	mv -f src/*.ecec $(BOOTSTRAP_DIR)/
 	@echo "Bootstrap .ecec files regenerated in $(BOOTSTRAP_DIR)/"
-	@echo "Converting .ecec to .ececb..."
-	qlot exec sbcl --eval '(asdf:load-system :ece)' \
-	  --eval '(ece:evaluate (list (quote load) "src/ecec-to-binary.scm"))' \
-	  --eval '(dolist (name (list "prelude" "compiler" "reader" "assembler" "compilation-unit")) (ece::convert-ecec-to-ececb (format nil "bootstrap/~A.ecec" name) (format nil "bootstrap/~A.ececb" name)))' \
-	  --quit
-	@echo "Bootstrap .ececb files generated."
 
 test-wasm: wasm
 	@echo "Compiling WASM test suite..."
@@ -48,11 +42,9 @@ test-wasm: wasm
 	@echo '(run-tests)' >> /tmp/ece-wasm-tests.scm
 	@qlot exec sbcl --eval '(asdf:load-system :ece)' \
 	  --eval '(ece:evaluate (list (intern "compile-file" :ece) "/tmp/ece-wasm-tests.scm"))' \
-	  --eval '(ece:evaluate (list (quote load) "src/ecec-to-binary.scm"))' \
-	  --eval '(ece::convert-ecec-to-ececb "/tmp/ece-wasm-tests.ecec" "/tmp/ece-wasm-tests.ececb")' \
 	  --quit
 	@echo "Running WASM tests..."
-	@node --max-old-space-size=4096 wasm/test.js /tmp/ece-wasm-tests.ececb
+	@node --max-old-space-size=4096 wasm/test.js /tmp/ece-wasm-tests.ecec
 
 sandbox: wasm
 	bash scripts/build-sandbox.sh

@@ -84,7 +84,7 @@
 (define (mc-make-label name)
   (set! mc-label-counter (+ mc-label-counter 1))
   (string->symbol
-   (string-append "mc-" (symbol->string name) "-" (number->string mc-label-counter))))
+   (string-append "L" (number->string mc-label-counter))))
 
 ;;; Linkage code
 
