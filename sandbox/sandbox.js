@@ -228,6 +228,7 @@ const Sandbox = {
 
   animationLoop() {
     if (!Sandbox.running) return;
+    ECE.wasm.reset_handles();  // recycle temporary handles from last frame
     if (!Sandbox.hasYieldCont()) {
       Sandbox.finishRun();
       return;
@@ -258,6 +259,7 @@ const Sandbox = {
 
   evalECE(source, progName) {
     const w = ECE.wasm;
+    w.reset_handles();  // recycle temporary handles from previous run
     // Try pre-compiled .ecec first (only if source hasn't been edited)
     const key = progName || "";
     const edited = Sandbox._editorOriginal !== undefined && source !== Sandbox._editorOriginal;
