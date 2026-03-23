@@ -235,10 +235,10 @@ const Sandbox = {
 
     const w = ECE.wasm;
     try {
-      // Resume the stored yield proc (call/cc wrapper lambda) with void
+      // Resume the stored yield continuation with void
       const contHandle = w.get_yield_cont();
       w.clear_yield_cont();
-      const args = w.h_cons(ECE._hVoid, ECE._hNil);
+      const args = w.h_cons(ECE._hVoid, w.h_nil());
       w.call_ece_proc(contHandle, args);
     } catch(e) {
       Sandbox.appendConsole("\nError: " + e.message + "\n");

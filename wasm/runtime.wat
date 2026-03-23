@@ -995,8 +995,8 @@
     (field $opcode i32)
     (field $a i32)              ;; target register or save/restore register
     (field $b i32)              ;; source type or dest type
-    (field $c (mut i32))        ;; source reg/label-pc/op-id
-    (field $val (mut (ref null eq)))  ;; constant value or operand list
+    (field $c i32)              ;; source reg/label-pc/op-id
+    (field $val (ref null eq))  ;; constant value or operand list
   ))
 
   ;; --- Instruction vector per space ---
@@ -4618,10 +4618,10 @@
     (local $id i32)
     (local $i i32)
     (local.set $id (struct.get $symbol $id (local.get $sym)))
-    ;; Op names are in asm-sym-ids slots 17-37 (op-id = slot - 17)
+    ;; Op names are in asm-sym-ids slots 17-38 (op-id = slot - 17)
     (local.set $i (i32.const 17))
     (block $done (loop $scan
-      (br_if $done (i32.ge_u (local.get $i) (i32.const 38)))
+      (br_if $done (i32.ge_u (local.get $i) (i32.const 39)))
       (if (i32.eq (local.get $id) (array.get $i32-array (ref.as_non_null (global.get $asm-sym-ids)) (local.get $i)))
         (then (return (i32.sub (local.get $i) (i32.const 17)))))
       (local.set $i (i32.add (local.get $i) (i32.const 1)))
@@ -4686,7 +4686,8 @@
       (else (global.get $nil))))
 
   ;; Build operand list from s-exp list of operands
-  (func $ecec-build-operand-list (param $ops (ref null eq)) (result (ref null eq))
+  (func $ecec-build-operand-list (param $ops (ref null eq)) (param $labels (ref null eq))
+                                  (result (ref null eq))
     (local $cur (ref null eq))
     (local $result (ref null eq))
     (local.set $cur (local.get $ops))
@@ -4701,23 +4702,44 @@
         (call $cons (call $make-fixnum (global.get $ecec-op-type))
           (if (result (ref null eq)) (i32.eq (global.get $ecec-op-type) (i32.const 1))
             (then (call $make-fixnum (global.get $ecec-op-arg)))  ;; reg
-            (else (global.get $ecec-op-val))))                     ;; const/label value
+            (else
+              ;; For label operands (type 2), resolve to PC fixnum immediately
+              (if (result (ref null eq)) (i32.eq (global.get $ecec-op-type) (i32.const 2))
+                (then (call $make-fixnum
+                  (call $ecec-label-pc (global.get $ecec-op-val) (local.get $labels))))
+                (else (global.get $ecec-op-val))))))  ;; const value
         (local.get $result)))
       (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $cur))))
       (br $again)))
     ;; Reverse
     (call $prim-reverse (local.get $result)))
 
+  ;; Check if a value is a symbol matching one of the 7 instruction keywords
+  (func $ecec-is-instr-keyword (param $v (ref null eq)) (result i32)
+    (local $id i32)
+    (if (i32.eqz (call $is-symbol (local.get $v)))
+      (then (return (i32.const 0))))
+    (local.set $id (struct.get $symbol $id
+      (ref.cast (ref $symbol) (local.get $v))))
+    (if (i32.eq (local.get $id) (array.get $i32-array (ref.as_non_null (global.get $asm-sym-ids)) (i32.const 0))) (then (return (i32.const 1))))
+    (if (i32.eq (local.get $id) (array.get $i32-array (ref.as_non_null (global.get $asm-sym-ids)) (i32.const 1))) (then (return (i32.const 1))))
+    (if (i32.eq (local.get $id) (array.get $i32-array (ref.as_non_null (global.get $asm-sym-ids)) (i32.const 2))) (then (return (i32.const 1))))
+    (if (i32.eq (local.get $id) (array.get $i32-array (ref.as_non_null (global.get $asm-sym-ids)) (i32.const 3))) (then (return (i32.const 1))))
+    (if (i32.eq (local.get $id) (array.get $i32-array (ref.as_non_null (global.get $asm-sym-ids)) (i32.const 4))) (then (return (i32.const 1))))
+    (if (i32.eq (local.get $id) (array.get $i32-array (ref.as_non_null (global.get $asm-sym-ids)) (i32.const 5))) (then (return (i32.const 1))))
+    (if (i32.eq (local.get $id) (array.get $i32-array (ref.as_non_null (global.get $asm-sym-ids)) (i32.const 6))) (then (return (i32.const 1))))
+    (i32.const 0))
+
   ;; Parse a single instruction s-expression into an $instr struct
-  ;; Returns null for labels (stores label in space label table instead)
+  ;; Labels resolved at creation using the labels alist.
   (func $ecec-parse-instr (param $sexp (ref null eq)) (param $space-id i32) (param $pc i32)
-                           (result (ref null $instr))
+                           (param $labels (ref null eq)) (result (ref null $instr))
     (local $tag (ref $symbol))
     (local $tag-id i32)
     (local $rest (ref null eq))
     (local $target-reg i32)
     (local $src-type i32) (local $src-arg i32) (local $src-val (ref null eq))
-    ;; Bare symbol = label
+    ;; Bare symbol = label (skip in phase 2)
     (if (call $is-symbol (local.get $sexp))
       (then (return (ref.null $instr))))
     ;; Must be a list: (opcode ...)
@@ -4733,21 +4755,28 @@
         (local.set $target-reg (call $ecec-reg-id (ref.cast (ref $symbol)
           (call $car (ref.cast (ref $pair) (local.get $rest))))))
         (local.set $rest (call $cdr (ref.cast (ref $pair) (local.get $rest))))
-        ;; Parse source operand
         (call $ecec-parse-operand
           (call $car (ref.cast (ref $pair) (local.get $rest))))
         (local.set $src-type (global.get $ecec-op-type))
         (local.set $src-arg (global.get $ecec-op-arg))
         (local.set $src-val (global.get $ecec-op-val))
-        ;; For op sources, build operand list from remaining args
+        ;; op source: build operand list with resolved labels
         (if (i32.eq (local.get $src-type) (i32.const 3))
           (then
             (local.set $src-val (call $ecec-build-operand-list
-              (call $cdr (ref.cast (ref $pair) (local.get $rest)))))
+              (call $cdr (ref.cast (ref $pair) (local.get $rest)))
+              (local.get $labels)))
             (return (struct.new $instr
               (i32.const 0) (local.get $target-reg) (i32.const 3) (local.get $src-arg)
               (local.get $src-val)))))
-        ;; Non-op source: b=src-type, c=src-arg (reg-id or 0), val=src-val
+        ;; label source: resolve PC now, val = nil
+        (if (i32.eq (local.get $src-type) (i32.const 2))
+          (then
+            (return (struct.new $instr
+              (i32.const 0) (local.get $target-reg) (i32.const 2)
+              (call $ecec-label-pc (local.get $src-val) (local.get $labels))
+              (global.get $nil)))))
+        ;; reg/const source
         (return (struct.new $instr
           (i32.const 0) (local.get $target-reg) (local.get $src-type) (local.get $src-arg)
           (local.get $src-val)))))
@@ -4758,22 +4787,24 @@
       (then
         (call $ecec-parse-operand
           (call $car (ref.cast (ref $pair) (local.get $rest))))
-        (local.set $src-arg (global.get $ecec-op-arg))  ;; op-id
+        (local.set $src-arg (global.get $ecec-op-arg))
         (local.set $src-val (call $ecec-build-operand-list
-          (call $cdr (ref.cast (ref $pair) (local.get $rest)))))
+          (call $cdr (ref.cast (ref $pair) (local.get $rest)))
+          (local.get $labels)))
         (return (struct.new $instr
           (i32.const 1) (i32.const 0) (i32.const 0) (local.get $src-arg)
           (local.get $src-val)))))
 
-    ;; branch (slot 2): (branch (label name))
+    ;; branch (slot 2): resolve label PC now
     (if (i32.eq (local.get $tag-id)
           (array.get $i32-array (ref.as_non_null (global.get $asm-sym-ids)) (i32.const 2)))
       (then
         (call $ecec-parse-operand
           (call $car (ref.cast (ref $pair) (local.get $rest))))
         (return (struct.new $instr
-          (i32.const 2) (i32.const 0) (i32.const 0) (i32.const 0)
-          (global.get $ecec-op-val)))))
+          (i32.const 2) (i32.const 0) (i32.const 0)
+          (call $ecec-label-pc (global.get $ecec-op-val) (local.get $labels))
+          (global.get $nil)))))
 
     ;; goto (slot 3): (goto (label name)) or (goto (reg name))
     (if (i32.eq (local.get $tag-id)
@@ -4783,14 +4814,14 @@
           (call $car (ref.cast (ref $pair) (local.get $rest))))
         (if (i32.eq (global.get $ecec-op-type) (i32.const 1))
           (then
-            ;; goto reg
             (return (struct.new $instr
               (i32.const 3) (i32.const 0) (i32.const 1) (global.get $ecec-op-arg)
               (global.get $nil)))))
-        ;; goto label
+        ;; goto label: resolve PC now
         (return (struct.new $instr
-          (i32.const 3) (i32.const 0) (i32.const 0) (i32.const 0)
-          (global.get $ecec-op-val)))))
+          (i32.const 3) (i32.const 0) (i32.const 0)
+          (call $ecec-label-pc (global.get $ecec-op-val) (local.get $labels))
+          (global.get $nil)))))
 
     ;; save (slot 4): (save reg)
     (if (i32.eq (local.get $tag-id)
@@ -4818,18 +4849,20 @@
       (then
         (call $ecec-parse-operand
           (call $car (ref.cast (ref $pair) (local.get $rest))))
-        (local.set $src-arg (global.get $ecec-op-arg))  ;; op-id
+        (local.set $src-arg (global.get $ecec-op-arg))
         (local.set $src-val (call $ecec-build-operand-list
-          (call $cdr (ref.cast (ref $pair) (local.get $rest)))))
+          (call $cdr (ref.cast (ref $pair) (local.get $rest)))
+          (local.get $labels)))
         (return (struct.new $instr
           (i32.const 6) (i32.const 0) (i32.const 0) (local.get $src-arg)
           (local.get $src-val)))))
 
-    ;; Unknown instruction type
+    ;; Unknown instruction type (e.g. procedure-name metadata) — skip
     (ref.null $instr))
 
   ;; Load a complete .ecec file from linear memory
-  ;; Returns the space ID
+  ;; Two-phase: (1) read all units + collect all labels, (2) create instructions with resolved labels.
+  ;; Returns the space ID.
   (func (export "load_ecec") (param $offset i32) (param $len i32) (result i32)
     (local $header (ref null eq))
     (local $space-name (ref null eq))
@@ -4839,7 +4872,8 @@
     (local $item (ref null eq))
     (local $instr (ref null $instr))
     (local $pc i32)
-    (local $labels (ref null eq))  ;; list of (symbol . pc) pairs for deferred resolution
+    (local $labels (ref null eq))   ;; alist of (symbol . pc) across ALL units
+    (local $units (ref null eq))    ;; reversed list of unit s-expressions
 
     ;; Set up cursor
     (global.set $ecec-pos (local.get $offset))
@@ -4865,50 +4899,76 @@
     (local.set $space-id (call $create-space-internal
       (ref.cast (ref $symbol) (local.get $space-name)) (i32.const 65536)))
 
-    ;; Read units: each is a list of instructions and labels
+    ;; ── Phase 1: Read all units, collect all labels ──
     (local.set $labels (global.get $nil))
+    (local.set $units (global.get $nil))
     (local.set $pc (i32.const 0))
-    (block $eof (loop $next-unit
+    (block $eof (loop $read-units
       (local.set $unit (call $ecec-read-sexp))
       (br_if $eof (call $is-eof (local.get $unit)))
-
-      ;; Walk the flat list of instructions/labels in this unit
+      ;; Save unit for phase 2
+      (local.set $units (call $cons (local.get $unit) (local.get $units)))
+      ;; Scan: collect labels, count instructions
       (local.set $item (local.get $unit))
-      (block $end-unit (loop $next-item
-        (br_if $end-unit (ref.is_null (local.get $item)))
-        (br_if $end-unit (call $is-null (local.get $item)))
-        (br_if $end-unit (i32.eqz (call $is-pair (local.get $item))))
-
-        ;; Get current element
-        (local.set $instr (call $ecec-parse-instr
-          (call $car (ref.cast (ref $pair) (local.get $item)))
-          (local.get $space-id) (local.get $pc)))
-
-        (if (ref.is_null (local.get $instr))
+      (block $end-scan (loop $scan
+        (br_if $end-scan (ref.is_null (local.get $item)))
+        (br_if $end-scan (call $is-null (local.get $item)))
+        (br_if $end-scan (i32.eqz (call $is-pair (local.get $item))))
+        (if (call $is-symbol (call $car (ref.cast (ref $pair) (local.get $item))))
           (then
-            ;; Label: record (symbol . pc) for later resolution
+            ;; Label: record (symbol . pc)
             (local.set $labels (call $cons
               (call $cons
                 (call $car (ref.cast (ref $pair) (local.get $item)))
                 (call $make-fixnum (local.get $pc)))
               (local.get $labels))))
           (else
-            ;; Instruction: store in space
-            (call $space-set-instr (local.get $space-id) (local.get $pc)
-              (ref.as_non_null (local.get $instr)))
-            (local.set $pc (i32.add (local.get $pc) (i32.const 1)))))
-
+            ;; List item: instruction or metadata (procedure-name etc.)
+            ;; Only count if it's a recognized instruction (first element matches asm-sym-ids 0-6)
+            (if (call $is-pair (call $car (ref.cast (ref $pair) (local.get $item))))
+              (then
+                (if (call $ecec-is-instr-keyword
+                      (call $car (ref.cast (ref $pair)
+                        (call $car (ref.cast (ref $pair) (local.get $item))))))
+                  (then
+                    (local.set $pc (i32.add (local.get $pc) (i32.const 1)))))))))
         (local.set $item (call $cdr (ref.cast (ref $pair) (local.get $item))))
-        (br $next-item)))
-      (br $next-unit)))
+        (br $scan)))
+      (br $read-units)))
+
+    ;; ── Phase 2: Create instructions with all labels resolved ──
+    (local.set $units (call $prim-reverse (local.get $units)))
+    (local.set $pc (i32.const 0))
+    (block $done-units (loop $build-units
+      (br_if $done-units (call $is-null (local.get $units)))
+      (br_if $done-units (i32.eqz (call $is-pair (local.get $units))))
+      ;; Get current unit
+      (local.set $item (call $car (ref.cast (ref $pair) (local.get $units))))
+      ;; Walk items: skip labels, create instructions
+      (block $end-build (loop $build
+        (br_if $end-build (ref.is_null (local.get $item)))
+        (br_if $end-build (call $is-null (local.get $item)))
+        (br_if $end-build (i32.eqz (call $is-pair (local.get $item))))
+        (if (i32.eqz (call $is-symbol (call $car (ref.cast (ref $pair) (local.get $item)))))
+          (then
+            ;; Instruction or metadata: parse (returns null for unknown types)
+            (local.set $instr (call $ecec-parse-instr
+              (call $car (ref.cast (ref $pair) (local.get $item)))
+              (local.get $space-id) (local.get $pc) (local.get $labels)))
+            (if (i32.eqz (ref.is_null (local.get $instr)))
+              (then
+                (call $space-set-instr (local.get $space-id) (local.get $pc)
+                  (ref.as_non_null (local.get $instr)))
+                (local.set $pc (i32.add (local.get $pc) (i32.const 1)))))))
+        (local.set $item (call $cdr (ref.cast (ref $pair) (local.get $item))))
+        (br $build)))
+      (local.set $units (call $cdr (ref.cast (ref $pair) (local.get $units))))
+      (br $build-units)))
 
     ;; Set final instruction count
     (struct.set $comp-space $len
       (call $get-space (local.get $space-id))
       (local.get $pc))
-
-    ;; Resolve labels: iterate instructions, replace label symbols with PCs
-    (call $ecec-resolve-labels (local.get $space-id) (local.get $pc) (local.get $labels))
 
     ;; Register macros in the macro table
     (call $ecec-register-macros (local.get $macros) (local.get $space-id))
@@ -4933,65 +4993,6 @@
       (local.get $pc)
       (local.get $instr)))
 
-  ;; Resolve label references in instructions
-  ;; Labels are stored as symbol refs in instruction values. Replace with PC offsets.
-  (func $ecec-resolve-labels (param $space-id i32) (param $count i32) (param $labels (ref null eq))
-    (local $i i32)
-    (local $instr (ref $instr))
-    (local $opcode i32)
-    (local $val (ref null eq))
-    ;; Build a label lookup: walk the labels list
-    ;; For each instruction, if it references a label, resolve it
-    (local.set $i (i32.const 0))
-    (block $done (loop $scan
-      (br_if $done (i32.ge_u (local.get $i) (local.get $count)))
-      (local.set $instr (ref.as_non_null
-        (array.get $instr-vec
-          (struct.get $comp-space $instrs (call $get-space (local.get $space-id)))
-          (local.get $i))))
-      (local.set $opcode (struct.get $instr $opcode (local.get $instr)))
-
-      ;; assign with label source (b=2): resolve val (symbol → pc), clear val
-      (if (i32.and (i32.eqz (local.get $opcode))
-                   (i32.eq (struct.get $instr $b (local.get $instr)) (i32.const 2)))
-        (then
-          (struct.set $instr $c (local.get $instr)
-            (call $ecec-label-pc (struct.get $instr $val (local.get $instr)) (local.get $labels)))
-          (struct.set $instr $val (local.get $instr) (global.get $nil))))
-
-      ;; assign with op source (b=3): resolve labels in operand list
-      (if (i32.and (i32.eqz (local.get $opcode))
-                   (i32.eq (struct.get $instr $b (local.get $instr)) (i32.const 3)))
-        (then
-          (call $ecec-resolve-operand-labels (struct.get $instr $val (local.get $instr)) (local.get $labels))))
-
-      ;; branch (opcode 2): resolve val (symbol → pc), clear val
-      (if (i32.eq (local.get $opcode) (i32.const 2))
-        (then
-          (struct.set $instr $c (local.get $instr)
-            (call $ecec-label-pc (struct.get $instr $val (local.get $instr)) (local.get $labels)))
-          (struct.set $instr $val (local.get $instr) (global.get $nil))))
-
-      ;; goto label (opcode 3, b=0): resolve val, clear val
-      (if (i32.and (i32.eq (local.get $opcode) (i32.const 3))
-                   (i32.eqz (struct.get $instr $b (local.get $instr))))
-        (then
-          (struct.set $instr $c (local.get $instr)
-            (call $ecec-label-pc (struct.get $instr $val (local.get $instr)) (local.get $labels)))
-          (struct.set $instr $val (local.get $instr) (global.get $nil))))
-
-      ;; test (opcode 1): resolve labels in operand list
-      (if (i32.eq (local.get $opcode) (i32.const 1))
-        (then
-          (call $ecec-resolve-operand-labels (struct.get $instr $val (local.get $instr)) (local.get $labels))))
-
-      ;; perform (opcode 6): resolve labels in operand list
-      (if (i32.eq (local.get $opcode) (i32.const 6))
-        (then
-          (call $ecec-resolve-operand-labels (struct.get $instr $val (local.get $instr)) (local.get $labels))))
-
-      (local.set $i (i32.add (local.get $i) (i32.const 1)))
-      (br $scan))))
 
   ;; Look up a label symbol in the labels alist, return the PC
   (func $ecec-label-pc (param $sym (ref null eq)) (param $labels (ref null eq)) (result i32)
@@ -5010,26 +5011,6 @@
     (i32.const 0))  ;; label not found — should not happen
 
   ;; Resolve label references in an operand list
-  (func $ecec-resolve-operand-labels (param $ops (ref null eq)) (param $labels (ref null eq))
-    (local $cur (ref null eq))
-    (local $op (ref $pair))
-    (local $op-type i32)
-    (local.set $cur (local.get $ops))
-    (block $done (loop $scan
-      (br_if $done (call $is-null (local.get $cur)))
-      (br_if $done (i32.eqz (call $is-pair (local.get $cur))))
-      (local.set $op (ref.cast (ref $pair)
-        (call $car (ref.cast (ref $pair) (local.get $cur)))))
-      (local.set $op-type (call $fixnum-value
-        (ref.cast (ref i31) (struct.get $pair $car (local.get $op)))))
-      ;; Type 2 = label reference — resolve to PC
-      (if (i32.eq (local.get $op-type) (i32.const 2))
-        (then
-          (struct.set $pair $cdr (local.get $op)
-            (call $make-fixnum
-              (call $ecec-label-pc (struct.get $pair $cdr (local.get $op)) (local.get $labels))))))
-      (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $cur))))
-      (br $scan))))
 
   ;; Register macros from the header's macro list
   (func $ecec-register-macros (param $macros (ref null eq)) (param $space-id i32)
@@ -5290,11 +5271,13 @@
   (global $yield-flag (mut i32) (i32.const 0))
   (global $yield-continuation (mut (ref null eq)) (ref.null eq))
   (func (export "get_yield_flag") (result i32) (global.get $yield-flag))
+
   (func (export "set_yield_flag") (param $v i32) (global.set $yield-flag (local.get $v)))
   (func (export "get_yield_cont") (result i32)
     (call $alloc-handle (global.get $yield-continuation)))
   (func (export "clear_yield_cont")
     (global.set $yield-continuation (ref.null eq)))
+
 
   ;; Debug: last executed PC and space (for crash diagnosis)
   (global $dbg-pc (mut i32) (i32.const -1))
