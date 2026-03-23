@@ -25,6 +25,7 @@
   ;; .ececb loading — JS fetches the bytes, passes them in
   (import "loader" "fetch_ececb" (func $js-fetch-ececb (param externref) (result externref)))
   (import "io" "trace_pc" (func $js-trace-pc (param i32 i32)))
+  (import "io" "runtime_error" (func $js-runtime-error (param i32)))
 
   ;; Timing — performance.now() for current-milliseconds
   (import "timing" "performance_now" (func $js-performance-now (result i32)))
@@ -175,6 +176,14 @@
   (global $nil   (ref eq) (ref.i31 (i32.const 5)))   ;; 0x05
   (global $eof   (ref eq) (ref.i31 (i32.const 7)))   ;; 0x07
   (global $void  (ref eq) (ref.i31 (i32.const 9)))   ;; 0x09
+
+  ;; Error message strings (UTF-16 arrays)
+  ;; "Unbound variable: " (18 chars)
+  (global $err-unbound-var (ref $string)
+    (array.new_fixed $string 18
+      (i32.const 85)(i32.const 110)(i32.const 98)(i32.const 111)(i32.const 117)(i32.const 110)
+      (i32.const 100)(i32.const 32)(i32.const 118)(i32.const 97)(i32.const 114)(i32.const 105)
+      (i32.const 97)(i32.const 98)(i32.const 108)(i32.const 101)(i32.const 58)(i32.const 32)))
 
 
   ;; ═══════════════════════════════════════════════════════════════════
@@ -598,8 +607,6 @@
   (type $sym-name-array (array (mut (ref null $string))))
   (type $sym-ref-array  (array (mut (ref null $symbol))))
 
-  ;; Intern table capacity (grows if needed)
-  (global $sym-capacity (mut i32) (i32.const 1024))
   (global $sym-count    (mut i32) (i32.const 0))
   (global $sym-names    (mut (ref null $sym-name-array))
     (array.new_default $sym-name-array (i32.const 65536)))
@@ -627,6 +634,32 @@
     (i32.const 1)
   )
 
+  ;; --- Grow symbol intern arrays (double capacity) ---
+  (func $grow-sym-arrays (param $old-names (ref $sym-name-array))
+                          (param $old-refs (ref $sym-ref-array))
+                          (result (ref $sym-name-array))
+    (local $old-len i32)
+    (local $new-len i32)
+    (local $new-names (ref $sym-name-array))
+    (local $new-refs (ref $sym-ref-array))
+    (local $i i32)
+    (local.set $old-len (array.len (local.get $old-names)))
+    (local.set $new-len (i32.mul (local.get $old-len) (i32.const 2)))
+    (local.set $new-names (array.new_default $sym-name-array (local.get $new-len)))
+    (local.set $new-refs (array.new_default $sym-ref-array (local.get $new-len)))
+    (local.set $i (i32.const 0))
+    (block $done (loop $copy
+      (br_if $done (i32.ge_u (local.get $i) (local.get $old-len)))
+      (array.set $sym-name-array (local.get $new-names) (local.get $i)
+        (array.get $sym-name-array (local.get $old-names) (local.get $i)))
+      (array.set $sym-ref-array (local.get $new-refs) (local.get $i)
+        (array.get $sym-ref-array (local.get $old-refs) (local.get $i)))
+      (local.set $i (i32.add (local.get $i) (i32.const 1)))
+      (br $copy)))
+    (global.set $sym-names (local.get $new-names))
+    (global.set $sym-refs (local.get $new-refs))
+    (local.get $new-names))
+
   ;; --- Intern: look up or create a symbol for a given name ---
   (func $intern (param $name (ref $string)) (result (ref $symbol))
     (local $i i32)
@@ -650,7 +683,11 @@
         (local.set $i (i32.add (local.get $i) (i32.const 1)))
         (br $scan)))
     ;; Not found — create new symbol
-    ;; TODO: grow arrays if sym-count == sym-capacity
+    ;; Grow arrays if at capacity
+    (if (i32.ge_u (global.get $sym-count) (array.len (local.get $names)))
+      (then
+        (local.set $names (call $grow-sym-arrays (local.get $names) (local.get $refs)))
+        (local.set $refs (ref.as_non_null (global.get $sym-refs)))))
     (local.set $id (global.get $sym-count))
     (local.set $sym (struct.new $symbol (local.get $id) (local.get $name)))
     (array.set $sym-name-array (local.get $names) (local.get $id) (local.get $name))
@@ -832,7 +869,7 @@
         ;; Move to enclosing frame
         (local.set $env (struct.get $env-frame $enclosing (local.get $frame)))
         (br $walk-frames)))
-    ;; Not found — return null (caller should signal error)
+    ;; Not found — return null (callers check for this)
     (ref.null eq)
   )
 
@@ -964,7 +1001,7 @@
             (br $scan)))
         (local.set $env (struct.get $env-frame $enclosing (local.get $frame)))
         (br $walk-frames)))
-    ;; Not found — TODO: signal error via JS import
+    ;; Not found — variable doesn't exist yet (define-variable! handles this case)
   )
 
 
@@ -1018,11 +1055,32 @@
   ;; --- Register a space ---
   (func $register-space (param $space (ref $comp-space))
     (local $sym-id i32)
+    (local $old-arr (ref $space-array))
+    (local $new-arr (ref $space-array))
+    (local $new-len i32)
+    (local $i i32)
     (local.set $sym-id (struct.get $symbol $id
       (struct.get $comp-space $name (local.get $space))))
-    ;; TODO: grow array if needed
+    ;; Grow array if sym-id exceeds current length
+    (local.set $old-arr (ref.as_non_null (global.get $spaces)))
+    (if (i32.ge_u (local.get $sym-id) (array.len (local.get $old-arr)))
+      (then
+        (local.set $new-len (i32.mul (array.len (local.get $old-arr)) (i32.const 2)))
+        ;; Ensure new length covers sym-id
+        (if (i32.ge_u (local.get $sym-id) (local.get $new-len))
+          (then (local.set $new-len (i32.add (local.get $sym-id) (i32.const 1)))))
+        (local.set $new-arr (array.new_default $space-array (local.get $new-len)))
+        (local.set $i (i32.const 0))
+        (block $done (loop $copy
+          (br_if $done (i32.ge_u (local.get $i) (array.len (local.get $old-arr))))
+          (array.set $space-array (local.get $new-arr) (local.get $i)
+            (array.get $space-array (local.get $old-arr) (local.get $i)))
+          (local.set $i (i32.add (local.get $i) (i32.const 1)))
+          (br $copy)))
+        (global.set $spaces (local.get $new-arr))
+        (local.set $old-arr (local.get $new-arr))))
     (array.set $space-array
-      (ref.as_non_null (global.get $spaces))
+      (local.get $old-arr)
       (local.get $sym-id)
       (local.get $space))
     (global.set $space-count
@@ -5028,6 +5086,36 @@
 
   ;; 1 page = 64KB linear memory for string transfer only
   (memory $transfer (export "memory") 1)
+
+  ;; ── Runtime error helpers ──
+  ;; Write a prefix string + symbol name to linear memory, then call runtime_error.
+  (func $signal-error-sym (param $prefix (ref $string)) (param $sym (ref $symbol))
+    (local $name (ref $string))
+    (local $plen i32)
+    (local $nlen i32)
+    (local $i i32)
+    (local $mem-offset i32)
+    (local.set $name (struct.get $symbol $name (local.get $sym)))
+    (local.set $plen (array.len (local.get $prefix)))
+    (local.set $nlen (array.len (local.get $name)))
+    ;; Write prefix
+    (local.set $i (i32.const 0))
+    (block $d1 (loop $c1
+      (br_if $d1 (i32.ge_u (local.get $i) (local.get $plen)))
+      (i32.store16 (i32.shl (local.get $i) (i32.const 1))
+        (array.get_u $string (local.get $prefix) (local.get $i)))
+      (local.set $i (i32.add (local.get $i) (i32.const 1)))
+      (br $c1)))
+    ;; Write symbol name after prefix
+    (local.set $mem-offset (local.get $plen))
+    (local.set $i (i32.const 0))
+    (block $d2 (loop $c2
+      (br_if $d2 (i32.ge_u (local.get $i) (local.get $nlen)))
+      (i32.store16 (i32.shl (i32.add (local.get $mem-offset) (local.get $i)) (i32.const 1))
+        (array.get_u $string (local.get $name) (local.get $i)))
+      (local.set $i (i32.add (local.get $i) (i32.const 1)))
+      (br $c2)))
+    (call $js-runtime-error (i32.add (local.get $plen) (local.get $nlen))))
 
   ;; Handle table
   (type $handle-array (array (mut (ref null eq))))

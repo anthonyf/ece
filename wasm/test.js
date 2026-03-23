@@ -135,7 +135,11 @@ async function run() {
       },
       display_number(n) { output.push(String(n)); },
       newline() { output.push("\n"); },
-      trace_pc() {}
+      trace_pc() {},
+      runtime_error(len) {
+        const mem = new Uint16Array(ECE.wasm.memory.buffer, 0, len);
+        throw new Error(String.fromCharCode(...mem));
+      }
     },
     loader: { fetch_ececb() { return null; } },
     storage: ECE.storage,

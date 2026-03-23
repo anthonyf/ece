@@ -40,6 +40,12 @@ const ECE = {
 
     trace_pc(pc, handle) {
       // Debug trace — no-op in production
+    },
+
+    runtime_error(len) {
+      const mem = new Uint16Array(ECE.wasm.memory.buffer, 0, len);
+      const msg = String.fromCharCode(...mem);
+      throw new Error(msg);
     }
   },
 
