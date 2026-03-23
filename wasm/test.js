@@ -11,6 +11,99 @@ const testFile = process.argv[2] || path.join(__dirname, "..", "wasm-tests.ecec"
 const bootstrapDir = path.join(__dirname, "..", "bootstrap");
 const wasmFile = path.join(__dirname, "runtime.wasm");
 
+// ── Integration tests (JS↔WASM boundary) ──
+
+function runIntegrationTests(w, envH) {
+  let iPassed = 0, iFailed = 0;
+
+  function iTest(name, fn) {
+    try {
+      fn();
+      iPassed++;
+    } catch (e) {
+      console.log(`  FAIL: ${name}: ${e.message}`);
+      iFailed++;
+    }
+  }
+
+  function assert(cond, msg) {
+    if (!cond) throw new Error(msg || "assertion failed");
+  }
+
+  // ── Op-id exhaustive check ──
+  const opNames = [
+    'lookup-variable-value', 'compiled-procedure-entry', 'compiled-procedure-env',
+    'make-compiled-procedure', 'extend-environment', 'primitive-procedure?',
+    'apply-primitive-procedure', 'continuation?', 'continuation-stack',
+    'continuation-conts', 'parameter?', 'apply-parameter', 'false?',
+    'list', 'cons', 'car', 'cdr', 'lexical-ref', 'lexical-set!',
+    'define-variable!', 'set-variable-value!', 'capture-continuation'
+  ];
+  for (let i = 0; i < opNames.length; i++) {
+    iTest(`op-id ${opNames[i]} = ${i}`, () => {
+      const sym = ECE.internSym(opNames[i]);
+      const id = w.check_op_id(sym);
+      assert(id === i, `expected ${i}, got ${id}`);
+    });
+  }
+
+  // ── Validate bootstrap spaces ──
+  const bootNames = ["prelude", "compiler", "reader", "assembler", "compilation-unit"];
+  for (const name of bootNames) {
+    iTest(`validate space "${name}"`, () => {
+      const sym = ECE.internSym(name);
+      const spaceId = w.sym_id(sym);
+      const result = w.validate_space(spaceId);
+      assert(result === 0, `invalid instruction at PC ${-result - 1}`);
+    });
+  }
+
+  // ── Yield/resume: single frame ──
+  iTest("yield single frame", () => {
+    const output = [];
+    // Temporarily capture display output
+    const origDisplay = ECE.io.display_string;
+    const origNumber = ECE.io.display_number;
+    // We can't easily redirect — use eval-string and check yield cont
+    const evalStr = w.env_lookup(envH, ECE.internSym("eval-string"));
+    const src = '(begin (define (test-yield-1) (display "A") (yield) (display "B")) (test-yield-1))';
+    w.call_ece_proc(evalStr, w.h_cons(ECE.makeString(src), w.h_nil()));
+
+    // Check yield continuation exists
+    const contH = w.get_yield_cont();
+    const contType = w.dbg_type(contH);
+    assert(contType === 6, `expected compiled-proc (6), got type ${contType}`);
+
+    // Resume
+    w.clear_yield_cont();
+    w.call_ece_proc(contH, w.h_cons(w.h_void(), w.h_nil()));
+  });
+
+  // ── Yield/resume: multi-frame ──
+  iTest("yield multi-frame (3 cycles)", () => {
+    const evalStr = w.env_lookup(envH, ECE.internSym("eval-string"));
+    const src = '(begin (define *yc* 0) (define (test-yield-loop) (set! *yc* (+ *yc* 1)) (yield) (test-yield-loop)) (test-yield-loop))';
+    w.call_ece_proc(evalStr, w.h_cons(ECE.makeString(src), w.h_nil()));
+
+    for (let frame = 0; frame < 3; frame++) {
+      const contH = w.get_yield_cont();
+      const contType = w.dbg_type(contH);
+      assert(contType === 6, `frame ${frame}: expected compiled-proc (6), got type ${contType}`);
+      w.clear_yield_cont();
+      w.call_ece_proc(contH, w.h_cons(w.h_void(), w.h_nil()));
+    }
+
+    // Verify counter advanced
+    const ycH = w.env_lookup(envH, ECE.internSym("*yc*"));
+    const ycVal = w.h_fixnum_val(ycH);
+    assert(ycVal === 4, `expected *yc* = 4, got ${ycVal}`);
+  });
+
+  return { passed: iPassed, failed: iFailed };
+}
+
+// ── Main test runner ──
+
 async function run() {
   // Load WASM module
   const wasmBytes = fs.readFileSync(wasmFile);
@@ -49,7 +142,10 @@ async function run() {
     console.log(`Loaded space "${name}"`);
   }
 
-  // Load and run tests
+  // ── Run integration tests ──
+  const intResults = runIntegrationTests(w, envH);
+
+  // ── Load and run ECE test suite ──
   if (!fs.existsSync(testFile)) {
     console.error("Test file not found:", testFile);
     process.exit(1);
@@ -87,9 +183,16 @@ async function run() {
     }
   }
 
-  console.log(`\nWASM tests: ${passed} passed, ${failed} failed (${elapsed}ms)`);
+  // Combined results
+  const totalPassed = passed + intResults.passed;
+  const totalFailed = failed + intResults.failed;
 
-  if (failed > 0 || passed === 0) {
+  console.log(`\nWASM tests: ${totalPassed} passed, ${totalFailed} failed (${elapsed}ms)`);
+  if (intResults.passed > 0) {
+    console.log(`  (${passed} ECE + ${intResults.passed} integration)`);
+  }
+
+  if (totalFailed > 0 || passed === 0) {
     process.exit(1);
   }
 }
