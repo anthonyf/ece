@@ -99,6 +99,25 @@ function runIntegrationTests(w, envH) {
     assert(ycVal === 4, `expected *yc* = 4, got ${ycVal}`);
   });
 
+  // ── Handle stability: reset_handles keeps handles bounded ──
+  iTest("handle table stable over 100 yield cycles", () => {
+    const evalStr = w.env_lookup(envH, ECE.internSym("eval-string"));
+    const src = '(begin (define *hc* 0) (define (test-handle-loop) (set! *hc* (+ *hc* 1)) (yield) (test-handle-loop)) (test-handle-loop))';
+    w.call_ece_proc(evalStr, w.h_cons(ECE.makeString(src), w.h_nil()));
+
+    for (let frame = 0; frame < 100; frame++) {
+      w.reset_handles();  // simulate what sandbox animationLoop does
+      const contH = w.get_yield_cont();
+      w.clear_yield_cont();
+      w.call_ece_proc(contH, w.h_cons(w.h_void(), w.h_nil()));
+    }
+
+    // Verify counter advanced and we didn't crash
+    const hcH = w.env_lookup(envH, ECE.internSym("*hc*"));
+    const hcVal = w.h_fixnum_val(hcH);
+    assert(hcVal === 101, `expected *hc* = 101, got ${hcVal}`);
+  });
+
   return { passed: iPassed, failed: iFailed };
 }
 
