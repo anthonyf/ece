@@ -685,10 +685,17 @@ shared structure, and global env sentinel."
               (define (scan-vec i)
                 (when (< i len) (scan (vector-ref obj i)) (scan-vec (+ i 1))))
               (scan-vec 0))
+             ;; Compiled procedure — scan env
+             ((compiled-procedure? obj) (scan (compiled-procedure-env obj)))
+             ;; Continuation — scan stack and conts
+             ((continuation? obj)
+              (scan (continuation-stack obj))
+              (scan (continuation-conts obj)))
+             ;; Primitive — no sub-structure to scan
+             ((primitive? obj) '())
              ;; Pair/list
              ((pair? obj) (scan (car obj)) (scan (cdr obj)))
-             ;; Other compound (compiled-procedure, continuation, etc.)
-             ;; These are list-tagged, so the pair? branch handles them
+             ;; Other compound
              (else '())))))))
 
   (scan value)
@@ -752,23 +759,21 @@ shared structure, and global env sentinel."
      ((and (pair? obj) (eq? (car obj) 'parameter))
       (define cell (cadr obj))
       (string-append "(%ser/parameter " (ser (car cell)) " " (ser (cdr cell)) ")"))
-     ;; Compiled procedure
-     ((and (pair? obj) (eq? (car obj) 'compiled-procedure))
-      (define entry (cadr obj))
-      (define env (caddr obj))
+     ;; Compiled procedure (WasmGC struct or CL tagged pair)
+     ((compiled-procedure? obj)
+      (define entry (compiled-procedure-entry obj))
+      (define env (compiled-procedure-env obj))
       (string-append "(%ser/compiled-procedure" (ser-entry entry) " " (ser env) ")"))
-     ;; Continuation
-     ((and (pair? obj) (eq? (car obj) 'continuation))
-      (define stack (cadr obj))
-      (define cont (caddr obj))
+     ;; Continuation (WasmGC struct or CL tagged pair)
+     ((continuation? obj)
+      (define stack (continuation-stack obj))
+      (define cont (continuation-conts obj))
       (string-append "(%ser/continuation" (ser stack) " " (ser-entry cont) ")"))
-     ;; Primitive
-     ((and (pair? obj) (eq? (car obj) 'primitive))
-      (define id-or-name (cadr obj))
-      (define name (if (number? id-or-name)
-                       (%primitive-name id-or-name)
-                       id-or-name))
-      (string-append "(%ser/primitive" (write-to-string-flat name) ")"))
+     ;; Primitive (WasmGC struct or CL tagged pair)
+     ((primitive? obj)
+      (define id (%primitive-id-of obj))
+      (define name (%primitive-name id))
+      (string-append "(%ser/primitive " (if name (symbol->string name) (number->string id)) ")"))
      ;; Vector
      ((vector? obj)
       (define len (vector-length obj))
@@ -800,13 +805,13 @@ shared structure, and global env sentinel."
              #f)
             (else (proper-list? (cdr x)))))
     (if (proper-list? obj)
-        ;; Proper list
-        (string-append "("
-                       (let loop ((xs obj) (first #t))
-                         (if (null? xs) ")"
-                             (string-append (if first "" " ")
-                                            (ser (car xs))
-                                            (loop (cdr xs) #f)))))
+        ;; Proper list — use explicit let bindings to avoid complex nested args
+        (let loop ((xs obj) (acc "("))
+          (if (null? xs)
+              (string-append acc ")")
+              (let ((elem (ser (car xs)))
+                    (sep (if (string=? acc "(") "" " ")))
+                (loop (cdr xs) (string-append acc sep elem)))))
         ;; Dotted pair
         (string-append "(" (ser (car obj)) " . " (ser (cdr obj)) ")")))
 
@@ -859,19 +864,17 @@ Reconstructs tagged types and resolves #:def/#:ref references."
        ((string=? tag "%ser/compiled-procedure")
         (define entry (cadr form))
         (define env (deser (caddr form)))
-        (list 'compiled-procedure entry env))
+        (%make-compiled-procedure entry env))
        ;; Continuation
        ((string=? tag "%ser/continuation")
         (define stack (deser (cadr form)))
         (define cont (caddr form))
-        (list 'continuation stack cont))
+        (%make-continuation stack cont))
        ;; Primitive by name
        ((string=? tag "%ser/primitive")
         (define name (cadr form))
         (define id (%primitive-id name))
-        (if id
-            (list 'primitive id)
-            (list 'primitive name)))
+        (%make-primitive (if id id 0)))
        ;; Vector
        ((string=? tag "%ser/vector")
         (list->vector (map deser (cdr form))))

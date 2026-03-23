@@ -1099,10 +1099,57 @@ print without CL pipe escaping."
     (hash-has-key? . ece-hash-has-key-p)
     (hash-keys . ece-hash-keys)
     (hash-values . ece-hash-values)
-    (hash-count . ece-hash-count)))
+    (hash-count . ece-hash-count)
+    ;; Type introspection (core IDs 155-165)
+    (compiled-procedure? . ece-compiled-procedure-p)
+    (continuation? . ece-continuation-p)
+    (primitive? . ece-primitive-p)
+    (compiled-procedure-entry . ece-compiled-procedure-entry)
+    (compiled-procedure-env . ece-compiled-procedure-env)
+    (continuation-stack . ece-continuation-stack)
+    (continuation-conts . ece-continuation-conts)
+    (%primitive-id-of . ece-%primitive-id-of)
+    (%make-compiled-procedure . ece-%make-compiled-procedure)
+    (%make-continuation . ece-%make-continuation)
+    (%make-primitive . ece-%make-primitive)))
 
 ;;; Wrapper primitives are now registered via the manifest-based dispatch table.
 ;;; *wrapper-primitives* is still used by build-cl-function-map to map names to CL functions.
+
+;;; --- Type introspection primitives ---
+
+(defun ece-compiled-procedure-p (x)
+  (scheme-bool (and (listp x) (eq (car x) 'compiled-procedure))))
+
+(defun ece-continuation-p (x)
+  (scheme-bool (and (listp x) (eq (car x) 'continuation))))
+
+(defun ece-primitive-p (x)
+  (scheme-bool (and (listp x) (eq (car x) 'primitive))))
+
+(defun ece-compiled-procedure-entry (proc)
+  (cadr proc))
+
+(defun ece-compiled-procedure-env (proc)
+  (caddr proc))
+
+(defun ece-continuation-stack (k)
+  (cadr k))
+
+(defun ece-continuation-conts (k)
+  (caddr k))
+
+(defun ece-%primitive-id-of (prim)
+  (cadr prim))
+
+(defun ece-%make-compiled-procedure (entry env)
+  (list 'compiled-procedure entry env))
+
+(defun ece-%make-continuation (stack conts)
+  (list 'continuation stack conts))
+
+(defun ece-%make-primitive (id)
+  (list 'primitive id))
 
 ;;; --- Platform discovery primitives ---
 
