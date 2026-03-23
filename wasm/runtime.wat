@@ -1704,9 +1704,8 @@
         ;; Debug tracking
         (global.set $dbg-pc (local.get $pc))
         (global.set $dbg-space (local.get $space-id))
-        ;; Tracing disabled for production runs
-        ;; (call $js-trace-pc (local.get $pc)
-        ;;   (call $alloc-handle (local.get $proc)))
+        ;; Tracing enabled temporarily
+        (call $js-trace-pc (local.get $pc) (local.get $space-id))
 
         ;; Fetch instruction
         (local.set $instr

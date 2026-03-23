@@ -805,13 +805,13 @@ shared structure, and global env sentinel."
              #f)
             (else (proper-list? (cdr x)))))
     (if (proper-list? obj)
-        ;; Proper list
-        (string-append "("
-                       (let loop ((xs obj) (first #t))
-                         (if (null? xs) ")"
-                             (string-append (if first "" " ")
-                                            (ser (car xs))
-                                            (loop (cdr xs) #f)))))
+        ;; Proper list — use explicit let bindings to avoid complex nested args
+        (let loop ((xs obj) (acc "("))
+          (if (null? xs)
+              (string-append acc ")")
+              (let ((elem (ser (car xs)))
+                    (sep (if (string=? acc "(") "" " ")))
+                (loop (cdr xs) (string-append acc sep elem)))))
         ;; Dotted pair
         (string-append "(" (ser (car obj)) " . " (ser (cdr obj)) ")")))
 

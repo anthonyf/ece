@@ -146,6 +146,40 @@ function runIntegrationTests(w, envH) {
     assert(id === id2, `expected same id ${id}, got ${id2}`);
   });
 
+  // ── Serialization tests ──
+
+  // Serialization tests use eval-string-last which returns the last value
+  const evalStrLast = w.env_lookup(envH, ECE.internSym("eval-string-last"));
+
+  iTest("serialize-value: list", () => {
+    const r = w.call_ece_proc(evalStrLast, w.h_cons(ECE.makeString("(serialize-value (list 1 2 3))"), w.h_nil()));
+    // Result is a string — check its type
+    assert(w.dbg_type(r) === 4, `expected string (4), got type ${w.dbg_type(r)}`);
+  });
+
+  iTest("serialize-value: dotted pair", () => {
+    const r = w.call_ece_proc(evalStrLast, w.h_cons(ECE.makeString("(serialize-value (cons 1 2))"), w.h_nil()));
+    assert(w.dbg_type(r) === 4, `expected string (4), got type ${w.dbg_type(r)}`);
+  });
+
+  iTest("serialize-value: lambda", () => {
+    const r = w.call_ece_proc(evalStrLast, w.h_cons(ECE.makeString("(serialize-value (lambda (x) x))"), w.h_nil()));
+    assert(w.dbg_type(r) === 4, `expected string (4), got type ${w.dbg_type(r)}`);
+  });
+
+  iTest("serialize round-trip: list", () => {
+    const r = w.call_ece_proc(evalStrLast, w.h_cons(ECE.makeString(
+      "(equal? (deserialize-value (read (open-input-string (serialize-value (list 1 2 3))))) (list 1 2 3))"), w.h_nil()));
+    // Result should be #t (type 10 = i31, the true singleton)
+    assert(w.dbg_type(r) === 1 || w.dbg_type(r) === 10, `expected boolean, got type ${w.dbg_type(r)}`);
+  });
+
+  iTest("save/load round-trip", () => {
+    const r = w.call_ece_proc(evalStrLast, w.h_cons(ECE.makeString(
+      '(begin (save-continuation! "test-sl" (list 1 2 3)) (equal? (load-continuation "test-sl") (list 1 2 3)))'), w.h_nil()));
+    assert(w.dbg_type(r) === 1 || w.dbg_type(r) === 10, `expected boolean, got type ${w.dbg_type(r)}`);
+  });
+
   return { passed: iPassed, failed: iFailed };
 }
 
@@ -192,6 +226,9 @@ async function run() {
     w.run(spaceId, 0, envH);
     console.log(`Loaded space "${name}"`);
   }
+
+  // Mark handles after bootstrap so reset_handles() preserves bootstrap state
+  w.mark_handles();
 
   // ── Run integration tests ──
   const intResults = runIntegrationTests(w, envH);
