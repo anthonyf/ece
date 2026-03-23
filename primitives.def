@@ -171,12 +171,12 @@
 (114 parameter?                  1 core "Test if value is a parameter object")
 
 ;;; --- Hash table (CL-backed eq hash) ---
-(116 %eq-hash-table      0  cl     "Create empty eq hash table")
-(117 %eq-hash-ref         2  cl     "Look up key in eq hash table")
-(118 %eq-hash-set!        3  cl     "Set key in eq hash table")
+(116 %eq-hash-table      0  core   "Create empty eq hash table")
+(117 %eq-hash-ref         2  core   "Look up key in eq hash table")
+(118 %eq-hash-set!        3  core   "Set key in eq hash table")
 (119 %eq-hash-has-key?    2  cl     "Test if key exists in eq hash table")
 (120 %eq-hash-keys        1  cl     "List all keys in eq hash table")
-(121 %hash-frame?         1  cl     "Test for hash-table frame")
+(121 %hash-frame?         1  core   "Test for hash-table frame")
 (122 %hash-frame-entries  1  cl     "All entries in hash-table frame")
 (123 %make-hash-frame     0  cl     "Create empty hash-table frame")
 (124 %hash-frame-set!     3  cl     "Set key in hash-table frame")
@@ -193,11 +193,11 @@
 (133 %space-count              0  core   "Number of spaces in registry")
 (134 %space-source-ref         2  core   "Get source instruction at index in a space")
 (135 %space-label-entries      1  core   "Label table of a space as alist")
-(136 write-to-string-flat      1  cl     "Serialize to string without shared-structure markers")
+(136 write-to-string-flat      1  core    "Serialize to string without shared-structure markers")
 (137 keyword?                  1  core   "Test if value is a keyword symbol")
-(138 %primitive-name            1  cl     "Get name symbol for primitive ID")
-(139 %primitive-id              1  cl     "Get numeric ID for primitive name")
-(140 %global-env-frame          0  cl     "First frame of *global-env* for identity check")
+(138 %primitive-name            1  core   "Get name symbol for primitive ID")
+(139 %primitive-id              1  core   "Get numeric ID for primitive name")
+(140 %global-env-frame          0  core   "First frame of *global-env* for identity check")
 
 ;;; --- Hash table primitives (core — all runtimes) ---
 (141 %make-hash-table       0  core   "Create empty mutable hash table")
@@ -216,6 +216,18 @@
 (152 sin                     1  core   "Sine of angle in radians")
 (153 cos                     1  core   "Cosine of angle in radians")
 (154 wall-clock-ms           0  core   "Milliseconds since midnight local time")
+
+;;; --- Type introspection / save-load support ---
+(155 compiled-procedure?       1  core   "Test if value is a compiled procedure")
+(156 continuation?             1  core   "Test if value is a continuation")
+(157 primitive?                1  core   "Test if value is a primitive procedure")
+(158 compiled-procedure-entry  1  core   "Get entry address of compiled procedure")
+(159 compiled-procedure-env    1  core   "Get captured environment of compiled procedure")
+(160 continuation-stack        1  core   "Get saved stack from continuation")
+(161 continuation-conts        1  core   "Get saved continue from continuation")
+(162 %primitive-id-of          1  core   "Get numeric ID from primitive struct")
+(163 %make-compiled-procedure  2  core   "Construct compiled procedure from entry+env")
+(164 %make-continuation        2  core   "Construct continuation from stack+conts")
 
 ;;; ═══════════════════════════════════════════════════════════════════════
 ;;; BROWSER PLATFORM PRIMITIVES (200-299) — Canvas and DOM
@@ -243,3 +255,4 @@
 (219 %js-null?             1  browser "Check for null/undefined js-ref")
 (220 %js-release!          1  browser "Free a JS handle")
 (221 %js-ref?              1  browser "Type predicate for js-ref values")
+(165 %make-primitive           1  core   "Construct primitive from numeric ID")

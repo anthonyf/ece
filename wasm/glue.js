@@ -338,75 +338,9 @@ const ECE = {
 
     // Register ALL primitives from primitives.def
     // Core (0-99) + CL-compat stubs
-    const prims = [
-      [0,"+"], [1,"-"], [2,"*"], [3,"/"], [4,"modulo"],
-      [5,"car"], [6,"cdr"], [7,"cons"], [8,"list"],
-      [9,"set-car!"], [10,"set-cdr!"],
-      [11,"null?"], [12,"pair?"], [13,"number?"], [14,"string?"],
-      [15,"symbol?"], [16,"integer?"], [17,"char?"], [18,"vector?"],
-      [19,"boolean?"], [20,"eq?"], [21,"equal?"],
-      [22,"="], [23,"<"], [24,">"],
-      [25,"string-length"], [26,"string-ref"], [27,"string-append"],
-      [28,"substring"], [29,"string->number"], [30,"number->string"],
-      [31,"string->symbol"], [32,"symbol->string"],
-      [33,"string=?"], [34,"string<?"], [35,"string>?"],
-      [36,"string-downcase"], [37,"string-upcase"],
-      [38,"string-split"], [39,"string-trim"],
-      [40,"string-contains?"], [41,"string-join"], [42,"string"],
-      [43,"char->integer"], [44,"integer->char"],
-      [45,"char=?"], [46,"char<?"],
-      [47,"char-whitespace?"], [48,"char-alphabetic?"], [49,"char-numeric?"],
-      [50,"make-vector"], [51,"vector"], [52,"vector-ref"],
-      [53,"vector-set!"], [54,"vector-length"],
-      [55,"vector->list"], [56,"list->vector"],
-      [57,"display"], [58,"write"], [59,"newline"],
-      [60,"read-char"], [61,"peek-char"], [62,"write-char"],
-      [63,"read-line"], [64,"char-ready?"], [65,"eof?"],
-      [66,"print"], [67,"write-to-string"],
-      [68,"input-port?"], [69,"output-port?"], [70,"port?"],
-      [71,"current-input-port"], [72,"current-output-port"],
-      [73,"open-input-string"], [74,"close-input-port"], [75,"close-output-port"],
-      // File I/O (localStorage-backed on WASM)
-      [100,"open-input-file"], [101,"open-output-file"],
-      [102,"with-input-from-file"], [103,"with-output-to-file"],
-      [76,"bitwise-and"], [77,"bitwise-or"], [78,"bitwise-xor"],
-      [79,"bitwise-not"], [80,"arithmetic-shift"],
-      [81,"%raw-error"], [82,"gensym"],
-      [83,"sleep"], [84,"clear-screen"],
-      [85,"execute-from-pc"], [86,"get-macro"], [87,"set-macro!"],
-      [88,"make-parameter"],
-      [89,"apply-compiled-procedure"], [90,"try-eval"],
-      [91,"extend-environment"],
-      [92,"%intern-ece"],
-      [93,"%instruction-vector-length"], [94,"%instruction-vector-push!"],
-      [95,"%label-table-set!"], [96,"%label-table-ref"],
-      [97,"%procedure-name-set!"],
-      [98,"platform-has?"], [99,"%platform-primitives"],
-      [114,"parameter?"], [137,"keyword?"],
-      // Compilation space primitives (core)
-      [125,"%create-space"], [126,"%space-instruction-length"],
-      [127,"%space-name"], [128,"%current-space-id"],
-      [129,"%set-current-space-id!"], [130,"%space-instruction-push!"],
-      [131,"%space-label-set!"], [132,"%space-label-ref"],
-      [133,"%space-count"], [134,"%space-source-ref"],
-      [135,"%space-label-entries"],
-      // Platform hash table primitives (core)
-      [141,"%make-hash-table"], [142,"hash-table?"],
-      [143,"hash-ref"], [144,"hash-set!"], [145,"hash-remove!"],
-      [146,"hash-has-key?"], [147,"hash-keys"], [148,"hash-values"], [149,"hash-count"],
-      // Yield + timing + trig
-      [150,"%yield!"], [151,"current-milliseconds"],
-      [152,"sin"], [153,"cos"], [154,"wall-clock-ms"],
-      // Canvas (browser platform)
-      [200,"canvas-clear"], [201,"canvas-set-fill-color"],
-      [202,"canvas-fill-rect"], [203,"canvas-fill-circle"],
-      [204,"canvas-draw-text"], [205,"canvas-width"], [206,"canvas-height"],
-      // JavaScript FFI
-      [210,"%js-eval"], [211,"%js-get"], [212,"%js-set!"], [213,"%js-call"],
-      [214,"%js-callback"], [215,"%js-ref->number"], [216,"%js-ref->string"],
-      [217,"%js-number"], [218,"%js-string"], [219,"%js-null?"],
-      [220,"%js-release!"], [221,"%js-ref?"],
-    ];
+    // Generated from primitives.def — do not edit by hand.
+    // Regenerate with: bash scripts/gen-primitives-json.sh
+    const prims = require("./primitives.json");
 
     for (const [id, name] of prims) {
       const nameSym = ECE.internSym(name);

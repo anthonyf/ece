@@ -3274,6 +3274,8 @@
   (func $apply-primitive (param $prim (ref $primitive)) (param $args (ref null eq))
                          (result (ref null eq))
     (local $id i32)
+    (local $cur (ref null eq))
+    (local $key (ref null eq))
     (local.set $id (call $primitive-id (local.get $prim)))
     ;; Debug: store prim ID for crash diagnosis
     (global.set $dbg-opcode (i32.add (local.get $id) (i32.const 1000)))
@@ -3474,6 +3476,10 @@
         (then (global.get $true)) (else (global.get $false))))))
     ;; 67 = write-to-string
     (if (i32.eq (local.get $id) (i32.const 67))
+      (then (return (call $write-to-string-impl (call $arg1 (local.get $args))))))
+
+    ;; 136 = write-to-string-flat (same as write-to-string on WASM)
+    (if (i32.eq (local.get $id) (i32.const 136))
       (then (return (call $write-to-string-impl (call $arg1 (local.get $args))))))
 
     ;; 66 = print — now implemented in prelude.scm
@@ -3733,35 +3739,32 @@
                      (i32.eqz (call $is-null (local.get $args))))
             (then (call $arg1 (local.get $args)))
             (else (global.get $void)))))))
-    ;; 116 = %eq-hash-table (create empty)
+    ;; 116 = %eq-hash-table() → mutable cell wrapping alist: (cons '() '())
     (if (i32.eq (local.get $id) (i32.const 116))
-      (then
-        (return (struct.new $hash-table
-          (array.new_default $hash-keys (i32.const 16))
-          (array.new_default $hash-vals (i32.const 16))
-          (i32.const 0)))))
-    ;; 117 = %eq-hash-ref (table key)
+      (then (return (call $cons (global.get $nil) (global.get $nil)))))
+    ;; 117 = %eq-hash-ref(table, key) → value or #f (identity-based lookup)
     (if (i32.eq (local.get $id) (i32.const 117))
-      (then (return (call $hash-ref-impl
-        (ref.cast (ref $hash-table) (call $arg1 (local.get $args)))
-        (call $arg2 (local.get $args))))))
-    ;; 118 = %eq-hash-set! (table key value)
+      (then
+        (local.set $cur (call $car (ref.cast (ref $pair) (call $arg1 (local.get $args)))))
+        (local.set $key (call $arg2 (local.get $args)))
+        (block $not-found (loop $scan
+          (br_if $not-found (call $is-null (local.get $cur)))
+          (br_if $not-found (ref.is_null (local.get $cur)))
+          (if (ref.eq (call $car (ref.cast (ref $pair) (call $car (ref.cast (ref $pair) (local.get $cur)))))
+                      (local.get $key))
+            (then (return (call $cdr (ref.cast (ref $pair) (call $car (ref.cast (ref $pair) (local.get $cur))))))))
+          (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $cur))))
+          (br $scan)))
+        (return (global.get $false))))
+    ;; 118 = %eq-hash-set!(table, key, value) → void (mutates table cell)
     (if (i32.eq (local.get $id) (i32.const 118))
       (then
-        (call $hash-set-impl
-          (ref.cast (ref $hash-table) (call $arg1 (local.get $args)))
-          (call $arg2 (local.get $args))
-          (call $arg3 (local.get $args)))
+        (struct.set $pair $car
+          (ref.cast (ref $pair) (call $arg1 (local.get $args)))
+          (call $cons
+            (call $cons (call $arg2 (local.get $args)) (call $arg3 (local.get $args)))
+            (call $car (ref.cast (ref $pair) (call $arg1 (local.get $args))))))
         (return (global.get $void))))
-    ;; 119 = %eq-hash-has-key? (table key)
-    (if (i32.eq (local.get $id) (i32.const 119))
-      (then (return (call $hash-has-key-impl
-        (ref.cast (ref $hash-table) (call $arg1 (local.get $args)))
-        (call $arg2 (local.get $args))))))
-    ;; 120 = %eq-hash-keys (table)
-    (if (i32.eq (local.get $id) (i32.const 120))
-      (then (return (call $hash-keys-impl
-        (ref.cast (ref $hash-table) (call $arg1 (local.get $args)))))))
     ;; 83 = sleep (no-op on WASM for now)
     (if (i32.eq (local.get $id) (i32.const 83))
       (then (return (global.get $void))))
@@ -4230,6 +4233,92 @@
         (return (if (result (ref null eq))
           (call $is-js-ref (call $arg1 (local.get $args)))
           (then (global.get $true)) (else (global.get $false))))))
+
+    ;; --- Identity hash tables (alist-based with ref.eq) ---
+
+
+    ;; 121 = %hash-frame?(val) → always #f on WASM (no CL hash frames)
+    (if (i32.eq (local.get $id) (i32.const 121))
+      (then (return (global.get $false))))
+
+    ;; 138 = %primitive-name(id) → symbol name
+    ;; For now, return #f (the serializer handles it)
+    (if (i32.eq (local.get $id) (i32.const 138))
+      (then (return (global.get $false))))
+
+    ;; 139 = %primitive-id(name-sym) → fixnum id or #f
+    ;; For now, return #f (serializer handles it via fallback)
+    (if (i32.eq (local.get $id) (i32.const 139))
+      (then (return (global.get $false))))
+
+    ;; 140 = %global-env-frame() → first frame of global env
+    (if (i32.eq (local.get $id) (i32.const 140))
+      (then (return (global.get $global-env))))
+
+    ;; --- Type introspection primitives ---
+
+    ;; 155 = compiled-procedure?(val)
+    (if (i32.eq (local.get $id) (i32.const 155))
+      (then (return (if (result (ref null eq)) (call $is-compiled-proc (call $arg1 (local.get $args)))
+        (then (global.get $true)) (else (global.get $false))))))
+
+    ;; 156 = continuation?(val)
+    (if (i32.eq (local.get $id) (i32.const 156))
+      (then (return (if (result (ref null eq)) (call $is-continuation (call $arg1 (local.get $args)))
+        (then (global.get $true)) (else (global.get $false))))))
+
+    ;; 157 = primitive?(val)
+    (if (i32.eq (local.get $id) (i32.const 157))
+      (then (return (if (result (ref null eq)) (call $is-primitive (call $arg1 (local.get $args)))
+        (then (global.get $true)) (else (global.get $false))))))
+
+    ;; 158 = compiled-procedure-entry(proc) → (space-id . pc) pair
+    (if (i32.eq (local.get $id) (i32.const 158))
+      (then
+        (return (call $cons
+          (call $make-fixnum (call $compiled-proc-space
+            (ref.cast (ref $compiled-proc) (call $arg1 (local.get $args)))))
+          (call $make-fixnum (call $compiled-proc-pc
+            (ref.cast (ref $compiled-proc) (call $arg1 (local.get $args)))))))))
+
+    ;; 159 = compiled-procedure-env(proc) → env
+    (if (i32.eq (local.get $id) (i32.const 159))
+      (then (return (call $compiled-proc-env
+        (ref.cast (ref $compiled-proc) (call $arg1 (local.get $args)))))))
+
+    ;; 160 = continuation-stack(k) → stack
+    (if (i32.eq (local.get $id) (i32.const 160))
+      (then (return (struct.get $continuation $stack
+        (ref.cast (ref $continuation) (call $arg1 (local.get $args)))))))
+
+    ;; 161 = continuation-conts(k) → conts
+    (if (i32.eq (local.get $id) (i32.const 161))
+      (then (return (struct.get $continuation $conts
+        (ref.cast (ref $continuation) (call $arg1 (local.get $args)))))))
+
+    ;; 162 = %primitive-id-of(prim) → fixnum id
+    (if (i32.eq (local.get $id) (i32.const 162))
+      (then (return (call $make-fixnum (struct.get $primitive $id
+        (ref.cast (ref $primitive) (call $arg1 (local.get $args))))))))
+
+    ;; 163 = %make-compiled-procedure(entry, env) → compiled-proc
+    ;; entry is (space-id . pc) pair
+    (if (i32.eq (local.get $id) (i32.const 163))
+      (then (return (struct.new $compiled-proc
+        (call $fixnum-value (ref.cast (ref i31) (call $car (ref.cast (ref $pair) (call $arg1 (local.get $args))))))
+        (call $fixnum-value (ref.cast (ref i31) (call $cdr (ref.cast (ref $pair) (call $arg1 (local.get $args))))))
+        (call $arg2 (local.get $args))))))
+
+    ;; 164 = %make-continuation(stack, conts) → continuation
+    (if (i32.eq (local.get $id) (i32.const 164))
+      (then (return (struct.new $continuation
+        (call $arg1 (local.get $args))
+        (call $arg2 (local.get $args))))))
+
+    ;; 165 = %make-primitive(id) → primitive struct
+    (if (i32.eq (local.get $id) (i32.const 165))
+      (then (return (struct.new $primitive
+        (call $fixnum-value (ref.cast (ref i31) (call $arg1 (local.get $args))))))))
 
     ;; Unknown primitive — return void
     (global.get $void)
