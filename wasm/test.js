@@ -146,64 +146,8 @@ function runIntegrationTests(w, envH) {
     assert(id === id2, `expected same id ${id}, got ${id2}`);
   });
 
-  // ── Serialization round-trip tests ──
-
-  const evalStrLast = w.env_lookup(envH, ECE.internSym("eval-string-last"));
-
-  // Helper: eval code, assert result is truthy (#t)
-  function assertTruthy(name, code) {
-    iTest(name, () => {
-      const r = w.call_ece_proc(evalStrLast, w.h_cons(ECE.makeString(code), w.h_nil()));
-      const t = w.dbg_type(r);
-      assert(t === 1 || t === 10, `expected truthy, got type ${t}`);
-    });
-  }
-
-  // In-memory round-trip: serialize → read → deserialize → equal?
-  const rt = (v) => `(let ((v ${v})) (equal? (deserialize-value (read (open-input-string (serialize-value v)))) v))`;
-
-  assertTruthy("round-trip: fixnum", rt("42"));
-  assertTruthy("round-trip: string", rt('"hello world"'));
-  assertTruthy("round-trip: symbol", rt("(quote foo)"));
-  assertTruthy("round-trip: #t", rt("#t"));
-  assertTruthy("round-trip: #f", rt("#f"));
-  assertTruthy("round-trip: nil", rt("(quote ())"));
-  assertTruthy("round-trip: dotted pair", rt("(cons 1 2)"));
-  assertTruthy("round-trip: proper list", rt("(list 1 2 3)"));
-  assertTruthy("round-trip: nested list", rt("(list (list 1 2) (list 3 4))"));
-  assertTruthy("round-trip: vector", rt("(vector 1 2 3)"));
-
-  // File-based round-trip: save-continuation! → load-continuation → equal?
-  const frt = (v) => `(let ((v ${v})) (save-continuation! "/tmp/ece-rt-test.dat" v) (equal? (load-continuation "/tmp/ece-rt-test.dat") v))`;
-
-  assertTruthy("save/load: list", frt("(list 1 2 3)"));
-  assertTruthy("save/load: nested", frt("(list (vector 1 2) (cons 3 4))"));
-
-  // Shared structure round-trip
-  assertTruthy("round-trip: shared structure",
-    "(let ((x (list 1 2))) (let ((v (list x x))) (equal? (deserialize-value (read (open-input-string (serialize-value v)))) v)))");
-
-  // Compiled procedure round-trip (verify it produces a string, callable test is complex)
-  iTest("round-trip: compiled procedure serializes", () => {
-    const r = w.call_ece_proc(evalStrLast, w.h_cons(ECE.makeString(
-      "(string? (serialize-value (lambda (x) (+ x 1))))"), w.h_nil()));
-    const t = w.dbg_type(r);
-    assert(t === 1 || t === 10, `expected truthy, got type ${t}`);
-  });
-
-  // Continuation round-trip — may not work end-to-end yet
-  iTest("round-trip: continuation serializes", () => {
-    try {
-      const r = w.call_ece_proc(evalStrLast, w.h_cons(ECE.makeString(
-        '(call/cc (lambda (k) (string? (serialize-value k))))'), w.h_nil()));
-      const t = w.dbg_type(r);
-      assert(t === 1 || t === 10, `expected truthy, got type ${t}`);
-    } catch (e) {
-      // Known limitation — continuation serialization may not be complete
-      console.log("  SKIP: continuation round-trip: " + e.message.substring(0, 50));
-      iPassed++; // Count as pass (known skip)
-    }
-  });
+  // Serialization round-trip tests are in tests/ece/test-serialization.scm
+  // (run as part of the ECE test suite, not as JS integration tests)
 
   return { passed: iPassed, failed: iFailed };
 }
