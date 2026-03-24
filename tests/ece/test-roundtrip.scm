@@ -28,3 +28,32 @@
   (let* ((x (list 1 2))
          (v (list x x)))
     (assert-equal (deserialize-value (read (open-input-string (serialize-value v)))) v))))
+
+;; --- Named-let regression tests ---
+;; These test patterns that previously crashed due to frame-append bugs.
+
+(test "named-let as function argument" (lambda ()
+  (assert-equal
+    (string-append "("
+      (let loop ((xs (list 1 2)) (first #t))
+        (if (null? xs) ")"
+            (string-append (if first "" " ")
+                           (write-to-string-flat (car xs))
+                           (loop (cdr xs) #f)))))
+    "(1 2)")))
+
+(test "named-let with hoisted define in enclosing scope" (lambda ()
+  (let ((obj (list 1 2)))
+    (define (helper x) x)
+    (assert-equal
+      (string-append "("
+        (let loop ((xs obj) (first #t))
+          (if (null? xs) ")"
+              (string-append (if first "" " ")
+                             (write-to-string-flat (car xs))
+                             (loop (cdr xs) #f)))))
+      "(1 2)"))))
+
+;; Note: top-level define + multiple calls from separate compilation units
+;; crashes when the define appears late in a large .ecec file (Bug 3).
+;; That's a separate frame-append/global-env issue, not named-let related.
