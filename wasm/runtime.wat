@@ -26,6 +26,8 @@
   (import "loader" "fetch_ececb" (func $js-fetch-ececb (param externref) (result externref)))
   (import "io" "trace_pc" (func $js-trace-pc (param i32 i32)))
   (import "io" "runtime_error" (func $js-runtime-error (param i32)))
+  ;; Save/restore trace: pc, space-id, is-save(1)/is-restore(0), register-id, value-type, stack-depth
+  (import "io" "trace_save_restore" (func $js-trace-sr (param i32 i32 i32 i32 i32 i32)))
 
   ;; Timing — performance.now() for current-milliseconds
   (import "timing" "performance_now" (func $js-performance-now (result i32)))
@@ -781,6 +783,7 @@
                      (param $env (ref null eq)) (result (ref null eq))
     (local $frame (ref $env-frame))
     (local $d i32)
+    (local $result (ref null eq))
     (local.set $frame (ref.cast (ref $env-frame) (local.get $env)))
     (local.set $d (local.get $depth))
     (block $at-depth
@@ -791,9 +794,11 @@
             (struct.get $env-frame $enclosing (local.get $frame))))
         (local.set $d (i32.sub (local.get $d) (i32.const 1)))
         (br $walk)))
-    (array.get $val-array
+    (local.set $result (array.get $val-array
       (struct.get $env-frame $vals (local.get $frame))
-      (local.get $offset))
+      (local.get $offset)))
+    ;; Debug removed
+    (local.get $result)
   )
 
   ;; --- lexical-set! (depth, offset, value) ---
@@ -923,36 +928,94 @@
   )
 
   ;; --- Helper: append a binding to a frame ---
-  ;; Creates a new vals array with one more slot, copies existing values,
-  ;; prepends the name to the names list.
+  ;; Adds a name+value pair to a frame while preserving pre-compiled
+  ;; lexical-ref offsets.  The value is placed at the index that matches
+  ;; the new name's position in the names list.
+  ;;
+  ;; Key subtlety: the compiler's extend-env creates frames where
+  ;; vals.length may exceed names.length (extra-slots for hoisted defines).
+  ;; We place the new value at index = names-count (the first slot without
+  ;; a corresponding name).  If that index is within the existing vals
+  ;; array, we reuse the slot; otherwise we grow the array.
+  ;;
+  ;; The original names list is NOT mutated (it may be shared).
   (func $frame-append (param $frame (ref $env-frame))
                       (param $name (ref $symbol)) (param $value (ref null eq))
     (local $old-vals (ref $val-array))
-    (local $new-vals (ref $val-array))
     (local $old-len i32)
+    (local $names-count i32)
+    (local $target-idx i32)
+    (local $new-vals (ref $val-array))
     (local $i i32)
+    (local $cur (ref null eq))
+    (local $reversed (ref null eq))
+    (local $new-names (ref null eq))
     (local.set $old-vals (struct.get $env-frame $vals (local.get $frame)))
     (local.set $old-len (array.len (local.get $old-vals)))
-    (local.set $new-vals (array.new_default $val-array
-      (i32.add (local.get $old-len) (i32.const 1))))
-    ;; New value at index 0 (names list is prepended, so index 0 = newest)
-    (array.set $val-array (local.get $new-vals) (i32.const 0) (local.get $value))
-    ;; Copy existing values shifted right by 1
-    (local.set $i (i32.const 0))
-    (block $done
-      (loop $copy
-        (br_if $done (i32.ge_u (local.get $i) (local.get $old-len)))
+    ;; Count existing names
+    (local.set $cur (struct.get $env-frame $names (local.get $frame)))
+    (local.set $names-count (i32.const 0))
+    (block $cnt-done
+      (loop $cnt
+        (br_if $cnt-done
+          (i32.or (ref.is_null (local.get $cur)) (call $is-null (local.get $cur))))
+        (if (call $is-pair (local.get $cur))
+          (then
+            (local.set $names-count (i32.add (local.get $names-count) (i32.const 1)))
+            (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $cur))))
+            (br $cnt)))))
+    ;; Target index = names-count (matches the position of the appended name)
+    (local.set $target-idx (local.get $names-count))
+    ;; If target is within existing array, reuse it; otherwise grow
+    (if (i32.lt_u (local.get $target-idx) (local.get $old-len))
+      (then
+        ;; Reuse existing slot — no need to grow
+        (array.set $val-array (local.get $old-vals)
+          (local.get $target-idx) (local.get $value)))
+      (else
+        ;; Need to grow: create new array, copy old, place new value
+        (local.set $new-vals (array.new_default $val-array
+          (i32.add (local.get $target-idx) (i32.const 1))))
+        (local.set $i (i32.const 0))
+        (block $done
+          (loop $copy
+            (br_if $done (i32.ge_u (local.get $i) (local.get $old-len)))
+            (array.set $val-array (local.get $new-vals)
+              (local.get $i)
+              (array.get $val-array (local.get $old-vals) (local.get $i)))
+            (local.set $i (i32.add (local.get $i) (i32.const 1)))
+            (br $copy)))
         (array.set $val-array (local.get $new-vals)
-          (i32.add (local.get $i) (i32.const 1))
-          (array.get $val-array (local.get $old-vals) (local.get $i)))
-        (local.set $i (i32.add (local.get $i) (i32.const 1)))
-        (br $copy)))
-    ;; Update frame: new vals, prepend name to names list
-    (struct.set $env-frame $vals (local.get $frame) (local.get $new-vals))
-    (struct.set $env-frame $names (local.get $frame)
-      (call $cons
-        (local.get $name)
-        (struct.get $env-frame $names (local.get $frame))))
+          (local.get $target-idx) (local.get $value))
+        (struct.set $env-frame $vals (local.get $frame) (local.get $new-vals))))
+    ;; Build fresh names list: (old1 old2 ... new-name)
+    ;; Step 1: reverse old names into $reversed
+    (local.set $cur (struct.get $env-frame $names (local.get $frame)))
+    (local.set $reversed (global.get $nil))
+    (block $rev-done
+      (loop $rev
+        (br_if $rev-done
+          (i32.or (ref.is_null (local.get $cur)) (call $is-null (local.get $cur))))
+        (local.set $reversed
+          (call $cons
+            (call $car (ref.cast (ref $pair) (local.get $cur)))
+            (local.get $reversed)))
+        (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $cur))))
+        (br $rev)))
+    ;; Step 2: fold reversed list onto (new-name) to get (old1 old2 ... new-name)
+    (local.set $new-names (call $cons (local.get $name) (global.get $nil)))
+    (block $build-done
+      (loop $build
+        (br_if $build-done
+          (i32.or (ref.is_null (local.get $reversed)) (call $is-null (local.get $reversed))))
+        (local.set $new-names
+          (call $cons
+            (call $car (ref.cast (ref $pair) (local.get $reversed)))
+            (local.get $new-names)))
+        (local.set $reversed (call $cdr (ref.cast (ref $pair) (local.get $reversed))))
+        (br $build)))
+    ;; Update names
+    (struct.set $env-frame $names (local.get $frame) (local.get $new-names))
   )
 
   ;; --- set-variable-value! ---
@@ -1843,7 +1906,13 @@
                 (call $get-reg (struct.get $instr $a (local.get $instr))
                   (local.get $val) (local.get $env) (local.get $proc)
                   (local.get $argl) (local.get $cont) (local.get $stack))
-                (local.get $stack)))))
+                (local.get $stack)))
+            (if (global.get $trace-sr)
+              (then (call $js-trace-sr (local.get $pc) (local.get $space-id)
+                (i32.const 1) ;; is-save
+                (struct.get $instr $a (local.get $instr))
+                (call $type-id (call $car (ref.cast (ref $pair) (local.get $stack))))
+                (call $stack-depth (local.get $stack)))))))
 
         ;; ── restore (opcode 5) ──
         (if (i32.eq (local.get $opcode) (i32.const 5))
@@ -1866,7 +1935,12 @@
               (then (local.set $cont (local.get $op-result))))
             (if (i32.eq (local.get $target) (i32.const 5))
               (then (local.set $stack (local.get $op-result))))
-          ))
+            (if (global.get $trace-sr)
+              (then (call $js-trace-sr (local.get $pc) (local.get $space-id)
+                (i32.const 0) ;; is-restore
+                (local.get $target)
+                (call $type-id (local.get $op-result))
+                (call $stack-depth (local.get $stack)))))))
 
         ;; ── perform (opcode 6) ──
         (if (i32.eq (local.get $opcode) (i32.const 6))
@@ -5504,6 +5578,36 @@
     (i32.const 0))
 
   ;; Yield flag and stored continuation for cooperative multitasking
+  ;; Save/restore trace flag (0=disabled, 1=enabled)
+  (global $trace-sr (mut i32) (i32.const 0))
+  (func (export "enable_trace_sr") (global.set $trace-sr (i32.const 1)))
+  (func (export "disable_trace_sr") (global.set $trace-sr (i32.const 0)))
+
+  ;; Count stack depth (number of pairs in the cons-list stack)
+  (func $stack-depth (param $s (ref null eq)) (result i32)
+    (local $d i32)
+    (block $done (loop $count
+      (br_if $done (call $is-null (local.get $s)))
+      (br_if $done (ref.is_null (local.get $s)))
+      (br_if $done (i32.eqz (call $is-pair (local.get $s))))
+      (local.set $s (call $cdr (ref.cast (ref $pair) (local.get $s))))
+      (local.set $d (i32.add (local.get $d) (i32.const 1)))
+      (br $count)))
+    (local.get $d))
+
+  ;; Type ID for trace (matches dbg_type encoding)
+  (func $type-id (param $v (ref null eq)) (result i32)
+    (if (ref.is_null (local.get $v)) (then (return (i32.const 0))))
+    (if (call $is-fixnum (local.get $v)) (then (return (i32.const 1))))
+    (if (call $is-pair (local.get $v)) (then (return (i32.const 2))))
+    (if (call $is-symbol (local.get $v)) (then (return (i32.const 3))))
+    (if (call $is-string (local.get $v)) (then (return (i32.const 4))))
+    (if (call $is-compiled-proc (local.get $v)) (then (return (i32.const 6))))
+    (if (call $is-continuation (local.get $v)) (then (return (i32.const 7))))
+    (if (call $is-primitive (local.get $v)) (then (return (i32.const 8))))
+    (if (ref.test (ref i31) (local.get $v)) (then (return (i32.const 10))))
+    (i32.const 99))
+
   (global $yield-flag (mut i32) (i32.const 0))
   (global $yield-continuation (mut (ref null eq)) (ref.null eq))
   (func (export "get_yield_flag") (result i32) (global.get $yield-flag))

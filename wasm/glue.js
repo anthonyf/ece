@@ -46,6 +46,10 @@ const ECE = {
       const mem = new Uint16Array(ECE.wasm.memory.buffer, 0, len);
       const msg = String.fromCharCode(...mem);
       throw new Error(msg);
+    },
+
+    trace_save_restore(pc, spaceId, isSave, regId, valType, stackDepth) {
+      // No-op in production. Override for debugging.
     }
   },
 

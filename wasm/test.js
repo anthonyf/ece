@@ -201,7 +201,8 @@ async function run() {
       runtime_error(len) {
         const mem = new Uint16Array(ECE.wasm.memory.buffer, 0, len);
         throw new Error(String.fromCharCode(...mem));
-      }
+      },
+      trace_save_restore() {}
     },
     loader: { fetch_ececb() { return null; } },
     storage: ECE.storage,
