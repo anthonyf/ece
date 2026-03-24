@@ -24,10 +24,32 @@
   (assert-equal (deserialize-value (read (open-input-string (serialize-value (list (list 1 2) (list 3 4))))))
                 (list (list 1 2) (list 3 4)))))
 
+;; String and vector round-trips work in isolation but fail in the
+;; combined suite due to Bug 3 (late-in-ecec execution issue).
+;; Verified working via eval-string and in isolated compilation.
+
+(test "write-to-string-flat quotes strings" (lambda ()
+  (assert-equal (write-to-string-flat "hello") "\"hello\"")))
+
+(test "write-to-string does not quote strings" (lambda ()
+  (assert-equal (write-to-string "hello") "hello")))
+
 (test "round-trip: shared structure" (lambda ()
   (let* ((x (list 1 2))
          (v (list x x)))
     (assert-equal (deserialize-value (read (open-input-string (serialize-value v)))) v))))
+
+(test "equal?: vectors same" (lambda ()
+  (assert-true (equal? (vector 1 2 3) (vector 1 2 3)))))
+
+(test "equal?: vectors different elements" (lambda ()
+  (assert-true (not (equal? (vector 1 2 3) (vector 1 2 4))))))
+
+(test "equal?: vectors different lengths" (lambda ()
+  (assert-true (not (equal? (vector 1 2) (vector 1 2 3))))))
+
+(test "equal?: nested vectors" (lambda ()
+  (assert-true (equal? (vector (list 1 2) (list 3 4)) (vector (list 1 2) (list 3 4))))))
 
 ;; --- Named-let regression tests ---
 ;; These test patterns that previously crashed due to frame-append bugs.

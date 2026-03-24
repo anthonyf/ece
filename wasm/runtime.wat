@@ -2553,6 +2553,9 @@
 
   ;; --- equal? (structural equality) ---
   (func $prim-equal (param $a (ref null eq)) (param $b (ref null eq)) (result (ref null eq))
+    (local $va (ref null $vector))
+    (local $vb (ref null $vector))
+    (local $vi i32)
     ;; Identity check first
     (if (ref.eq (local.get $a) (local.get $b))
       (then (return (global.get $true))))
@@ -2578,6 +2581,25 @@
         (return (call $prim-equal
           (call $cdr (ref.cast (ref $pair) (local.get $a)))
           (call $cdr (ref.cast (ref $pair) (local.get $b)))))))
+    ;; Both vectors — element-wise
+    (if (i32.and (call $is-vector (local.get $a)) (call $is-vector (local.get $b)))
+      (then
+        (local.set $va (ref.cast (ref $vector) (local.get $a)))
+        (local.set $vb (ref.cast (ref $vector) (local.get $b)))
+        (if (i32.ne (array.len (local.get $va)) (array.len (local.get $vb)))
+          (then (return (global.get $false))))
+        (local.set $vi (i32.const 0))
+        (block $vec-done
+          (loop $vec-cmp
+            (br_if $vec-done (i32.ge_u (local.get $vi) (array.len (local.get $va))))
+            (if (call $is-false
+                  (call $prim-equal
+                    (array.get $vector (local.get $va) (local.get $vi))
+                    (array.get $vector (local.get $vb) (local.get $vi))))
+              (then (return (global.get $false))))
+            (local.set $vi (i32.add (local.get $vi) (i32.const 1)))
+            (br $vec-cmp)))
+        (return (global.get $true))))
     ;; Both numbers (mixed fixnum/float)
     (if (i32.and (call $is-number (local.get $a)) (call $is-number (local.get $b)))
       (then (return (if (result (ref null eq))
@@ -2728,6 +2750,61 @@
     (if (local.get $neg)
       (then (local.set $result (f64.neg (local.get $result)))))
     (call $make-float (local.get $result))
+  )
+
+  ;; --- write-to-string for strings: wraps in quotes, escapes \ and " ---
+  (func $wts-string (param $s (ref $string)) (result (ref null eq))
+    (local $src-len i32)
+    (local $dst-len i32)
+    (local $i i32)
+    (local $ch i32)
+    (local $result (ref $string))
+    (local $pos i32)
+    (local.set $src-len (array.len (local.get $s)))
+    ;; First pass: compute output length (2 for quotes + extras for escapes)
+    (local.set $dst-len (i32.const 2)) ;; opening and closing "
+    (local.set $i (i32.const 0))
+    (block $cnt-done
+      (loop $cnt
+        (br_if $cnt-done (i32.ge_u (local.get $i) (local.get $src-len)))
+        (local.set $ch (array.get_u $string (local.get $s) (local.get $i)))
+        (if (i32.or (i32.eq (local.get $ch) (i32.const 34))   ;; "
+                    (i32.eq (local.get $ch) (i32.const 92)))   ;; backslash
+          (then (local.set $dst-len (i32.add (local.get $dst-len) (i32.const 2))))
+          (else (local.set $dst-len (i32.add (local.get $dst-len) (i32.const 1)))))
+        (local.set $i (i32.add (local.get $i) (i32.const 1)))
+        (br $cnt)))
+    ;; Allocate and fill
+    (local.set $result (array.new_default $string (local.get $dst-len)))
+    (array.set $string (local.get $result) (i32.const 0) (i32.const 34)) ;; opening "
+    (local.set $pos (i32.const 1))
+    (local.set $i (i32.const 0))
+    (block $fill-done
+      (loop $fill
+        (br_if $fill-done (i32.ge_u (local.get $i) (local.get $src-len)))
+        (local.set $ch (array.get_u $string (local.get $s) (local.get $i)))
+        (if (i32.or (i32.eq (local.get $ch) (i32.const 34))
+                    (i32.eq (local.get $ch) (i32.const 92)))
+          (then
+            (array.set $string (local.get $result) (local.get $pos) (i32.const 92)) ;; backslash
+            (local.set $pos (i32.add (local.get $pos) (i32.const 1)))
+            (array.set $string (local.get $result) (local.get $pos) (local.get $ch))
+            (local.set $pos (i32.add (local.get $pos) (i32.const 1))))
+          (else
+            (array.set $string (local.get $result) (local.get $pos) (local.get $ch))
+            (local.set $pos (i32.add (local.get $pos) (i32.const 1)))))
+        (local.set $i (i32.add (local.get $i) (i32.const 1)))
+        (br $fill)))
+    (array.set $string (local.get $result) (local.get $pos) (i32.const 34)) ;; closing "
+    (local.get $result)
+  )
+
+  ;; --- display-to-string: like write-to-string but without string quoting ---
+  ;; Used internally by wts-list/wts-vector for list element display.
+  (func $display-to-string-impl (param $v (ref null eq)) (result (ref null eq))
+    (if (call $is-string (local.get $v))
+      (then (return (local.get $v))))
+    (call $write-to-string-impl (local.get $v))
   )
 
   ;; --- write-to-string: convert any ECE value to its string representation ---
@@ -3551,9 +3628,13 @@
     (if (i32.eq (local.get $id) (i32.const 67))
       (then (return (call $write-to-string-impl (call $arg1 (local.get $args))))))
 
-    ;; 136 = write-to-string-flat (same as write-to-string on WASM)
+    ;; 136 = write-to-string-flat (quotes strings for serialization)
     (if (i32.eq (local.get $id) (i32.const 136))
-      (then (return (call $write-to-string-impl (call $arg1 (local.get $args))))))
+      (then
+        (return
+          (if (result (ref null eq)) (call $is-string (call $arg1 (local.get $args)))
+            (then (call $wts-string (ref.cast (ref $string) (call $arg1 (local.get $args)))))
+            (else (call $write-to-string-impl (call $arg1 (local.get $args))))))))
 
     ;; 66 = print — now implemented in prelude.scm
 
