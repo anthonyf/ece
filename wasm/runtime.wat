@@ -2823,7 +2823,11 @@
     (if (call $is-fixnum (local.get $v))
       (then (return (call $prim-number-to-string (local.get $v)))))
     (if (call $is-string (local.get $v))
-      (then (return (local.get $v))))
+      (then
+        (return
+          (if (result (ref null eq)) (global.get $write-mode)
+            (then (call $wts-string (ref.cast (ref $string) (local.get $v))))
+            (else (local.get $v))))))
     (if (call $is-symbol (local.get $v))
       (then (return (call $symbol-to-string
         (ref.cast (ref $symbol) (local.get $v))))))
@@ -3434,6 +3438,7 @@
     (local $id i32)
     (local $cur (ref null eq))
     (local $key (ref null eq))
+    (local $result (ref null eq))
     (local.set $id (call $primitive-id (local.get $prim)))
     ;; Debug: store prim ID for crash diagnosis
     (global.set $dbg-opcode (i32.add (local.get $id) (i32.const 1000)))
@@ -3598,9 +3603,10 @@
           (else
             (call $display-value (call $arg1 (local.get $args)))))
         (return (global.get $void))))
-    ;; 58 = write (value [port])
+    ;; 58 = write (value [port]) — enable write-mode for string quoting
     (if (i32.eq (local.get $id) (i32.const 58))
       (then
+        (global.set $write-mode (i32.const 1))
         (if (i32.and
               (i32.eqz (ref.is_null (call $cdr (ref.cast (ref $pair) (local.get $args)))))
               (i32.eqz (call $is-null (call $cdr (ref.cast (ref $pair) (local.get $args))))))
@@ -3608,10 +3614,12 @@
             (if (ref.test (ref $port) (call $arg2 (local.get $args)))
               (then
                 (call $display-to-port
-                  (call $arg1 (local.get $args))
+                  (call $write-to-string-impl (call $arg1 (local.get $args)))
                   (ref.cast (ref $port) (call $arg2 (local.get $args)))))))
           (else
-            (call $display-value (call $arg1 (local.get $args)))))
+            (call $display-value
+              (call $write-to-string-impl (call $arg1 (local.get $args))))))
+        (global.set $write-mode (i32.const 0))
         (return (global.get $void))))
     ;; 59 = newline ([port])
     (if (i32.eq (local.get $id) (i32.const 59))
@@ -3636,13 +3644,13 @@
     (if (i32.eq (local.get $id) (i32.const 67))
       (then (return (call $write-to-string-impl (call $arg1 (local.get $args))))))
 
-    ;; 136 = write-to-string-flat (quotes strings for serialization)
+    ;; 136 = write-to-string-flat (quotes strings via write-mode flag)
     (if (i32.eq (local.get $id) (i32.const 136))
       (then
-        (return
-          (if (result (ref null eq)) (call $is-string (call $arg1 (local.get $args)))
-            (then (call $wts-string (ref.cast (ref $string) (call $arg1 (local.get $args)))))
-            (else (call $write-to-string-impl (call $arg1 (local.get $args))))))))
+        (global.set $write-mode (i32.const 1))
+        (local.set $result (call $write-to-string-impl (call $arg1 (local.get $args))))
+        (global.set $write-mode (i32.const 0))
+        (return (local.get $result))))
 
     ;; 66 = print — now implemented in prelude.scm
 
@@ -5682,6 +5690,9 @@
       (local.set $i (i32.add (local.get $i) (i32.const 1)))
       (br $scan)))
     (i32.const 0))
+
+  ;; Write mode flag: 0=display (no string quoting), 1=write (quote strings)
+  (global $write-mode (mut i32) (i32.const 0))
 
   ;; Yield flag and stored continuation for cooperative multitasking
   ;; Save/restore trace flag (0=disabled, 1=enabled)

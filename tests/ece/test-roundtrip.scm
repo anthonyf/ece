@@ -36,6 +36,13 @@
 (test "write-to-string does not quote strings" (lambda ()
   (assert-equal (write-to-string "hello") "hello")))
 
+;; --- write vs display semantics ---
+;; write-to-string (prim 67) = display mode (no string quoting)
+;; write-to-string-flat (prim 136) = write mode (quotes strings)
+
+(test "write-to-string-flat quotes strings in lists" (lambda ()
+  (assert-equal (write-to-string-flat (list "a" "b")) "(\"a\" \"b\")")))
+
 (test "round-trip: shared structure" (lambda ()
   (let* ((x (list 1 2))
          (v (list x x)))
