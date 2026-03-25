@@ -24,9 +24,11 @@
   (assert-equal (deserialize-value (read (open-input-string (serialize-value (list (list 1 2) (list 3 4))))))
                 (list (list 1 2) (list 3 4)))))
 
-;; String and vector round-trips work in isolation but fail in the
-;; combined suite due to Bug 3 (late-in-ecec execution issue).
-;; Verified working via eval-string and in isolated compilation.
+(test "round-trip: string" (lambda ()
+  (assert-equal (deserialize-value (read (open-input-string (serialize-value "hello world")))) "hello world")))
+
+(test "round-trip: vector" (lambda ()
+  (assert-equal (deserialize-value (read (open-input-string (serialize-value (vector 1 2 3))))) (vector 1 2 3))))
 
 (test "write-to-string-flat quotes strings" (lambda ()
   (assert-equal (write-to-string-flat "hello") "\"hello\"")))
@@ -76,6 +78,16 @@
                              (loop (cdr xs) #f)))))
       "(1 2)"))))
 
-;; Note: top-level define + multiple calls from separate compilation units
-;; crashes when the define appears late in a large .ecec file (Bug 3).
-;; That's a separate frame-append/global-env issue, not named-let related.
+;; --- Top-level define regression (env-leak fix) ---
+
+(define (round-trip v)
+  (deserialize-value (read (open-input-string (serialize-value v)))))
+
+(test "top-level define: call from thunk 1" (lambda ()
+  (assert-equal (round-trip 42) 42)))
+
+(test "top-level define: call from thunk 2" (lambda ()
+  (assert-equal (round-trip (list 1 2 3)) (list 1 2 3))))
+
+(test "top-level define: call from thunk 3" (lambda ()
+  (assert-equal (round-trip (cons 'a 'b)) (cons 'a 'b))))
