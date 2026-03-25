@@ -1204,11 +1204,19 @@
 
   ;; Reset current space for fresh run (discard compiled code, labels, pending instrs)
   (func (export "reset_current_space")
+    (local $space (ref null $comp-space))
+    (local.set $space
+      (array.get $space-array
+        (ref.as_non_null (global.get $spaces))
+        (global.get $current-space-id)))
+    ;; Guard: skip if space doesn't exist (not yet initialized)
+    (if (ref.is_null (local.get $space))
+      (then (return)))
     (struct.set $comp-space $len
-      (call $get-space (global.get $current-space-id))
+      (ref.as_non_null (local.get $space))
       (i32.const 0))
     (struct.set $comp-space $labels
-      (call $get-space (global.get $current-space-id))
+      (ref.as_non_null (local.get $space))
       (ref.null eq))
     (global.set $pending-instrs (ref.null eq)))
 
