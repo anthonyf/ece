@@ -229,6 +229,7 @@ const Sandbox = {
   animationLoop() {
     if (!Sandbox.running) return;
     ECE.wasm.reset_handles();  // recycle temporary handles from last frame
+    ECE._symCache = {};  // clear stale symbol handle cache
     if (!Sandbox.hasYieldCont()) {
       Sandbox.finishRun();
       return;
@@ -260,6 +261,7 @@ const Sandbox = {
   evalECE(source, progName) {
     const w = ECE.wasm;
     w.reset_handles();  // recycle temporary handles from previous run
+    ECE._symCache = {};  // clear stale symbol handle cache
     // Try pre-compiled .ecec first (only if source hasn't been edited)
     const key = progName || "";
     const edited = Sandbox._editorOriginal !== undefined && source !== Sandbox._editorOriginal;
@@ -268,8 +270,13 @@ const Sandbox = {
       const text = (typeof atob === "function")
         ? atob(progData)
         : Buffer.from(progData, "base64").toString("binary");
-      const spaceId = ECE.loadEcecText(text);
-      w.run(spaceId, 0, Sandbox.envHandle);
+      try {
+        const spaceId = ECE.loadEcecText(text);
+        w.run(spaceId, 0, Sandbox.envHandle);
+      } catch(e) {
+        // Pre-compiled failed — fall through to eval-string path
+        Sandbox.appendConsole("Pre-compiled failed (" + e.message.substring(0,40) + "), trying eval-string...\n");
+      }
       return;
     }
     // Reset compilation state for fresh run
