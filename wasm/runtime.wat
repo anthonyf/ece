@@ -874,7 +874,7 @@
         ;; Move to enclosing frame
         (local.set $env (struct.get $env-frame $enclosing (local.get $frame)))
         (br $walk-frames)))
-    ;; Not found — return null (callers check for this)
+    ;; Not found — return null
     (ref.null eq)
   )
 
@@ -5235,7 +5235,12 @@
                     (local.set $pc (i32.add (local.get $pc) (i32.const 1)))))))))
         (local.set $item (call $cdr (ref.cast (ref $pair) (local.get $item))))
         (br $scan)))
+      ;; Count one extra instruction for the env-reset between units
+      ;; (will be injected in Phase 2 between non-last units)
+      (local.set $pc (i32.add (local.get $pc) (i32.const 1)))
       (br $read-units)))
+    ;; Subtract 1 for the last unit (no env-reset after it)
+    (local.set $pc (i32.sub (local.get $pc) (i32.const 1)))
 
     ;; ── Phase 2: Create instructions with all labels resolved ──
     (local.set $units (call $prim-reverse (local.get $units)))
@@ -5263,7 +5268,19 @@
                 (local.set $pc (i32.add (local.get $pc) (i32.const 1)))))))
         (local.set $item (call $cdr (ref.cast (ref $pair) (local.get $item))))
         (br $build)))
+      ;; Between compilation units: inject (assign env (const <global-env>))
+      ;; to prevent env register leaking from one top-level form to the next.
       (local.set $units (call $cdr (ref.cast (ref $pair) (local.get $units))))
+      (if (i32.eqz (call $is-null (local.get $units)))
+        (then
+          (call $space-set-instr (local.get $space-id) (local.get $pc)
+            (struct.new $instr
+              (i32.const 0)   ;; opcode: assign
+              (i32.const 1)   ;; a: env register
+              (i32.const 0)   ;; b: from const
+              (i32.const 0)   ;; c: unused
+              (global.get $global-env)))  ;; val: the global env
+          (local.set $pc (i32.add (local.get $pc) (i32.const 1)))))
       (br $build-units)))
 
     ;; Set final instruction count
