@@ -694,6 +694,11 @@ shared structure, and global env sentinel."
               (scan (continuation-conts obj)))
              ;; Primitive — no sub-structure to scan
              ((primitive? obj) '())
+             ;; Env frame — scan vals and enclosing
+             ((%env-frame? obj)
+              (for-each scan (%env-frame-vals obj))
+              (let ((enc (%env-frame-enclosing obj)))
+                (if (not (null? enc)) (scan enc))))
              ;; Pair/list
              ((pair? obj) (scan (car obj)) (scan (cdr obj)))
              ;; Other compound
@@ -747,6 +752,16 @@ shared structure, and global env sentinel."
      ((eq? obj global-frame) "(%ser/global-env)")
      ;; Hash frame sentinel — shouldn't normally be serialized directly
      ((%hash-frame? obj) "(%ser/hash-frame)")
+     ;; Env frame (WasmGC struct — serialize names, vals, enclosing)
+     ((%env-frame? obj)
+      (define names (%env-frame-names obj))
+      (define vals (%env-frame-vals obj))
+      (define enc (%env-frame-enclosing obj))
+      (string-append "(%ser/env-frame "
+                     (ser names) " "
+                     (ser vals) " "
+                     (if (null? enc) "#f" (ser enc))
+                     ")"))
      ;; Hash table (:hash-table count . root)
      ((and (pair? obj) (eq? (car obj) :hash-table))
       (define entries (map (lambda (k) (cons k (hash-ref obj k))) (hash-keys obj)))
@@ -849,6 +864,12 @@ Reconstructs tagged types and resolves #:def/#:ref references."
        ;; Hash frame sentinel
        ((string=? tag "%ser/hash-frame")
         (%global-env-frame))  ;; best approximation
+       ;; Env frame
+       ((string=? tag "%ser/env-frame")
+        (define names (deser (cadr form)))
+        (define vals (deser (caddr form)))
+        (define enc (deser (car (cdr (cdr (cdr form))))))
+        (%make-env-frame names vals (if (or (null? enc) (eq? enc #f)) '() enc)))
        ;; Hash table
        ((string=? tag "%ser/hash-table")
         (define entries (cdr form))

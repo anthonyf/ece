@@ -98,3 +98,28 @@
 
 (test "top-level define: call from thunk 3" (lambda ()
   (assert-equal (round-trip (cons 'a 'b)) (cons 'a 'b))))
+
+;; --- Continuation save/load ---
+;; Raw continuations (%raw-call/cc) serialize and invoke correctly.
+;; call/cc continuations require dynamic-wind stack preservation which
+;; isn't supported in serialization yet — use %raw-call/cc for save/load.
+
+(test "env-frame round-trip" (lambda ()
+  (let* ((f (%make-env-frame (quote (x y)) (list 10 20) (quote ())))
+         (s (serialize-value f))
+         (f2 (deserialize-value (read (open-input-string s)))))
+    (assert-true (%env-frame? f2))
+    (assert-equal (%env-frame-vals f2) (list 10 20)))))
+
+;; Raw continuation invoke test runs as bare top-level code
+;; (can't use test framework — continuation resume crosses $execute calls)
+(define *raw-cc-result*
+  (%raw-call/cc (lambda (k)
+    (save-continuation! "/tmp/ece-rt-rawcc.dat" k)
+    "first")))
+(if (equal? *raw-cc-result* "first")
+    (begin
+      (define *loaded-k* (load-continuation "/tmp/ece-rt-rawcc.dat"))
+      (*loaded-k* "second"))
+    (test "raw continuation round-trip" (lambda ()
+      (assert-equal *raw-cc-result* "second"))))
