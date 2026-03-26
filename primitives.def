@@ -228,6 +228,14 @@
 (162 %primitive-id-of          1  core   "Get numeric ID from primitive struct")
 (163 %make-compiled-procedure  2  core   "Construct compiled procedure from entry+env")
 (164 %make-continuation        2  core   "Construct continuation from stack+conts")
+(165 %make-primitive           1  core   "Construct primitive from numeric ID")
+
+;;; --- Env-frame introspection / save-load support ---
+(166 %env-frame?               1  core   "Test if value is an env-frame")
+(167 %env-frame-names          1  core   "Get names list of env-frame")
+(168 %env-frame-vals           1  core   "Get vals as a list from env-frame")
+(169 %env-frame-enclosing      1  core   "Get enclosing frame (or nil)")
+(170 %make-env-frame           3  core   "Construct env-frame from names, vals-list, enclosing")
 
 ;;; ═══════════════════════════════════════════════════════════════════════
 ;;; BROWSER PLATFORM PRIMITIVES (200-299) — Canvas and DOM

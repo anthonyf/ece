@@ -4490,6 +4490,80 @@
       (then (return (struct.new $primitive
         (call $fixnum-value (ref.cast (ref i31) (call $arg1 (local.get $args))))))))
 
+    ;; 166 = %env-frame?(val) → bool
+    (if (i32.eq (local.get $id) (i32.const 166))
+      (then (return (if (result (ref null eq))
+        (ref.test (ref $env-frame) (call $arg1 (local.get $args)))
+        (then (global.get $true)) (else (global.get $false))))))
+
+    ;; 167 = %env-frame-names(frame) → names list
+    (if (i32.eq (local.get $id) (i32.const 167))
+      (then (return (struct.get $env-frame $names
+        (ref.cast (ref $env-frame) (call $arg1 (local.get $args)))))))
+
+    ;; 168 = %env-frame-vals(frame) → vals as a proper list (right-to-left build)
+    (if (i32.eq (local.get $id) (i32.const 168))
+      (then
+        (local.set $cur (global.get $nil))
+        (local.set $id  ;; reuse $id as loop counter
+          (i32.sub
+            (array.len (struct.get $env-frame $vals
+              (ref.cast (ref $env-frame) (call $arg1 (local.get $args)))))
+            (i32.const 1)))
+        (block $done (loop $build
+          (br_if $done (i32.lt_s (local.get $id) (i32.const 0)))
+          (local.set $cur (call $cons
+            (array.get $val-array
+              (struct.get $env-frame $vals
+                (ref.cast (ref $env-frame) (call $arg1 (local.get $args))))
+              (local.get $id))
+            (local.get $cur)))
+          (local.set $id (i32.sub (local.get $id) (i32.const 1)))
+          (br $build)))
+        (return (local.get $cur))))
+
+    ;; 169 = %env-frame-enclosing(frame) → enclosing frame or nil
+    (if (i32.eq (local.get $id) (i32.const 169))
+      (then
+        (local.set $cur (struct.get $env-frame $enclosing
+          (ref.cast (ref $env-frame) (call $arg1 (local.get $args)))))
+        (return (if (result (ref null eq)) (ref.is_null (local.get $cur))
+          (then (global.get $nil)) (else (local.get $cur))))))
+
+    ;; 170 = %make-env-frame(names, vals-list, enclosing) → env-frame
+    (if (i32.eq (local.get $id) (i32.const 170))
+      (then
+        ;; Count vals-list length
+        (local.set $cur (call $arg2 (local.get $args)))
+        (local.set $id (i32.const 0))
+        (block $cnt (loop $c
+          (br_if $cnt (ref.is_null (local.get $cur)))
+          (br_if $cnt (call $is-null (local.get $cur)))
+          (local.set $id (i32.add (local.get $id) (i32.const 1)))
+          (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $cur))))
+          (br $c)))
+        ;; Build vals array from list
+        (local.set $key (array.new_default $val-array (local.get $id)))
+        (local.set $cur (call $arg2 (local.get $args)))
+        (local.set $id (i32.const 0))
+        (block $fill (loop $f
+          (br_if $fill (ref.is_null (local.get $cur)))
+          (br_if $fill (call $is-null (local.get $cur)))
+          (array.set $val-array (ref.cast (ref $val-array) (local.get $key))
+            (local.get $id)
+            (call $car (ref.cast (ref $pair) (local.get $cur))))
+          (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $cur))))
+          (local.set $id (i32.add (local.get $id) (i32.const 1)))
+          (br $f)))
+        ;; Enclosing: nil → null
+        (local.set $cur (call $arg3 (local.get $args)))
+        (return (struct.new $env-frame
+          (call $arg1 (local.get $args))
+          (ref.cast (ref $val-array) (local.get $key))
+          (if (result (ref null eq)) (call $is-null (local.get $cur))
+            (then (ref.null eq))
+            (else (local.get $cur)))))))
+
     ;; Unknown primitive — return void
     (global.get $void)
   )
