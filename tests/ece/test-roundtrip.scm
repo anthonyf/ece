@@ -100,9 +100,6 @@
   (assert-equal (round-trip (cons 'a 'b)) (cons 'a 'b))))
 
 ;; --- Continuation save/load ---
-;; Raw continuations (%raw-call/cc) serialize and invoke correctly.
-;; call/cc continuations require dynamic-wind stack preservation which
-;; isn't supported in serialization yet — use %raw-call/cc for save/load.
 
 (test "env-frame round-trip" (lambda ()
   (let* ((f (%make-env-frame (quote (x y)) (list 10 20) (quote ())))
@@ -111,15 +108,21 @@
     (assert-true (%env-frame? f2))
     (assert-equal (%env-frame-vals f2) (list 10 20)))))
 
-;; Raw continuation invoke test runs as bare top-level code
-;; (can't use test framework — continuation resume crosses $execute calls)
+;; Continuation serialize!/deserialize round-trip runs as bare top-level code
+;; (continuation resume crosses $execute calls, can't use test framework)
 (define *raw-cc-result*
   (%raw-call/cc (lambda (k)
-    (save-continuation! "/tmp/ece-rt-rawcc.dat" k)
+    (let ((port (open-output-file "/tmp/ece-rt-ser.dat")))
+      (serialize! k port)
+      (close-output-port port))
     "first")))
 (if (equal? *raw-cc-result* "first")
     (begin
-      (define *loaded-k* (load-continuation "/tmp/ece-rt-rawcc.dat"))
+      (define *loaded-k*
+        (let ((port (open-input-file "/tmp/ece-rt-ser.dat")))
+          (let ((v (deserialize port)))
+            (close-input-port port)
+            v)))
       (*loaded-k* "second"))
-    (test "raw continuation round-trip" (lambda ()
+    (test "serialize! / deserialize continuation round-trip" (lambda ()
       (assert-equal *raw-cc-result* "second"))))

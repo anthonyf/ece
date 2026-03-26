@@ -1,5 +1,11 @@
 ;; ---- Value Serialization Tests ----
 
+;; Test helpers: save/load via serialize!/deserialize + file ports
+(define (test-save! filename value)
+  (call-with-output-file filename (lambda (port) (serialize! value port))))
+(define (test-load filename)
+  (call-with-input-file filename deserialize))
+
 (test "serialize plain number" (lambda ()
   (assert-equal (serialize-value 42) "42")))
 
@@ -17,56 +23,57 @@
   (assert-equal (serialize-value 'foo) "foo")))
 
 (test "round-trip plain values" (lambda ()
-  (save-continuation! "/tmp/ece-rt-plain.dat" 42)
-  (assert-equal (load-continuation "/tmp/ece-rt-plain.dat") 42)
-  (save-continuation! "/tmp/ece-rt-plain.dat" "hello world")
-  (assert-equal (load-continuation "/tmp/ece-rt-plain.dat") "hello world")
-  (save-continuation! "/tmp/ece-rt-plain.dat" #t)
-  (assert-equal (load-continuation "/tmp/ece-rt-plain.dat") #t)))
+  (test-save! "/tmp/ece-rt-plain.dat" 42)
+  (assert-equal (test-load "/tmp/ece-rt-plain.dat") 42)
+  (test-save! "/tmp/ece-rt-plain.dat" "hello world")
+  (assert-equal (test-load "/tmp/ece-rt-plain.dat") "hello world")
+  (test-save! "/tmp/ece-rt-plain.dat" #t)
+  (assert-equal (test-load "/tmp/ece-rt-plain.dat") #t)))
 
 (test "round-trip list" (lambda ()
-  (save-continuation! "/tmp/ece-rt-list.dat" (list 1 "two" #t 'four))
-  (define result (load-continuation "/tmp/ece-rt-list.dat"))
+  (test-save! "/tmp/ece-rt-list.dat" (list 1 "two" #t 'four))
+  (define result (test-load "/tmp/ece-rt-list.dat"))
   (assert-equal (car result) 1)
   (assert-equal (cadr result) "two")
   (assert-equal (caddr result) #t)
   (assert-equal (cadddr result) 'four)))
 
 (test "round-trip dotted pair" (lambda ()
-  (save-continuation! "/tmp/ece-rt-pair.dat" (cons 'a 'b))
-  (define result (load-continuation "/tmp/ece-rt-pair.dat"))
+  (test-save! "/tmp/ece-rt-pair.dat" (cons 'a 'b))
+  (define result (test-load "/tmp/ece-rt-pair.dat"))
   (assert-equal (car result) 'a)
   (assert-equal (cdr result) 'b)))
 
 (test "round-trip vector" (lambda ()
-  (save-continuation! "/tmp/ece-rt-vec.dat" (vector 10 20 30))
-  (define v (load-continuation "/tmp/ece-rt-vec.dat"))
+  (test-save! "/tmp/ece-rt-vec.dat" (vector 10 20 30))
+  (define v (test-load "/tmp/ece-rt-vec.dat"))
   (assert (vector? v))
   (assert-equal (vector-ref v 0) 10)
   (assert-equal (vector-ref v 1) 20)
   (assert-equal (vector-ref v 2) 30)))
 
 (test "round-trip hash table" (lambda ()
-  (save-continuation! "/tmp/ece-rt-ht.dat" (hash-table 'name "Alice" 'age 30))
-  (define ht (load-continuation "/tmp/ece-rt-ht.dat"))
+  (test-save! "/tmp/ece-rt-ht.dat" (hash-table 'name "Alice" 'age 30))
+  (define ht (test-load "/tmp/ece-rt-ht.dat"))
   (assert (hash-table? ht))
   (assert-equal (hash-ref ht 'name) "Alice")
   (assert-equal (hash-ref ht 'age) 30)))
 
 (test "round-trip compiled procedure" (lambda ()
   (define (test-sq x) (* x x))
-  (save-continuation! "/tmp/ece-rt-fn.dat" test-sq)
-  (define loaded (load-continuation "/tmp/ece-rt-fn.dat"))
+  (test-save! "/tmp/ece-rt-fn.dat" test-sq)
+  (define loaded (test-load "/tmp/ece-rt-fn.dat"))
   (assert-equal (loaded 7) 49)))
 
-(test "save-continuation! returns #t" (lambda ()
-  (assert-equal (save-continuation! "/tmp/ece-rt-ret.dat" 42) #t)))
+(test "serialize! writes without error" (lambda ()
+  (test-save! "/tmp/ece-rt-ret.dat" 42)
+  (assert-equal (test-load "/tmp/ece-rt-ret.dat") 42)))
 
 (test "round-trip continuation" (lambda ()
   (define k #f)
   (%raw-call/cc (lambda (cont) (set! k cont)))
-  (save-continuation! "/tmp/ece-rt-cont.dat" k)
-  (define loaded (load-continuation "/tmp/ece-rt-cont.dat"))
+  (test-save! "/tmp/ece-rt-cont.dat" k)
+  (define loaded (test-load "/tmp/ece-rt-cont.dat"))
   (assert (pair? loaded))
   (assert-equal (car loaded) 'continuation)))
 
@@ -88,15 +95,15 @@
 (test "round-trip parameter value" (lambda ()
   (define p (make-parameter 42))
   (p 99)
-  (save-continuation! "/tmp/ece-rt-param.dat" p)
-  (define loaded (load-continuation "/tmp/ece-rt-param.dat"))
+  (test-save! "/tmp/ece-rt-param.dat" p)
+  (define loaded (test-load "/tmp/ece-rt-param.dat"))
   (assert (parameter? loaded) "loaded should be a parameter")
   (assert-equal (loaded) 99)))
 
 (test "round-trip parameter with converter" (lambda ()
   (define p (make-parameter "hello" string-length))
-  (save-continuation! "/tmp/ece-rt-param-conv.dat" p)
-  (define loaded (load-continuation "/tmp/ece-rt-param-conv.dat"))
+  (test-save! "/tmp/ece-rt-param-conv.dat" p)
+  (define loaded (test-load "/tmp/ece-rt-param-conv.dat"))
   (assert (parameter? loaded) "loaded should be a parameter")
   (assert-equal (loaded) 5)
   ;; converter should also be preserved
@@ -110,8 +117,8 @@
       (p "dungeon")
       (define k #f)
       (%raw-call/cc (lambda (c) (set! k c) 0))
-      (save-continuation! "/tmp/ece-rt-param-lex.dat" k)
-      (define loaded (load-continuation "/tmp/ece-rt-param-lex.dat"))
+      (test-save! "/tmp/ece-rt-param-lex.dat" k)
+      (define loaded (test-load "/tmp/ece-rt-param-lex.dat"))
       ;; The continuation captured the env with p in lexical scope
       (assert (pair? loaded))
       (assert-equal (car loaded) 'continuation)
@@ -123,8 +130,8 @@
   (p 1)
   (p 2)
   (p 42)
-  (save-continuation! "/tmp/ece-rt-param-mut.dat" p)
-  (define loaded (load-continuation "/tmp/ece-rt-param-mut.dat"))
+  (test-save! "/tmp/ece-rt-param-mut.dat" p)
+  (define loaded (test-load "/tmp/ece-rt-param-mut.dat"))
   (assert-equal (loaded) 42)
   ;; mutating loaded doesn't affect original
   (loaded 999)
@@ -173,7 +180,7 @@
     (define k #f)
     (%raw-call/cc (lambda (c) (set! k c) 0))
     ;; Save continuation
-    (save-continuation! "/tmp/ece-rt-lexical-game.dat" k)
+    (test-save! "/tmp/ece-rt-lexical-game.dat" k)
     ;; Return current state for verification
     (list (room) (hp)))
 
@@ -182,7 +189,7 @@
   (assert-equal (cadr result) 70)
 
   ;; Load the saved continuation
-  (define loaded (load-continuation "/tmp/ece-rt-lexical-game.dat"))
+  (define loaded (test-load "/tmp/ece-rt-lexical-game.dat"))
   (assert (pair? loaded))
   (assert-equal (car loaded) 'continuation)))
 
@@ -206,8 +213,8 @@
     ;; Parameter with converter ensures hp is always integer
     (define hp (make-parameter 100))
     (hp 70)
-    (save-continuation! "/tmp/ece-rt-lexical-conv.dat" hp)
-    (define loaded (load-continuation "/tmp/ece-rt-lexical-conv.dat"))
+    (test-save! "/tmp/ece-rt-lexical-conv.dat" hp)
+    (define loaded (test-load "/tmp/ece-rt-lexical-conv.dat"))
     (assert (parameter? loaded))
     (assert-equal (loaded) 70))
   (run-game)))
@@ -221,7 +228,7 @@
     (define val
       (call/cc (lambda (k)
         ;; Save while room = "dungeon"
-        (save-continuation! "/tmp/ece-rt-revert.dat" k)
+        (test-save! "/tmp/ece-rt-revert.dat" k)
         ;; Mutate AFTER save
         (room "basement")
         'first-pass)))
@@ -231,7 +238,7 @@
       ;; room was mutated to "basement" after save
       (assert-equal (room) "basement")
       ;; Load and invoke — should revert to "dungeon"
-      (define loaded-k (load-continuation "/tmp/ece-rt-revert.dat"))
+      (define loaded-k (test-load "/tmp/ece-rt-revert.dat"))
       (loaded-k 'from-loaded))
      ((eq? val 'from-loaded)
       ;; Resumed from loaded continuation — room should be "dungeon"
@@ -251,7 +258,7 @@
 
     (define val
       (call/cc (lambda (k)
-        (save-continuation! "/tmp/ece-rt-revert-multi.dat" k)
+        (test-save! "/tmp/ece-rt-revert-multi.dat" k)
         ;; Mutate all state after save
         (room "final-boss")
         (hp 1)
@@ -260,7 +267,7 @@
 
     (cond
      ((eq? val 'first-pass)
-      (define loaded-k (load-continuation "/tmp/ece-rt-revert-multi.dat"))
+      (define loaded-k (test-load "/tmp/ece-rt-revert-multi.dat"))
       (loaded-k 'from-loaded))
      ((eq? val 'from-loaded)
       ;; All state should revert to save-time values

@@ -914,21 +914,13 @@ Reconstructs tagged types and resolves #:def/#:ref references."
 
   (deser form))
 
-(define (save-continuation! filename value)
-  "Serialize VALUE to FILENAME. Returns #t."
-  (let* ((port (open-output-file filename))
-         (s (serialize-value value)))
-    (let loop ((i 0))
-      (when (< i (string-length s))
-        (write-char (string-ref s i) port)
-        (loop (+ i 1))))
-    (write-char #\newline port)
-    (close-output-port port)
-    #t))
+(define (serialize! obj port)
+  "Serialize OBJ to PORT in a form that deserialize can reconstruct.
+Handles all ECE types including continuations, compiled procedures,
+env-frames, and shared structure."
+  (display (serialize-value obj) port)
+  (newline port))
 
-(define (load-continuation filename)
-  "Deserialize a value from FILENAME. Returns the deserialized value."
-  (let* ((port (open-input-file filename))
-         (form (ece-scheme-read port)))
-    (close-input-port port)
-    (deserialize-value form)))
+(define (deserialize port)
+  "Read and reconstruct a value from PORT (written by serialize!)."
+  (deserialize-value (ece-scheme-read port)))
