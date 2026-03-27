@@ -158,6 +158,8 @@
            #:char-numeric?
            #:with-input-from-file
            #:with-output-to-file
+           #:call-with-input-file
+           #:call-with-output-file
            #:%intern-ece
            #:%instruction-vector-length
            #:%instruction-vector-push!
@@ -974,6 +976,18 @@ print without CL pipe escaping."
            (apply-primitive-procedure thunk nil))
       (ece-close-output-port port))))
 
+(defun ece-call-with-input-file (filename proc)
+  (let ((port (ece-open-input-file filename)))
+    (unwind-protect
+         (apply-ece-procedure proc (list port))
+      (ece-close-input-port port))))
+
+(defun ece-call-with-output-file (filename proc)
+  (let ((port (ece-open-output-file filename)))
+    (unwind-protect
+         (apply-ece-procedure proc (list port))
+      (ece-close-output-port port))))
+
 ;;; Compile-time macro table (used by compiler.lisp for macro expansion)
 (defvar *compile-time-macros* (make-hash-table :test 'eq)
   "Hash table mapping macro names to compiled transformer procedures.")
@@ -1042,6 +1056,8 @@ print without CL pipe escaping."
     (char-numeric? . ece-char-numeric-p)
     (with-input-from-file . ece-with-input-from-file)
     (with-output-to-file . ece-with-output-to-file)
+    (call-with-input-file . ece-call-with-input-file)
+    (call-with-output-file . ece-call-with-output-file)
     (write-byte . ece-write-byte)
     (open-binary-output-file . ece-open-binary-output-file)
     (string . string)

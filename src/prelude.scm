@@ -466,6 +466,19 @@
   (display x)
   (newline))
 
+;; R7RS file port convenience functions
+(define (call-with-input-file filename proc)
+  (let ((port (open-input-file filename)))
+    (let ((result (proc port)))
+      (close-input-port port)
+      result)))
+
+(define (call-with-output-file filename proc)
+  (let ((port (open-output-file filename)))
+    (let ((result (proc port)))
+      (close-output-port port)
+      result)))
+
 ;; ---- dynamic-wind (R7RS) ----
 ;; Winding stack: list of (before . after) pairs, innermost first.
 
