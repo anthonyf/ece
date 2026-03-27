@@ -1127,7 +1127,17 @@ print without CL pipe escaping."
     (%primitive-id-of . ece-%primitive-id-of)
     (%make-compiled-procedure . ece-%make-compiled-procedure)
     (%make-continuation . ece-%make-continuation)
-    (%make-primitive . ece-%make-primitive)))
+    (%make-primitive . ece-%make-primitive)
+    ;; Env-frame introspection (core IDs 166-170)
+    (%env-frame? . ece-%env-frame-p)
+    (%env-frame-names . ece-%env-frame-names)
+    (%env-frame-vals . ece-%env-frame-vals)
+    (%env-frame-enclosing . ece-%env-frame-enclosing)
+    (%make-env-frame . ece-%make-env-frame)
+    ;; Winding stack support (core IDs 171-173)
+    (%set-winding-stack! . ece-%set-winding-stack!)
+    (%get-winding-stack . ece-%get-winding-stack)
+    (continuation-winds . ece-continuation-winds)))
 
 ;;; Wrapper primitives are now registered via the manifest-based dispatch table.
 ;;; *wrapper-primitives* is still used by build-cl-function-map to map names to CL functions.
@@ -1161,11 +1171,44 @@ print without CL pipe escaping."
 (defun ece-%make-compiled-procedure (entry env)
   (list 'compiled-procedure entry env))
 
-(defun ece-%make-continuation (stack conts)
-  (list 'continuation stack conts))
+(defun ece-%make-continuation (stack conts winds)
+  (list 'continuation stack conts winds))
+
+(defun ece-continuation-winds (k)
+  (cadddr k))
 
 (defun ece-%make-primitive (id)
   (list 'primitive id))
+
+;; Env-frame introspection (CL frames are (names . values) pairs)
+(defun ece-%env-frame-p (x)
+  (scheme-bool (and (consp x) (not (symbolp (car x))))))
+
+(defun ece-%env-frame-names (frame)
+  (car frame))
+
+(defun ece-%env-frame-vals (frame)
+  (if (vectorp frame)
+      (coerce frame 'list)
+      (cdr frame)))
+
+(defun ece-%env-frame-enclosing (frame)
+  (declare (ignore frame))
+  nil)  ;; CL env frames don't have a single enclosing pointer accessible here
+
+(defun ece-%make-env-frame (names vals enclosing)
+  (declare (ignore enclosing))
+  (cons names vals))
+
+;; Winding stack sync
+(defvar *cl-winding-stack* nil)
+
+(defun ece-%set-winding-stack! (val)
+  (setf *cl-winding-stack* val)
+  nil)
+
+(defun ece-%get-winding-stack ()
+  (or *cl-winding-stack* nil))
 
 ;;; --- Platform discovery primitives ---
 
@@ -1375,11 +1418,29 @@ for backward compat with old images."
 (defun continuation-conts (cont)
   (caddr cont))
 
+(defun cl-winding-stack ()
+  "Read the ECE *winding-stack* variable. Returns nil during cold boot."
+  (ignore-errors
+    (lookup-variable-value (intern "*winding-stack*" :ece) *global-env*)))
+
 (defun capture-continuation (stack continue-reg)
   (list '|continuation| (copy-list stack)
         (if (consp continue-reg)
             continue-reg
-            (cons *executing-space-id* continue-reg))))
+            (cons *executing-space-id* continue-reg))
+        (or (cl-winding-stack) nil)))
+
+(defun do-continuation-winds (cont)
+  "If the continuation's saved winding stack differs from the current one,
+call do-winds! to transition. Uses nested execute-compiled-call."
+  (let* ((target-winds (cadddr cont))
+         (current-winds (or (cl-winding-stack) nil)))
+    (when (and (not (eq current-winds target-winds))
+               (not (and (null current-winds) (null target-winds))))
+      (let ((do-winds-fn (lookup-variable-value
+                          (intern "do-winds!" :ece) *global-env*)))
+        (execute-compiled-call do-winds-fn
+                               (list current-winds target-winds))))))
 
 ;;; Operations dispatch
 
@@ -1404,6 +1465,7 @@ for backward compat with old images."
     (|apply-parameter| #'apply-parameter)
     (|apply-primitive-procedure| #'apply-primitive-procedure)
     (|capture-continuation| #'capture-continuation)
+    (|do-continuation-winds| #'do-continuation-winds)
     (|continuation-stack| #'continuation-stack)
     (|continuation-conts| #'continuation-conts)
     (|false?| #'scheme-false-p)

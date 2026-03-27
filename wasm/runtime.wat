@@ -97,10 +97,11 @@
     (field $env (ref null eq))))
 
   ;; --- Continuation ---
-  ;; Captured by call/cc: the stack and return address at capture time.
+  ;; Captured by call/cc: the stack, return address, and winding stack at capture time.
   (type $continuation (struct
     (field $stack (ref null eq))
-    (field $conts (ref null eq))))
+    (field $conts (ref null eq))
+    (field $winds (ref null eq))))
 
   ;; --- Primitive ---
   ;; Just a numeric ID into the dispatch table (from primitives.def).
@@ -1182,7 +1183,7 @@
   ;; Slots: 0-6 = instr types (assign,test,branch,goto,save,restore,perform)
   ;;        7-12 = register names (val,env,proc,argl,continue,stack)
   ;;        13-16 = source types (const,reg,label,op)
-  ;;        17-37 = operation names (op-id = slot - 17)
+  ;;        17-38 = operation names (op-id = slot - 17)
   (type $i32-array (array (mut i32)))
   (global $asm-sym-ids (mut (ref null $i32-array)) (ref.null none))
 
@@ -1198,6 +1199,14 @@
 
   (func (export "set_global_env") (param $env-handle i32)
     (global.set $global-env (call $deref-handle (local.get $env-handle))))
+
+  (func (export "set_do_winds_sym") (param $sym-handle i32)
+    (global.set $do-winds-sym
+      (ref.cast (ref $symbol) (call $deref-handle (local.get $sym-handle)))))
+
+  (func (export "set_winding_stack_sym") (param $sym-handle i32)
+    (global.set $winding-stack-sym
+      (ref.cast (ref $symbol) (call $deref-handle (local.get $sym-handle)))))
 
   (func (export "set_current_space") (param $space-id i32)
     (global.set $current-space-id (local.get $space-id)))
@@ -1247,10 +1256,10 @@
     (local $i i32)
     (local.set $id (struct.get $symbol $id (local.get $sym)))
     (local.set $syms (ref.as_non_null (global.get $asm-sym-ids)))
-    ;; Linear scan slots 17-38
+    ;; Linear scan slots 17-39 (ops 0-22)
     (local.set $i (i32.const 17))
     (block $done (loop $scan
-      (br_if $done (i32.gt_u (local.get $i) (i32.const 38)))
+      (br_if $done (i32.gt_u (local.get $i) (i32.const 39)))
       (if (i32.eq (local.get $id) (array.get $i32-array (local.get $syms) (local.get $i)))
         (then (return (i32.sub (local.get $i) (i32.const 17)))))
       (local.set $i (i32.add (local.get $i) (i32.const 1)))
@@ -1633,6 +1642,7 @@
   ;;  9 = continuation-conts        19 = define-variable!
   ;;                                20 = set-variable-value!
   ;;                                21 = capture-continuation
+  ;;                                22 = do-continuation-winds
 
   ;; --- Evaluate a single operand ---
   ;; Operand is a pair: (type . value)
@@ -2211,13 +2221,61 @@
         (global.get $void))
 
     ;; 21 = capture-continuation(stack, continue) → continuation struct
+    ;; Also captures the current winding stack from the ECE *winding-stack* variable.
     (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 21))
       (then
-        (struct.new $continuation (local.get $a) (local.get $b)))
+        (local.set $c  ;; reuse $c for winds
+          (if (result (ref null eq)) (ref.is_null (global.get $winding-stack-sym))
+            (then (global.get $nil))
+            (else
+              (call $lookup-variable-value
+                (ref.as_non_null (global.get $winding-stack-sym))
+                (global.get $global-env)))))
+        (struct.new $continuation (local.get $a) (local.get $b)
+          (if (result (ref null eq)) (ref.is_null (local.get $c))
+            (then (global.get $nil))
+            (else (local.get $c)))))
+
+    ;; 22 = do-continuation-winds(proc) — transition winding stack before resuming
+    ;; If the continuation's saved winds differ from the current *winding-stack*,
+    ;; look up do-winds! and call it to run before/after thunks.
+    (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 22))
+      (then
+        ;; $a = continuation's saved winds
+        (local.set $a (struct.get $continuation $winds
+          (ref.cast (ref $continuation) (local.get $a))))
+        ;; $b = current *winding-stack* (from ECE env)
+        (local.set $b
+          (if (result (ref null eq)) (ref.is_null (global.get $winding-stack-sym))
+            (then (global.get $nil))
+            (else (call $lookup-variable-value
+              (ref.as_non_null (global.get $winding-stack-sym))
+              (global.get $global-env)))))
+        (if (ref.is_null (local.get $b))
+          (then (local.set $b (global.get $nil))))
+        ;; Identity check: same object = no winding needed (common case)
+        (if (ref.eq (local.get $b) (local.get $a))
+          (then (return (global.get $void))))
+        ;; Both nil = no winding needed
+        (if (i32.and (call $is-null (local.get $b)) (call $is-null (local.get $a)))
+          (then (return (global.get $void))))
+        ;; Need to call do-winds!(current-winds, target-winds)
+        (local.set $c (call $lookup-variable-value
+          (ref.as_non_null (global.get $do-winds-sym))
+          (global.get $global-env)))
+        (global.set $execute-argl
+          (call $cons (local.get $b)
+            (call $cons (local.get $a) (global.get $nil))))
+        (global.set $execute-proc (local.get $c))
+        (drop (call $execute
+          (call $compiled-proc-space (ref.cast (ref $compiled-proc) (local.get $c)))
+          (call $compiled-proc-pc (ref.cast (ref $compiled-proc) (local.get $c)))
+          (call $compiled-proc-env (ref.cast (ref $compiled-proc) (local.get $c)))))
+        (global.get $void))
 
     ;; Unknown op — return void
     (else (global.get $void)
-    ))))))))))))))))))))))))))))))))))))))))))))
+    ))))))))))))))))))))))))))))))))))))))))))))))
   )
 
 
@@ -4479,11 +4537,12 @@
         (call $fixnum-value (ref.cast (ref i31) (call $cdr (ref.cast (ref $pair) (call $arg1 (local.get $args))))))
         (call $arg2 (local.get $args))))))
 
-    ;; 164 = %make-continuation(stack, conts) → continuation
+    ;; 164 = %make-continuation(stack, conts, winds) → continuation
     (if (i32.eq (local.get $id) (i32.const 164))
       (then (return (struct.new $continuation
         (call $arg1 (local.get $args))
-        (call $arg2 (local.get $args))))))
+        (call $arg2 (local.get $args))
+        (call $arg3 (local.get $args))))))
 
     ;; 165 = %make-primitive(id) → primitive struct
     (if (i32.eq (local.get $id) (i32.const 165))
@@ -4563,6 +4622,24 @@
           (if (result (ref null eq)) (call $is-null (local.get $cur))
             (then (ref.null eq))
             (else (local.get $cur)))))))
+
+    ;; 171 = %set-winding-stack!(val) — sync WAT global
+    (if (i32.eq (local.get $id) (i32.const 171))
+      (then
+        (global.set $winding-stack (call $arg1 (local.get $args)))
+        (return (global.get $void))))
+
+    ;; 172 = %get-winding-stack() — read WAT global
+    (if (i32.eq (local.get $id) (i32.const 172))
+      (then
+        (return (if (result (ref null eq)) (ref.is_null (global.get $winding-stack))
+          (then (global.get $nil))
+          (else (global.get $winding-stack))))))
+
+    ;; 173 = continuation-winds(cont) — get saved winding stack
+    (if (i32.eq (local.get $id) (i32.const 173))
+      (then (return (struct.get $continuation $winds
+        (ref.cast (ref $continuation) (call $arg1 (local.get $args)))))))
 
     ;; Unknown primitive — return void
     (global.get $void)
@@ -5633,8 +5710,39 @@
     (local $conts (ref $pair))
     (local $space-id i32)
     (local $pc i32)
+    (local $saved-winds (ref null eq))
+    (local $current-winds (ref null eq))
+    (local $do-winds-fn (ref null eq))
     (local.set $cont (ref.cast (ref $continuation)
       (call $deref-handle (local.get $cont-handle))))
+    ;; Do winding transition if needed
+    (local.set $saved-winds (struct.get $continuation $winds (local.get $cont)))
+    (if (ref.is_null (local.get $saved-winds))
+      (then (local.set $saved-winds (global.get $nil))))
+    (local.set $current-winds
+      (if (result (ref null eq)) (ref.is_null (global.get $winding-stack-sym))
+        (then (global.get $nil))
+        (else (call $lookup-variable-value
+          (ref.as_non_null (global.get $winding-stack-sym))
+          (global.get $global-env)))))
+    (if (ref.is_null (local.get $current-winds))
+      (then (local.set $current-winds (global.get $nil))))
+    (if (i32.eqz (ref.eq (local.get $current-winds) (local.get $saved-winds)))
+      (then
+        (if (i32.eqz (i32.and (call $is-null (local.get $current-winds))
+                               (call $is-null (local.get $saved-winds))))
+          (then
+            (local.set $do-winds-fn (call $lookup-variable-value
+              (ref.as_non_null (global.get $do-winds-sym))
+              (global.get $global-env)))
+            (global.set $execute-argl
+              (call $cons (local.get $current-winds)
+                (call $cons (local.get $saved-winds) (global.get $nil))))
+            (global.set $execute-proc (local.get $do-winds-fn))
+            (drop (call $execute
+              (call $compiled-proc-space (ref.cast (ref $compiled-proc) (local.get $do-winds-fn)))
+              (call $compiled-proc-pc (ref.cast (ref $compiled-proc) (local.get $do-winds-fn)))
+              (call $compiled-proc-env (ref.cast (ref $compiled-proc) (local.get $do-winds-fn)))))))))
     ;; conts = saved continue register = (space-id . pc)
     (local.set $conts (ref.cast (ref $pair)
       (struct.get $continuation $conts (local.get $cont))))
@@ -5749,7 +5857,7 @@
                           (i32.eq (local.get $op) (i32.const 6))))
         (then
           (if (i32.or (i32.lt_s (local.get $c) (i32.const 0))
-                      (i32.gt_s (local.get $c) (i32.const 21)))
+                      (i32.gt_s (local.get $c) (i32.const 22)))
             (then (return (i32.sub (i32.const 0) (i32.add (local.get $i) (i32.const 1))))))))
       ;; Check: for branch (op=2), goto-label (op=3,b=0), assign-label (op=0,b=2): c must be 0..len
       (if (i32.or (i32.eq (local.get $op) (i32.const 2))
@@ -5764,6 +5872,14 @@
       (local.set $i (i32.add (local.get $i) (i32.const 1)))
       (br $scan)))
     (i32.const 0))
+
+  ;; Winding stack mirror: synced with ECE *winding-stack* by dynamic-wind.
+  ;; Used by capture-continuation to snapshot the winding state.
+  (global $winding-stack (mut (ref null eq)) (ref.null eq))
+
+  ;; Cached symbols for winding support (set during bootstrap)
+  (global $do-winds-sym (mut (ref null $symbol)) (ref.null $symbol))
+  (global $winding-stack-sym (mut (ref null $symbol)) (ref.null $symbol))
 
   ;; Write mode flag: 0=display (no string quoting), 1=write (quote strings)
   (global $write-mode (mut i32) (i32.const 0))

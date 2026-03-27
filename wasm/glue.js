@@ -372,6 +372,10 @@ const ECE = {
     // Store global env for execute-from-pc
     w.set_global_env(envHandle);
 
+    // Cache symbols for continuation winding support
+    w.set_do_winds_sym(ECE.internSym("do-winds!"));
+    w.set_winding_stack_sym(ECE.internSym("*winding-stack*"));
+
     // Create default compilation space for REPL/eval
     const replSym = ECE.internSym("repl");
     w.create_space(replSym, 524288);
@@ -390,7 +394,7 @@ const ECE = {
       'val', 'env', 'proc', 'argl', 'continue', 'stack',
       // 13-16: source/dest types
       'const', 'reg', 'label', 'op',
-      // 17-37: operation names (op-id = slot - 17)
+      // 17-38: operation names (op-id = slot - 17)
       'lookup-variable-value',       // 17 → op 0
       'compiled-procedure-entry',    // 18 → op 1
       'compiled-procedure-env',      // 19 → op 2
@@ -413,6 +417,7 @@ const ECE = {
       'define-variable!',            // 36 → op 19
       'set-variable-value!',         // 37 → op 20
       'capture-continuation',        // 38 → op 21
+      'do-continuation-winds',       // 39 → op 22
     ];
     w.init_asm_syms(names.length);
     for (let i = 0; i < names.length; i++) {

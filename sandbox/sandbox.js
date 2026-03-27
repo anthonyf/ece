@@ -240,8 +240,10 @@ const Sandbox = {
       // Resume the stored yield continuation with void
       const contHandle = w.get_yield_cont();
       w.clear_yield_cont();
-      const args = w.h_cons(ECE._hVoid, w.h_nil());
-      w.call_ece_proc(contHandle, args);
+      if (w.dbg_type(contHandle) === 7)
+        w.call_continuation(contHandle, w.h_void());
+      else
+        w.call_ece_proc(contHandle, w.h_cons(ECE._hVoid, w.h_nil()));
     } catch(e) {
       Sandbox.appendConsole("\nError: " + e.message + "\n");
       Sandbox.finishRun();

@@ -69,14 +69,17 @@ function runIntegrationTests(w, envH) {
     const src = '(begin (define (test-yield-1) (display "A") (yield) (display "B")) (test-yield-1))';
     w.call_ece_proc(evalStr, w.h_cons(ECE.makeString(src), w.h_nil()));
 
-    // Check yield continuation exists
+    // Check yield continuation exists (type 7 = raw continuation with unified call/cc)
     const contH = w.get_yield_cont();
     const contType = w.dbg_type(contH);
-    assert(contType === 6, `expected compiled-proc (6), got type ${contType}`);
+    assert(contType === 6 || contType === 7, `expected compiled-proc (6) or continuation (7), got type ${contType}`);
 
     // Resume
     w.clear_yield_cont();
-    w.call_ece_proc(contH, w.h_cons(w.h_void(), w.h_nil()));
+    if (contType === 7)
+      w.call_continuation(contH, w.h_void());
+    else
+      w.call_ece_proc(contH, w.h_cons(w.h_void(), w.h_nil()));
   });
 
   // ── Yield/resume: multi-frame ──
@@ -88,9 +91,12 @@ function runIntegrationTests(w, envH) {
     for (let frame = 0; frame < 3; frame++) {
       const contH = w.get_yield_cont();
       const contType = w.dbg_type(contH);
-      assert(contType === 6, `frame ${frame}: expected compiled-proc (6), got type ${contType}`);
+      assert(contType === 6 || contType === 7, `frame ${frame}: expected compiled-proc (6) or continuation (7), got type ${contType}`);
       w.clear_yield_cont();
-      w.call_ece_proc(contH, w.h_cons(w.h_void(), w.h_nil()));
+      if (contType === 7)
+        w.call_continuation(contH, w.h_void());
+      else
+        w.call_ece_proc(contH, w.h_cons(w.h_void(), w.h_nil()));
     }
 
     // Verify counter advanced
@@ -107,9 +113,14 @@ function runIntegrationTests(w, envH) {
 
     for (let frame = 0; frame < 100; frame++) {
       w.reset_handles();  // simulate what sandbox animationLoop does
+      ECE._symCache = {};
       const contH = w.get_yield_cont();
+      const contType = w.dbg_type(contH);
       w.clear_yield_cont();
-      w.call_ece_proc(contH, w.h_cons(w.h_void(), w.h_nil()));
+      if (contType === 7)
+        w.call_continuation(contH, w.h_void());
+      else
+        w.call_ece_proc(contH, w.h_cons(w.h_void(), w.h_nil()));
     }
 
     // Verify counter advanced and we didn't crash

@@ -86,7 +86,7 @@
     (lambda () ()))
    30)))
 
-(test "%raw-call/cc bypasses winding" (lambda ()
+(test "%raw-call/cc triggers winding (unified)" (lambda ()
   (define log '())
   (define result
     (%raw-call/cc (lambda (k)
@@ -95,5 +95,5 @@
        (lambda () (k 'raw-escape))
        (lambda () (set! log (cons 'after log)))))))
   (assert-equal result 'raw-escape)
-  ;; after should NOT be called because %raw-call/cc bypasses winding
-  (assert-equal (member 'after log) #f)))
+  ;; after IS called because all continuations now trigger do-continuation-winds
+  (assert-true (member 'after log))))
