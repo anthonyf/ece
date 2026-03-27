@@ -1,4 +1,4 @@
-.PHONY: test test-ece test-wasm repl run bootstrap wasm sandbox site fmt check-fmt setup clean
+.PHONY: test test-ece test-wasm test-conformance repl run bootstrap wasm sandbox site fmt check-fmt setup clean
 
 # Test files for WASM (common tests that don't need try-eval)
 WASM_TEST_SRCS := tests/ece/test-framework.scm \
@@ -26,6 +26,11 @@ test-ece:
 	qlot exec sbcl --eval '(asdf:load-system :ece)' \
 	  --eval '(handler-case (ece:evaluate (list (quote load) "tests/ece/run-all.scm")) (error ()))' \
 	  --eval '(let ((f (ece::lookup-variable-value (intern "*test-failures*" :ece) ece::*global-env*))) (when (> f 0) (format t "~D ECE test failures~%" f) (sb-ext:exit :code 1)))' \
+	  --quit
+
+test-conformance:
+	qlot exec sbcl --dynamic-space-size 4096 --eval '(asdf:load-system :ece)' \
+	  --eval '(handler-case (ece:evaluate (list (quote load) "tests/conformance/run-conformance.scm")) (error (c) (format t "Error: ~A~%" c)))' \
 	  --quit
 
 repl:
