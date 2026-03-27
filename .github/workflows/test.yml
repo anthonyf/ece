@@ -34,6 +34,10 @@ jobs:
             --eval '(let ((f (ece::lookup-variable-value (intern "*test-failures*" :ece) ece::*global-env*))) (when (> f 0) (format t "~D ECE test failures~%" f) (sb-ext:exit :code 1)))' \
             --quit
 
+      - name: Run conformance tests
+        continue-on-error: true  # Conformance failures are informational
+        run: make test-conformance
+
       - name: Install binaryen
         run: |
           curl -L https://github.com/WebAssembly/binaryen/releases/download/version_128/binaryen-version_128-x86_64-linux.tar.gz | tar xz
