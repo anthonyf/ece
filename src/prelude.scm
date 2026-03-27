@@ -523,16 +523,11 @@
     result))
 
 ;; ---- call/cc: winding-aware continuation capture (R7RS) ----
+;; Winding is handled at invoke time by the executor's do-continuation-winds
+;; operation (in the compiler's continuation branch). No wrapper lambda needed.
 
 (define-macro (call/cc receiver)
-  (let ((saved (gensym))
-        (raw-k (gensym))
-        (val (gensym)))
-    `(let ((,saved *winding-stack*))
-       (%raw-call/cc (lambda (,raw-k)
-                       (,receiver (lambda (,val)
-                                    (do-winds! *winding-stack* ,saved)
-                                    (,raw-k ,val))))))))
+  `(%raw-call/cc ,receiver))
 
 (define (call-with-current-continuation receiver)
   (call/cc receiver))
@@ -701,10 +696,11 @@ shared structure, and global env sentinel."
               (scan-vec 0))
              ;; Compiled procedure — scan env
              ((compiled-procedure? obj) (scan (compiled-procedure-env obj)))
-             ;; Continuation — scan stack and conts
+             ;; Continuation — scan stack, conts, and winds
              ((continuation? obj)
               (scan (continuation-stack obj))
-              (scan (continuation-conts obj)))
+              (scan (continuation-conts obj))
+              (scan (continuation-winds obj)))
              ;; Primitive — no sub-structure to scan
              ((primitive? obj) '())
              ;; Env frame — scan vals and enclosing
@@ -797,7 +793,8 @@ shared structure, and global env sentinel."
      ((continuation? obj)
       (define stack (continuation-stack obj))
       (define cont (continuation-conts obj))
-      (string-append "(%ser/continuation" (ser stack) " " (ser-entry cont) ")"))
+      (define winds (continuation-winds obj))
+      (string-append "(%ser/continuation" (ser stack) " " (ser-entry cont) " " (ser winds) ")"))
      ;; Primitive (WasmGC struct or CL tagged pair)
      ((primitive? obj)
       (define id (%primitive-id-of obj))
@@ -904,7 +901,8 @@ Reconstructs tagged types and resolves #:def/#:ref references."
        ((string=? tag "%ser/continuation")
         (define stack (deser (cadr form)))
         (define cont (caddr form))
-        (%make-continuation stack cont))
+        (define winds (if (null? (cdddr form)) '() (deser (car (cdddr form)))))
+        (%make-continuation stack cont winds))
        ;; Primitive by name
        ((string=? tag "%ser/primitive")
         (define name (cadr form))

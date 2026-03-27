@@ -337,6 +337,7 @@
           (make-instruction-sequence
            '(proc argl) '(stack continue val)
            '((assign val (op car) (reg argl))
+             (perform (op do-continuation-winds) (reg proc))
              (assign stack (op continuation-stack) (reg proc))
              (assign continue (op continuation-conts) (reg proc))
              (goto (reg continue)))))
