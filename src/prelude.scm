@@ -525,12 +525,12 @@
 ;; ---- call/cc: winding-aware continuation capture (R7RS) ----
 ;; Winding is handled at invoke time by the executor's do-continuation-winds
 ;; operation (in the compiler's continuation branch). No wrapper lambda needed.
+;; call/cc is a first-class procedure (R7RS), not a macro.
 
-(define-macro (call/cc receiver)
-  `(%raw-call/cc ,receiver))
+(define (call/cc receiver)
+  (%raw-call/cc receiver))
 
-(define (call-with-current-continuation receiver)
-  (call/cc receiver))
+(define call-with-current-continuation call/cc)
 
 ;; loop: infinite loop with break
 (define-macro (loop . body)
