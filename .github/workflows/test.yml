@@ -25,10 +25,10 @@ jobs:
         run: qlot install
 
       - name: Run CL rove tests
-        run: qlot exec sbcl --disable-debugger --eval '(asdf:load-system :ece)' --eval '(asdf:load-system :ece/tests)' --eval '(unless (rove:run :ece/tests) (uiop:quit 1))' --quit
+        run: qlot exec sbcl --dynamic-space-size 4096 --disable-debugger --eval '(asdf:load-system :ece)' --eval '(asdf:load-system :ece/tests)' --eval '(unless (rove:run :ece/tests) (uiop:quit 1))' --quit
 
       - name: Run ECE self-hosted tests
-        run: make test-ece
+        run: qlot exec sbcl --dynamic-space-size 4096 --eval '(asdf:load-system :ece)' --eval '(handler-case (ece:evaluate (list (quote load) "tests/ece/run-all.scm")) (error ()))' --eval '(let ((f (ece::lookup-variable-value (intern "*test-failures*" :ece) ece::*global-env*))) (when (> f 0) (format t "~D ECE test failures~%" f) (sb-ext:exit :code 1)))' --quit
 
       - name: Install binaryen
         run: |
