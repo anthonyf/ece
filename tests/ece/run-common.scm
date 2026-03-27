@@ -15,6 +15,7 @@
 (load "tests/ece/test-control-flow.scm")
 (load "tests/ece/test-closures.scm")
 (load "tests/ece/test-macros.scm")
+(load "tests/ece/test-syntax-rules.scm")
 (load "tests/ece/test-tco.scm")
 
 ;; Advanced features

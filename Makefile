@@ -6,7 +6,8 @@ WASM_TEST_SRCS := tests/ece/test-framework.scm \
 	tests/ece/test-strings.scm tests/ece/test-vectors.scm \
 	tests/ece/test-hash-tables.scm tests/ece/test-types.scm \
 	tests/ece/test-control-flow.scm tests/ece/test-closures.scm \
-	tests/ece/test-macros.scm tests/ece/test-tco.scm \
+	tests/ece/test-macros.scm tests/ece/test-syntax-rules.scm \
+	tests/ece/test-tco.scm \
 	tests/ece/test-higher-order.scm tests/ece/test-records.scm \
 	tests/ece/test-parameters.scm tests/ece/test-mutation.scm \
 	tests/ece/test-callcc.scm tests/ece/test-advanced-continuations.scm \
@@ -16,7 +17,7 @@ WASM_TEST_SRCS := tests/ece/test-framework.scm \
 	wasm/wasm-test-runner.scm
 
 BOOTSTRAP_DIR := bootstrap
-BOOTSTRAP_SRCS := src/prelude.scm src/compiler.scm src/reader.scm src/assembler.scm src/compilation-unit.scm
+BOOTSTRAP_SRCS := src/prelude.scm src/compiler.scm src/reader.scm src/assembler.scm src/compilation-unit.scm src/syntax-rules.scm
 
 test:
 	qlot exec sbcl --eval '(asdf:test-system :ece)' --quit
@@ -35,7 +36,7 @@ bootstrap:
 	qlot exec sbcl --eval '(asdf:load-system :ece)' \
 	  --eval '(in-package :ece)' \
 	  --eval '(evaluate (list (quote eval) (list (quote read) (list (quote open-input-string) "(load \"src/compilation-unit.scm\")"))))' \
-	  --eval '(dolist (f (list "src/prelude.scm" "src/compiler.scm" "src/reader.scm" "src/assembler.scm" "src/compilation-unit.scm")) (format t "Compiling ~A~%" f) (evaluate (list (quote eval) (list (quote read) (list (quote open-input-string) (format nil "(compile-file ~S)" f))))))' \
+	  --eval '(dolist (f (list "src/prelude.scm" "src/compiler.scm" "src/reader.scm" "src/assembler.scm" "src/compilation-unit.scm" "src/syntax-rules.scm")) (format t "Compiling ~A~%" f) (evaluate (list (quote eval) (list (quote read) (list (quote open-input-string) (format nil "(compile-file ~S)" f))))))' \
 	  --quit
 	mv -f src/*.ecec $(BOOTSTRAP_DIR)/
 	@echo "Bootstrap .ecec files regenerated in $(BOOTSTRAP_DIR)/"

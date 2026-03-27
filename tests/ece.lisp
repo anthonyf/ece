@@ -2695,10 +2695,12 @@
              (let ((image-path (asdf:system-relative-pathname :ece "bootstrap/ece.image")))
                (when (probe-file image-path)
                  (ece::ece-load-image (namestring image-path))))
-             ;; Load and run all ECE native tests.
-             ;; Wrap in handler-case: the test runner may trigger errors during
-             ;; error-recovery tests that propagate out after printing results.
-             (handler-case (evaluate '(load "tests/ece/run-all.scm"))
+             ;; Load and run common ECE native tests (platform-independent).
+             ;; CL-only tests (serialization, compilation-units) run separately
+             ;; via make test-ece to avoid heap exhaustion in the Rove process.
+             (handler-case (progn
+                             (evaluate '(load "tests/ece/run-common.scm"))
+                             (evaluate (list (intern "run-tests" :ece))))
                (error ()))
              ;; Read failure count directly from the global environment
              (let ((failures (ece::lookup-variable-value

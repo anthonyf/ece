@@ -2143,10 +2143,11 @@ Uses the CL reader (not the ECE reader) so this works at boot before the ECE rea
     (let ((sym (intern name :ece)))
       (define-variable! sym sym *global-env*)))
   (dolist (name '("prelude" "compiler" "reader" "assembler"
-                  "compilation-unit"))
-    (load-ecec-file
-     (asdf:system-relative-pathname :ece
-                                    (format nil "bootstrap/~A.ecec" name))))
+                  "compilation-unit" "syntax-rules"))
+    (let ((path (asdf:system-relative-pathname :ece
+                                               (format nil "bootstrap/~A.ecec" name))))
+      (when (probe-file path)
+        (load-ecec-file path))))
   )
 
 ;;; Boot from .ecec files
