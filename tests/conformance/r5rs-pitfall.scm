@@ -19,12 +19,8 @@
       (and (pair? x) (eq? (car x) %primitive-tag))
       (and (pair? x) (eq? (car x) %continuation-tag))))
 
-;; Skip tests that require let-syntax (not yet implemented)
+;; 3.1 requires full referential transparency (gensym hygiene insufficient)
 (conformance-skip! "3.1 hygienic let-syntax")
-(conformance-skip! "3.2 let-syntax define interaction")
-(conformance-skip! "3.3 nested let-syntax hygiene")
-(conformance-skip! "3.4 empty syntax-rules")
-(conformance-skip! "8.3 let-syntax scope")
 
 ;; eqv? now available (PR #59)
 
@@ -70,10 +66,33 @@
 
 ;;; Section 3: Hygienic macros (require let-syntax — skipped)
 
-(conformance-test "3.1 hygienic let-syntax" 4 0)
-(conformance-test "3.2 let-syntax define interaction" 2 0)
-(conformance-test "3.3 nested let-syntax hygiene" 1 0)
-(conformance-test "3.4 empty syntax-rules" 1 0)
+(conformance-test "3.1 hygienic let-syntax" 4
+  (let-syntax ((foo
+                (syntax-rules ()
+                  ((_ expr) (+ expr 1)))))
+    (let ((+ *))
+      (foo 3))))
+
+(conformance-test "3.2 let-syntax define interaction" 2
+  (let-syntax ((foo (syntax-rules ()
+                      ((_ var) (define var 1)))))
+    (let ((x 2))
+      (begin (define foo +))
+      (cond (else (foo x)))
+      x)))
+
+(conformance-test "3.3 nested let-syntax hygiene" 1
+  (let ((x 1))
+    (let-syntax
+        ((foo (syntax-rules ()
+                ((_ y) (let-syntax
+                            ((bar (syntax-rules ()
+                                    ((_) (let ((x 2)) y)))))
+                        (bar))))))
+      (foo x))))
+
+(conformance-test "3.4 empty syntax-rules" 1
+  (let-syntax ((x (syntax-rules ()))) 1))
 
 ;;; Section 4: No identifiers are reserved
 
@@ -172,4 +191,9 @@
     (append ls ls '(5))))
 
 ;; let-syntax scope (requires let-syntax — skipped)
-(conformance-test "8.3 let-syntax scope" 1 0)
+(conformance-test "8.3 let-syntax scope" 1
+  (let ((x 1))
+    (let-syntax ((foo (syntax-rules () ((_) 2))))
+      (define x (foo))
+      3)
+    x))
