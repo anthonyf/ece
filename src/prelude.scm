@@ -391,6 +391,53 @@
       init
       (f (car lst) (fold-right f init (cdr lst)))))
 
+;; ---- Character predicates ----
+;; Implemented in ECE via char->integer range checks.
+
+(define (char-whitespace? ch)
+  (let ((code (char->integer ch)))
+    (or (= code 32) (= code 9) (= code 10) (= code 13))))
+
+(define (char-alphabetic? ch)
+  (let ((code (char->integer ch)))
+    (or (and (>= code 65) (<= code 90))
+        (and (>= code 97) (<= code 122)))))
+
+(define (char-numeric? ch)
+  (let ((code (char->integer ch)))
+    (and (>= code 48) (<= code 57))))
+
+;; ---- Equality ----
+
+(define (eqv? x y)
+  (cond
+   ((eq? x y) #t)
+   ((and (number? x) (number? y)) (= x y))
+   (else #f)))
+
+(define (equal? x y)
+  (cond
+   ((eq? x y) #t)
+   ((and (pair? x) (pair? y))
+    (and (equal? (car x) (car y))
+         (equal? (cdr x) (cdr y))))
+   ((and (vector? x) (vector? y))
+    (and (= (vector-length x) (vector-length y))
+         (let loop ((i 0))
+           (or (= i (vector-length x))
+               (and (equal? (vector-ref x i) (vector-ref y i))
+                    (loop (+ i 1)))))))
+   ((and (string? x) (string? y)) (string=? x y))
+   ((and (number? x) (number? y)) (= x y))
+   (else #f)))
+
+;; ---- Gensym ----
+
+(define %gensym-counter 0)
+(define (gensym)
+  (set! %gensym-counter (+ %gensym-counter 1))
+  (string->symbol (string-append "g" (number->string %gensym-counter))))
+
 ;; ---- String operations ----
 ;; Implemented in ECE using core string primitives.
 
