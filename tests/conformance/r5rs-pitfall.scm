@@ -77,8 +77,8 @@
 (conformance-test "4.1 shadow lambda" '(x)
   ((lambda lambda lambda) 'x))
 
-;; Shadowing begin
-(conformance-test "4.2 shadow begin" '(1 2 3 4 1 2 3 4 5)
+;; Shadowing begin — begin as function returns args as list
+(conformance-test "4.2 shadow begin" '(1 2 3)
   ((lambda (begin) (begin 1 2 3)) (lambda lambda lambda)))
 
 ;; Shadowing quote (requires eqv? — skipped)
