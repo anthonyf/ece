@@ -11,6 +11,14 @@
 ;;; - string->symbol case sensitivity
 ;;; - First-class continuations
 
+;; R5RS shim: procedure? (needed by tests 1.2)
+(define %primitive-tag (car +))
+(define %continuation-tag (car (call/cc (lambda (k) k))))
+(define (procedure? x)
+  (or (compiled-procedure? x)
+      (and (pair? x) (eq? (car x) %primitive-tag))
+      (and (pair? x) (eq? (car x) %continuation-tag))))
+
 ;; Skip tests that require let-syntax (not yet implemented)
 (conformance-skip! "3.1 hygienic let-syntax")
 (conformance-skip! "3.2 let-syntax define interaction")
@@ -20,12 +28,7 @@
 
 ;; eqv? now available (PR #59)
 
-;; Tests 1.2 and 1.3 trigger CL-level type errors during complex
-;; letrec+call/cc interactions (continuations returning into list operations).
-;; Still crash after letrec fix (PR #56) — the issue is in continuation
-;; restoration, not letrec expansion.
-(conformance-skip! "1.2 letrec double return")
-(conformance-skip! "1.3 letrec call/cc eq")
+;; Tests 1.2 and 1.3 need procedure? (defined below).
 
 ;;; Section 1: Proper letrec implementation
 
