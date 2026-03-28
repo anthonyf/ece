@@ -236,8 +236,7 @@
 (test #t (symbol? (car '(a b))))
 (test #f (symbol? "bar"))
 (test #t (symbol? 'nil))
-;; skipped: CL nil is both symbol and empty list — fundamental divergence
-;; (test #f (symbol? '()))
+(test #f (symbol? '()))
 (test "flying-fish" (symbol->string 'flying-fish))
 (test "Martin" (symbol->string 'Martin))
 (test "Malvina" (symbol->string (string->symbol "Malvina")))
