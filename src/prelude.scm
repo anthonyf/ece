@@ -173,10 +173,11 @@
 (define-macro (let bindings . body)
   (if (and (symbol? bindings) (not (null? bindings)))
       ;; Named let: (let name ((var init) ...) body...)
-      ;; Expand to letrec-style so the loop name is always a lexical
-      ;; variable (never needs runtime define-variable! / frame-append).
-      `(letrec ((,bindings (lambda ,(map car (car body)) ,@(cdr body))))
-         (,bindings ,@(map cadr (car body))))
+      ;; Inits evaluate outside letrec scope so the name doesn't shadow
+      ;; outer bindings (e.g., (let - ((n (- 1))) n) → n = -1).
+      `((letrec ((,bindings (lambda ,(map car (car body)) ,@(cdr body))))
+          ,bindings)
+        ,@(map cadr (car body)))
       ;; Regular let: (let ((var init) ...) body...)
       (cons `(lambda ,(map car bindings)
                ,@body)

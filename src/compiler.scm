@@ -573,6 +573,10 @@
   (cond
    ((mc-self-evaluating? expr) (mc-compile-self-evaluating expr target linkage))
    ((mc-variable? expr) (mc-compile-variable expr target linkage))
+   ;; Lexical bindings shadow special forms (R5RS §4.1.1)
+   ((and (pair? expr) (symbol? (car expr))
+         (mc-find-variable (car expr) (*mc-compile-lexical-env*)))
+    (mc-compile-application expr target linkage))
    ((mc-quoted? expr) (mc-compile-quoted expr target linkage))
    ((mc-quasiquote? expr) (mc-compile-quasiquote expr target linkage))
    ((mc-lambda? expr) (mc-compile-lambda expr target linkage))
