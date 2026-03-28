@@ -121,3 +121,79 @@
        (if test (begin body ...)))))
   (assert-equal (my-when #t 42) 42)
   (assert-equal (my-when #f 42) #f)))
+
+;; --- Operator-position hygiene (%global-ref) ---
+
+(test "hygiene: shadowed + in operator position" (lambda ()
+  (let-syntax ((add1 (syntax-rules ()
+                        ((_ e) (+ e 1)))))
+    (let ((+ *))
+      (assert-equal (add1 3) 4)))))
+
+(test "hygiene: shadowed cons in operator position" (lambda ()
+  (let-syntax ((my-pair (syntax-rules ()
+                          ((_ a b) (cons a b)))))
+    (let ((cons list))
+      (assert-equal (my-pair 1 2) '(1 . 2))))))
+
+(test "hygiene: shadowed - in operator position" (lambda ()
+  (let-syntax ((sub1 (syntax-rules ()
+                        ((_ e) (- e 1)))))
+    (let ((- +))
+      (assert-equal (sub1 10) 9)))))
+
+(test "hygiene: multiple free operators in template" (lambda ()
+  (let-syntax ((math (syntax-rules ()
+                        ((_ a b) (+ (* a b) 1)))))
+    (let ((+ -) (* /))
+      (assert-equal (math 3 4) 13)))))
+
+(test "hygiene: operator hygiene with ellipsis" (lambda ()
+  (let-syntax ((add-all (syntax-rules ()
+                           ((_ x ...) (+ x ...)))))
+    (let ((+ *))
+      (assert-equal (add-all 1 2 3) 6)))))
+
+(test "hygiene: quote not affected by wrapping" (lambda ()
+  (define-syntax my-quote
+    (syntax-rules ()
+      ((_ x) (quote x))))
+  (assert-equal (my-quote hello) 'hello)
+  (assert-equal (my-quote (a b c)) '(a b c))))
+
+(test "hygiene: lambda params not broken by wrapping" (lambda ()
+  (define-syntax my-let1
+    (syntax-rules ()
+      ((_ (var val) body) ((lambda (var) body) val))))
+  (assert-equal (my-let1 (x 5) (+ x 1)) 6)))
+
+(test "hygiene: set! in template works" (lambda ()
+  (define counter 0)
+  (let-syntax ((inc! (syntax-rules ()
+                        ((_) (set! counter (+ counter 1))))))
+    (inc!)
+    (inc!)
+    (assert-equal counter 2))))
+
+(test "hygiene: nested let-syntax preserves lexical refs" (lambda ()
+  (let ((x 1))
+    (let-syntax ((foo (syntax-rules ()
+                        ((_ y) (let-syntax
+                                    ((bar (syntax-rules ()
+                                            ((_) (let ((x 2)) y)))))
+                                  (bar))))))
+      (assert-equal (foo x) 1)))))
+
+(test "hygiene: cond with else in template" (lambda ()
+  (let-syntax ((safe-div (syntax-rules ()
+                            ((_ a b) (cond ((= b 0) 0)
+                                           (else (/ a b)))))))
+    (assert-equal (safe-div 10 2) 5)
+    (assert-equal (safe-div 10 0) 0))))
+
+(test "hygiene: define-syntax macro with if in template" (lambda ()
+  (define-syntax my-abs
+    (syntax-rules ()
+      ((_ x) (if (< x 0) (- 0 x) x))))
+  (assert-equal (my-abs 5) 5)
+  (assert-equal (my-abs -3) 3)))
