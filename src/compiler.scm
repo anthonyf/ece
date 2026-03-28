@@ -475,7 +475,8 @@
 
 (define (mc-compile-callcc expr target linkage)
   (let ((receiver-code (mc-compile (cadr expr) 'proc 'next))
-        (return-label (mc-make-label 'callcc-return)))
+        (return-label (mc-make-label 'callcc-return))
+        (primitive-callcc (mc-make-label 'callcc-primitive)))
     (end-with-linkage linkage
                       (preserving '(env continue)
                                   receiver-code
@@ -484,8 +485,13 @@
                                    (list (list 'assign 'continue (list 'label return-label))
                                          '(assign argl (op capture-continuation) (reg stack) (reg continue))
                                          '(assign argl (op list) (reg argl))
+                                         '(test (op primitive-procedure?) (reg proc))
+                                         (list 'branch (list 'label primitive-callcc))
                                          '(assign val (op compiled-procedure-entry) (reg proc))
                                          '(goto (reg val))
+                                         primitive-callcc
+                                         '(assign val (op apply-primitive-procedure) (reg proc) (reg argl))
+                                         (list 'goto (list 'label return-label))
                                          return-label
                                          (list 'assign target '(reg val))))))))
 
