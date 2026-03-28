@@ -103,7 +103,10 @@
 ;;; Expression predicates
 
 (define *mc-special-forms*
-  '(quote if var set set! lambda begin %raw-call/cc define apply define-macro let-syntax letrec-syntax quasiquote))
+  '(quote if var set set! lambda begin %raw-call/cc define apply define-macro let-syntax letrec-syntax quasiquote %global-ref
+          ;; Auxiliary keywords — not special forms per se, but must not be wrapped
+          ;; by %global-ref in syntax-rules templates (they're keywords, not values)
+          syntax-rules else =>))
 
 (define (mc-self-evaluating? expr)
   (or (number? expr)
@@ -168,6 +171,19 @@
                                        '(op lookup-variable-value)
                                        (list 'const expr)
                                        '(reg env))))))))
+
+(define (mc-global-ref? expr)
+  (and (pair? expr) (eq? (car expr) '%global-ref)))
+
+(define (mc-compile-global-ref expr target linkage)
+  (let ((name (cadr expr)))
+    (end-with-linkage linkage
+                      (make-instruction-sequence
+                       '(env) (list target)
+                       (list (list 'assign target
+                                   '(op lookup-variable-value)
+                                   (list 'const name)
+                                   '(reg env)))))))
 
 (define (mc-compile-quoted expr target linkage)
   (end-with-linkage linkage
@@ -404,9 +420,13 @@
 ;;; Remaining special forms
 
 (define (mc-compile-assignment expr target linkage)
-  (let* ((variable (cadr expr))
+  (let* ((var-expr (cadr expr))
+         (force-global (mc-global-ref? var-expr))
+         (variable (if force-global (cadr var-expr) var-expr))
          (value-code (mc-compile (caddr expr) 'val 'next))
-         (addr (mc-find-variable variable (*mc-compile-lexical-env*))))
+         (addr (if force-global
+                   #f
+                   (mc-find-variable variable (*mc-compile-lexical-env*)))))
     (end-with-linkage linkage
                       (preserving '(env)
                                   value-code
@@ -641,6 +661,7 @@
    ((mc-let-syntax? expr) (mc-compile-let-syntax expr target linkage))
    ((mc-define? expr) (mc-compile-define expr target linkage))
    ((mc-begin? expr) (mc-compile-begin expr target linkage))
+   ((mc-global-ref? expr) (mc-compile-global-ref expr target linkage))
    ((mc-application? expr)
     ;; Check for compile-time macro (skip if operator is lexically shadowed)
     (let ((macro-def (if (mc-lexically-shadows-macro? (car expr))

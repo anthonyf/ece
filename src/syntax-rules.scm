@@ -202,6 +202,14 @@
               (else '()))
              (syntax-scan-list (cddr tmpl) pattern-vars))
             '()))
+       ;; (let-syntax ((name transformer) ...) body ...) and letrec-syntax
+       ((or (eq? (car tmpl) 'let-syntax)
+            (eq? (car tmpl) 'letrec-syntax))
+        (if (and (pair? (cdr tmpl)) (pair? (cadr tmpl)))
+            (append
+             (syntax-bindings-introduced (cadr tmpl) pattern-vars)
+             (syntax-scan-list (cddr tmpl) pattern-vars))
+            '()))
        ;; Other forms: recurse into car and cdr
        (else
         (append (syntax-scan-introduced (car tmpl) pattern-vars)
@@ -268,12 +276,47 @@
     (append
      (syntax-instantiate-ellipsis (car template) mr pattern-vars rename-table)
      (syntax-instantiate (cddr template) mr pattern-vars rename-table)))
-   ;; Regular pair
+   ;; %global-ref: pass through without recursing
+   ((and (pair? template) (eq? (car template) '%global-ref))
+    template)
+   ;; Nested syntax-rules: skip patterns, only process templates
+   ((and (pair? template) (eq? (car template) 'syntax-rules))
+    (syntax-instantiate-nested-syntax-rules template mr pattern-vars rename-table))
+   ;; Regular pair (form): wrap free symbols in operator position only
    ((pair? template)
-    (cons (syntax-instantiate (car template) mr pattern-vars rename-table)
-          (syntax-instantiate (cdr template) mr pattern-vars rename-table)))
+    (cons (syntax-instantiate-operator (car template) mr pattern-vars rename-table)
+          (syntax-instantiate-args (cdr template) mr pattern-vars rename-table)))
    ;; Atom
    (else template)))
+
+;; Process operator position — wrap free symbols in %global-ref for hygiene
+(define (syntax-instantiate-operator expr mr pattern-vars rename-table)
+  (cond
+   ((symbol? expr)
+    (let ((regular-entry (assoc expr (match-regular mr))))
+      (if regular-entry
+          (cdr regular-entry)
+          (let ((rename-entry (assoc expr rename-table)))
+            (if rename-entry
+                (cdr rename-entry)
+                ;; Free symbol in operator position: wrap unless keyword/macro
+                (if (or (member expr *mc-special-forms*)
+                        (get-macro expr))
+                    expr
+                    (list '%global-ref expr)))))))
+   ;; Non-symbol operator (e.g., (lambda ...) in ((lambda ...) args))
+   (else (syntax-instantiate expr mr pattern-vars rename-table))))
+
+;; Process argument list — each element is an expression, recurse without
+;; wrapping the CDR CARs (they're arguments, not operators)
+(define (syntax-instantiate-args args mr pattern-vars rename-table)
+  (cond
+   ((null? args) '())
+   ((pair? args)
+    (cons (syntax-instantiate (car args) mr pattern-vars rename-table)
+          (syntax-instantiate-args (cdr args) mr pattern-vars rename-table)))
+   ;; Dotted pair rest or bare symbol
+   (else (syntax-instantiate args mr pattern-vars rename-table))))
 
 (define (syntax-instantiate-ellipsis elt-template mr pattern-vars rename-table)
   (let ((used-vars
@@ -299,6 +342,24 @@
                         (cons (syntax-instantiate elt-template adjusted-mr
                                                   pattern-vars rename-table)
                               result)))))))))
+
+(define (syntax-instantiate-nested-syntax-rules form mr pattern-vars rename-table)
+  ;; form = (syntax-rules (literals...) clause ...)
+  ;; clause = (pattern template)
+  ;; Patterns are match structures — leave unchanged.
+  ;; Templates contain code — process for substitution and hygiene.
+  (let ((literals (cadr form))
+        (clauses (cddr form)))
+    (cons 'syntax-rules
+          (cons literals
+                (syntax-instantiate-sr-clauses clauses mr pattern-vars rename-table)))))
+
+(define (syntax-instantiate-sr-clauses clauses mr pattern-vars rename-table)
+  (if (null? clauses)
+      '()
+      (cons (list (caar clauses)
+                  (syntax-instantiate (cadr (car clauses)) mr pattern-vars rename-table))
+            (syntax-instantiate-sr-clauses (cdr clauses) mr pattern-vars rename-table))))
 
 ;;; --- Main expander ---
 
