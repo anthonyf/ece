@@ -3194,50 +3194,7 @@
     (global.get $false)
   )
 
-  ;; --- Gensym counter ---
-  (global $gensym-counter (mut i32) (i32.const 0))
-
-  (func $gensym-name (result (ref $string))
-    ;; Generate "g<N>" as a string
-    (local $n i32)
-    (local $buf (ref $string))
-    (local $i i32)
-    (local $len i32)
-    (local $digit i32)
-    (local $result (ref $string))
-    (local.set $n (global.get $gensym-counter))
-    ;; Build digits reversed
-    (local.set $buf (array.new_default $string (i32.const 12)))
-    (local.set $i (i32.const 0))
-    (if (i32.eqz (local.get $n))
-      (then
-        (array.set $string (local.get $buf) (i32.const 0) (i32.const 48))
-        (local.set $i (i32.const 1)))
-      (else
-        (block $done
-          (loop $digits
-            (br_if $done (i32.eqz (local.get $n)))
-            (array.set $string (local.get $buf) (local.get $i)
-              (i32.add (i32.rem_u (local.get $n) (i32.const 10)) (i32.const 48)))
-            (local.set $n (i32.div_u (local.get $n) (i32.const 10)))
-            (local.set $i (i32.add (local.get $i) (i32.const 1)))
-            (br $digits)))))
-    (local.set $len (i32.add (local.get $i) (i32.const 1)))
-    (local.set $result (array.new_default $string (local.get $len)))
-    (array.set $string (local.get $result) (i32.const 0) (i32.const 103))  ;; 'g'
-    ;; Copy digits reversed
-    (local.set $n (i32.const 0))
-    (block $done2
-      (loop $rev
-        (br_if $done2 (i32.ge_u (local.get $n) (local.get $i)))
-        (array.set $string (local.get $result)
-          (i32.add (local.get $n) (i32.const 1))
-          (array.get_u $string (local.get $buf)
-            (i32.sub (i32.sub (local.get $i) (i32.const 1)) (local.get $n))))
-        (local.set $n (i32.add (local.get $n) (i32.const 1)))
-        (br $rev)))
-    (local.get $result)
-  )
+  ;; --- Gensym: now in prelude.scm ---
 
   ;; --- Vector/list conversion helpers ---
   (func $prim-vector-to-list (param $v (ref null eq)) (result (ref null eq))
@@ -3584,9 +3541,7 @@
       (then (return (if (result (ref null eq))
         (call $eq (call $arg1 (local.get $args)) (call $arg2 (local.get $args)))
         (then (global.get $true)) (else (global.get $false))))))
-    ;; 21 = equal?
-    (if (i32.eq (local.get $id) (i32.const 21))
-      (then (return (call $prim-equal (call $arg1 (local.get $args)) (call $arg2 (local.get $args))))))
+    ;; 21 = equal? — now in prelude.scm
     ;; 22 = = (numeric)
     (if (i32.eq (local.get $id) (i32.const 22))
       (then (return (call $cmp-eq (local.get $args)))))
@@ -3829,12 +3784,7 @@
                 (then (global.get $true))
                 (else (global.get $false))))
             (else (global.get $true))))))
-    ;; 82 = gensym
-    (if (i32.eq (local.get $id) (i32.const 82))
-      (then
-        ;; Simple gensym: create a symbol with a unique name
-        (global.set $gensym-counter (i32.add (global.get $gensym-counter) (i32.const 1)))
-        (return (call $intern (call $gensym-name)))))
+    ;; 82 = gensym — now in prelude.scm
     ;; 50 = make-vector (size [fill])
     (if (i32.eq (local.get $id) (i32.const 50))
       (then
@@ -3898,34 +3848,7 @@
           (call $char-codepoint (ref.cast (ref i31) (call $arg1 (local.get $args))))
           (call $char-codepoint (ref.cast (ref i31) (call $arg2 (local.get $args)))))
         (then (global.get $true)) (else (global.get $false))))))
-    ;; 47 = char-whitespace?
-    (if (i32.eq (local.get $id) (i32.const 47))
-      (then
-        (local.set $id (call $char-codepoint (ref.cast (ref i31) (call $arg1 (local.get $args)))))
-        (return (if (result (ref null eq))
-          (i32.or (i32.or (i32.eq (local.get $id) (i32.const 32))
-                          (i32.eq (local.get $id) (i32.const 9)))
-                  (i32.or (i32.eq (local.get $id) (i32.const 10))
-                          (i32.eq (local.get $id) (i32.const 13))))
-          (then (global.get $true)) (else (global.get $false))))))
-    ;; 48 = char-alphabetic?
-    (if (i32.eq (local.get $id) (i32.const 48))
-      (then
-        (local.set $id (call $char-codepoint (ref.cast (ref i31) (call $arg1 (local.get $args)))))
-        (return (if (result (ref null eq))
-          (i32.or (i32.and (i32.ge_u (local.get $id) (i32.const 65))
-                           (i32.le_u (local.get $id) (i32.const 90)))
-                  (i32.and (i32.ge_u (local.get $id) (i32.const 97))
-                           (i32.le_u (local.get $id) (i32.const 122))))
-          (then (global.get $true)) (else (global.get $false))))))
-    ;; 49 = char-numeric?
-    (if (i32.eq (local.get $id) (i32.const 49))
-      (then
-        (local.set $id (call $char-codepoint (ref.cast (ref i31) (call $arg1 (local.get $args)))))
-        (return (if (result (ref null eq))
-          (i32.and (i32.ge_u (local.get $id) (i32.const 48))
-                   (i32.le_u (local.get $id) (i32.const 57)))
-          (then (global.get $true)) (else (global.get $false))))))
+    ;; 47-49 char-whitespace?, char-alphabetic?, char-numeric? — now in prelude.scm
     ;; 76 = bitwise-and (handles fixnum and float args)
     (if (i32.eq (local.get $id) (i32.const 76))
       (then (return (call $make-fixnum (i32.and
@@ -5086,10 +5009,10 @@
     (local $id i32)
     (local $i i32)
     (local.set $id (struct.get $symbol $id (local.get $sym)))
-    ;; Op names are in asm-sym-ids slots 17-38 (op-id = slot - 17)
+    ;; Op names are in asm-sym-ids slots 17-39 (ops 0-22, op-id = slot - 17)
     (local.set $i (i32.const 17))
     (block $done (loop $scan
-      (br_if $done (i32.ge_u (local.get $i) (i32.const 39)))
+      (br_if $done (i32.gt_u (local.get $i) (i32.const 39)))
       (if (i32.eq (local.get $id) (array.get $i32-array (ref.as_non_null (global.get $asm-sym-ids)) (local.get $i)))
         (then (return (i32.sub (local.get $i) (i32.const 17)))))
       (local.set $i (i32.add (local.get $i) (i32.const 1)))

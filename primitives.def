@@ -5,7 +5,8 @@
 ;;;   id       - Stable numeric ID (never reused once assigned)
 ;;;   name     - ECE symbol name
 ;;;   arity    - Exact argument count, or -1 for variadic
-;;;   platform - core (all runtimes), cl (CL only), browser (browser only)
+;;;   platform - core (all runtimes), ece (implemented in prelude.scm),
+;;;              cl (CL only), browser (browser only)
 ;;;   description - Human-readable description
 ;;;
 ;;; ID ranges:
@@ -49,7 +50,7 @@
 
 ;;; --- Equality and comparison ---
 (20  eq?                2   core   "Identity equality")
-(21  equal?             2   core   "Structural equality")
+(21  equal?             2   ece    "Structural equality")
 (22  =                 -1   core   "Numeric equality")
 (23  <                 -1   core   "Numeric less-than")
 (24  >                 -1   core   "Numeric greater-than")
@@ -66,12 +67,12 @@
 (33  string=?           2   core   "String equality")
 (34  string<?           2   core   "String less-than")
 (35  string>?           2   core   "String greater-than")
-(36  string-downcase    1   core   "Lowercase string")
-(37  string-upcase      1   core   "Uppercase string")
-(38  string-split       2   core   "Split string by delimiter")
-(39  string-trim        1   core   "Trim whitespace from string")
-(40  string-contains?   2   core   "Test if string contains substring")
-(41  string-join        2   core   "Join list of strings with separator")
+(36  string-downcase    1   ece    "Lowercase string")
+(37  string-upcase      1   ece    "Uppercase string")
+(38  string-split       2   ece    "Split string by delimiter")
+(39  string-trim        1   ece    "Trim whitespace from string")
+(40  string-contains?   2   ece    "Test if string contains substring")
+(41  string-join        2   ece    "Join list of strings with separator")
 (42  string             1   core   "Convert character to string")
 
 ;;; --- Character operations ---
@@ -79,9 +80,9 @@
 (44  integer->char      1   core   "Integer code point to character")
 (45  char=?             2   core   "Character equality")
 (46  char<?             2   core   "Character less-than")
-(47  char-whitespace?   1   core   "Test for whitespace character")
-(48  char-alphabetic?   1   core   "Test for alphabetic character")
-(49  char-numeric?      1   core   "Test for numeric character")
+(47  char-whitespace?   1   ece    "Test for whitespace character")
+(48  char-alphabetic?   1   ece    "Test for alphabetic character")
+(49  char-numeric?      1   ece    "Test for numeric character")
 
 ;;; --- Vector operations ---
 (50  make-vector        -1  core   "Create vector of given size")
@@ -102,7 +103,7 @@
 (63  read-line          -1  core   "Read line from port")
 (64  char-ready?        -1  core   "Test if character available on port")
 (65  eof?                1  core   "Test for end-of-file sentinel")
-(66  print               1  core   "Print object with newline")
+(66  print               1  ece    "Print object with newline")
 (67  write-to-string     1  core   "Convert object to string representation")
 
 ;;; --- Port operations ---
@@ -126,7 +127,7 @@
 (81  %raw-error         -1  core   "Signal error with message")
 
 ;;; --- Miscellaneous ---
-(82  gensym             -1  core   "Generate unique uninterned symbol")
+(82  gensym             -1  ece    "Generate unique interned symbol")
 (83  sleep               1  core   "Pause execution for milliseconds")
 (84  clear-screen        0  core   "Clear terminal/display")
 
@@ -243,7 +244,7 @@
 (173 continuation-winds        1  core   "Get saved winding stack from continuation")
 
 ;;; --- Additional equality ---
-(174 eqv?                      2  core   "Equivalence predicate (CL eql)")
+(174 eqv?                      2  ece    "Equivalence predicate")
 
 ;;; ═══════════════════════════════════════════════════════════════════════
 ;;; BROWSER PLATFORM PRIMITIVES (200-299) — Canvas and DOM
