@@ -242,6 +242,9 @@
 (172 %get-winding-stack        0  core   "Read WAT winding-stack global")
 (173 continuation-winds        1  core   "Get saved winding stack from continuation")
 
+;;; --- Additional equality ---
+(174 eqv?                      2  core   "Equivalence predicate (CL eql)")
+
 ;;; ═══════════════════════════════════════════════════════════════════════
 ;;; BROWSER PLATFORM PRIMITIVES (200-299) — Canvas and DOM
 ;;; ═══════════════════════════════════════════════════════════════════════

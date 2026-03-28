@@ -144,7 +144,15 @@
 (test '(a 3 4 5 6 b)
     `(a ,(+ 1 2) ,@(map abs '(4 -5 6)) b))
 
-;; Equality
+;; Equality — eqv?
+(test #t (eqv? 'a 'a))
+(test #f (eqv? 'a 'b))
+(test #t (eqv? '() '()))
+(test #f (eqv? (cons 1 2) (cons 1 2)))
+(test #f (eqv? (lambda () 1) (lambda () 2)))
+(test #t (let ((p (lambda (x) x))) (eqv? p p)))
+
+;; Equality — eq?
 (test #t (eq? 'a 'a))
 (test #f (eq? (list 'a) (list 'a)))
 (test #t (eq? '() '()))

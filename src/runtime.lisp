@@ -30,6 +30,7 @@
            #:boolean?
            #:zero?
            #:eq?
+           #:eqv?
            #:equal?
            #:modulo
            #:even?
@@ -483,6 +484,7 @@ Dispatches on frame type: hash-table or list-based."
 (defun ece-symbol? (x) (scheme-bool (symbolp x)))
 (defun ece-integer? (x) (scheme-bool (integerp x)))
 (defun ece-eq? (x y) (scheme-bool (eq x y)))
+(defun ece-eqv? (x y) (scheme-bool (eql x y)))
 (defun ece-equal? (x y) (scheme-bool (equal x y)))
 (defun ece-char? (x) (scheme-bool (characterp x)))
 (defun ece-char=? (x y) (scheme-bool (char= x y)))
@@ -1000,7 +1002,7 @@ print without CL pipe escaping."
     (null? . ece-null?) (pair? . ece-pair?)
     (number? . ece-number?) (string? . ece-string?) (symbol? . ece-symbol?)
     (integer? . ece-integer?)
-    (eq? . ece-eq?) (equal? . ece-equal?)
+    (eq? . ece-eq?) (eqv? . ece-eqv?) (equal? . ece-equal?)
     (char? . ece-char?) (char=? . ece-char=?) (char<? . ece-char<?)
     (string=? . ece-string=?) (string<? . ece-string<?) (string>? . ece-string>?)
     (print . print)
