@@ -22,7 +22,10 @@
 (conformance-skip! "4.3 shadow quote")
 (conformance-skip! "5.2 eqv #f/nil")
 
-;; Skip complex letrec+call/cc tests that trigger CL-level errors
+;; Tests 1.2 and 1.3 trigger CL-level type errors during complex
+;; letrec+call/cc interactions (continuations returning into list operations).
+;; Still crash after letrec fix (PR #56) — the issue is in continuation
+;; restoration, not letrec expansion.
 (conformance-skip! "1.2 letrec double return")
 (conformance-skip! "1.3 letrec call/cc eq")
 
