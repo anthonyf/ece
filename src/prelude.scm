@@ -171,7 +171,7 @@
                (cond ,@(cdr clauses))))))
 
 (define-macro (let bindings . body)
-  (if (symbol? bindings)
+  (if (and (symbol? bindings) (not (null? bindings)))
       ;; Named let: (let name ((var init) ...) body...)
       ;; Expand to letrec-style so the loop name is always a lexical
       ;; variable (never needs runtime define-variable! / frame-append).

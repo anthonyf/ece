@@ -7,7 +7,6 @@
 (load "tests/conformance/r5rs-pitfall.scm")
 
 ;; Chibi R5RS tests (core R5RS coverage)
-;; Temporarily disabled while investigating cdr compile-time crash
-;; (load "tests/conformance/chibi-r5rs.scm")
+(load "tests/conformance/chibi-r5rs.scm")
 
 (conformance-summary)
