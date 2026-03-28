@@ -279,6 +279,10 @@
    ;; %global-ref: pass through without recursing
    ((and (pair? template) (eq? (car template) '%global-ref))
     template)
+   ;; Quasiquote: don't wrap inside (it's data), except inside unquote (code)
+   ((and (pair? template) (eq? (car template) 'quasiquote))
+    (list 'quasiquote
+          (syntax-instantiate-qq (cadr template) mr pattern-vars rename-table)))
    ;; Nested syntax-rules: skip patterns, only process templates
    ((and (pair? template) (eq? (car template) 'syntax-rules))
     (syntax-instantiate-nested-syntax-rules template mr pattern-vars rename-table))
@@ -360,6 +364,36 @@
       (cons (list (caar clauses)
                   (syntax-instantiate (cadr (car clauses)) mr pattern-vars rename-table))
             (syntax-instantiate-sr-clauses (cdr clauses) mr pattern-vars rename-table))))
+
+;; Process inside quasiquote — substitute and rename but don't wrap operators.
+;; Unquote/unquote-splicing switch back to normal mode (they contain code).
+(define (syntax-instantiate-qq template mr pattern-vars rename-table)
+  (cond
+   ((symbol? template)
+    (let ((regular-entry (assoc template (match-regular mr))))
+      (if regular-entry
+          (cdr regular-entry)
+          (let ((rename-entry (assoc template rename-table)))
+            (if rename-entry
+                (cdr rename-entry)
+                template)))))
+   ;; Unquote: back to normal mode (code context)
+   ((and (pair? template) (eq? (car template) 'unquote))
+    (list 'unquote
+          (syntax-instantiate (cadr template) mr pattern-vars rename-table)))
+   ;; Unquote-splicing: back to normal mode
+   ((and (pair? template) (eq? (car template) 'unquote-splicing))
+    (list 'unquote-splicing
+          (syntax-instantiate (cadr template) mr pattern-vars rename-table)))
+   ;; Nested quasiquote: stay in qq mode
+   ((and (pair? template) (eq? (car template) 'quasiquote))
+    (list 'quasiquote
+          (syntax-instantiate-qq (cadr template) mr pattern-vars rename-table)))
+   ;; Regular pair: recurse in qq mode (no wrapping)
+   ((pair? template)
+    (cons (syntax-instantiate-qq (car template) mr pattern-vars rename-table)
+          (syntax-instantiate-qq (cdr template) mr pattern-vars rename-table)))
+   (else template)))
 
 ;;; --- Main expander ---
 

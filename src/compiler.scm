@@ -106,7 +106,7 @@
   '(quote if var set set! lambda begin %raw-call/cc define apply define-macro let-syntax letrec-syntax quasiquote %global-ref
           ;; Auxiliary keywords — not special forms per se, but must not be wrapped
           ;; by %global-ref in syntax-rules templates (they're keywords, not values)
-          syntax-rules else =>))
+          syntax-rules else => unquote unquote-splicing))
 
 (define (mc-self-evaluating? expr)
   (or (number? expr)
