@@ -92,8 +92,7 @@
 (conformance-test "5.1 eq #f/nil" #f
   (eq? #f '()))
 
-;; CL nil is both #f and '() — (eqv? #f '()) = #t in ECE, #f in R5RS
-(conformance-skip! "5.2 eqv #f/nil")
+;; ECE already distinguishes #f (*scheme-false*) from '() (CL nil)
 (conformance-test "5.2 eqv #f/nil" #f
   (eqv? #f '()))
 

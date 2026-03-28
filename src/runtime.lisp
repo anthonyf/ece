@@ -481,7 +481,7 @@ Dispatches on frame type: hash-table or list-based."
 (defun ece-keyword? (x) (scheme-bool (keywordp x)))
 (defun ece-boolean-p (x) (scheme-bool (or (eq x 't) (eq x nil))))
 (defun ece-string? (x) (scheme-bool (stringp x)))
-(defun ece-symbol? (x) (scheme-bool (symbolp x)))
+(defun ece-symbol? (x) (scheme-bool (and (symbolp x) x)))  ;; exclude nil ('())
 (defun ece-integer? (x) (scheme-bool (integerp x)))
 (defun ece-eq? (x y) (scheme-bool (eq x y)))
 (defun ece-eqv? (x y) (scheme-bool (eql x y)))
