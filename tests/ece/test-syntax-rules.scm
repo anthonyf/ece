@@ -197,3 +197,86 @@
       ((_ x) (if (< x 0) (- 0 x) x))))
   (assert-equal (my-abs 5) 5)
   (assert-equal (my-abs -3) 3)))
+
+(test "hygiene: pattern variable in operator position" (lambda ()
+  ;; f is a pattern var — should be substituted, not wrapped
+  (define-syntax apply1
+    (syntax-rules ()
+      ((_ f x) (f x))))
+  (assert-equal (apply1 + 0) 0)
+  (assert-equal (apply1 car '(1 2)) 1)
+  (assert-equal (apply1 (lambda (x) (* x 2)) 5) 10)))
+
+(test "hygiene: pattern var operator with use-site shadowing" (lambda ()
+  ;; f comes from use site — should use use-site binding
+  (define-syntax call-with
+    (syntax-rules ()
+      ((_ f x) (f x))))
+  (let ((add1 (lambda (n) (+ n 1))))
+    (assert-equal (call-with add1 5) 6))))
+
+(test "hygiene: let macro in template works normally" (lambda ()
+  ;; let in the template is a macro — it should expand correctly
+  (let-syntax ((bind-and-add (syntax-rules ()
+                                ((_ v e) (let ((x v)) (+ x e))))))
+    (assert-equal (bind-and-add 3 4) 7))))
+
+(test "hygiene: and/or macros in template" (lambda ()
+  (let-syntax ((both? (syntax-rules ()
+                         ((_ a b) (and a b)))))
+    (assert-equal (both? 1 2) 2)
+    (assert-equal (both? #f 2) #f))
+  (let-syntax ((either? (syntax-rules ()
+                           ((_ a b) (or a b)))))
+    (assert-equal (either? #f 3) 3)
+    (assert-equal (either? 1 2) 1))))
+
+(test "hygiene: deeply nested operators all protected" (lambda ()
+  (let-syntax ((deep (syntax-rules ()
+                        ((_ a b c) (+ (* a b) (- c 1))))))
+    (let ((+ -) (* +) (- *))
+      ;; All three operators in the template should resolve globally
+      (assert-equal (deep 3 4 5) 16)))))
+
+(test "hygiene: macro calls macro preserves hygiene" (lambda ()
+  ;; Inner macro's + should resolve globally even when outer shadows it
+  (let-syntax ((dbl (syntax-rules ()
+                       ((_ x) (+ x x)))))
+    (let ((+ *))
+      ;; dbl's + is hygienic — uses global +, not the shadow
+      (assert-equal (dbl 5) 10)))))
+
+(test "hygiene: letrec-syntax mutual reference" (lambda ()
+  ;; letrec-syntax bindings can reference each other
+  (letrec-syntax ((first (syntax-rules ()
+                            ((_ a b) a)))
+                  (second (syntax-rules ()
+                             ((_ a b) (first b a)))))
+    (assert-equal (first 1 2) 1)
+    (assert-equal (second 1 2) 2))))
+
+(test "hygiene: multiple clauses with different free operators" (lambda ()
+  (let-syntax ((math-op (syntax-rules (add mul)
+                           ((_ add a b) (+ a b))
+                           ((_ mul a b) (* a b)))))
+    (let ((+ -) (* /))
+      (assert-equal (math-op add 3 1) 4)
+      (assert-equal (math-op mul 6 2) 12)))))
+
+(test "hygiene: template with only pattern vars (no free vars)" (lambda ()
+  (define-syntax swap-pair
+    (syntax-rules ()
+      ((_ a b) (list b a))))
+  (assert-equal (swap-pair 1 2) '(2 1))))
+
+(test "hygiene: argument-position vars resolve at use site" (lambda ()
+  ;; Known limitation: only operator position is protected.
+  ;; Argument-position free vars resolve at the use site.
+  (define-syntax get-op
+    (syntax-rules ()
+      ((_ x) (list + x))))
+  ;; Without shadowing: + resolves to the global +
+  (assert-equal (get-op 1) (list + 1))
+  ;; With shadowing: + in argument position uses the shadow
+  (let ((+ 42))
+    (assert-equal (get-op 1) (list 42 1)))))
