@@ -19,8 +19,7 @@
       (and (pair? x) (eq? (car x) %primitive-tag))
       (and (pair? x) (eq? (car x) %continuation-tag))))
 
-;; 3.1 requires full referential transparency (gensym hygiene insufficient)
-(conformance-skip! "3.1 hygienic let-syntax")
+;; 3.1 now passes — %global-ref wraps free template vars for referential hygiene
 
 ;; eqv? now available (PR #59)
 
