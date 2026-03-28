@@ -18,9 +18,7 @@
 (conformance-skip! "3.4 empty syntax-rules")
 (conformance-skip! "8.3 let-syntax scope")
 
-;; Skip tests that require eqv? (not yet implemented)
-(conformance-skip! "4.3 shadow quote")
-(conformance-skip! "5.2 eqv #f/nil")
+;; eqv? now available (PR #59)
 
 ;; Tests 1.2 and 1.3 trigger CL-level type errors during complex
 ;; letrec+call/cc interactions (continuations returning into list operations).
@@ -84,8 +82,9 @@
 (conformance-test "4.2 shadow begin" '(1 2 3)
   ((lambda (begin) (begin 1 2 3)) (lambda lambda lambda)))
 
-;; Shadowing quote (requires eqv? — skipped)
-(conformance-test "4.3 shadow quote" #f 0)
+;; Shadowing quote
+(conformance-test "4.3 shadow quote" #f
+  (let ((quote -)) (eqv? '1 1)))
 
 ;;; Section 5: #f/() distinctness
 
@@ -93,7 +92,10 @@
 (conformance-test "5.1 eq #f/nil" #f
   (eq? #f '()))
 
-(conformance-test "5.2 eqv #f/nil" #f 0)
+;; CL nil is both #f and '() — (eqv? #f '()) = #t in ECE, #f in R5RS
+(conformance-skip! "5.2 eqv #f/nil")
+(conformance-test "5.2 eqv #f/nil" #f
+  (eqv? #f '()))
 
 (conformance-test "5.3 equal #f/nil" #f
   (equal? #f '()))
