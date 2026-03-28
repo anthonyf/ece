@@ -103,7 +103,7 @@
 ;;; Expression predicates
 
 (define *mc-special-forms*
-  '(quote if var set set! lambda begin %raw-call/cc define apply define-macro quasiquote))
+  '(quote if var set set! lambda begin %raw-call/cc define apply define-macro let-syntax letrec-syntax quasiquote))
 
 (define (mc-self-evaluating? expr)
   (or (number? expr)
@@ -134,6 +134,9 @@
       (mc-tagged-list? expr 'set)))
 (define (mc-apply-form? expr) (mc-tagged-list? expr 'apply))
 (define (mc-define-macro? expr) (mc-tagged-list? expr 'define-macro))
+(define (mc-let-syntax? expr)
+  (or (mc-tagged-list? expr 'let-syntax)
+      (mc-tagged-list? expr 'letrec-syntax)))
 
 (define (mc-application? expr)
   (and (pair? expr)
@@ -531,6 +534,41 @@
                        '() (list target)
                        (list (list 'assign target (list 'const variable)))))))
 
+(define (mc-compile-let-syntax expr target linkage)
+  ;; (let-syntax ((name transformer) ...) body ...)
+  ;; (letrec-syntax ((name transformer) ...) body ...)
+  (let ((bindings (cadr expr))
+        (body (cddr expr)))
+    ;; Save current macros
+    (let ((saved (map (lambda (b)
+                        (cons (car b) (get-macro (car b))))
+                      bindings)))
+      ;; Install new transformers
+      (for-each
+       (lambda (b)
+         (let ((name (car b))
+               (transformer-expr (cadr b)))
+           (if (and (pair? transformer-expr)
+                    (eq? (car transformer-expr) 'syntax-rules))
+               (let ((literals (cadr transformer-expr))
+                     (clauses (cddr transformer-expr)))
+                 (set-macro! name
+                             (lambda args
+                               (syntax-rules-expand literals clauses (cons name args)))))
+               ;; For non-syntax-rules, try compiling as a procedure
+               (set-macro! name (mc-compile-and-go transformer-expr)))))
+       bindings)
+      ;; Compile body with new macros active, in its own scope
+      (let ((result (mc-compile (list (cons 'lambda (cons '() body))) target linkage)))
+        ;; Restore original macros
+        (for-each
+         (lambda (s)
+           (if (and (cdr s) (not (eq? (cdr s) #f)))
+               (set-macro! (car s) (cdr s))
+               (set-macro! (car s) #f)))
+         saved)
+        result))))
+
 ;;; Quasiquote expansion
 
 (define (mc-qq-expand form depth)
@@ -600,6 +638,7 @@
    ((mc-assignment? expr) (mc-compile-assignment expr target linkage))
    ((mc-apply-form? expr) (mc-compile-apply-form expr target linkage))
    ((mc-define-macro? expr) (mc-compile-define-macro expr target linkage))
+   ((mc-let-syntax? expr) (mc-compile-let-syntax expr target linkage))
    ((mc-define? expr) (mc-compile-define expr target linkage))
    ((mc-begin? expr) (mc-compile-begin expr target linkage))
    ((mc-application? expr)
