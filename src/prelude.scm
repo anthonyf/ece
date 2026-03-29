@@ -73,12 +73,14 @@
 (define (modulo a b) (- a (* (floor (/ a b)) b)))
 
 (define (number->string n)
-  (if (< n 0)
-      (string-append "-" (number->string (- 0 n)))
-      (if (< n 10)
-          (string (integer->char (+ n 48)))
-          (string-append (number->string (quotient n 10))
-                         (string (integer->char (+ (modulo n 10) 48)))))))
+  (if (not (integer? n))
+      (number->string (truncate n))
+      (if (< n 0)
+          (string-append "-" (number->string (- 0 n)))
+          (if (< n 10)
+              (string (integer->char (+ n 48)))
+              (string-append (number->string (quotient n 10))
+                             (string (integer->char (+ (modulo n 10) 48))))))))
 
 ;; ---- Derived predicates ----
 
