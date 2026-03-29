@@ -35,6 +35,58 @@
   (assert-equal (modulo 9 3) 0)
   (assert-equal (modulo 7 2) 1)))
 
+(test "modulo negative operands" (lambda ()
+  (assert-equal (modulo -13 4) 3)
+  (assert-equal (modulo 13 -4) -3)
+  (assert-equal (modulo -13 -4) -1)
+  (assert-equal (modulo 0 5) 0)))
+
+(test "quotient" (lambda ()
+  (assert-equal (quotient 13 4) 3)
+  (assert-equal (quotient -13 4) -3)
+  (assert-equal (quotient 13 -4) -3)
+  (assert-equal (quotient -13 -4) 3)))
+
+(test "remainder" (lambda ()
+  (assert-equal (remainder 13 4) 1)
+  (assert-equal (remainder -13 4) -1)
+  (assert-equal (remainder 13 -4) 1)
+  (assert-equal (remainder -13 -4) -1)))
+
+(test "quotient/remainder identity" (lambda ()
+  (assert-equal (+ (* (quotient -13 4) 4) (remainder -13 4)) -13)
+  (assert-equal (+ (* (quotient 13 -4) -4) (remainder 13 -4)) 13)))
+
+(test "truncate" (lambda ()
+  (assert-equal (truncate 5) 5)
+  (assert-equal (truncate -3) -3)
+  (assert-equal (truncate 3.7) 3)
+  (assert-equal (truncate -3.7) -3)))
+
+(test "floor" (lambda ()
+  (assert-equal (floor 5) 5)
+  (assert-equal (floor -3) -3)
+  (assert-equal (floor 3.7) 3)
+  (assert-equal (floor -3.7) -4)))
+
+(test "ceiling" (lambda ()
+  (assert-equal (ceiling 5) 5)
+  (assert-equal (ceiling 3.2) 4)
+  (assert-equal (ceiling -3.7) -3)))
+
+(test "round" (lambda ()
+  (assert-equal (round 3.2) 3)
+  (assert-equal (round 3.7) 4)
+  (assert-equal (round 3.5) 4)
+  (assert-equal (round 4.5) 4)
+  (assert-equal (round -3.7) -4)))
+
+(test "division by zero in modulo" (lambda ()
+  (assert-true (guard (e ((error-object? e) #t)) (modulo 10 0) #f))))
+
+(test "division by zero in quotient" (lambda ()
+  (assert-true (guard (e ((error-object? e) #t)) (quotient 10 0) #f))))
+
 (test "abs" (lambda ()
   (assert-equal (abs -5) 5)
   (assert-equal (abs 5) 5)
