@@ -142,6 +142,21 @@
               (iter (cdr rest) acc))))
     (iter lst (quote ()))))
 
+;; ---- Vector/list conversions ----
+
+(define (vector->list vec)
+  (let loop ((i (- (vector-length vec) 1)) (acc '()))
+    (if (< i 0) acc
+        (loop (- i 1) (cons (vector-ref vec i) acc)))))
+
+(define (list->vector lst)
+  (let* ((len (length lst))
+         (vec (make-vector len)))
+    (let loop ((i 0) (rest lst))
+      (if (= i len) vec
+          (begin (vector-set! vec i (car rest))
+                 (loop (+ i 1) (cdr rest)))))))
+
 ;; ---- Math helpers ----
 
 (define (abs n) (if (< n 0) (- 0 n) n))
@@ -441,6 +456,9 @@
   (let ((code (char->integer ch)))
     (and (>= code 48) (<= code 57))))
 
+(define (char=? a b) (= (char->integer a) (char->integer b)))
+(define (char<? a b) (< (char->integer a) (char->integer b)))
+
 ;; ---- Equality ----
 
 (define (eqv? x y)
@@ -474,6 +492,25 @@
 
 ;; ---- String operations ----
 ;; Implemented in ECE using core string primitives.
+
+(define (string=? a b)
+  (and (= (string-length a) (string-length b))
+       (let loop ((i 0))
+         (or (= i (string-length a))
+             (and (char=? (string-ref a i) (string-ref b i))
+                  (loop (+ i 1)))))))
+
+(define (string<? a b)
+  (let ((la (string-length a)) (lb (string-length b)))
+    (let loop ((i 0))
+      (cond
+       ((= i la) (< la lb))
+       ((= i lb) #f)
+       ((char<? (string-ref a i) (string-ref b i)) #t)
+       ((char<? (string-ref b i) (string-ref a i)) #f)
+       (else (loop (+ i 1)))))))
+
+(define (string>? a b) (string<? b a))
 
 (define (string-downcase s)
   (let* ((len (string-length s))

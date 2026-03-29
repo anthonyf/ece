@@ -3573,18 +3573,7 @@
     (if (i32.eq (local.get $id) (i32.const 32))
       (then (return (call $symbol-to-string
         (ref.cast (ref $symbol) (call $arg1 (local.get $args)))))))
-    ;; 33 = string=?
-    (if (i32.eq (local.get $id) (i32.const 33))
-      (then (return (call $prim-string-eq
-        (call $arg1 (local.get $args)) (call $arg2 (local.get $args))))))
-    ;; 34 = string<?
-    (if (i32.eq (local.get $id) (i32.const 34))
-      (then (return (call $prim-string-lt
-        (call $arg1 (local.get $args)) (call $arg2 (local.get $args))))))
-    ;; 35 = string>?
-    (if (i32.eq (local.get $id) (i32.const 35))
-      (then (return (call $prim-string-gt
-        (call $arg1 (local.get $args)) (call $arg2 (local.get $args))))))
+    ;; 33-35: string=?, string<?, string>? — now implemented in prelude.scm
     ;; 36-41: string-downcase, string-upcase, string-split, string-trim,
     ;; string-contains?, string-join — now implemented in prelude.scm
 
@@ -3813,12 +3802,7 @@
     (if (i32.eq (local.get $id) (i32.const 54))
       (then (return (call $make-fixnum
         (array.len (ref.cast (ref $vector) (call $arg1 (local.get $args))))))))
-    ;; 55 = vector->list
-    (if (i32.eq (local.get $id) (i32.const 55))
-      (then (return (call $prim-vector-to-list (call $arg1 (local.get $args))))))
-    ;; 56 = list->vector
-    (if (i32.eq (local.get $id) (i32.const 56))
-      (then (return (call $prim-list-to-vector (call $arg1 (local.get $args))))))
+    ;; 55-56: vector->list, list->vector — now implemented in prelude.scm
     ;; 43 = char->integer
     (if (i32.eq (local.get $id) (i32.const 43))
       (then (return (call $make-fixnum
@@ -3827,21 +3811,7 @@
     (if (i32.eq (local.get $id) (i32.const 44))
       (then (return (call $make-char
         (call $fixnum-value (ref.cast (ref i31) (call $arg1 (local.get $args))))))))
-    ;; 45 = char=?
-    (if (i32.eq (local.get $id) (i32.const 45))
-      (then (return (if (result (ref null eq))
-        (i32.eq
-          (call $char-codepoint (ref.cast (ref i31) (call $arg1 (local.get $args))))
-          (call $char-codepoint (ref.cast (ref i31) (call $arg2 (local.get $args)))))
-        (then (global.get $true)) (else (global.get $false))))))
-    ;; 46 = char<?
-    (if (i32.eq (local.get $id) (i32.const 46))
-      (then (return (if (result (ref null eq))
-        (i32.lt_u
-          (call $char-codepoint (ref.cast (ref i31) (call $arg1 (local.get $args))))
-          (call $char-codepoint (ref.cast (ref i31) (call $arg2 (local.get $args)))))
-        (then (global.get $true)) (else (global.get $false))))))
-    ;; 47-49 char-whitespace?, char-alphabetic?, char-numeric? — now in prelude.scm
+    ;; 45-49: char=?, char<?, char-whitespace?, char-alphabetic?, char-numeric? — now in prelude.scm
     ;; 76 = bitwise-and (handles fixnum and float args)
     (if (i32.eq (local.get $id) (i32.const 76))
       (then (return (call $make-fixnum (i32.and
