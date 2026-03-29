@@ -3564,9 +3564,7 @@
     ;; 29 = string->number
     (if (i32.eq (local.get $id) (i32.const 29))
       (then (return (call $prim-string-to-number (call $arg1 (local.get $args))))))
-    ;; 30 = number->string
-    (if (i32.eq (local.get $id) (i32.const 30))
-      (then (return (call $prim-number-to-string (call $arg1 (local.get $args))))))
+    ;; 30 = number->string — migrated to ECE prelude
     ;; 31 = string->symbol
     (if (i32.eq (local.get $id) (i32.const 31))
       (then (return (call $string-to-symbol
