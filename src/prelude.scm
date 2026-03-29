@@ -72,6 +72,14 @@
 (define (remainder a b) (- a (* (quotient a b) b)))
 (define (modulo a b) (- a (* (floor (/ a b)) b)))
 
+(define (number->string n)
+  (if (< n 0)
+      (string-append "-" (number->string (- 0 n)))
+      (if (< n 10)
+          (string (integer->char (+ n 48)))
+          (string-append (number->string (quotient n 10))
+                         (string (integer->char (+ (modulo n 10) 48)))))))
+
 ;; ---- Derived predicates ----
 
 (define (not x) (if x #f #t))

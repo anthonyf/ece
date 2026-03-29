@@ -61,7 +61,7 @@
 (27  string-append     -1   core   "Concatenate strings")
 (28  substring          3   core   "Extract substring")
 (29  string->number     1   core   "Parse number from string")
-(30  number->string     1   core   "Convert number to string")
+(30  number->string     1   ece    "Convert number to string")
 (31  string->symbol     1   core   "Intern symbol from string")
 (32  symbol->string     1   core   "Symbol name as string")
 (33  string=?           2   core   "String equality")

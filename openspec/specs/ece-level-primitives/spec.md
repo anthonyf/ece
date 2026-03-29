@@ -97,7 +97,7 @@ Migrated primitives SHALL have their platform annotation changed from `core` to 
 
 #### Scenario: annotation reflects migration
 - **WHEN** `primitives.def` is read
-- **THEN** `char-whitespace?` (47), `char-alphabetic?` (48), `char-numeric?` (49), `equal?` (21), `eqv?` (174), `gensym` (82), `string-downcase` (36), `string-upcase` (37), `string-split` (38), `string-trim` (39), `string-contains?` (40), `string-join` (41), `print` (66), and `modulo` (4) SHALL have platform `ece`
+- **THEN** `char-whitespace?` (47), `char-alphabetic?` (48), `char-numeric?` (49), `equal?` (21), `eqv?` (174), `gensym` (82), `string-downcase` (36), `string-upcase` (37), `string-split` (38), `string-trim` (39), `string-contains?` (40), `string-join` (41), `print` (66), `modulo` (4), and `number->string` (30) SHALL have platform `ece`
 
 #### Scenario: new core primitives registered
 - **WHEN** `primitives.def` is read

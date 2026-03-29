@@ -750,10 +750,6 @@ Supports integers and decimal floats. Returns #f on failure."
                 val
                 *scheme-false*))))))
 
-(defun ece-number->string (n)
-  "Convert number n to string."
-  (write-to-string n))
-
 (defun ece-string->symbol (s)
   "Intern a symbol from string s in the ECE package."
   (intern s :ece))
@@ -1024,7 +1020,6 @@ print without CL pipe escaping."
     (string-append . ece-string-append)
     (substring . ece-substring)
     (string->number . ece-string->number)
-    (number->string . ece-number->string)
     (string->symbol . ece-string->symbol)
     (symbol->string . ece-symbol->string)
     (keyword? . ece-keyword?)
