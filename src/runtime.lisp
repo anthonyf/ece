@@ -640,19 +640,20 @@ Combines *primitive-procedures* and *wrapper-primitives*."
              obj))
   (write-char #\} stream))
 
-(defun ece-display (obj)
-  "Write obj without leading newline (princ)."
-  (cond
-    ((scheme-false-p obj) (write-string "#f"))
-    ((eq obj t) (write-string "#t"))
-    ((null obj) (write-string "()"))
-    ((and (listp obj) (member (car obj) '(compiled-procedure primitive)))
-     (princ (format-ece-proc obj)))
-    ((hash-table-p obj)
-     (format-ece-hash-table obj *standard-output*
-                            (lambda (v s) (ece-display-to-stream v s))))
-    (t (let ((*print-circle* t))
-         (princ obj))))
+(defun ece-display (obj &optional port)
+  "Write obj without leading newline (princ). Optional PORT argument."
+  (let ((stream (if port (ece-port-stream port) *standard-output*)))
+    (cond
+      ((scheme-false-p obj) (write-string "#f" stream))
+      ((eq obj t) (write-string "#t" stream))
+      ((null obj) (write-string "()" stream))
+      ((and (listp obj) (member (car obj) '(compiled-procedure primitive)))
+       (princ (format-ece-proc obj) stream))
+      ((hash-table-p obj)
+       (format-ece-hash-table obj stream
+                              (lambda (v s) (ece-display-to-stream v s))))
+      (t (let ((*print-circle* t))
+           (princ obj stream)))))
   (finish-output)
   obj)
 
@@ -664,19 +665,20 @@ Combines *primitive-procedures* and *wrapper-primitives*."
     ((null obj) (write-string "()" stream))
     (t (let ((*print-circle* t)) (princ obj stream)))))
 
-(defun ece-write (obj)
-  "Write obj in readable form (prin1). Strings are quoted, symbols uppercase."
-  (cond
-    ((scheme-false-p obj) (write-string "#f"))
-    ((eq obj t) (write-string "#t"))
-    ((null obj) (write-string "()"))
-    ((and (listp obj) (member (car obj) '(compiled-procedure primitive)))
-     (princ (format-ece-proc obj)))
-    ((hash-table-p obj)
-     (format-ece-hash-table obj *standard-output*
-                            (lambda (v s) (ece-write-to-stream v s))))
-    (t (let ((*print-circle* t))
-         (prin1 obj))))
+(defun ece-write (obj &optional port)
+  "Write obj in readable form (prin1). Optional PORT argument."
+  (let ((stream (if port (ece-port-stream port) *standard-output*)))
+    (cond
+      ((scheme-false-p obj) (write-string "#f" stream))
+      ((eq obj t) (write-string "#t" stream))
+      ((null obj) (write-string "()" stream))
+      ((and (listp obj) (member (car obj) '(compiled-procedure primitive)))
+       (princ (format-ece-proc obj) stream))
+      ((hash-table-p obj)
+       (format-ece-hash-table obj stream
+                              (lambda (v s) (ece-write-to-stream v s))))
+      (t (let ((*print-circle* t))
+           (prin1 obj stream)))))
   (finish-output)
   obj)
 
@@ -688,11 +690,12 @@ Combines *primitive-procedures* and *wrapper-primitives*."
     ((null obj) (write-string "()" stream))
     (t (let ((*print-circle* t)) (prin1 obj stream)))))
 
-(defun ece-newline ()
-  "Write a newline."
-  (terpri)
-  (finish-output)
-  nil)
+(defun ece-newline (&optional port)
+  "Write a newline. Optional PORT argument."
+  (let ((stream (if port (ece-port-stream port) *standard-output*)))
+    (terpri stream)
+    (finish-output stream)
+    nil))
 
 (defun ece-eof-p (obj)
   "Test if obj is the EOF sentinel."

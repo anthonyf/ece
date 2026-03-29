@@ -7,6 +7,8 @@
 (define (caddr x) (car (cdr (cdr x))))
 (define (caar x) (car (car x)))
 (define (cddr x) (cdr (cdr x)))
+(define (cdddr x) (cdr (cdr (cdr x))))
+(define (cadddr x) (car (cdr (cdr (cdr x)))))
 
 (define (list-ref lst n)
   (if (= n 0)
@@ -958,10 +960,12 @@ Reconstructs tagged types and resolves #:def/#:ref references."
         (define cont (caddr form))
         (define winds (if (null? (cdddr form)) '() (deser (car (cdddr form)))))
         (%make-continuation stack cont winds))
-       ;; Primitive by name
+       ;; Primitive by name or numeric ID
        ((string=? tag "%ser/primitive")
-        (define name (cadr form))
-        (define id (%primitive-id name))
+        (define name-or-id (cadr form))
+        (define id (if (number? name-or-id)
+                       name-or-id
+                       (%primitive-id name-or-id)))
         (%make-primitive (if id id 0)))
        ;; Vector
        ((string=? tag "%ser/vector")
@@ -990,3 +994,24 @@ env-frames, and shared structure."
 (define (deserialize port)
   "Read and reconstruct a value from PORT (written by serialize!)."
   (deserialize-value (ece-scheme-read port)))
+
+;; ---- File-based save/load (R7RS style) ----
+
+(define (save filename obj)
+  "Serialize OBJ to FILENAME. The file can be restored with load-saved."
+  (call-with-output-file filename
+    (lambda (port) (serialize! obj port))))
+
+(define (load-saved filename)
+  "Deserialize and return the value saved to FILENAME by save."
+  (call-with-input-file filename
+    (lambda (port) (deserialize port))))
+
+(define (save-continuation! filename)
+  "Capture the current continuation and save it to FILENAME.
+Returns #t on the initial save, and the restored value on reload.
+Usage: (if (save-continuation! \"save.dat\") 'saved 'restored)"
+  (call/cc
+   (lambda (k)
+     (save filename k)
+     #t)))
