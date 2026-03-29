@@ -461,7 +461,6 @@ Dispatches on frame type: hash-table or list-based."
 
 (defparameter *primitive-procedures*
   '(+ - * / car cdr cons list
-    (modulo . mod)
     (char->integer . char-code) (integer->char . code-char)
     (%raw-error . error)
     (vector-length . length) (vector-ref . aref)
@@ -825,6 +824,14 @@ print without CL pipe escaping."
     (setf (readtable-case *readtable*) :preserve)
     (prin1-to-string x)))
 
+(defun ece-truncate (x)
+  "Truncate number toward zero to integer."
+  (values (cl:truncate x)))
+
+(defun ece-floor (x)
+  "Floor number toward negative infinity to integer."
+  (values (cl:floor x)))
+
 (defun ece-sleep (seconds)
   "Pause execution for the given number of seconds. Returns nil."
   (cl:sleep seconds)
@@ -1131,7 +1138,10 @@ print without CL pipe escaping."
     ;; Winding stack support (core IDs 171-173)
     (%set-winding-stack! . ece-%set-winding-stack!)
     (%get-winding-stack . ece-%get-winding-stack)
-    (continuation-winds . ece-continuation-winds)))
+    (continuation-winds . ece-continuation-winds)
+    ;; Integer rounding (core IDs 108-109)
+    (truncate . ece-truncate)
+    (floor . ece-floor)))
 
 ;;; Wrapper primitives are now registered via the manifest-based dispatch table.
 ;;; *wrapper-primitives* is still used by build-cl-function-map to map names to CL functions.

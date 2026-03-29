@@ -64,6 +64,14 @@
           (car alist)
           (assoc key (cdr alist)))))
 
+;; ---- Integer arithmetic ----
+;; quotient/remainder use truncation (toward zero).
+;; modulo uses floor (toward -∞). Replaces host primitive 4.
+
+(define (quotient a b) (truncate (/ a b)))
+(define (remainder a b) (- a (* (quotient a b) b)))
+(define (modulo a b) (- a (* (floor (/ a b)) b)))
+
 ;; ---- Derived predicates ----
 
 (define (not x) (if x #f #t))
@@ -78,6 +86,20 @@
 
 (define (<= a b) (not (> a b)))
 (define (>= a b) (not (< a b)))
+
+;; ---- Rounding ----
+
+(define (ceiling x)
+  (if (integer? x) x (+ (floor x) 1)))
+
+(define (round x)
+  (let ((f (floor x)))
+    (let ((diff (- x f)))
+      (cond
+       ((< diff 0.5) f)
+       ((> diff 0.5) (+ f 1))
+       ((even? f) f)
+       (else (+ f 1))))))
 
 ;; ---- Higher-order functions ----
 

@@ -27,7 +27,7 @@
 (1   -                 -1   core   "Subtraction")
 (2   *                 -1   core   "Multiplication")
 (3   /                 -1   core   "Division")
-(4   modulo             2   core   "Modulo/remainder")
+(4   modulo             2   ece    "Modulo/remainder (ECE-derived from floor)")
 
 ;;; --- Pair operations ---
 (5   car                1   core   "First element of pair")
@@ -167,6 +167,10 @@
 ;;; --- Debugging ---
 (106 trace               1  cl     "Enable tracing for procedure")
 (107 untrace             1  cl     "Disable tracing for procedure")
+
+;;; --- Integer rounding (core — both runtimes) ---
+(108 truncate            1  core   "Truncate number toward zero to integer")
+(109 floor               1  core   "Floor number toward -infinity to integer")
 (112 %label-table-entries        0 cl "All label table entries")
 (113 %macro-table-entries        0 cl "All macro table entries")
 (114 parameter?                  1 core "Test if value is a parameter object")

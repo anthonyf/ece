@@ -3470,12 +3470,7 @@
     ;; 3 = /
     (if (i32.eq (local.get $id) (i32.const 3))
       (then (return (call $fold-div (local.get $args)))))
-    ;; 4 = modulo
-    (if (i32.eq (local.get $id) (i32.const 4))
-      (then (return (call $wrap-i32
-        (i32.rem_s
-          (call $fixnum-value (ref.cast (ref i31) (call $arg1 (local.get $args))))
-          (call $fixnum-value (ref.cast (ref i31) (call $arg2 (local.get $args)))))))))
+    ;; 4 = modulo — migrated to ECE (prelude.scm), derived from floor
     ;; 5 = car
     (if (i32.eq (local.get $id) (i32.const 5))
       (then (return (call $car (ref.cast (ref $pair) (call $arg1 (local.get $args)))))))
@@ -3932,6 +3927,29 @@
     ;; 137 = keyword?
     (if (i32.eq (local.get $id) (i32.const 137))
       (then (return (global.get $false))))  ;; stub
+
+    ;; --- Integer rounding primitives ---
+
+    ;; 108 = truncate (toward zero)
+    (if (i32.eq (local.get $id) (i32.const 108))
+      (then
+        (local.set $result (call $arg1 (local.get $args)))
+        (if (result (ref null eq)) (call $is-fixnum (local.get $result))
+          (then (return (local.get $result)))
+          (else (return (call $make-fixnum
+            (call $safe-trunc-i32
+              (f64.trunc (call $float-value
+                (ref.cast (ref $float-box) (local.get $result)))))))))))
+    ;; 109 = floor (toward -infinity)
+    (if (i32.eq (local.get $id) (i32.const 109))
+      (then
+        (local.set $result (call $arg1 (local.get $args)))
+        (if (result (ref null eq)) (call $is-fixnum (local.get $result))
+          (then (return (local.get $result)))
+          (else (return (call $make-fixnum
+            (call $safe-trunc-i32
+              (f64.floor (call $float-value
+                (ref.cast (ref $float-box) (local.get $result)))))))))))
 
     ;; --- Compiler/macro support primitives ---
 
