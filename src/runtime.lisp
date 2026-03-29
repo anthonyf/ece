@@ -486,11 +486,6 @@ Dispatches on frame type: hash-table or list-based."
 (defun ece-eqv? (x y) (scheme-bool (eql x y)))
 (defun ece-equal? (x y) (scheme-bool (equal x y)))
 (defun ece-char? (x) (scheme-bool (characterp x)))
-(defun ece-char=? (x y) (scheme-bool (char= x y)))
-(defun ece-char<? (x y) (scheme-bool (char< x y)))
-(defun ece-string=? (x y) (scheme-bool (string= x y)))
-(defun ece-string<? (x y) (scheme-bool (if (string< x y) t nil)))
-(defun ece-string>? (x y) (scheme-bool (if (string> x y) t nil)))
 
 ;;; --- Manifest-based dispatch tables ---
 
@@ -779,14 +774,6 @@ Supports integers and decimal floats. Returns #f on failure."
   (setf (aref vec idx) val)
   val)
 
-(defun ece-vector->list (vec)
-  "Convert vector to list."
-  (coerce vec 'list))
-
-(defun ece-list->vector (lst)
-  "Convert list to vector."
-  (coerce lst 'vector))
-
 (defun ece-read-line (&optional port)
   "Read a line of text from PORT (default current-input-port).
 Returns EOF sentinel at end of input."
@@ -1009,8 +996,7 @@ print without CL pipe escaping."
     (number? . ece-number?) (string? . ece-string?) (symbol? . ece-symbol?)
     (integer? . ece-integer?)
     (eq? . ece-eq?)
-    (char? . ece-char?) (char=? . ece-char=?) (char<? . ece-char<?)
-    (string=? . ece-string=?) (string<? . ece-string<?) (string>? . ece-string>?)
+    (char? . ece-char?)
     (write . ece-write)
     (display . ece-display)
     (newline . ece-newline)
@@ -1027,8 +1013,6 @@ print without CL pipe escaping."
     (make-vector . ece-make-vector)
     (vector . ece-vector)
     (vector-set! . ece-vector-set!)
-    (vector->list . ece-vector->list)
-    (list->vector . ece-list->vector)
     (read-line . ece-read-line)
     (write-to-string . ece-write-to-string)
     (write-to-string-flat . ece-write-to-string-flat)
