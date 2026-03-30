@@ -108,21 +108,5 @@
     (assert-true (%env-frame? f2))
     (assert-equal (%env-frame-vals f2) (list 10 20)))))
 
-;; Continuation serialize!/deserialize round-trip runs as bare top-level code
-;; (continuation resume crosses $execute calls, can't use test framework)
-(define *raw-cc-result*
-  (%raw-call/cc (lambda (k)
-    (let ((port (open-output-file "/tmp/ece-rt-ser.dat")))
-      (serialize! k port)
-      (close-output-port port))
-    "first")))
-(if (equal? *raw-cc-result* "first")
-    (begin
-      (define *loaded-k*
-        (let ((port (open-input-file "/tmp/ece-rt-ser.dat")))
-          (let ((v (deserialize port)))
-            (close-input-port port)
-            v)))
-      (*loaded-k* "second"))
-    (test "serialize! / deserialize continuation round-trip" (lambda ()
-      (assert-equal *raw-cc-result* "second"))))
+;; Continuation serialize!/deserialize round-trip is in wasm-test-runner.scm
+;; (runs as bare top-level code at runtime, not during compile-file)
