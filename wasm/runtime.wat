@@ -2743,81 +2743,6 @@
     (global.get $void)
   )
 
-  ;; --- string->number (simple integer parser) ---
-  (func $prim-string-to-number (param $s (ref null eq)) (result (ref null eq))
-    (local $str (ref $string))
-    (local $len i32)
-    (local $i i32)
-    (local $neg i32)
-    (local $acc i32)
-    (local $ch i32)
-    (local.set $str (ref.cast (ref $string) (local.get $s)))
-    (local.set $len (array.len (local.get $str)))
-    (if (i32.eqz (local.get $len)) (then (return (global.get $false))))
-    (local.set $i (i32.const 0))
-    ;; Check for leading minus
-    (if (i32.eq (array.get_u $string (local.get $str) (i32.const 0)) (i32.const 45))
-      (then
-        (local.set $neg (i32.const 1))
-        (local.set $i (i32.const 1))))
-    (local.set $acc (i32.const 0))
-    (block $done
-      (loop $parse
-        (br_if $done (i32.ge_u (local.get $i) (local.get $len)))
-        (local.set $ch (array.get_u $string (local.get $str) (local.get $i)))
-        ;; Check digit 0-9 or decimal point
-        (if (i32.eq (local.get $ch) (i32.const 46))  ;; '.'
-          (then
-            ;; Switch to float parsing
-            (return (call $parse-float-after-dot
-              (local.get $str) (local.get $len)
-              (local.get $i) (local.get $acc) (local.get $neg)))))
-        (if (i32.or
-              (i32.lt_u (local.get $ch) (i32.const 48))
-              (i32.gt_u (local.get $ch) (i32.const 57)))
-          (then (return (global.get $false)))) ;; not a number
-        (local.set $acc (i32.add
-          (i32.mul (local.get $acc) (i32.const 10))
-          (i32.sub (local.get $ch) (i32.const 48))))
-        (local.set $i (i32.add (local.get $i) (i32.const 1)))
-        (br $parse)))
-    (if (local.get $neg)
-      (then (local.set $acc (i32.sub (i32.const 0) (local.get $acc)))))
-    (call $make-fixnum (local.get $acc))
-  )
-
-  ;; --- Float parser: continue after decimal point ---
-  (func $parse-float-after-dot (param $str (ref $string)) (param $len i32)
-                               (param $dot-pos i32) (param $int-part i32)
-                               (param $neg i32)
-                               (result (ref null eq))
-    (local $i i32)
-    (local $frac f64)
-    (local $divisor f64)
-    (local $ch i32)
-    (local $result f64)
-    (local.set $i (i32.add (local.get $dot-pos) (i32.const 1)))
-    (local.set $frac (f64.const 0))
-    (local.set $divisor (f64.const 1))
-    (block $done
-      (loop $parse
-        (br_if $done (i32.ge_u (local.get $i) (local.get $len)))
-        (local.set $ch (array.get_u $string (local.get $str) (local.get $i)))
-        (if (i32.or (i32.lt_u (local.get $ch) (i32.const 48))
-                    (i32.gt_u (local.get $ch) (i32.const 57)))
-          (then (return (global.get $false))))
-        (local.set $divisor (f64.mul (local.get $divisor) (f64.const 10)))
-        (local.set $frac (f64.add (local.get $frac)
-          (f64.div (f64.convert_i32_u (i32.sub (local.get $ch) (i32.const 48)))
-                   (local.get $divisor))))
-        (local.set $i (i32.add (local.get $i) (i32.const 1)))
-        (br $parse)))
-    (local.set $result (f64.add (f64.convert_i32_s (local.get $int-part)) (local.get $frac)))
-    (if (local.get $neg)
-      (then (local.set $result (f64.neg (local.get $result)))))
-    (call $make-float (local.get $result))
-  )
-
   ;; --- write-to-string for strings: wraps in quotes, escapes \ and " ---
   (func $wts-string (param $s (ref $string)) (result (ref null eq))
     (local $src-len i32)
@@ -3527,10 +3452,7 @@
     (if (i32.eq (local.get $id) (i32.const 18))
       (then (return (if (result (ref null eq)) (call $is-vector (call $arg1 (local.get $args)))
         (then (global.get $true)) (else (global.get $false))))))
-    ;; 19 = boolean?
-    (if (i32.eq (local.get $id) (i32.const 19))
-      (then (return (if (result (ref null eq)) (call $is-boolean (call $arg1 (local.get $args)))
-        (then (global.get $true)) (else (global.get $false))))))
+    ;; 19 = boolean? — migrated to ECE prelude
     ;; 20 = eq?
     (if (i32.eq (local.get $id) (i32.const 20))
       (then (return (if (result (ref null eq))
@@ -3561,9 +3483,7 @@
       (then (return (call $prim-substring
         (call $arg1 (local.get $args)) (call $arg2 (local.get $args))
         (call $arg3 (local.get $args))))))
-    ;; 29 = string->number
-    (if (i32.eq (local.get $id) (i32.const 29))
-      (then (return (call $prim-string-to-number (call $arg1 (local.get $args))))))
+    ;; 29 = string->number — migrated to ECE prelude
     ;; 30 = number->string — migrated to ECE prelude
     ;; 31 = string->symbol
     (if (i32.eq (local.get $id) (i32.const 31))

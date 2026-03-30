@@ -82,6 +82,39 @@
               (string-append (number->string (quotient n 10))
                              (string (integer->char (+ (modulo n 10) 48))))))))
 
+(define (string->number s)
+  (let ((len (string-length s)))
+    (if (= len 0) #f
+        (let* ((start (if (or (char=? (string-ref s 0) #\-)
+                              (char=? (string-ref s 0) #\+))
+                          1 0))
+               (neg (char=? (string-ref s 0) #\-)))
+          (if (= start len) #f
+              (%parse-digits s start len neg))))))
+
+(define (%parse-digits s start len neg)
+  (let loop ((i start) (acc 0))
+    (if (= i len)
+        (if neg (- 0 acc) acc)
+        (let ((ch (string-ref s i)))
+          (if (char=? ch #\.)
+              (%parse-frac s (+ i 1) len acc neg)
+              (let ((d (- (char->integer ch) 48)))
+                (if (or (< d 0) (> d 9))
+                    #f
+                    (loop (+ i 1) (+ (* acc 10) d)))))))))
+
+(define (%parse-frac s start len int-part neg)
+  (if (= start len) #f
+      (let loop ((i start) (frac 0) (divisor 1))
+        (if (= i len)
+            (let ((result (+ int-part (/ frac divisor))))
+              (if neg (- 0 result) result))
+            (let ((d (- (char->integer (string-ref s i)) 48)))
+              (if (or (< d 0) (> d 9))
+                  #f
+                  (loop (+ i 1) (+ (* frac 10) d) (* divisor 10))))))))
+
 ;; ---- Derived predicates ----
 
 (define (not x) (if x #f #t))

@@ -46,7 +46,7 @@
 (16  integer?           1   core   "Test for integer")
 (17  char?              1   core   "Test for character")
 (18  vector?            1   core   "Test for vector")
-(19  boolean?           1   core   "Test for boolean")
+(19  boolean?           1   ece    "Test for boolean")
 
 ;;; --- Equality and comparison ---
 (20  eq?                2   core   "Identity equality")
@@ -60,7 +60,7 @@
 (26  string-ref         2   core   "Character at index in string")
 (27  string-append     -1   core   "Concatenate strings")
 (28  substring          3   core   "Extract substring")
-(29  string->number     1   core   "Parse number from string")
+(29  string->number     1   ece    "Parse number from string")
 (30  number->string     1   ece    "Convert number to string")
 (31  string->symbol     1   core   "Intern symbol from string")
 (32  symbol->string     1   core   "Symbol name as string")

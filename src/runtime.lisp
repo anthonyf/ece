@@ -478,7 +478,6 @@ Dispatches on frame type: hash-table or list-based."
 (defun ece-pair? (x) (scheme-bool (consp x)))
 (defun ece-number? (x) (scheme-bool (numberp x)))
 (defun ece-keyword? (x) (scheme-bool (keywordp x)))
-(defun ece-boolean-p (x) (scheme-bool (or (eq x 't) (eq x nil))))
 (defun ece-string? (x) (scheme-bool (stringp x)))
 (defun ece-symbol? (x) (scheme-bool (and (symbolp x) x)))  ;; exclude nil ('())
 (defun ece-integer? (x) (scheme-bool (integerp x)))
@@ -707,43 +706,6 @@ Combines *primitive-procedures* and *wrapper-primitives*."
   "Extract substring from start to end."
   (subseq s start end))
 
-(defun ece-string->number (s)
-  "Parse a number from string S without invoking the CL reader.
-Supports integers and decimal floats. Returns #f on failure."
-  (let ((trimmed (string-trim '(#\Space #\Tab) s)))
-    (when (zerop (length trimmed))
-      (return-from ece-string->number *scheme-false*))
-    (let ((dot-pos (position #\. trimmed)))
-      (if dot-pos
-          ;; Try float: parse integer and fractional parts separately
-          (let* ((int-str (subseq trimmed 0 dot-pos))
-                 (frac-str (subseq trimmed (1+ dot-pos)))
-                 ;; Allow leading sign with empty integer part (e.g., "-.5" -> "-0" + "5")
-                 (sign-only (or (string= int-str "") (string= int-str "-") (string= int-str "+")))
-                 (int-part (if (string= int-str "")
-                               0
-                               (parse-integer int-str :junk-allowed t)))
-                 (frac-part (if (zerop (length frac-str))
-                                nil
-                                (parse-integer frac-str :junk-allowed t))))
-            (when (and sign-only (null frac-part))
-              (return-from ece-string->number *scheme-false*))
-            (when (or (and (not sign-only) (null int-part))
-                      (and (> (length frac-str) 0) (null frac-part)))
-              (return-from ece-string->number *scheme-false*))
-            (let* ((negative (and (> (length int-str) 0) (char= (char int-str 0) #\-)))
-                   (abs-int (abs (or int-part 0)))
-                   (frac-val (if frac-part
-                                 (/ (float frac-part) (expt 10.0 (length frac-str)))
-                                 0.0))
-                   (result (+ (float abs-int) frac-val)))
-              (if negative (- result) result)))
-          ;; Try integer
-          (multiple-value-bind (val pos)
-              (parse-integer trimmed :junk-allowed t)
-            (if (and val (= pos (length trimmed)))
-                val
-                *scheme-false*))))))
 
 (defun ece-string->symbol (s)
   "Intern a symbol from string s in the ECE package."
@@ -1005,7 +967,6 @@ print without CL pipe escaping."
     (string-ref . ece-string-ref)
     (string-append . ece-string-append)
     (substring . ece-substring)
-    (string->number . ece-string->number)
     (string->symbol . ece-string->symbol)
     (symbol->string . ece-symbol->string)
     (keyword? . ece-keyword?)
@@ -1080,7 +1041,6 @@ print without CL pipe escaping."
     (platform-has? . ece-platform-has-p)
     (%platform-primitives . ece-%platform-primitives)
     ;; Compiler-support primitives (previously registered implicitly)
-    (boolean? . ece-boolean-p)
     (execute-from-pc . ece-execute-from-pc)
     (get-macro . ece-get-macro)
     (set-macro! . ece-set-macro!)
