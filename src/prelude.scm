@@ -108,7 +108,7 @@
   (if (= start len) #f
       (let loop ((i start) (frac 0) (divisor 1))
         (if (= i len)
-            (let ((result (+ int-part (/ frac divisor))))
+            (let ((result (exact->inexact (+ int-part (/ frac divisor)))))
               (if neg (- 0 result) result))
             (let ((d (- (char->integer (string-ref s i)) 48)))
               (if (or (< d 0) (> d 9))

@@ -777,6 +777,10 @@ print without CL pipe escaping."
   "Floor number toward negative infinity to integer."
   (values (cl:floor x)))
 
+(defun ece-exact->inexact (x)
+  "Convert exact number to inexact (float)."
+  (float x 1.0))
+
 (defun ece-sleep (seconds)
   "Pause execution for the given number of seconds. Returns nil."
   (cl:sleep seconds)
@@ -1080,7 +1084,8 @@ print without CL pipe escaping."
     (continuation-winds . ece-continuation-winds)
     ;; Integer rounding (core IDs 108-109)
     (truncate . ece-truncate)
-    (floor . ece-floor)))
+    (floor . ece-floor)
+    (exact->inexact . ece-exact->inexact)))
 
 ;;; Wrapper primitives are now registered via the manifest-based dispatch table.
 ;;; *wrapper-primitives* is still used by build-cl-function-map to map names to CL functions.

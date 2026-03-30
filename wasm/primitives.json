@@ -82,6 +82,7 @@
   [103, "with-output-to-file"],
   [108, "truncate"],
   [109, "floor"],
+  [110, "exact->inexact"],
   [114, "parameter?"],
   [116, "%eq-hash-table"],
   [117, "%eq-hash-ref"],

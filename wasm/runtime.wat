@@ -3839,6 +3839,15 @@
               (f64.floor (call $float-value
                 (ref.cast (ref $float-box) (local.get $result)))))))))))
 
+    ;; 110 = exact->inexact (convert to float)
+    (if (i32.eq (local.get $id) (i32.const 110))
+      (then
+        (local.set $result (call $arg1 (local.get $args)))
+        (if (result (ref null eq)) (call $is-fixnum (local.get $result))
+          (then (return (call $make-float (f64.convert_i32_s
+            (call $fixnum-value (ref.cast (ref i31) (local.get $result)))))))
+          (else (return (local.get $result))))))
+
     ;; --- Compiler/macro support primitives ---
 
     ;; 86 = get-macro (name) — look up compile-time macro, return transformer or #f

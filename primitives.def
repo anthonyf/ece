@@ -171,6 +171,7 @@
 ;;; --- Integer rounding (core — both runtimes) ---
 (108 truncate            1  core   "Truncate number toward zero to integer")
 (109 floor               1  core   "Floor number toward -infinity to integer")
+(110 exact->inexact      1  core   "Convert exact number to inexact (float)")
 (112 %label-table-entries        0 cl "All label table entries")
 (113 %macro-table-entries        0 cl "All macro table entries")
 (114 parameter?                  1 core "Test if value is a parameter object")
