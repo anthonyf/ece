@@ -182,6 +182,11 @@
 
   ;; Error message strings (UTF-16 arrays)
   ;; "Unbound variable: " (18 chars)
+  (global $err-div-zero (ref $string)
+    (array.new_fixed $string 16
+      (i32.const 68)(i32.const 105)(i32.const 118)(i32.const 105)(i32.const 115)(i32.const 105)
+      (i32.const 111)(i32.const 110)(i32.const 32)(i32.const 98)(i32.const 121)(i32.const 32)
+      (i32.const 122)(i32.const 101)(i32.const 114)(i32.const 111)))
   (global $err-unbound-var (ref $string)
     (array.new_fixed $string 18
       (i32.const 85)(i32.const 110)(i32.const 98)(i32.const 111)(i32.const 117)(i32.const 110)
@@ -2437,6 +2442,8 @@
       (loop $loop
         (br_if $done (ref.is_null (local.get $cur)))
         (br_if $done (call $is-null (local.get $cur)))
+        (if (f64.eq (call $to-f64 (call $car (ref.cast (ref $pair) (local.get $cur)))) (f64.const 0))
+          (then (call $signal-error-str (global.get $err-div-zero))))
         (local.set $acc (f64.div (local.get $acc)
           (call $to-f64 (call $car (ref.cast (ref $pair) (local.get $cur))))))
         (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $cur))))
@@ -5364,6 +5371,20 @@
   (memory $transfer (export "memory") 1)
 
   ;; ── Runtime error helpers ──
+  ;; Write a plain string to linear memory, then call runtime_error.
+  (func $signal-error-str (param $msg (ref $string))
+    (local $len i32)
+    (local $i i32)
+    (local.set $len (array.len (local.get $msg)))
+    (local.set $i (i32.const 0))
+    (block $done (loop $copy
+      (br_if $done (i32.ge_u (local.get $i) (local.get $len)))
+      (i32.store16 (i32.shl (local.get $i) (i32.const 1))
+        (array.get_u $string (local.get $msg) (local.get $i)))
+      (local.set $i (i32.add (local.get $i) (i32.const 1)))
+      (br $copy)))
+    (call $js-runtime-error (local.get $len)))
+
   ;; Write a prefix string + symbol name to linear memory, then call runtime_error.
   (func $signal-error-sym (param $prefix (ref $string)) (param $sym (ref $symbol))
     (local $name (ref $string))

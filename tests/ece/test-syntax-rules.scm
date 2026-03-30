@@ -81,11 +81,13 @@
 
 ;; --- No matching clause ---
 
-(test "syntax-rules no matching clause signals error" (lambda ()
-  (define-syntax only-two
-    (syntax-rules ()
-      ((_ a b) (list a b))))
-  (assert-error (only-two 1))))
+;; assert-error requires try-eval which is CL-only
+(when (platform-has? 'try-eval)
+  (test "syntax-rules no matching clause signals error" (lambda ()
+    (define-syntax only-two
+      (syntax-rules ()
+        ((_ a b) (list a b))))
+    (assert-error (only-two 1)))))
 
 ;; --- define-syntax coexists with define-macro ---
 

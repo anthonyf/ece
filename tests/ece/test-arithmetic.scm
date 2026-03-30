@@ -81,11 +81,13 @@
   (assert-equal (round 4.5) 4)
   (assert-equal (round -3.7) -4)))
 
-(test "division by zero in modulo" (lambda ()
-  (assert-true (guard (e ((error-object? e) #t)) (modulo 10 0) #f))))
+;; guard/error tests require try-eval which is CL-only (WASM errors become JS exceptions)
+(when (platform-has? 'try-eval)
+  (test "division by zero in modulo" (lambda ()
+    (assert-true (guard (e ((error-object? e) #t)) (modulo 10 0) #f))))
 
-(test "division by zero in quotient" (lambda ()
-  (assert-true (guard (e ((error-object? e) #t)) (quotient 10 0) #f))))
+  (test "division by zero in quotient" (lambda ()
+    (assert-true (guard (e ((error-object? e) #t)) (quotient 10 0) #f)))))
 
 (test "abs" (lambda ()
   (assert-equal (abs -5) 5)
