@@ -68,9 +68,15 @@
 ;; quotient/remainder use truncation (toward zero).
 ;; modulo uses floor (toward -∞). Replaces host primitive 4.
 
-(define (quotient a b) (truncate (/ a b)))
-(define (remainder a b) (- a (* (quotient a b) b)))
-(define (modulo a b) (- a (* (floor (/ a b)) b)))
+(define (quotient a b)
+  (if (= b 0) (error "/: division by zero")
+      (truncate (/ a b))))
+(define (remainder a b)
+  (if (= b 0) (error "/: division by zero")
+      (- a (* (quotient a b) b))))
+(define (modulo a b)
+  (if (= b 0) (error "/: division by zero")
+      (- a (* (floor (/ a b)) b))))
 
 (define (number->string n)
   (if (not (integer? n))
