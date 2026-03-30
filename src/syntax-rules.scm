@@ -296,6 +296,7 @@
 ;; Process operator position — wrap free symbols in %global-ref for hygiene
 (define (syntax-instantiate-operator expr mr pattern-vars rename-table)
   (cond
+   ((mc-self-evaluating? expr) expr)  ;; #t, #f, numbers — don't wrap
    ((symbol? expr)
     (let ((regular-entry (assoc expr (match-regular mr))))
       (if regular-entry
