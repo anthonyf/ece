@@ -38,7 +38,7 @@ function runIntegrationTests(w, envH) {
     'continuation-conts', 'parameter?', 'apply-parameter', 'false?',
     'list', 'cons', 'car', 'cdr', 'lexical-ref', 'lexical-set!',
     'define-variable!', 'set-variable-value!', 'capture-continuation',
-    'do-continuation-winds'
+    'do-continuation-winds', 'lookup-global-variable'
   ];
   for (let i = 0; i < opNames.length; i++) {
     iTest(`op-id ${opNames[i]} = ${i}`, () => {

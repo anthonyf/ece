@@ -179,11 +179,10 @@
   (let ((name (cadr expr)))
     (end-with-linkage linkage
                       (make-instruction-sequence
-                       '(env) (list target)
+                       '() (list target)
                        (list (list 'assign target
-                                   '(op lookup-variable-value)
-                                   (list 'const name)
-                                   '(reg env)))))))
+                                   '(op lookup-global-variable)
+                                   (list 'const name)))))))
 
 (define (mc-compile-quoted expr target linkage)
   (end-with-linkage linkage

@@ -403,6 +403,11 @@ When EXTRA-SLOTS is nil (3-arg call), creates list-based frames for name-based l
                             (env-loop (cdr env))))))))))
     (env-loop env)))
 
+(defun lookup-global-variable (var)
+  "Look up VAR in the global environment only, bypassing lexical frames.
+Used by %global-ref for syntax-rules hygiene."
+  (lookup-variable-value var *global-env*))
+
 (defun set-variable-value! (var val env)
   "Set VAR by name. Dispatches on frame type: hash-table O(1), list O(n), skip vectors."
   (labels ((scan (vars vals)
@@ -1396,6 +1401,7 @@ call do-winds! to transition. Uses nested execute-compiled-call."
   "Get the CL function for a compiled operation name."
   (ecase name
     (|lookup-variable-value| #'lookup-variable-value)
+    (|lookup-global-variable| #'lookup-global-variable)
     (|set-variable-value!| #'set-variable-value!)
     (|define-variable!| #'define-variable!)
     (|lexical-ref| #'lexical-ref)
