@@ -2333,19 +2333,20 @@
         (else (i32.trunc_f64_s (local.get $n))))))
   )
 
-  ;; Wrap an f64 result, demoting to fixnum if it's an integer in range
+  ;; Wrap an f64 result, demoting to fixnum if it's an integer in fixnum range.
+  ;; Range check BEFORE i32.trunc_f64_s to avoid WASM trap on large floats.
   (func $wrap-f64 (param $n f64) (result (ref null eq))
     (local $i i32)
-    ;; Check if it's an integer value
-    (if (result (ref null eq)) (f64.eq (local.get $n) (f64.trunc (local.get $n)))
+    ;; Check if it's an integer value AND in fixnum range
+    (if (result (ref null eq))
+      (i32.and
+        (f64.eq (local.get $n) (f64.trunc (local.get $n)))
+        (i32.and
+          (f64.ge (local.get $n) (f64.const -536870912))
+          (f64.le (local.get $n) (f64.const 536870911))))
       (then
         (local.set $i (i32.trunc_f64_s (local.get $n)))
-        (if (result (ref null eq))
-          (i32.and
-            (i32.ge_s (local.get $i) (i32.const -536870912))
-            (i32.le_s (local.get $i) (i32.const 536870911)))
-          (then (call $make-fixnum (local.get $i)))
-          (else (call $make-float (local.get $n)))))
+        (call $make-fixnum (local.get $i)))
       (else (call $make-float (local.get $n))))
   )
 
@@ -2403,6 +2404,9 @@
     (local.set $first (call $to-f64 (call $arg1 (local.get $args))))
     (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $args))))
     (local.set $all-int (i32.const 1))
+    ;; Check first arg for float (loop only checks remaining args)
+    (if (i32.eqz (call $is-fixnum (call $arg1 (local.get $args))))
+      (then (local.set $all-int (i32.const 0))))
     ;; Unary minus: (- x) = -x
     (if (call $is-null (local.get $cur))
       (then
