@@ -182,11 +182,6 @@
 
   ;; Error message strings (UTF-16 arrays)
   ;; "Unbound variable: " (18 chars)
-  (global $err-div-zero (ref $string)
-    (array.new_fixed $string 16
-      (i32.const 68)(i32.const 105)(i32.const 118)(i32.const 105)(i32.const 115)(i32.const 105)
-      (i32.const 111)(i32.const 110)(i32.const 32)(i32.const 98)(i32.const 121)(i32.const 32)
-      (i32.const 122)(i32.const 101)(i32.const 114)(i32.const 111)))
   (global $err-unbound-var (ref $string)
     (array.new_fixed $string 18
       (i32.const 85)(i32.const 110)(i32.const 98)(i32.const 111)(i32.const 117)(i32.const 110)
@@ -2442,8 +2437,6 @@
       (loop $loop
         (br_if $done (ref.is_null (local.get $cur)))
         (br_if $done (call $is-null (local.get $cur)))
-        (if (f64.eq (call $to-f64 (call $car (ref.cast (ref $pair) (local.get $cur)))) (f64.const 0))
-          (then (call $signal-error-str (global.get $err-div-zero))))
         (local.set $acc (f64.div (local.get $acc)
           (call $to-f64 (call $car (ref.cast (ref $pair) (local.get $cur))))))
         (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $cur))))
@@ -3816,6 +3809,12 @@
           (call $cons
             (call $cons (call $arg2 (local.get $args)) (call $arg3 (local.get $args)))
             (call $car (ref.cast (ref $pair) (call $arg1 (local.get $args))))))
+        (return (global.get $void))))
+    ;; 81 = %raw-error (fatal error — throws JS exception)
+    (if (i32.eq (local.get $id) (i32.const 81))
+      (then
+        (call $signal-error-str
+          (ref.cast (ref $string) (call $arg1 (local.get $args))))
         (return (global.get $void))))
     ;; 83 = sleep (no-op on WASM for now)
     (if (i32.eq (local.get $id) (i32.const 83))

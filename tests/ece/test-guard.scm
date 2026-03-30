@@ -84,3 +84,9 @@
    (guard (e (#t (error-object-irritants e)))
      (error "simple"))
    '())))
+
+(test "division by zero in modulo" (lambda ()
+  (assert-true (guard (e ((error-object? e) #t)) (modulo 10 0) #f))))
+
+(test "division by zero in quotient" (lambda ()
+  (assert-true (guard (e ((error-object? e) #t)) (quotient 10 0) #f))))

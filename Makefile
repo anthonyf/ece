@@ -11,7 +11,7 @@ WASM_TEST_SRCS := tests/ece/test-framework.scm \
 	tests/ece/test-higher-order.scm tests/ece/test-records.scm \
 	tests/ece/test-parameters.scm tests/ece/test-mutation.scm \
 	tests/ece/test-callcc.scm tests/ece/test-advanced-continuations.scm \
-	tests/ece/test-dynamic-wind.scm \
+	tests/ece/test-dynamic-wind.scm tests/ece/test-guard.scm \
 	tests/ece/test-eval-string.scm tests/ece/test-cross-space.scm \
 	tests/ece/test-roundtrip.scm \
 	wasm/wasm-test-runner.scm
