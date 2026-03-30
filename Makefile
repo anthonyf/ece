@@ -50,7 +50,7 @@ test-wasm: wasm
 	@echo "Compiling WASM test suite..."
 	@cat $(WASM_TEST_SRCS) > /tmp/ece-wasm-tests.scm
 	@echo '(run-tests)' >> /tmp/ece-wasm-tests.scm
-	@qlot exec sbcl --eval '(asdf:load-system :ece)' \
+	@qlot exec sbcl --disable-debugger --eval '(asdf:load-system :ece)' \
 	  --eval '(ece:evaluate (list (intern "compile-file" :ece) "/tmp/ece-wasm-tests.scm"))' \
 	  --quit
 	@echo "Running WASM tests..."

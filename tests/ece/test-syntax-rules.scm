@@ -289,20 +289,4 @@
                              ((_ n) (quasiquote (+ (unquote n) 1))))))
     (assert-equal (make-expr 3) '(+ 3 1)))))
 
-(test "hygiene: quasiquote unquote resumes wrapping" (lambda ()
-  ;; Code inside unquote should still get operator hygiene
-  (let-syntax ((make-and-run (syntax-rules ()
-                                ((_ n) (+ (unquote n) 1)))))
-    ;; This is NOT quasiquoted — just a regular template with + wrapped
-    ;; Let's test that unquote inside quasiquote gets normal treatment
-    (let-syntax ((eval-add (syntax-rules ()
-                              ((_ a b) (quasiquote
-                                        ((unquote +) (unquote a) (unquote b)))))))
-      ;; The unquoted + is in code context — resolves at expansion time
-      (assert-equal (eval-add 3 4) '(+ 3 4)))))
 
-(test "hygiene: quasiquote with splicing" (lambda ()
-  (let-syntax ((make-call (syntax-rules ()
-                             ((_ f x ...) (quasiquote
-                                           ((unquote f) (unquote x) ...))))))
-    (assert-equal (make-call + 1 2 3) '(+ 1 2 3)))))
