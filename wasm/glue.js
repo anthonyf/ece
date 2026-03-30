@@ -418,6 +418,7 @@ const ECE = {
       'set-variable-value!',         // 37 → op 20
       'capture-continuation',        // 38 → op 21
       'do-continuation-winds',       // 39 → op 22
+      'lookup-global-variable',      // 40 → op 23
     ];
     w.init_asm_syms(names.length);
     for (let i = 0; i < names.length; i++) {
