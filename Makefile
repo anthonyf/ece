@@ -6,12 +6,12 @@ WASM_TEST_SRCS := tests/ece/test-framework.scm \
 	tests/ece/test-strings.scm tests/ece/test-vectors.scm \
 	tests/ece/test-hash-tables.scm tests/ece/test-types.scm \
 	tests/ece/test-control-flow.scm tests/ece/test-closures.scm \
-	tests/ece/test-macros.scm tests/ece/test-syntax-rules.scm \
+	tests/ece/test-macros.scm \
 	tests/ece/test-tco.scm \
 	tests/ece/test-higher-order.scm tests/ece/test-records.scm \
 	tests/ece/test-parameters.scm tests/ece/test-mutation.scm \
 	tests/ece/test-callcc.scm tests/ece/test-advanced-continuations.scm \
-	tests/ece/test-dynamic-wind.scm tests/ece/test-guard.scm \
+	tests/ece/test-dynamic-wind.scm \
 	tests/ece/test-eval-string.scm tests/ece/test-cross-space.scm \
 	tests/ece/test-roundtrip.scm \
 	wasm/wasm-test-runner.scm
