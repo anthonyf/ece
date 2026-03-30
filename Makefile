@@ -20,7 +20,7 @@ BOOTSTRAP_DIR := bootstrap
 BOOTSTRAP_SRCS := src/prelude.scm src/compiler.scm src/reader.scm src/assembler.scm src/compilation-unit.scm src/syntax-rules.scm
 
 test:
-	qlot exec sbcl --eval '(asdf:test-system :ece)' --quit
+	qlot exec sbcl --eval '(asdf:load-system :ece)' --eval '(asdf:load-system :ece/tests)' --eval '(unless (rove:run :ece/tests) (uiop:quit 1))' --quit
 
 test-ece:
 	qlot exec sbcl --eval '(asdf:load-system :ece)' \
