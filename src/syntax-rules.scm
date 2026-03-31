@@ -317,6 +317,11 @@
 (define (syntax-instantiate-args args mr pattern-vars rename-table)
   (cond
    ((null? args) '())
+   ;; Ellipsis: (elt ... rest...)
+   ((and (pair? args) (pair? (cdr args)) (eq? (cadr args) '...))
+    (append
+     (syntax-instantiate-ellipsis (car args) mr pattern-vars rename-table)
+     (syntax-instantiate-args (cddr args) mr pattern-vars rename-table)))
    ((pair? args)
     (cons (syntax-instantiate (car args) mr pattern-vars rename-table)
           (syntax-instantiate-args (cdr args) mr pattern-vars rename-table)))
