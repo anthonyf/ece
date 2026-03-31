@@ -92,8 +92,16 @@ Returns the output filename."
               (list 'set-macro! (list 'quote name)
                     (cons 'lambda (cons params body)))
               (list 'quote name))))
+    (define (maybe-expand-define-syntax expr)
+      "If EXPR is (define-syntax ...), expand to (define-macro ...) so it gets
+       compile-time execution and load-time set-macro! treatment."
+      (if (and (pair? expr) (eq? (car expr) 'define-syntax)
+               (get-macro 'define-syntax))
+          (mc-expand-macro-at-compile-time
+           (get-macro 'define-syntax) (cdr expr))
+          expr))
     (define (read-loop units macros)
-      (let ((expr (ece-scheme-read in)))
+      (let ((expr (maybe-expand-define-syntax (ece-scheme-read in))))
         (if (eof? expr)
             (begin (close-input-port in) (cons units macros))
             (begin

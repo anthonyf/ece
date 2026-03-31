@@ -6,7 +6,7 @@ WASM_TEST_SRCS := tests/ece/test-framework.scm \
 	tests/ece/test-strings.scm tests/ece/test-vectors.scm \
 	tests/ece/test-hash-tables.scm tests/ece/test-types.scm \
 	tests/ece/test-control-flow.scm tests/ece/test-closures.scm \
-	tests/ece/test-macros.scm \
+	tests/ece/test-macros.scm tests/ece/test-syntax-rules.scm \
 	tests/ece/test-tco.scm \
 	tests/ece/test-higher-order.scm tests/ece/test-records.scm \
 	tests/ece/test-parameters.scm tests/ece/test-mutation.scm \
