@@ -69,3 +69,11 @@ Ports SHALL be represented as tagged lists: `(input-port <stream>)` for input po
 #### Scenario: with-input-from-file restores port after thunk
 - **WHEN** `with-input-from-file` completes (or errors)
 - **THEN** `current-input-port` SHALL be restored to its previous value
+
+#### Scenario: with-output-to-file with compiled thunk
+- **WHEN** `(with-output-to-file "out.txt" (lambda () (display "hi")))` is evaluated where the lambda is a compiled procedure
+- **THEN** the thunk SHALL execute successfully, writing "hi" to the file
+
+#### Scenario: with-input-from-file with compiled thunk
+- **WHEN** `(with-input-from-file "in.txt" (lambda () (read-char)))` is evaluated where the lambda is a compiled procedure
+- **THEN** the thunk SHALL execute successfully, reading from the file

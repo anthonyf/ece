@@ -39,5 +39,8 @@
 ;; File I/O (filesystem on CL, localStorage on WASM)
 (load "tests/ece/test-file-io.scm")
 
+;; Serialization round-trips
+(load "tests/ece/test-roundtrip.scm")
+
 ;; Cross-space function calls
 (load "tests/ece/test-cross-space.scm")

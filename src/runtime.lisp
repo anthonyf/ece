@@ -212,41 +212,42 @@
    (ece-instruction :initarg :instruction :reader ece-error-instruction :initform nil)
    (ece-backtrace :initarg :backtrace :reader ece-error-backtrace :initform nil))
   (:report (lambda (c stream)
-             (format stream "ECE error: ~A" (ece-original-error c))
-             (let ((proc (ece-error-procedure c)))
-               (when proc
-                 (format stream "~%  in procedure: ~A" (format-ece-proc proc))
-                 (let ((args (ece-error-arguments c)))
-                   (when args
-                     (format stream "~%  with arguments: ~S" args)))))
-             (let ((env (ece-error-environment c)))
-               (when (and env (consp env) (consp (car env)))
-                 (let ((frame (car env)))
-                   (format stream "~%  bindings:")
-                   (if (hash-frame-p frame)
-                       (let ((i 0))
-                         (block done
-                           (maphash (lambda (k v)
-                                      (when (>= i 10) (return-from done))
-                                      (format stream "~%    ~A = ~S"
-                                              k (truncate-value v))
-                                      (incf i))
-                                    (cdr frame))))
-                       (loop for var in (car frame)
-                             for val in (cdr frame)
-                             for i below 10
-                             do (format stream "~%    ~A = ~S"
-                                        var (truncate-value val)))))))
-             (let ((bt (ece-error-backtrace c)))
-               (when bt
-                 (format stream "~%  backtrace:")
-                 (loop for entry in bt
-                       for i from 0
-                       do (format stream "~%    [~D] ~A at pc=~D" i
-                                  (if (car entry)
-                                      (format-ece-proc (car entry))
-                                      "<unknown>")
-                                  (cdr entry))))))))
+             (let ((*print-circle* t) (*print-level* 5) (*print-length* 20))
+               (format stream "ECE error: ~A" (ece-original-error c))
+               (let ((proc (ece-error-procedure c)))
+                 (when proc
+                   (format stream "~%  in procedure: ~A" (format-ece-proc proc))
+                   (let ((args (ece-error-arguments c)))
+                     (when args
+                       (format stream "~%  with arguments: ~S" args)))))
+               (let ((env (ece-error-environment c)))
+                 (when (and env (consp env) (consp (car env)))
+                   (let ((frame (car env)))
+                     (format stream "~%  bindings:")
+                     (if (hash-frame-p frame)
+                         (let ((i 0))
+                           (block done
+                             (maphash (lambda (k v)
+                                        (when (>= i 10) (return-from done))
+                                        (format stream "~%    ~A = ~S"
+                                                k (truncate-value v))
+                                        (incf i))
+                                      (cdr frame))))
+                         (loop for var in (car frame)
+                               for val in (cdr frame)
+                               for i below 10
+                               do (format stream "~%    ~A = ~S"
+                                          var (truncate-value val)))))))
+               (let ((bt (ece-error-backtrace c)))
+                 (when bt
+                   (format stream "~%  backtrace:")
+                   (loop for entry in bt
+                         for i from 0
+                         do (format stream "~%    [~D] ~A at pc=~D" i
+                                    (if (car entry)
+                                        (format-ece-proc (car entry))
+                                        "<unknown>")
+                                    (cdr entry)))))))))
 
 (defun format-ece-proc (proc)
   "Format a procedure value for display in errors."
@@ -651,8 +652,8 @@ Combines *primitive-procedures* and *wrapper-primitives*."
        (format-ece-hash-table obj stream
                               (lambda (v s) (ece-display-to-stream v s))))
       (t (let ((*print-circle* t))
-           (princ obj stream)))))
-  (finish-output)
+           (princ obj stream))))
+    (finish-output stream))
   obj)
 
 (defun ece-display-to-stream (obj stream)
@@ -676,8 +677,8 @@ Combines *primitive-procedures* and *wrapper-primitives*."
        (format-ece-hash-table obj stream
                               (lambda (v s) (ece-write-to-stream v s))))
       (t (let ((*print-circle* t))
-           (prin1 obj stream)))))
-  (finish-output)
+           (prin1 obj stream))))
+    (finish-output stream))
   obj)
 
 (defun ece-write-to-stream (obj stream)
@@ -764,15 +765,23 @@ Returns EOF sentinel at end of input."
     (t (let ((*print-circle* t))
          (princ-to-string x)))))
 
+(defvar *preserve-readtable*
+  (let ((rt (copy-readtable nil)))
+    (setf (readtable-case rt) :preserve)
+    rt)
+  "Cached readtable with :preserve case for write-to-string-flat.")
+
 (defun ece-write-to-string-flat (x)
   "Serialize X to a string without *print-circle* shared-structure markers.
 Used for .ecec file serialization where the ECE reader needs to parse the output.
-Binds *package* to :ece and uses :downcase readtable-case so lowercase symbols
+Binds *package* to :ece and uses :preserve readtable-case so lowercase symbols
 print without CL pipe escaping."
   (let ((*print-circle* nil) (*print-pretty* nil) (*package* (find-package :ece))
-        (*readtable* (copy-readtable)))
-    (setf (readtable-case *readtable*) :preserve)
-    (prin1-to-string x)))
+        (*readtable* *preserve-readtable*))
+    (if (hash-table-p x)
+        ;; CL hash tables are not ECE-readable; emit sentinel
+        "(%ser/opaque)"
+        (prin1-to-string x))))
 
 (defun ece-truncate (x)
   "Truncate number toward zero to integer."
@@ -931,15 +940,17 @@ print without CL pipe escaping."
 (defun ece-with-input-from-file (filename thunk)
   (let ((port (ece-open-input-file filename)))
     (unwind-protect
-         (let ((*current-input-port* port))
-           (apply-primitive-procedure thunk nil))
+         (let ((*current-input-port* port)
+               (*standard-input* (ece-port-stream port)))
+           (apply-ece-procedure thunk nil))
       (ece-close-input-port port))))
 
 (defun ece-with-output-to-file (filename thunk)
   (let ((port (ece-open-output-file filename)))
     (unwind-protect
-         (let ((*current-output-port* port))
-           (apply-primitive-procedure thunk nil))
+         (let ((*current-output-port* port)
+               (*standard-output* (ece-port-stream port)))
+           (apply-ece-procedure thunk nil))
       (ece-close-output-port port))))
 
 (defun ece-call-with-input-file (filename proc)
