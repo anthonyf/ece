@@ -496,35 +496,63 @@
                           define-code))))
 
 (define (mc-compile-callcc expr target linkage)
-  (let ((receiver-code (mc-compile (cadr expr) 'proc 'next))
-        (return-label (mc-make-label 'callcc-return))
-        (primitive-callcc (mc-make-label 'callcc-primitive))
-        (continuation-callcc (mc-make-label 'callcc-continuation)))
-    (end-with-linkage linkage
-                      (preserving '(env continue)
-                                  receiver-code
-                                  (make-instruction-sequence
-                                   '(proc) *mc-all-regs*
-                                   (list (list 'assign 'continue (list 'label return-label))
-                                         '(assign argl (op capture-continuation) (reg stack) (reg continue))
-                                         '(assign argl (op list) (reg argl))
-                                         '(test (op primitive-procedure?) (reg proc))
-                                         (list 'branch (list 'label primitive-callcc))
-                                         '(test (op continuation?) (reg proc))
-                                         (list 'branch (list 'label continuation-callcc))
-                                         '(assign val (op compiled-procedure-entry) (reg proc))
-                                         '(goto (reg val))
-                                         primitive-callcc
-                                         '(assign val (op apply-primitive-procedure) (reg proc) (reg argl))
-                                         (list 'goto (list 'label return-label))
-                                         continuation-callcc
-                                         '(assign val (op car) (reg argl))
-                                         '(perform (op do-continuation-winds) (reg proc))
-                                         '(assign stack (op continuation-stack) (reg proc))
-                                         '(assign continue (op continuation-conts) (reg proc))
-                                         '(goto (reg continue))
-                                         return-label
-                                         (list 'assign target '(reg val))))))))
+  (let ((receiver-code (mc-compile (cadr expr) 'proc 'next)))
+    (if (and (eq? target 'val) (eq? linkage 'return))
+        ;; Tail-position: use caller's continue directly, no save/restore.
+        ;; Mirrors mc-compile-proc-appl's tail-call pattern.
+        (let ((primitive-callcc (mc-make-label 'callcc-primitive))
+              (continuation-callcc (mc-make-label 'callcc-continuation)))
+          (preserving '(env continue)
+                      receiver-code
+                      (make-instruction-sequence
+                       '(proc continue) *mc-all-regs*
+                       (list '(assign argl (op capture-continuation) (reg stack) (reg continue))
+                             '(assign argl (op list) (reg argl))
+                             '(test (op primitive-procedure?) (reg proc))
+                             (list 'branch (list 'label primitive-callcc))
+                             '(test (op continuation?) (reg proc))
+                             (list 'branch (list 'label continuation-callcc))
+                             ;; Compiled procedure: true tail call
+                             '(assign val (op compiled-procedure-entry) (reg proc))
+                             '(goto (reg val))
+                             primitive-callcc
+                             '(assign val (op apply-primitive-procedure) (reg proc) (reg argl))
+                             '(goto (reg continue))
+                             continuation-callcc
+                             '(assign val (op car) (reg argl))
+                             '(perform (op do-continuation-winds) (reg proc))
+                             '(assign stack (op continuation-stack) (reg proc))
+                             '(assign continue (op continuation-conts) (reg proc))
+                             '(goto (reg continue))))))
+        ;; Non-tail: existing behavior with return-label trampoline
+        (let ((return-label (mc-make-label 'callcc-return))
+              (primitive-callcc (mc-make-label 'callcc-primitive))
+              (continuation-callcc (mc-make-label 'callcc-continuation)))
+          (end-with-linkage linkage
+                            (preserving '(env continue)
+                                        receiver-code
+                                        (make-instruction-sequence
+                                         '(proc) *mc-all-regs*
+                                         (list (list 'assign 'continue (list 'label return-label))
+                                               '(assign argl (op capture-continuation) (reg stack) (reg continue))
+                                               '(assign argl (op list) (reg argl))
+                                               '(test (op primitive-procedure?) (reg proc))
+                                               (list 'branch (list 'label primitive-callcc))
+                                               '(test (op continuation?) (reg proc))
+                                               (list 'branch (list 'label continuation-callcc))
+                                               '(assign val (op compiled-procedure-entry) (reg proc))
+                                               '(goto (reg val))
+                                               primitive-callcc
+                                               '(assign val (op apply-primitive-procedure) (reg proc) (reg argl))
+                                               (list 'goto (list 'label return-label))
+                                               continuation-callcc
+                                               '(assign val (op car) (reg argl))
+                                               '(perform (op do-continuation-winds) (reg proc))
+                                               '(assign stack (op continuation-stack) (reg proc))
+                                               '(assign continue (op continuation-conts) (reg proc))
+                                               '(goto (reg continue))
+                                               return-label
+                                               (list 'assign target '(reg val))))))))))
 
 (define (mc-compile-apply-form expr target linkage)
   (let ((proc-code (mc-compile (cadr expr) 'proc 'next))

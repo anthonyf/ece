@@ -1,4 +1,4 @@
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: O(n) memory serialization
 The `serialize-value` function SHALL use O(n) total memory when serializing structures of depth n, where n is the total number of tokens in the output. The implementation SHALL use port-based output (`open-output-string` / `display` / `get-output-string`) rather than recursive string concatenation.
@@ -18,22 +18,3 @@ The `serialize-value` function SHALL use O(n) total memory when serializing stru
 #### Scenario: Cyclic structure round-trip via deserialize-value
 - **WHEN** deserializing a serialized value that contains cyclic references (via `%ser/def`/`%ser/ref` tags where a `%ser/ref` appears inside the body of its own `%ser/def`)
 - **THEN** `deserialize-value` SHALL reconstruct the cycle correctly with the back-reference resolving to the pre-allocated placeholder
-
-### Requirement: serializer detects and skips code objects
-The `serialize-value` function SHALL detect code-like objects (instruction vectors, compilation space internals) and emit skip sentinels instead of recursively serializing them.
-
-#### Scenario: Vector containing instructions
-- **WHEN** serializing a vector whose elements are instruction lists (e.g., `(assign val ...)`)
-- **THEN** the serializer SHALL emit `(%ser/code-skip)` instead of serializing each instruction
-
-#### Scenario: Data vector preserved
-- **WHEN** serializing a vector like `#(1 2 3)` or `#("a" "b")`
-- **THEN** the serializer SHALL serialize it normally as `(%ser/vector 1 2 3)`
-
-### Requirement: String output ports
-The runtime SHALL provide `open-output-string` and `get-output-string` as core primitives on all platforms.
-
-#### Scenario: Basic string port round-trip
-- **GIVEN** a port created by `(open-output-string)`
-- **WHEN** characters or strings are written via `display` / `write` / `write-char`
-- **THEN** `(get-output-string port)` SHALL return the accumulated content as a string

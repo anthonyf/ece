@@ -20,6 +20,7 @@
 
 ;; Advanced features
 (load "tests/ece/test-callcc.scm")
+(load "tests/ece/test-callcc-tco.scm")
 (load "tests/ece/test-higher-order.scm")
 (load "tests/ece/test-records.scm")
 (load "tests/ece/test-errors.scm")

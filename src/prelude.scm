@@ -1045,9 +1045,28 @@ Reconstructs tagged types and resolves #:def/#:ref references."
        ;; Definition (shared structure)
        ((string=? tag "%ser/def")
         (define id (cadr form))
-        (define val (deser (caddr form)))
-        (%eq-hash-set! ref-table id val)
-        val)
+        (define body (caddr form))
+        ;; Pre-allocate-and-patch for pair bodies to support cyclic structures.
+        ;; A cons placeholder is stored in ref-table BEFORE recursing, so
+        ;; %ser/ref back-references resolve during cycle deserialization.
+        ;; After deser, if the result is a pair (compiled-procedure, continuation,
+        ;; env pair), patch the placeholder. If non-pair (vector, hash-table),
+        ;; replace in ref-table directly (non-pair types don't form cycles).
+        (if (pair? body)
+            (let ((placeholder (cons #f #f)))
+              (%eq-hash-set! ref-table id placeholder)
+              (let ((result (deser body)))
+                (if (pair? result)
+                    (begin (set-car! placeholder (car result))
+                           (set-cdr! placeholder (cdr result))
+                           placeholder)
+                    ;; Non-pair result (vector, etc.) — no cycle through this
+                    (begin (%eq-hash-set! ref-table id result)
+                           result))))
+            ;; Non-pair body (atom) — direct deser, no cycles possible
+            (let ((val (deser body)))
+              (%eq-hash-set! ref-table id val)
+              val)))
        ;; Global env sentinel
        ((string=? tag "%ser/global-env")
         (%global-env-frame))
