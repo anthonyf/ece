@@ -138,6 +138,50 @@
   (assert-equal (loaded) 999)
   (assert-equal (p) 42)))
 
+;; --- Cyclic Serialization Tests ---
+
+(test "round-trip letrec self-referencing closure" (lambda ()
+  (define f (letrec ((f (lambda (x) (if (= x 0) 1 (* x (f (- x 1))))))) f))
+  (test-save! "/tmp/ece-rt-letrec-self.dat" f)
+  (define loaded (test-load "/tmp/ece-rt-letrec-self.dat"))
+  (assert-equal (loaded 5) 120)
+  (assert-equal (loaded 0) 1)))
+
+(test "round-trip mutually recursive closures" (lambda ()
+  (define fns
+    (letrec ((even? (lambda (n) (if (= n 0) #t (odd? (- n 1)))))
+             (odd?  (lambda (n) (if (= n 0) #f (even? (- n 1))))))
+      (list even? odd?)))
+  (test-save! "/tmp/ece-rt-mutual.dat" fns)
+  (define loaded (test-load "/tmp/ece-rt-mutual.dat"))
+  (define loaded-even? (car loaded))
+  (define loaded-odd? (cadr loaded))
+  (assert-equal (loaded-even? 0) #t)
+  (assert-equal (loaded-even? 1) #f)
+  (assert-equal (loaded-even? 4) #t)
+  (assert-equal (loaded-odd? 0) #f)
+  (assert-equal (loaded-odd? 1) #t)
+  (assert-equal (loaded-odd? 5) #t)))
+
+(test "round-trip recursive define in let body via call/cc" (lambda ()
+  (define result
+    (let ()
+      (define (fact x) (if (= x 0) 1 (* x (fact (- x 1)))))
+      (define k #f)
+      (%raw-call/cc (lambda (c) (set! k c) 0))
+      (test-save! "/tmp/ece-rt-rec-define.dat" fact)
+      (define loaded (test-load "/tmp/ece-rt-rec-define.dat"))
+      (loaded 6)))
+  (assert-equal result 720)))
+
+(test "non-cyclic shared structure still works" (lambda ()
+  ;; Verify existing non-cyclic round-trips still work
+  (define (test-sq x) (* x x))
+  (test-save! "/tmp/ece-rt-shared.dat" test-sq)
+  (define loaded (test-load "/tmp/ece-rt-shared.dat"))
+  (assert-equal (loaded 7) 49)
+  (assert-equal (loaded 3) 9)))
+
 ;; --- Lexical State Pattern (game-like save/load) ---
 
 (test "lexical state pattern: multiple params in function scope" (lambda ()
