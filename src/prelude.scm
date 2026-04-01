@@ -882,31 +882,36 @@ shared structure, and global env sentinel."
 
   (scan value)
 
-  ;; Pass 2: serialize with #:def/#:ref for shared objects.
+  ;; Pass 2: serialize to a string output port (O(n) — each token written once).
   (define next-id 0)
   (define refs (%eq-hash-table))  ;; obj -> assigned ref ID (only for shared)
+  (define port (open-output-string))
+
+  (define (emit str) (display str port))
 
   (define (ser obj)
     (cond
      ;; nil
-     ((null? obj) "()")
+     ((null? obj) (emit "()"))
      ;; booleans
-     ((eq? obj #t) "#t")
-     ((eq? obj #f) "#f")
+     ((eq? obj #t) (emit "#t"))
+     ((eq? obj #f) (emit "#f"))
      ;; numbers
-     ((number? obj) (write-to-string-flat obj))
+     ((number? obj) (emit (write-to-string-flat obj)))
      ;; characters
-     ((char? obj) (write-to-string-flat obj))
+     ((char? obj) (emit (write-to-string-flat obj)))
      ;; strings — use write-to-string-flat for proper escaping
-     ((string? obj) (write-to-string-flat obj))
+     ((string? obj) (emit (write-to-string-flat obj)))
      ;; symbols — use symbol->string for case-preserving output
-     ((symbol? obj) (symbol->string obj))
+     ((symbol? obj) (emit (symbol->string obj)))
      ;; compound: check for shared structure
      (else
       (define existing-ref (%eq-hash-ref refs obj))
       (if existing-ref
           ;; Already emitted — back-reference
-          (string-append "(%ser/ref " (write-to-string-flat existing-ref) ")")
+          (begin (emit "(%ser/ref ")
+                 (emit (write-to-string-flat existing-ref))
+                 (emit ")"))
           ;; First visit of compound object
           (begin
             (define count (%eq-hash-ref seen obj))
@@ -917,74 +922,79 @@ shared structure, and global env sentinel."
                              (%eq-hash-set! refs obj this-id)
                              this-id)
                            #f))
-            (define serialized (ser-compound obj))
             (if id
-                (string-append "(%ser/def " (write-to-string-flat id) " " serialized ")")
-                serialized))))))
+                (begin (emit "(%ser/def ")
+                       (emit (write-to-string-flat id))
+                       (emit " ")
+                       (ser-compound obj)
+                       (emit ")"))
+                (ser-compound obj)))))))
 
   (define (ser-compound obj)
     (cond
      ;; Global env frame sentinel
-     ((eq? obj global-frame) "(%ser/global-env)")
+     ((eq? obj global-frame) (emit "(%ser/global-env)"))
      ;; Hash frame sentinel — shouldn't normally be serialized directly
-     ((%hash-frame? obj) "(%ser/hash-frame)")
+     ((%hash-frame? obj) (emit "(%ser/hash-frame)"))
      ;; Env frame (WasmGC struct — serialize names, vals, enclosing)
      ((%env-frame? obj)
       (define names (%env-frame-names obj))
       (define vals (%env-frame-vals obj))
       (define enc (%env-frame-enclosing obj))
-      (string-append "(%ser/env-frame "
-                     (ser names) " "
-                     (ser vals) " "
-                     (if (null? enc) "#f" (ser enc))
-                     ")"))
+      (emit "(%ser/env-frame ")
+      (ser names) (emit " ")
+      (ser vals) (emit " ")
+      (if (null? enc) (emit "#f") (ser enc))
+      (emit ")"))
      ;; Hash table (:hash-table count . root)
      ((and (pair? obj) (eq? (car obj) :hash-table))
       (define entries (map (lambda (k) (cons k (hash-ref obj k))) (hash-keys obj)))
-      (string-append "(%ser/hash-table"
-                     (apply string-append
-                            (map (lambda (kv)
-                                   (string-append " (" (ser (car kv)) " " (ser (cdr kv)) ")"))
-                                 entries))
-                     ")"))
+      (emit "(%ser/hash-table")
+      (for-each (lambda (kv)
+                  (emit " (") (ser (car kv)) (emit " ") (ser (cdr kv)) (emit ")"))
+                entries)
+      (emit ")"))
      ;; Parameter
      ((and (pair? obj) (eq? (car obj) 'parameter))
       (define cell (cadr obj))
-      (string-append "(%ser/parameter " (ser (car cell)) " " (ser (cdr cell)) ")"))
+      (emit "(%ser/parameter ") (ser (car cell)) (emit " ") (ser (cdr cell)) (emit ")"))
      ;; Compiled procedure (WasmGC struct or CL tagged pair)
      ((compiled-procedure? obj)
       (define entry (compiled-procedure-entry obj))
       (define env (compiled-procedure-env obj))
-      (string-append "(%ser/compiled-procedure" (ser-entry entry) " " (ser env) ")"))
+      (emit "(%ser/compiled-procedure") (ser-entry entry) (emit " ") (ser env) (emit ")"))
      ;; Continuation (WasmGC struct or CL tagged pair)
      ((continuation? obj)
       (define stack (continuation-stack obj))
       (define cont (continuation-conts obj))
       (define winds (continuation-winds obj))
-      (string-append "(%ser/continuation" (ser stack) " " (ser-entry cont) " " (ser winds) ")"))
+      (emit "(%ser/continuation") (ser stack) (emit " ") (ser-entry cont) (emit " ") (ser winds) (emit ")"))
      ;; Primitive (WasmGC struct or CL tagged pair)
      ((primitive? obj)
       (define id (%primitive-id-of obj))
       (define name (%primitive-name id))
-      (string-append "(%ser/primitive " (if name (symbol->string name) (number->string id)) ")"))
+      (emit "(%ser/primitive ")
+      (if name (emit (symbol->string name)) (emit (number->string id)))
+      (emit ")"))
      ;; Vector
      ((vector? obj)
       (define len (vector-length obj))
+      (emit "(%ser/vector")
       (define (vec-items i)
-        (if (>= i len) ""
-            (string-append " " (ser (vector-ref obj i)) (vec-items (+ i 1)))))
-      (string-append "(%ser/vector" (vec-items 0) ")"))
+        (when (< i len) (emit " ") (ser (vector-ref obj i)) (vec-items (+ i 1))))
+      (vec-items 0)
+      (emit ")"))
      ;; Regular pair/list
      ((pair? obj) (ser-pair obj))
      ;; Fallback
-     (else (write-to-string-flat obj))))
+     (else (emit (write-to-string-flat obj)))))
 
   (define (ser-entry entry)
     "Serialize a space-qualified entry address or bare integer."
     (if (pair? entry)
-        (string-append "(" (write-to-string-flat (car entry))
-                       " . " (write-to-string-flat (cdr entry)) ")")
-        (write-to-string-flat entry)))
+        (begin (emit "(") (emit (write-to-string-flat (car entry)))
+               (emit " . ") (emit (write-to-string-flat (cdr entry))) (emit ")"))
+        (emit (write-to-string-flat entry))))
 
   (define (ser-pair obj)
     "Serialize a pair, detecting proper lists for compact output."
@@ -999,17 +1009,20 @@ shared structure, and global env sentinel."
             (else (proper-list? (cdr x)))))
     (if (proper-list? obj)
         ;; Proper list
-        (string-append "("
-                       (let loop ((xs obj) (first #t))
-                         (if (null? xs) ")"
-                             (string-append (if first "" " ")
-                                            (ser (car xs))
-                                            (loop (cdr xs) #f)))))
+        (begin
+          (emit "(")
+          (let loop ((xs obj) (first #t))
+            (when (not (null? xs))
+              (when (not first) (emit " "))
+              (ser (car xs))
+              (loop (cdr xs) #f)))
+          (emit ")"))
         ;; Dotted pair
-        (string-append "(" (ser (car obj)) " . " (ser (cdr obj)) ")")))
+        (begin (emit "(") (ser (car obj)) (emit " . ") (ser (cdr obj)) (emit ")"))))
 
-  ;; Run serialization
-  (ser value))
+  ;; Run serialization and extract result
+  (ser value)
+  (get-output-string port))
 
 (define (deserialize-value form)
   "Deserialize a value from a parsed s-expression FORM (already read by ECE reader).
@@ -1089,7 +1102,10 @@ Reconstructs tagged types and resolves #:def/#:ref references."
 
   (define (deser-pair form)
     (if (pair? form)
-        (cons (deser (car form)) (deser (cdr form)))
+        ;; Force left-to-right: process car before cdr so %ser/def
+        ;; stores into ref-table before %ser/ref reads from it.
+        (let ((a (deser (car form))))
+          (cons a (deser (cdr form))))
         (deser form)))
 
   (deser form))

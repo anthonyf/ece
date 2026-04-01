@@ -890,6 +890,12 @@ print without CL pipe escaping."
 (defun ece-open-input-string (str)
   (ece-make-input-port (make-string-input-stream str)))
 
+(defun ece-open-output-string ()
+  (ece-make-output-port (make-string-output-stream)))
+
+(defun ece-get-output-string (port)
+  (get-output-stream-string (ece-port-stream port)))
+
 ;;; Character I/O primitives
 
 (defun ece-read-char (&optional port)
@@ -1011,6 +1017,8 @@ print without CL pipe escaping."
     (close-input-port . ece-close-input-port)
     (close-output-port . ece-close-output-port)
     (open-input-string . ece-open-input-string)
+    (open-output-string . ece-open-output-string)
+    (get-output-string . ece-get-output-string)
     (read-char . ece-read-char)
     (peek-char . ece-peek-char)
     (write-char . ece-write-char)

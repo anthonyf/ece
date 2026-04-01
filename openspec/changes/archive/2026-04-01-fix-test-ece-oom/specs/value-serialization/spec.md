@@ -1,4 +1,4 @@
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: O(n) memory serialization
 The `serialize-value` function SHALL use O(n) total memory when serializing structures of depth n, where n is the total number of tokens in the output. The implementation SHALL use port-based output (`open-output-string` / `display` / `get-output-string`) rather than recursive string concatenation.
@@ -8,23 +8,14 @@ The `serialize-value` function SHALL use O(n) total memory when serializing stru
 - **THEN** the serializer SHALL complete without exhausting heap memory and produce a valid serialized string
 
 #### Scenario: Serialization inside nested execution context
-- **WHEN** `serialize-value` is called on a compiled procedure created inside a nested compilation context
+- **WHEN** `serialize-value` is called on a compiled procedure created inside a `try-eval` / nested `mc-compile-and-go` context
 - **THEN** the serializer SHALL complete successfully and produce output that `deserialize-value` can reconstruct
 
 #### Scenario: Output format unchanged
 - **WHEN** serializing any value
 - **THEN** the output SHALL be identical to the previous `string-append` implementation for the same input
 
-### Requirement: serializer detects and skips code objects
-The `serialize-value` function SHALL detect code-like objects (instruction vectors, compilation space internals) and emit skip sentinels instead of recursively serializing them.
-
-#### Scenario: Vector containing instructions
-- **WHEN** serializing a vector whose elements are instruction lists (e.g., `(assign val ...)`)
-- **THEN** the serializer SHALL emit `(%ser/code-skip)` instead of serializing each instruction
-
-#### Scenario: Data vector preserved
-- **WHEN** serializing a vector like `#(1 2 3)` or `#("a" "b")`
-- **THEN** the serializer SHALL serialize it normally as `(%ser/vector 1 2 3)`
+## NEW Requirements
 
 ### Requirement: String output ports
 The runtime SHALL provide `open-output-string` and `get-output-string` as core primitives on all platforms.
