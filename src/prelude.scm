@@ -868,8 +868,10 @@ shared structure, and global env sentinel."
               (scan (continuation-winds obj)))
              ;; Primitive — no sub-structure to scan
              ((primitive? obj) '())
-             ;; Env frame — scan vals and enclosing
+             ;; Env frame — scan names (vector frames on CL), vals, and enclosing
              ((%env-frame? obj)
+              (when (vector? (%env-frame-names obj))
+                (scan (%env-frame-names obj)))
               (for-each scan (%env-frame-vals obj))
               (let ((enc (%env-frame-enclosing obj)))
                 (if (not (null? enc)) (scan enc))))
