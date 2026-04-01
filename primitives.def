@@ -251,6 +251,10 @@
 ;;; --- Additional equality ---
 (174 eqv?                      2  ece    "Equivalence predicate")
 
+;;; --- String output ports (R7RS) ---
+(175 open-output-string         0  core   "Create output port that accumulates to string")
+(176 get-output-string          1  core   "Extract accumulated string from output string port")
+
 ;;; ═══════════════════════════════════════════════════════════════════════
 ;;; BROWSER PLATFORM PRIMITIVES (200-299) — Canvas and DOM
 ;;; ═══════════════════════════════════════════════════════════════════════

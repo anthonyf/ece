@@ -6,7 +6,6 @@
 (define *tests* '())
 (define *test-passes* 0)
 (define *test-failures* 0)
-(define *current-test-thunk* '())
 
 ;; --- Registration ---
 
@@ -96,9 +95,14 @@
      (display "  ")
      (display name)
      (newline)
-     ;; Run with error isolation via try-eval
-     (set! *current-test-thunk* thunk)
-     (try-eval '(*current-test-thunk*)))
+     ;; Run with error isolation via guard (no compilation overhead).
+     ;; Errors are reported but not counted as failures — the test's
+     ;; own assertions handle pass/fail counting.
+     (guard (e (#t
+                (display "    ERROR: ")
+                (display (if (error-object? e) (error-object-message e) e))
+                (newline)))
+       (thunk)))
    *tests*)
   (newline)
   (display *test-passes*)

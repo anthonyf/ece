@@ -137,6 +137,8 @@
   [171, "%set-winding-stack!"],
   [172, "%get-winding-stack"],
   [173, "continuation-winds"],
+  [175, "open-output-string"],
+  [176, "get-output-string"],
   [200, "canvas-clear"],
   [201, "canvas-set-fill-color"],
   [202, "canvas-fill-rect"],

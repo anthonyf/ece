@@ -596,6 +596,27 @@
     (call $make-input-port (local.get $buf) (local.get $len) (ref.null $string))
   )
 
+  ;; Open output string: create an in-memory output port (no localStorage).
+  (func $open-output-string-port (result (ref $port))
+    (call $make-output-port (ref.null $string))
+  )
+
+  ;; Get output string: extract accumulated buffer as an ECE $string.
+  (func $get-output-string-port (param $p (ref $port)) (result (ref $string))
+    (local $len i32) (local $buf (ref $port-buf)) (local $str (ref $string)) (local $i i32)
+    (local.set $len (struct.get $port $pos (local.get $p)))
+    (local.set $buf (ref.as_non_null (struct.get $port $buf (local.get $p))))
+    (local.set $str (array.new_default $string (local.get $len)))
+    (local.set $i (i32.const 0))
+    (block $d (loop $l
+      (br_if $d (i32.ge_u (local.get $i) (local.get $len)))
+      (array.set $string (local.get $str) (local.get $i)
+        (array.get_u $port-buf (local.get $buf) (local.get $i)))
+      (local.set $i (i32.add (local.get $i) (i32.const 1)))
+      (br $l)))
+    (local.get $str)
+  )
+
   ;; ═══════════════════════════════════════════════════════════════════
   ;; Section 5: Symbol Interning
   ;; ═══════════════════════════════════════════════════════════════════
@@ -4495,6 +4516,15 @@
     (if (i32.eq (local.get $id) (i32.const 173))
       (then (return (struct.get $continuation $winds
         (ref.cast (ref $continuation) (call $arg1 (local.get $args)))))))
+
+    ;; 175 = open-output-string() — create in-memory output string port
+    (if (i32.eq (local.get $id) (i32.const 175))
+      (then (return (call $open-output-string-port))))
+
+    ;; 176 = get-output-string(port) — extract accumulated string
+    (if (i32.eq (local.get $id) (i32.const 176))
+      (then (return (call $get-output-string-port
+        (ref.cast (ref $port) (call $arg1 (local.get $args)))))))
 
     ;; Unknown primitive — return void
     (global.get $void)
