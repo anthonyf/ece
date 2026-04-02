@@ -24,31 +24,6 @@ jobs:
       - name: Install dependencies
         run: qlot install
 
-      - name: Run CL rove tests
-        run: |
-          qlot exec sbcl --dynamic-space-size 4096 --disable-debugger \
-            --eval '(asdf:load-system :ece)' \
-            --eval '(asdf:load-system :ece/tests)' \
-            --eval '(unless (rove:run :ece/tests) (uiop:quit 1))' \
-            --quit
-
-      - name: Run ECE self-hosted tests
-        id: cl-ece
-        run: |
-          qlot exec sbcl --dynamic-space-size 4096 --eval '(asdf:load-system :ece)' \
-            --eval '(handler-case (progn (ece:evaluate (list (quote load) "tests/ece/run-common.scm")) (ece:evaluate (list (quote load) "tests/ece/test-compilation-units.scm")) (ece:evaluate (list (intern "run-tests" :ece)))) (error ()))' \
-            --eval '(let ((p (ece::lookup-variable-value (intern "*test-passes*" :ece) ece::*global-env*)) (f (ece::lookup-variable-value (intern "*test-failures*" :ece) ece::*global-env*))) (format t "~%ECE_PASS_COUNT=~D~%" p) (when (> f 0) (format t "~D ECE test failures~%" f) (sb-ext:exit :code 1)))' \
-            --quit 2>&1 | tee /tmp/cl-ece-output.txt
-          COUNT=$(grep 'ECE_PASS_COUNT=' /tmp/cl-ece-output.txt | sed 's/ECE_PASS_COUNT=//')
-          echo "count=$COUNT" >> $GITHUB_OUTPUT
-
-      - name: Run conformance tests
-        id: conformance
-        run: |
-          make test-conformance 2>&1 | tee /tmp/conformance-output.txt
-          COUNT=$(grep 'Conformance results:' /tmp/conformance-output.txt | grep -o '[0-9]* passed' | grep -o '[0-9]*')
-          echo "count=$COUNT" >> $GITHUB_OUTPUT
-
       - name: Install binaryen
         run: |
           curl -L https://github.com/WebAssembly/binaryen/releases/download/version_128/binaryen-version_128-x86_64-linux.tar.gz | tar xz
@@ -59,18 +34,5 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Build WASM runtime
-        run: make wasm
-
-      - name: Run WASM tests
-        id: wasm-ece
-        run: |
-          make test-wasm 2>&1 | tee /tmp/wasm-output.txt
-          COUNT=$(grep 'passed,' /tmp/wasm-output.txt | grep -o '^[0-9]*')
-          echo "count=$COUNT" >> $GITHUB_OUTPUT
-
-      - name: Check test count baselines
-        run: |
-          bash scripts/check-test-counts.sh cl-ece "${{ steps.cl-ece.outputs.count }}"
-          bash scripts/check-test-counts.sh conformance "${{ steps.conformance.outputs.count }}"
-          bash scripts/check-test-counts.sh wasm-ece "${{ steps.wasm-ece.outputs.count }}"
+      - name: Run all tests
+        run: make test
