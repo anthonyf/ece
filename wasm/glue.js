@@ -376,6 +376,9 @@ const ECE = {
     w.set_do_winds_sym(ECE.internSym("do-winds!"));
     w.set_winding_stack_sym(ECE.internSym("*winding-stack*"));
 
+    // Cache error symbol for primitive type-error bridging
+    w.set_error_sym(ECE.internSym("error"));
+
     // Create default compilation space for REPL/eval
     const replSym = ECE.internSym("repl");
     w.create_space(replSym, 524288);

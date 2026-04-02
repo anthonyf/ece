@@ -225,32 +225,38 @@ async function run() {
   const testSpaceId = ECE.loadEcecText(testText);
 
   const t0 = Date.now();
+  let eceCrash = null;
   try {
     w.run(testSpaceId, 0, envH);
   } catch (e) {
-    // Some tests may crash — continue to parse output
+    eceCrash = e.message;
   }
   const elapsed = Date.now() - t0;
 
-  // Parse output for results
+  // Print FAIL/ERROR lines from ECE output
   const text = output.join("");
   const lines = text.split("\n");
-
-  // Print test output
   for (const line of lines) {
-    if (line.includes("FAIL") || line.includes("passed,") || line.startsWith("Running")) {
+    if (line.includes("FAIL") || line.includes("ERROR:") || line.startsWith("Running")) {
       console.log(line);
     }
   }
 
-  // Find pass/fail counts
+  if (eceCrash) {
+    console.log(`  CRASH: ${eceCrash}`);
+  }
+
+  // Read pass/fail counters directly from the ECE environment.
+  // These are accurate even after a crash — they reflect all tests
+  // that completed before the crash point.
   let passed = 0, failed = 0;
-  for (const line of lines) {
-    const match = line.match(/(\d+) passed, (\d+) failed/);
-    if (match) {
-      passed = parseInt(match[1]);
-      failed = parseInt(match[2]);
-    }
+  try {
+    const passH = w.env_lookup(envH, ECE.internSym("*test-passes*"));
+    const failH = w.env_lookup(envH, ECE.internSym("*test-failures*"));
+    passed = w.h_fixnum_val(passH);
+    failed = w.h_fixnum_val(failH);
+  } catch (e) {
+    // Counters not available — leave at 0
   }
 
   // Combined results
@@ -262,7 +268,7 @@ async function run() {
     console.log(`  (${passed} ECE + ${intResults.passed} integration)`);
   }
 
-  if (totalFailed > 0 || passed === 0) {
+  if (totalFailed > 0 || eceCrash || passed === 0) {
     process.exit(1);
   }
 }
