@@ -1,4 +1,4 @@
-.PHONY: test test-rove test-ece test-wasm test-conformance repl run bootstrap wasm sandbox site fmt check-fmt setup clean clean-fasl
+.PHONY: test test-rove test-ece test-wasm test-conformance check-test-counts repl run bootstrap wasm sandbox site fmt check-fmt setup clean clean-fasl update-test-counts
 
 # FASL output goes to project-local .fasl-cache/ (sandbox-friendly, portable)
 export ASDF_OUTPUT_TRANSLATIONS = (:output-translations ("$(CURDIR)/" "$(CURDIR)/.fasl-cache/") :inherit-configuration)
@@ -6,24 +6,48 @@ export ASDF_OUTPUT_TRANSLATIONS = (:output-translations ("$(CURDIR)/" "$(CURDIR)
 # Derive WASM test sources from run-common.scm (single manifest for both platforms)
 WASM_TEST_SRCS := $(shell grep -o '"[^"]*"' tests/ece/run-common.scm | tr -d '"') wasm/wasm-test-runner.scm
 
+# Temp dir for test output capture (used by check-test-counts)
+TEST_OUTPUT_DIR := $(shell mktemp -d)
+
 BOOTSTRAP_DIR := bootstrap
 BOOTSTRAP_SRCS := src/prelude.scm src/compiler.scm src/reader.scm src/assembler.scm src/compilation-unit.scm src/syntax-rules.scm
 
-test: test-rove test-ece test-conformance test-wasm
+test: test-rove test-ece test-conformance test-wasm check-test-counts
 
 test-rove:
 	qlot exec sbcl --eval '(asdf:load-system :ece)' --eval '(asdf:load-system :ece/tests)' --eval '(unless (rove:run :ece/tests) (uiop:quit 1))' --quit
 
 test-ece:
-	qlot exec sbcl --eval '(asdf:load-system :ece)' \
+	@qlot exec sbcl --eval '(asdf:load-system :ece)' \
 	  --eval '(handler-case (ece:evaluate (list (quote load) "tests/ece/run-all.scm")) (error ()))' \
-	  --eval '(let ((f (ece::lookup-variable-value (intern "*test-failures*" :ece) ece::*global-env*))) (when (> f 0) (format t "~D ECE test failures~%" f) (sb-ext:exit :code 1)))' \
-	  --quit
+	  --eval '(let ((p (ece::lookup-variable-value (intern "*test-passes*" :ece) ece::*global-env*)) (f (ece::lookup-variable-value (intern "*test-failures*" :ece) ece::*global-env*))) (format t "~%~D passed, ~D failed~%" p f) (when (> f 0) (sb-ext:exit :code 1)))' \
+	  --quit 2>&1 | tee $(TEST_OUTPUT_DIR)/test-ece.txt
+	@grep -q "0 failed" $(TEST_OUTPUT_DIR)/test-ece.txt
 
 test-conformance:
-	qlot exec sbcl --dynamic-space-size 4096 --eval '(asdf:load-system :ece)' \
+	@qlot exec sbcl --dynamic-space-size 4096 --eval '(asdf:load-system :ece)' \
 	  --eval '(handler-case (ece:evaluate (list (quote load) "tests/conformance/run-conformance.scm")) (error (c) (format t "Error: ~A~%" c)))' \
+	  --quit 2>&1 | tee $(TEST_OUTPUT_DIR)/test-conformance.txt
+
+test-wasm: wasm
+	@echo "Compiling WASM test suite..."
+	@cat $(WASM_TEST_SRCS) > /tmp/ece-wasm-tests.scm
+	@echo '(run-tests)' >> /tmp/ece-wasm-tests.scm
+	@qlot exec sbcl --disable-debugger --eval '(asdf:load-system :ece)' \
+	  --eval '(ece:evaluate (list (intern "compile-file" :ece) "/tmp/ece-wasm-tests.scm"))' \
 	  --quit
+	@echo "Running WASM tests..."
+	@node --max-old-space-size=4096 wasm/test.js /tmp/ece-wasm-tests.ecec 2>&1 | tee $(TEST_OUTPUT_DIR)/test-wasm.txt
+
+check-test-counts:
+	@echo ""
+	@echo "=== Test Count Baseline Check ==="
+	@ECE_COUNT=$$(grep -o '[0-9]* passed' $(TEST_OUTPUT_DIR)/test-ece.txt 2>/dev/null | tail -1 | grep -o '^[0-9]*') && \
+	  [ -n "$$ECE_COUNT" ] && bash scripts/check-test-counts.sh cl-ece "$$ECE_COUNT" || true
+	@CONF_COUNT=$$(grep 'Conformance results:' $(TEST_OUTPUT_DIR)/test-conformance.txt 2>/dev/null | grep -o '[0-9]* passed' | grep -o '[0-9]*') && \
+	  [ -n "$$CONF_COUNT" ] && bash scripts/check-test-counts.sh conformance "$$CONF_COUNT" || true
+	@WASM_COUNT=$$(grep -o '[0-9]* passed' $(TEST_OUTPUT_DIR)/test-wasm.txt 2>/dev/null | tail -1 | grep -o '^[0-9]*') && \
+	  [ -n "$$WASM_COUNT" ] && bash scripts/check-test-counts.sh wasm-ece "$$WASM_COUNT" || true
 
 repl:
 	qlot exec sbcl --load ece.asd --eval '(asdf:load-system :ece)' --eval '(ece:repl)'
@@ -37,16 +61,6 @@ bootstrap:
 	  --quit
 	mv -f src/*.ecec $(BOOTSTRAP_DIR)/
 	@echo "Bootstrap .ecec files regenerated in $(BOOTSTRAP_DIR)/"
-
-test-wasm: wasm
-	@echo "Compiling WASM test suite..."
-	@cat $(WASM_TEST_SRCS) > /tmp/ece-wasm-tests.scm
-	@echo '(run-tests)' >> /tmp/ece-wasm-tests.scm
-	@qlot exec sbcl --disable-debugger --eval '(asdf:load-system :ece)' \
-	  --eval '(ece:evaluate (list (intern "compile-file" :ece) "/tmp/ece-wasm-tests.scm"))' \
-	  --quit
-	@echo "Running WASM tests..."
-	@node --max-old-space-size=4096 wasm/test.js /tmp/ece-wasm-tests.ecec
 
 sandbox: wasm
 	bash scripts/build-sandbox.sh
