@@ -55,29 +55,29 @@
 
 (test "write-compiled-unit / read-compiled-unit round-trip" (lambda ()
   (let ((unit (compile-form '(+ 10 20))))
-    (let ((port (open-output-file "/tmp/ece-cu-test.ecec")))
+    (let ((port (open-output-file ".tmp/ece-cu-test.ecec")))
       (write-compiled-unit unit port)
       (close-output-port port))
-    (let ((port (open-input-file "/tmp/ece-cu-test.ecec")))
+    (let ((port (open-input-file ".tmp/ece-cu-test.ecec")))
       (let ((loaded (read-compiled-unit port)))
         (close-input-port port)
         (assert-true (compiled-unit? loaded))
         (assert-equal (execute loaded) 30))))))
 
 (test "read-compiled-unit returns eof on empty" (lambda ()
-  (let ((port (open-output-file "/tmp/ece-cu-empty.ecec")))
+  (let ((port (open-output-file ".tmp/ece-cu-empty.ecec")))
     (close-output-port port))
-  (let ((port (open-input-file "/tmp/ece-cu-empty.ecec")))
+  (let ((port (open-input-file ".tmp/ece-cu-empty.ecec")))
     (let ((result (read-compiled-unit port)))
       (close-input-port port)
       (assert-true (eof? result))))))
 
 (test "round-trip with definition" (lambda ()
   (let ((unit (compile-form '(define cu-roundtrip-val 777))))
-    (let ((port (open-output-file "/tmp/ece-cu-def.ecec")))
+    (let ((port (open-output-file ".tmp/ece-cu-def.ecec")))
       (write-compiled-unit unit port)
       (close-output-port port))
-    (let ((port (open-input-file "/tmp/ece-cu-def.ecec")))
+    (let ((port (open-input-file ".tmp/ece-cu-def.ecec")))
       (let ((loaded (read-compiled-unit port)))
         (close-input-port port)
         (execute loaded)
@@ -87,36 +87,36 @@
 
 (test "compile-file creates output file" (lambda ()
   ;; Write a small source file
-  (write-string-to-file "/tmp/ece-cu-src.scm"
+  (write-string-to-file ".tmp/ece-cu-src.scm"
     "(define cu-from-file 123)\n(define cu-from-file-2 (* cu-from-file 2))\n")
   ;; Compile it
-  (let ((output (compile-file "/tmp/ece-cu-src.scm")))
-    (assert-equal output "/tmp/ece-cu-src.ecec"))))
+  (let ((output (compile-file ".tmp/ece-cu-src.scm")))
+    (assert-equal output ".tmp/ece-cu-src.ecec"))))
 
 (test "load-compiled executes compiled file" (lambda ()
   ;; Source file already compiled from previous test
-  (load-compiled "/tmp/ece-cu-src.ecec")
+  (load-compiled ".tmp/ece-cu-src.ecec")
   (assert-equal cu-from-file 123)
   (assert-equal cu-from-file-2 246)))
 
 (test "compile-file with macros" (lambda ()
   ;; Write a file that defines and uses a macro
-  (write-string-to-file "/tmp/ece-cu-macro.scm"
+  (write-string-to-file ".tmp/ece-cu-macro.scm"
     "(define-macro (cu-test-swap a b) (list b a))\n(define cu-swap-result (cu-test-swap 10 -))\n")
   ;; Compile and load
-  (compile-file "/tmp/ece-cu-macro.scm")
-  (load-compiled "/tmp/ece-cu-macro.ecec")
+  (compile-file ".tmp/ece-cu-macro.scm")
+  (load-compiled ".tmp/ece-cu-macro.ecec")
   (assert-equal cu-swap-result -10)))
 
 ;; --- 5.5 equivalence with load ---
 
 (test "load-compiled matches load behavior" (lambda ()
   ;; Write a source file
-  (write-string-to-file "/tmp/ece-cu-equiv.scm"
+  (write-string-to-file ".tmp/ece-cu-equiv.scm"
     "(define cu-equiv-a 100)\n(define cu-equiv-b (+ cu-equiv-a 50))\n")
   ;; Compile and load
-  (compile-file "/tmp/ece-cu-equiv.scm")
-  (load-compiled "/tmp/ece-cu-equiv.ecec")
+  (compile-file ".tmp/ece-cu-equiv.scm")
+  (load-compiled ".tmp/ece-cu-equiv.ecec")
   ;; Check same as what load would produce
   (assert-equal cu-equiv-a 100)
   (assert-equal cu-equiv-b 150)))

@@ -17,7 +17,7 @@
 
 (test "load .scm file and call function from it" (lambda ()
   ;; Write a temp .scm file
-  (define port (open-output-file "/tmp/ece-test-cross-space.scm"))
+  (define port (open-output-file ".tmp/ece-test-cross-space.scm"))
   (define code "(define (cross-space-add a b) (+ a b))\n")
   (define len (string-length code))
   (define (write-loop i)
@@ -27,6 +27,6 @@
   (write-loop 0)
   (close-output-port port)
   ;; Load it (creates a new space)
-  (load "/tmp/ece-test-cross-space.scm")
+  (load ".tmp/ece-test-cross-space.scm")
   ;; Call the function (cross-space call)
   (assert-equal (cross-space-add 10 32) 42)))

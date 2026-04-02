@@ -868,13 +868,9 @@ shared structure, and global env sentinel."
               (scan (continuation-winds obj)))
              ;; Primitive — no sub-structure to scan
              ((primitive? obj) '())
-             ;; Env frame — scan names (vector frames on CL), vals, and enclosing
+             ;; Env frame (WASM GC struct — not a vector, so needs its own branch)
              ((%env-frame? obj)
-              (when (vector? (%env-frame-names obj))
-                (scan (%env-frame-names obj)))
-              (for-each scan (%env-frame-vals obj))
-              (let ((enc (%env-frame-enclosing obj)))
-                (if (not (null? enc)) (scan enc))))
+              (for-each scan (%env-frame-vals obj)))
              ;; Pair/list
              ((pair? obj) (scan (car obj)) (scan (cdr obj)))
              ;; Other compound
@@ -936,16 +932,6 @@ shared structure, and global env sentinel."
      ((eq? obj global-frame) (emit "(%ser/global-env)"))
      ;; Hash frame sentinel — shouldn't normally be serialized directly
      ((%hash-frame? obj) (emit "(%ser/hash-frame)"))
-     ;; Env frame (WasmGC struct — serialize names, vals, enclosing)
-     ((%env-frame? obj)
-      (define names (%env-frame-names obj))
-      (define vals (%env-frame-vals obj))
-      (define enc (%env-frame-enclosing obj))
-      (emit "(%ser/env-frame ")
-      (ser names) (emit " ")
-      (ser vals) (emit " ")
-      (if (null? enc) (emit "#f") (ser enc))
-      (emit ")"))
      ;; Hash table (:hash-table count . root)
      ((and (pair? obj) (eq? (car obj) :hash-table))
       (define entries (map (lambda (k) (cons k (hash-ref obj k))) (hash-keys obj)))
@@ -984,6 +970,11 @@ shared structure, and global env sentinel."
         (when (< i len) (emit " ") (ser (vector-ref obj i)) (vec-items (+ i 1))))
       (vec-items 0)
       (emit ")"))
+     ;; Env frame (WASM GC struct — not a vector, so needs its own branch)
+     ((%env-frame? obj)
+      (define vals (%env-frame-vals obj))
+      (emit "(%ser/env-frame () ")
+      (ser vals) (emit " #f)"))
      ;; Regular pair/list
      ((pair? obj) (ser-pair obj))
      ;; Fallback

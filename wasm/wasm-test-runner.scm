@@ -3,14 +3,14 @@
 (define (run-continuation-roundtrip-test)
   (define result
     (%raw-call/cc (lambda (k)
-      (let ((port (open-output-file "/tmp/ece-rt-ser.dat")))
+      (let ((port (open-output-file ".tmp/ece-rt-ser.dat")))
         (serialize! k port)
         (close-output-port port))
       "first")))
   (if (equal? result "first")
       (begin
         (define loaded-k
-          (let ((port (open-input-file "/tmp/ece-rt-ser.dat")))
+          (let ((port (open-input-file ".tmp/ece-rt-ser.dat")))
             (let ((v (deserialize port)))
               (close-input-port port)
               v)))
