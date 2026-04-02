@@ -1,5 +1,8 @@
 ;;; File I/O tests
 ;;; Verify port operations, read/write char, and file primitives.
+;;; Guarded: requires filesystem primitives (CL only).
+
+(when (platform-has? 'open-input-file)
 
 (test "write-char and read-char round-trip" (lambda ()
   (define out (open-output-file "/tmp/ece-test-io.txt"))
@@ -51,3 +54,5 @@
   (assert-equal (read-line in) "line one")
   (assert-equal (read-line in) "line two")
   (close-input-port in)))
+
+) ;; end platform-has? guard

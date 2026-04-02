@@ -24,20 +24,6 @@ jobs:
       - name: Install dependencies
         run: qlot install
 
-      - name: Run CL rove tests
-        run: qlot exec sbcl --dynamic-space-size 4096 --disable-debugger --eval '(asdf:load-system :ece)' --eval '(asdf:load-system :ece/tests)' --eval '(unless (rove:run :ece/tests) (uiop:quit 1))' --quit
-
-      - name: Run ECE self-hosted tests
-        run: |
-          qlot exec sbcl --dynamic-space-size 4096 --eval '(asdf:load-system :ece)' \
-            --eval '(handler-case (progn (ece:evaluate (list (quote load) "tests/ece/run-common.scm")) (ece:evaluate (list (quote load) "tests/ece/test-compilation-units.scm")) (ece:evaluate (list (intern "run-tests" :ece)))) (error ()))' \
-            --eval '(let ((f (ece::lookup-variable-value (intern "*test-failures*" :ece) ece::*global-env*))) (when (> f 0) (format t "~D ECE test failures~%" f) (sb-ext:exit :code 1)))' \
-            --quit
-
-      - name: Run conformance tests
-        continue-on-error: true  # Conformance failures are informational
-        run: make test-conformance
-
       - name: Install binaryen
         run: |
           curl -L https://github.com/WebAssembly/binaryen/releases/download/version_128/binaryen-version_128-x86_64-linux.tar.gz | tar xz
@@ -48,8 +34,5 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Build WASM runtime
-        run: make wasm
-
-      - name: Run WASM tests
-        run: make test-wasm
+      - name: Run all tests
+        run: make test

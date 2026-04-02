@@ -252,7 +252,7 @@
 (defun format-ece-proc (proc)
   "Format a procedure value for display in errors."
   (cond
-    ((and (listp proc) (eq (car proc) 'compiled-procedure))
+    ((and (listp proc) (eq (car proc) '|compiled-procedure|))
      (let* ((entry (cadr proc))
             (name (or (gethash entry *procedure-name-table*)
                       ;; Backward compat: try bare local-pc if entry is qualified
@@ -261,7 +261,7 @@
        (if name
            (format nil "~A" name)
            (format nil "<compiled-procedure entry=~A>" entry))))
-    ((and (listp proc) (eq (car proc) 'primitive))
+    ((and (listp proc) (eq (car proc) '|primitive|))
      (let ((id-or-name (cadr proc)))
        (if (integerp id-or-name)
            (format nil "<primitive ~A>" (aref *primitive-name-table* id-or-name))
@@ -293,8 +293,8 @@ a nearby proc gives a named frame; a lone continue gives an anonymous frame."
         ;; A compiled-procedure or primitive on the stack is likely a saved proc
         ((and (listp item)
               (consp item)
-              (or (eq (car item) 'compiled-procedure)
-                  (eq (car item) 'primitive)))
+              (or (eq (car item) '|compiled-procedure|)
+                  (eq (car item) '|primitive|)))
          (setf last-proc item))
         ;; An integer or qualified address on the stack is likely a saved continue
         ((or (integerp item) (qualified-address-p item))
@@ -610,7 +610,7 @@ Combines *primitive-procedures* and *wrapper-primitives*."
                   (member platform '(browser)))
           (let ((name-sym (intern (string-downcase (symbol-name name)) :ece)))
             (push name-sym names)
-            (push (list 'primitive id) objects)))))
+            (push (list '|primitive| id) objects)))))
     (list (make-hash-frame (nreverse names) (nreverse objects)))))
 
 ;; *global-env* initialization deferred until after dispatch tables are built.
@@ -1117,13 +1117,13 @@ print without CL pipe escaping."
 ;;; --- Type introspection primitives ---
 
 (defun ece-compiled-procedure-p (x)
-  (scheme-bool (and (listp x) (eq (car x) 'compiled-procedure))))
+  (scheme-bool (and (listp x) (eq (car x) '|compiled-procedure|))))
 
 (defun ece-continuation-p (x)
-  (scheme-bool (and (listp x) (eq (car x) 'continuation))))
+  (scheme-bool (and (listp x) (eq (car x) '|continuation|))))
 
 (defun ece-primitive-p (x)
-  (scheme-bool (and (listp x) (eq (car x) 'primitive))))
+  (scheme-bool (and (listp x) (eq (car x) '|primitive|))))
 
 (defun ece-compiled-procedure-entry (proc)
   (cadr proc))
@@ -1141,16 +1141,16 @@ print without CL pipe escaping."
   (cadr prim))
 
 (defun ece-%make-compiled-procedure (entry env)
-  (list 'compiled-procedure entry env))
+  (list '|compiled-procedure| entry env))
 
 (defun ece-%make-continuation (stack conts winds)
-  (list 'continuation stack conts winds))
+  (list '|continuation| stack conts winds))
 
 (defun ece-continuation-winds (k)
   (cadddr k))
 
 (defun ece-%make-primitive (id)
-  (list 'primitive id))
+  (list '|primitive| id))
 
 ;; Env-frame introspection (CL frames are (names . values) pairs)
 (defun ece-%env-frame-p (x)
@@ -1274,13 +1274,13 @@ so INIT is already converted. We just store it with the converter."
 ;;; Compiled procedure representation
 
 (defun make-compiled-procedure (entry env)
-  (list 'compiled-procedure
+  (list '|compiled-procedure|
         (if (consp entry) entry
             (cons *executing-space-id* entry))
         env))
 
 (defun compiled-procedure-p (proc)
-  (and (listp proc) (eq (car proc) 'compiled-procedure)))
+  (and (listp proc) (eq (car proc) '|compiled-procedure|)))
 
 (defun compiled-procedure-entry (proc)
   (cadr proc))
@@ -1316,7 +1316,7 @@ for backward compat with old images."
 ;;; Predicate helpers for executor operations
 
 (defun primitive-procedure-p (proc)
-  (and (listp proc) (eq (car proc) 'primitive)))
+  (and (listp proc) (eq (car proc) '|primitive|)))
 
 (defun parameter-p (proc)
   "Test if PROC is a parameter object: (parameter (<value> . <converter>))"
@@ -1416,11 +1416,29 @@ call do-winds! to transition. Uses nested execute-compiled-call."
 
 ;;; Operations dispatch
 
+;; Safe wrappers for operations that signal CL errors (not ECE raise).
+;; These return ece-error-sentinels so the executor can bridge to ECE's error.
+(defun safe-lookup-variable-value (var env)
+  (handler-case
+      (lookup-variable-value var env)
+    (error (e)
+      (make-ece-error-sentinel
+       :message (format nil "Unbound variable: ~A" var)
+       :irritants nil))))
+
+(defun safe-lookup-global-variable (var)
+  (handler-case
+      (lookup-global-variable var)
+    (error (e)
+      (make-ece-error-sentinel
+       :message (format nil "Unbound variable: ~A" var)
+       :irritants nil))))
+
 (defun get-operation (name)
   "Get the CL function for a compiled operation name."
   (ecase name
-    (|lookup-variable-value| #'lookup-variable-value)
-    (|lookup-global-variable| #'lookup-global-variable)
+    (|lookup-variable-value| #'safe-lookup-variable-value)
+    (|lookup-global-variable| #'safe-lookup-global-variable)
     (|set-variable-value!| #'set-variable-value!)
     (|define-variable!| #'define-variable!)
     (|lexical-ref| #'lexical-ref)
@@ -1983,7 +2001,7 @@ Replaces the binding with a primitive wrapper that logs entry/exit."
                   (decf *trace-depth*)
                   (format t "~A=> ~S~%" indent result)
                   result))))
-      (set-variable-value! name (list 'primitive wrapper-sym) *global-env*)))
+      (set-variable-value! name (list '|primitive| wrapper-sym) *global-env*)))
   name)
 
 (defun ece-untrace (name)
@@ -2040,7 +2058,7 @@ for use as an ECE primitive."
                              init))
          (name (intern (format nil "PARAM~D" (incf *parameter-counter*)) :ece)))
     (setf (gethash name *parameter-table*) (cons converted-init converter))
-    (list 'primitive name)))
+    (list '|primitive| name)))
 
 (defun mc-eval (expr &optional (env nil env-supplied-p))
   "Evaluate EXPR using the metacircular compiler from the global env.
@@ -2140,7 +2158,7 @@ Uses the CL reader (not the ECE reader) so this works at boot before the ECE rea
         (handler-case
             (lookup-variable-value name-sym *global-env*)
           (error ()
-            (define-variable! name-sym (list 'primitive id) *global-env*)))))))
+            (define-variable! name-sym (list '|primitive| id) *global-env*)))))))
 
 ;;; Expose *global-env* as an ECE variable so mc-compile-define-macro can reference it.
 ;;; The CL compiler handled define-macro directly using the CL defvar; the mc-compiler

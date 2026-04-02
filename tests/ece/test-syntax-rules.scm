@@ -81,13 +81,14 @@
 
 ;; --- No matching clause ---
 
-;; assert-error requires try-eval which is CL-only
-(when (platform-has? 'try-eval)
-  (test "syntax-rules no matching clause signals error" (lambda ()
-    (define-syntax only-two
-      (syntax-rules ()
-        ((_ a b) (list a b))))
-    (assert-error (only-two 1)))))
+;; Syntax-rules expansion errors happen at compile time, so assert-error
+;; (which catches at runtime) can't handle them. Use eval-string to defer
+;; the expansion to runtime where guard can catch it.
+(test "syntax-rules no matching clause signals error" (lambda ()
+  (assert-true
+    (guard (e (#t #t))
+      (eval-string "(define-syntax only-two (syntax-rules () ((_ a b) (list a b)))) (only-two 1)")
+      #f))))
 
 ;; --- define-syntax coexists with define-macro ---
 
