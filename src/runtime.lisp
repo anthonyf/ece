@@ -2050,21 +2050,20 @@ Preserves T, NIL, and symbols from other packages."
         (t form)))
 
 (defun load-ecec-file (pathname)
-  "Load a .ecec file: read header, create named space, assemble and execute units.
+  "Load a .ecec file: read header, create named space, assemble and execute.
+Reads the ecec-header followed by a single flat instruction list.
 Uses the CL reader (not the ECE reader) so this works at boot before the ECE reader exists."
   (with-open-file (stream pathname)
     (let* ((raw-header (cl:read stream))
            (header (downcase-ece-symbols raw-header))
            (space-sym (cadr (assoc '|space| (cdr header))))
            (sid (create-space (symbol-name space-sym))))
-      ;; Read and execute compiled units
       (let ((*current-space-id* sid))
-        (loop for instrs = (cl:read stream nil :eof)
-              until (eq instrs :eof)
-              do (let* ((fixed (downcase-ece-symbols
-                                (canonicalize-ecec-constants instrs)))
-                        (start-pc (assemble-into-space sid fixed)))
-                   (execute-instructions sid start-pc *global-env*)))))))
+        (let* ((instrs (cl:read stream))
+               (fixed (downcase-ece-symbols
+                       (canonicalize-ecec-constants instrs)))
+               (start-pc (assemble-into-space sid fixed)))
+          (execute-instructions sid start-pc *global-env*))))))
 
 (defun boot-from-compiled ()
   "Boot ECE by loading .ecec files from bootstrap/ in fixed order."
@@ -2076,6 +2075,9 @@ Uses the CL reader (not the ECE reader) so this works at boot before the ECE rea
   (dolist (name '(":hash-table" ":hamt-node" ":hamt-collision"))
     (let ((sym (intern name :ece)))
       (define-variable! sym sym *global-env*)))
+  ;; Define *global-env* as an ECE variable BEFORE boot so that env-reset
+  ;; instructions in flat .ecec files can look it up during execution.
+  (define-variable! (intern "*global-env*" :ece) *global-env* *global-env*)
   (dolist (name '("prelude" "compiler" "reader" "assembler"
                   "compilation-unit" "syntax-rules"))
     (let ((path (asdf:system-relative-pathname :ece
@@ -2102,11 +2104,6 @@ Uses the CL reader (not the ECE reader) so this works at boot before the ECE rea
             (lookup-variable-value name-sym *global-env*)
           (error ()
             (define-variable! name-sym (list '|primitive| id) *global-env*)))))))
-
-;;; Expose *global-env* as an ECE variable so mc-compile-define-macro can reference it.
-;;; The CL compiler handled define-macro directly using the CL defvar; the mc-compiler
-;;; needs it as an ECE variable.
-(define-variable! (intern "*global-env*" :ece) *global-env* *global-env*)
 
 ;;; evaluate: compile and execute EXPR via the metacircular compiler in the image.
 (defun evaluate (expr &optional (env *global-env* env-supplied-p))

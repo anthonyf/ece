@@ -5160,32 +5160,55 @@
   ;; Read a list (opening paren already consumed)
   (func $ecec-read-list (result (ref null eq))
     (local $ch i32)
-    (local $first (ref null eq))
-    (call $ecec-skip-ws)
-    (local.set $ch (call $ecec-peek))
-    ;; Empty list
-    (if (i32.eq (local.get $ch) (i32.const 41))  ;; )
-      (then (drop (call $ecec-read)) (return (global.get $nil))))
-    ;; Read first element
-    (local.set $first (call $ecec-read-sexp))
-    ;; Check for dotted pair
-    (call $ecec-skip-ws)
-    (if (i32.eq (call $ecec-peek) (i32.const 46))  ;; .
+    (local $elem (ref null eq))
+    (local $acc (ref null eq))    ;; reversed list of elements
+    (local $tail (ref null eq))   ;; for dotted pair: the cdr value
+    (local $dotted i32)           ;; 1 if dotted pair encountered
+    (local.set $acc (global.get $nil))
+    (local.set $dotted (i32.const 0))
+    (block $done (loop $again
+      (call $ecec-skip-ws)
+      (local.set $ch (call $ecec-peek))
+      ;; End of list?
+      (br_if $done (i32.eq (local.get $ch) (i32.const 41)))  ;; )
+      ;; Read next element
+      (local.set $elem (call $ecec-read-sexp))
+      ;; Check for dotted pair
+      (call $ecec-skip-ws)
+      (if (i32.eq (call $ecec-peek) (i32.const 46))  ;; .
+        (then
+          (drop (call $ecec-read))
+          (local.set $ch (call $ecec-peek))
+          (if (i32.or (i32.eq (local.get $ch) (i32.const 32))
+                      (i32.eq (local.get $ch) (i32.const 10)))
+            (then
+              ;; Dotted pair: read cdr, consume )
+              (local.set $tail (call $ecec-read-sexp))
+              (local.set $acc (call $cons (local.get $elem) (local.get $acc)))
+              (local.set $dotted (i32.const 1))
+              (call $ecec-skip-ws)
+              (br $done)))))
+      ;; Regular element: prepend to accumulator
+      (local.set $acc (call $cons (local.get $elem) (local.get $acc)))
+      (br $again)))
+    (drop (call $ecec-read))  ;; consume )
+    ;; Build result: fold reversed acc onto tail (nil for proper list, value for dotted)
+    (if (local.get $dotted)
       (then
-        (drop (call $ecec-read))
-        ;; Check it's followed by whitespace (not a symbol starting with .)
-        (local.set $ch (call $ecec-peek))
-        (if (i32.or (i32.eq (local.get $ch) (i32.const 32))
-                    (i32.eq (local.get $ch) (i32.const 10)))
-          (then
-            ;; Dotted pair
-            (local.set $ch (i32.const 0))  ;; reuse as temp
-            (local.set $first (call $cons (local.get $first) (call $ecec-read-sexp)))
-            (call $ecec-skip-ws)
-            (drop (call $ecec-read))  ;; consume )
-            (return (local.get $first))))))
-    ;; Regular list: cons first with rest
-    (call $cons (local.get $first) (call $ecec-read-list)))
+        ;; Dotted pair: fold acc onto (last-elem . tail)
+        ;; acc = (last-elem ... e2 e1), tail = cdr-value
+        ;; We want (e1 e2 ... last-elem . tail)
+        (local.set $elem (local.get $tail))  ;; reuse $elem as fold accumulator
+        (block $fold-done (loop $fold
+          (br_if $fold-done (call $is-null (local.get $acc)))
+          (local.set $elem (call $cons
+            (call $car (ref.cast (ref $pair) (local.get $acc)))
+            (local.get $elem)))
+          (local.set $acc (call $cdr (ref.cast (ref $pair) (local.get $acc))))
+          (br $fold)))
+        (return (local.get $elem))))
+    ;; Proper list: reverse
+    (call $prim-reverse (local.get $acc)))
 
   ;; Read a vector literal: #(elem1 elem2 ...) — opening #( already consumed
   (func $ecec-read-vector (result (ref null eq))
@@ -5572,12 +5595,11 @@
     (local $space-name (ref null eq))
     (local $macros (ref null eq))
     (local $space-id i32)
-    (local $unit (ref null eq))
+    (local $instrs (ref null eq))   ;; single flat instruction list
     (local $item (ref null eq))
     (local $instr (ref null $instr))
     (local $pc i32)
-    (local $labels (ref null eq))   ;; alist of (symbol . pc) across ALL units
-    (local $units (ref null eq))    ;; reversed list of unit s-expressions
+    (local $labels (ref null eq))   ;; alist of (symbol . pc)
 
     ;; Set up cursor
     (global.set $ecec-pos (local.get $offset))
@@ -5599,92 +5621,62 @@
             (call $cdr (ref.cast (ref $pair)
               (call $cdr (ref.cast (ref $pair) (local.get $header))))))))))))
 
-    ;; ── Phase 1: Read all units, collect all labels ──
+    ;; Read single flat instruction list
+    (local.set $instrs (call $ecec-read-sexp))
+
+    ;; ── Phase 1: Scan instruction list, collect labels, count instructions ──
     (local.set $labels (global.get $nil))
-    (local.set $units (global.get $nil))
     (local.set $pc (i32.const 0))
-    (block $eof (loop $read-units
-      (local.set $unit (call $ecec-read-sexp))
-      (br_if $eof (call $is-eof (local.get $unit)))
-      ;; Save unit for phase 2
-      (local.set $units (call $cons (local.get $unit) (local.get $units)))
-      ;; Scan: collect labels, count instructions
-      (local.set $item (local.get $unit))
-      (block $end-scan (loop $scan
-        (br_if $end-scan (ref.is_null (local.get $item)))
-        (br_if $end-scan (call $is-null (local.get $item)))
-        (br_if $end-scan (i32.eqz (call $is-pair (local.get $item))))
-        (if (call $is-symbol (call $car (ref.cast (ref $pair) (local.get $item))))
-          (then
-            ;; Label: record (symbol . pc)
-            (local.set $labels (call $cons
-              (call $cons
-                (call $car (ref.cast (ref $pair) (local.get $item)))
-                (call $make-fixnum (local.get $pc)))
-              (local.get $labels))))
-          (else
-            ;; List item: instruction or metadata (procedure-name etc.)
-            ;; Only count if it's a recognized instruction (first element matches asm-sym-ids 0-6)
-            (if (call $is-pair (call $car (ref.cast (ref $pair) (local.get $item))))
-              (then
-                (if (call $ecec-is-instr-keyword
-                      (call $car (ref.cast (ref $pair)
-                        (call $car (ref.cast (ref $pair) (local.get $item))))))
-                  (then
-                    (local.set $pc (i32.add (local.get $pc) (i32.const 1)))))))))
-        (local.set $item (call $cdr (ref.cast (ref $pair) (local.get $item))))
-        (br $scan)))
-      ;; Count one extra instruction for the env-reset between units
-      ;; (will be injected in Phase 2 between non-last units)
-      (local.set $pc (i32.add (local.get $pc) (i32.const 1)))
-      (br $read-units)))
-    ;; Subtract 1 for the last unit (no env-reset after it)
-    (local.set $pc (i32.sub (local.get $pc) (i32.const 1)))
+    (local.set $item (local.get $instrs))
+    (block $end-scan (loop $scan
+      (br_if $end-scan (ref.is_null (local.get $item)))
+      (br_if $end-scan (call $is-null (local.get $item)))
+      (br_if $end-scan (i32.eqz (call $is-pair (local.get $item))))
+      (if (call $is-symbol (call $car (ref.cast (ref $pair) (local.get $item))))
+        (then
+          ;; Label: record (symbol . pc)
+          (local.set $labels (call $cons
+            (call $cons
+              (call $car (ref.cast (ref $pair) (local.get $item)))
+              (call $make-fixnum (local.get $pc)))
+            (local.get $labels))))
+        (else
+          ;; List item: instruction or metadata
+          ;; Only count if it's a recognized instruction
+          (if (call $is-pair (call $car (ref.cast (ref $pair) (local.get $item))))
+            (then
+              (if (call $ecec-is-instr-keyword
+                    (call $car (ref.cast (ref $pair)
+                      (call $car (ref.cast (ref $pair) (local.get $item))))))
+                (then
+                  (local.set $pc (i32.add (local.get $pc) (i32.const 1)))))))))
+      (local.set $item (call $cdr (ref.cast (ref $pair) (local.get $item))))
+      (br $scan)))
 
     ;; Create compilation space sized to actual instruction count
     (local.set $space-id (call $create-space-internal
       (ref.cast (ref $symbol) (local.get $space-name)) (local.get $pc)))
 
     ;; ── Phase 2: Create instructions with all labels resolved ──
-    (local.set $units (call $prim-reverse (local.get $units)))
     (local.set $pc (i32.const 0))
-    (block $done-units (loop $build-units
-      (br_if $done-units (call $is-null (local.get $units)))
-      (br_if $done-units (i32.eqz (call $is-pair (local.get $units))))
-      ;; Get current unit
-      (local.set $item (call $car (ref.cast (ref $pair) (local.get $units))))
-      ;; Walk items: skip labels, create instructions
-      (block $end-build (loop $build
-        (br_if $end-build (ref.is_null (local.get $item)))
-        (br_if $end-build (call $is-null (local.get $item)))
-        (br_if $end-build (i32.eqz (call $is-pair (local.get $item))))
-        (if (i32.eqz (call $is-symbol (call $car (ref.cast (ref $pair) (local.get $item)))))
-          (then
-            ;; Instruction or metadata: parse (returns null for unknown types)
-            (local.set $instr (call $ecec-parse-instr
-              (call $car (ref.cast (ref $pair) (local.get $item)))
-              (local.get $space-id) (local.get $pc) (local.get $labels)))
-            (if (i32.eqz (ref.is_null (local.get $instr)))
-              (then
-                (call $space-set-instr (local.get $space-id) (local.get $pc)
-                  (ref.as_non_null (local.get $instr)))
-                (local.set $pc (i32.add (local.get $pc) (i32.const 1)))))))
-        (local.set $item (call $cdr (ref.cast (ref $pair) (local.get $item))))
-        (br $build)))
-      ;; Between compilation units: inject (assign env (const <global-env>))
-      ;; to prevent env register leaking from one top-level form to the next.
-      (local.set $units (call $cdr (ref.cast (ref $pair) (local.get $units))))
-      (if (i32.eqz (call $is-null (local.get $units)))
+    (local.set $item (local.get $instrs))
+    (block $end-build (loop $build
+      (br_if $end-build (ref.is_null (local.get $item)))
+      (br_if $end-build (call $is-null (local.get $item)))
+      (br_if $end-build (i32.eqz (call $is-pair (local.get $item))))
+      (if (i32.eqz (call $is-symbol (call $car (ref.cast (ref $pair) (local.get $item)))))
         (then
-          (call $space-set-instr (local.get $space-id) (local.get $pc)
-            (struct.new $instr
-              (i32.const 0)   ;; opcode: assign
-              (i32.const 1)   ;; a: env register
-              (i32.const 0)   ;; b: from const
-              (i32.const 0)   ;; c: unused
-              (global.get $global-env)))  ;; val: the global env
-          (local.set $pc (i32.add (local.get $pc) (i32.const 1)))))
-      (br $build-units)))
+          ;; Instruction or metadata: parse (returns null for unknown types)
+          (local.set $instr (call $ecec-parse-instr
+            (call $car (ref.cast (ref $pair) (local.get $item)))
+            (local.get $space-id) (local.get $pc) (local.get $labels)))
+          (if (i32.eqz (ref.is_null (local.get $instr)))
+            (then
+              (call $space-set-instr (local.get $space-id) (local.get $pc)
+                (ref.as_non_null (local.get $instr)))
+              (local.set $pc (i32.add (local.get $pc) (i32.const 1)))))))
+      (local.set $item (call $cdr (ref.cast (ref $pair) (local.get $item))))
+      (br $build)))
 
     ;; Set final instruction count
     (struct.set $comp-space $len
