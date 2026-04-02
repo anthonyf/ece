@@ -7,6 +7,7 @@ WASM_FILE="wasm/runtime.wasm"
 BOOTSTRAP_DIR="bootstrap"
 GLUE_FILE="wasm/glue.js"
 
+mkdir -p .tmp
 echo "Building sandbox assets..."
 
 # 1. Build WASM if needed
@@ -49,16 +50,16 @@ echo "// Pre-compiled ECE programs — auto-generated" > "$SANDBOX_DIR/ece-compi
 echo "const ECE_COMPILED = {};" >> "$SANDBOX_DIR/ece-compiled.js"
 
 # Hello World
-cat > /tmp/ece-hello.scm << 'EOFSCM'
+cat > .tmp/ece-hello.scm << 'EOFSCM'
 (display "Hello, World!")
 (newline)
 EOFSCM
 qlot exec sbcl --eval '(asdf:load-system :ece)' \
-  --eval '(ece:evaluate (list (intern "compile-file" :ece) "/tmp/ece-hello.scm"))' \
+  --eval '(ece:evaluate (list (intern "compile-file" :ece) ".tmp/ece-hello.scm"))' \
   --quit 2>/dev/null
 
 echo -n 'ECE_COMPILED["Hello World"] = "' >> "$SANDBOX_DIR/ece-compiled.js"
-base64 -i /tmp/ece-hello.ecec | tr -d '\n' >> "$SANDBOX_DIR/ece-compiled.js"
+base64 -i .tmp/ece-hello.ecec | tr -d '\n' >> "$SANDBOX_DIR/ece-compiled.js"
 echo '";' >> "$SANDBOX_DIR/ece-compiled.js"
 
 echo "Sandbox assets built in $SANDBOX_DIR/"

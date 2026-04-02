@@ -312,23 +312,13 @@ a nearby proc gives a named frame; a lone continue gives an anonymous frame."
 
 ;;; Frame-based environment (SICP Section 4.1.3)
 ;;; A frame is one of:
-;;;   - list-based: (cons vars vals) — parallel lists of variable names and values
 ;;;   - vector-based: #(val1 val2 ...) — O(1) lexical access (no variable names)
 ;;;   - hash-table-based: (:hash-frame . <hash-table>) — O(1) named access for globals
 ;;; An environment is a list of frames
 
-(defun make-frame (vars vals)
-  (cons vars vals))
-
 (defun hash-frame-p (frame)
   "Return T if FRAME is a hash-table-backed frame (:hash-frame . ht)."
   (and (consp frame) (eq (car frame) :hash-frame)))
-
-(defun frame-variables (frame)
-  (car frame))
-
-(defun frame-values (frame)
-  (cdr frame))
 
 (defun lexical-ref (depth offset env)
   "O(1) variable access: traverse DEPTH frames, index at OFFSET."
@@ -344,48 +334,30 @@ a nearby proc gives a named frame; a lone continue gives an anonymous frame."
     (loop repeat depth do (setf frame (cdr frame)))
     (setf (svref (car frame) offset) val)))
 
-(defun extend-environment (vars vals base-env &optional extra-slots)
-  "Create a new environment frame.
-When EXTRA-SLOTS is provided (even if 0), creates vector frames for O(1) lexical access.
-When EXTRA-SLOTS is nil (3-arg call), creates list-based frames for name-based lookup."
-  (if extra-slots
-      ;; 4-arg call from CL compiler: create vector frame
-      (let ((extra (the fixnum extra-slots)))
-        (cond
-          ((or (listp vars) (null vars))
-           (let ((val-list nil) (v vars) (a vals))
-             (loop while (consp v)
-                   do (push (car a) val-list)
-                   (setf v (cdr v)) (setf a (cdr a)))
-             (when v (push a val-list))
-             (let ((vals-vec (nreverse val-list)))
-               (when (> extra 0)
-                 (setf vals-vec (nconc vals-vec (make-list extra))))
-               (cons (coerce vals-vec 'simple-vector) base-env))))
-          (t ; rest-only parameter
-           (if (> extra 0)
-               (let ((vec (make-array (1+ extra) :initial-element nil)))
-                 (setf (svref vec 0) vals)
-                 (cons vec base-env))
-               (cons (vector vals) base-env)))))
-      ;; 3-arg call from metacircular compiler: create list-based frame
-      (if (or (listp vars) (null vars))
-          (let ((var-list nil) (val-list nil) (v vars) (a vals))
-            (loop while (consp v)
-                  do (push (car v) var-list) (push (car a) val-list)
-                  (setf v (cdr v)) (setf a (cdr a)))
-            (when v (push v var-list) (push a val-list))
-            (cons (make-frame (nreverse var-list) (nreverse val-list)) base-env))
-          (cons (make-frame (list vars) (list vals)) base-env))))
+(defun extend-environment (vars vals base-env &optional (extra-slots 0))
+  "Create a new vector environment frame for O(1) lexical access."
+  (let ((extra (the fixnum extra-slots)))
+    (cond
+      ((or (listp vars) (null vars))
+       (let ((val-list nil) (v vars) (a vals))
+         (loop while (consp v)
+               do (push (car a) val-list)
+               (setf v (cdr v)) (setf a (cdr a)))
+         (when v (push a val-list))
+         (let ((vals-vec (nreverse val-list)))
+           (when (> extra 0)
+             (setf vals-vec (nconc vals-vec (make-list extra))))
+           (cons (coerce vals-vec 'simple-vector) base-env))))
+      (t ; rest-only parameter
+       (if (> extra 0)
+           (let ((vec (make-array (1+ extra) :initial-element nil)))
+             (setf (svref vec 0) vals)
+             (cons vec base-env))
+           (cons (vector vals) base-env))))))
 
 (defun lookup-variable-value (var env)
-  "Look up VAR by name. Dispatches on frame type: hash-table O(1), list O(n), skip vectors."
-  (labels ((scan-frame (vars vals)
-             (cond
-               ((null vars) nil)
-               ((eq var (car vars)) (cons t (car vals)))
-               (t (scan-frame (cdr vars) (cdr vals)))))
-           (env-loop (env)
+  "Look up VAR by name. Dispatches on frame type: hash-table O(1), skip vectors."
+  (labels ((env-loop (env)
              (if (null env)
                  (error "Unbound variable: ~A" var)
                  (let ((frame (car env)))
@@ -396,12 +368,7 @@ When EXTRA-SLOTS is nil (3-arg call), creates list-based frames for name-based l
                       (multiple-value-bind (val found)
                           (gethash var (cdr frame))
                         (if found val (env-loop (cdr env)))))
-                     (t
-                      (let ((result (scan-frame (frame-variables frame)
-                                                (frame-values frame))))
-                        (if result
-                            (cdr result)
-                            (env-loop (cdr env))))))))))
+                     (t (env-loop (cdr env))))))))
     (env-loop env)))
 
 (defun lookup-global-variable (var)
@@ -410,15 +377,8 @@ Used by %global-ref for syntax-rules hygiene."
   (lookup-variable-value var *global-env*))
 
 (defun set-variable-value! (var val env)
-  "Set VAR by name. Dispatches on frame type: hash-table O(1), list O(n), skip vectors."
-  (labels ((scan (vars vals)
-             (cond
-               ((null vars) nil)
-               ((eq var (car vars))
-                (setf (car vals) val)
-                t)
-               (t (scan (cdr vars) (cdr vals)))))
-           (env-loop (env)
+  "Set VAR by name. Dispatches on frame type: hash-table O(1), skip vectors."
+  (labels ((env-loop (env)
              (if (null env)
                  (error "Unbound variable: ~A" var)
                  (let ((frame (car env)))
@@ -432,32 +392,16 @@ Used by %global-ref for syntax-rules hygiene."
                         (if found
                             (progn (setf (gethash var (cdr frame)) val) val)
                             (env-loop (cdr env)))))
-                     (t
-                      (if (scan (frame-variables frame)
-                                (frame-values frame))
-                          val
-                          (env-loop (cdr env)))))))))
+                     (t (env-loop (cdr env))))))))
     (env-loop env)))
 
 (defun define-variable! (var val env)
-  "Define VAR in the first named frame in ENV, skipping vector frames.
-Dispatches on frame type: hash-table or list-based."
-  (labels ((find-named-frame (e)
-             (cond ((null e) (error "No named frame found for define-variable!"))
-                   ((vectorp (car e)) (find-named-frame (cdr e)))
-                   (t (car e)))))
-    (let ((frame (find-named-frame env)))
-      (if (hash-frame-p frame)
-          (setf (gethash var (cdr frame)) val)
-          (labels ((scan (vars vals)
-                     (cond
-                       ((null vars)
-                        (setf (car frame) (cons var (car frame)))
-                        (setf (cdr frame) (cons val (cdr frame))))
-                       ((eq var (car vars))
-                        (setf (car vals) val))
-                       (t (scan (cdr vars) (cdr vals))))))
-            (scan (frame-variables frame) (frame-values frame)))))))
+  "Define VAR in the first hash frame in ENV, skipping vector frames."
+  (labels ((find-hash-frame (e)
+             (cond ((null e) (error "No hash frame found for define-variable!"))
+                   ((hash-frame-p (car e)) (car e))
+                   (t (find-hash-frame (cdr e))))))
+    (setf (gethash var (cdr (find-hash-frame env))) val)))
 
 ;;; Primitives and global environment
 
@@ -1152,25 +1096,24 @@ print without CL pipe escaping."
 (defun ece-%make-primitive (id)
   (list '|primitive| id))
 
-;; Env-frame introspection (CL frames are (names . values) pairs)
+;; Env-frame introspection (CL frames are vectors for O(1) lexical access)
 (defun ece-%env-frame-p (x)
-  (scheme-bool (and (consp x) (not (symbolp (car x))))))
+  (scheme-bool (vectorp x)))
 
 (defun ece-%env-frame-names (frame)
-  (car frame))
+  (declare (ignore frame))
+  nil)
 
 (defun ece-%env-frame-vals (frame)
-  (if (vectorp frame)
-      (coerce frame 'list)
-      (cdr frame)))
+  (coerce frame 'list))
 
 (defun ece-%env-frame-enclosing (frame)
   (declare (ignore frame))
   nil)  ;; CL env frames don't have a single enclosing pointer accessible here
 
 (defun ece-%make-env-frame (names vals enclosing)
-  (declare (ignore enclosing))
-  (cons names vals))
+  (declare (ignore names enclosing))
+  (coerce vals 'simple-vector))
 
 ;; Winding stack sync
 (defvar *cl-winding-stack* nil)

@@ -6,6 +6,7 @@ set -e
 SITE_DIR="${1:-_site/tests}"
 SANDBOX_DIR="sandbox"
 
+mkdir -p .tmp
 echo "Building browser test page..."
 
 # 1. Compile test suite to .ececb (same as make test-wasm)
@@ -26,17 +27,17 @@ tests/ece/test-records.scm
 tests/ece/test-parameters.scm
 tests/ece/test-mutation.scm
 SOURCES
-) wasm/wasm-test-runner.scm > /tmp/ece-wasm-tests.scm
-echo '(run-tests)' >> /tmp/ece-wasm-tests.scm
+) wasm/wasm-test-runner.scm > .tmp/ece-wasm-tests.scm
+echo '(run-tests)' >> .tmp/ece-wasm-tests.scm
 
 qlot exec sbcl --eval '(asdf:load-system :ece)' \
-  --eval '(ece:evaluate (list (intern "compile-file" :ece) "/tmp/ece-wasm-tests.scm"))' \
+  --eval '(ece:evaluate (list (intern "compile-file" :ece) ".tmp/ece-wasm-tests.scm"))' \
   --eval '(ece:evaluate (list (quote load) "src/ecec-to-binary.scm"))' \
-  --eval '(ece::convert-ecec-to-ececb "/tmp/ece-wasm-tests.ecec" "/tmp/ece-wasm-tests.ececb")' \
+  --eval '(ece::convert-ecec-to-ececb ".tmp/ece-wasm-tests.ecec" ".tmp/ece-wasm-tests.ececb")' \
   --quit
 
 # 2. Encode test .ececb as base64
-TEST_B64=$(base64 -i /tmp/ece-wasm-tests.ececb | tr -d '\n')
+TEST_B64=$(base64 -i .tmp/ece-wasm-tests.ececb | tr -d '\n')
 
 # 3. Build the HTML page
 mkdir -p "$SITE_DIR"

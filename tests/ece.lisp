@@ -2148,9 +2148,9 @@
              (ece-eval-string "(define (img-test-fn x) (* x x))")
              (let ((pc-before (cadr (ece::lookup-variable-value 'ece::img-test-fn ece::*global-env*))))
                ;; Save image
-               (ece-eval-string "(save-image! \"/tmp/ece-name-test.image\")")
+               (ece-eval-string "(save-image! \".tmp/ece-name-test.image\")")
                ;; Clear and reload
-               (ece-eval-string "(load-image! \"/tmp/ece-name-test.image\")")
+               (ece-eval-string "(load-image! \".tmp/ece-name-test.image\")")
                ;; Name should still be mapped (try qualified key then bare local-pc)
                (let ((name-after (or (gethash pc-before ece::*procedure-name-table*)
                                      (when (consp pc-before)
@@ -2288,7 +2288,7 @@
            (ok (ece::ece-output-port-p (ece::ece-current-output-port))))
 
   (testing "with-input-from-file reads from file"
-           (let ((test-file "/tmp/claude/ece-port-test.txt"))
+           (let ((test-file ".tmp/ece-port-test.txt"))
              ;; Write a test file
              (with-open-file (s test-file :direction :output
                                 :if-exists :supersede)
@@ -2301,7 +2301,7 @@
              (delete-file test-file)))
 
   (testing "file ports: open, read, close"
-           (let ((test-file "/tmp/claude/ece-port-test2.txt"))
+           (let ((test-file ".tmp/ece-port-test2.txt"))
              ;; Write a test file
              (with-open-file (s test-file :direction :output
                                 :if-exists :supersede)
