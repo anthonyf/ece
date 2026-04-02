@@ -372,6 +372,10 @@ const ECE = {
     // Store global env for execute-from-pc
     w.set_global_env(envHandle);
 
+    // Define *global-env* as an ECE variable so env-reset instructions
+    // in flat .ecec files can look it up during execution
+    w.env_define(envHandle, ECE.internSym("*global-env*"), envHandle);
+
     // Cache symbols for continuation winding support
     w.set_do_winds_sym(ECE.internSym("do-winds!"));
     w.set_winding_stack_sym(ECE.internSym("*winding-stack*"));

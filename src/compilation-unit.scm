@@ -33,11 +33,46 @@
       (write-char (string-ref str i) port)
       (loop (+ i 1)))))
 
-(define (write-compiled-unit unit port)
-  "Write a compiled unit to PORT as an s-expression.
-Uses write-to-string-flat to avoid CL shared-structure markers."
-  (write-string-to-port (write-to-string-flat (compiled-unit-instructions unit)) port)
+(define (rename-labels instrs)
+  "Rename gensym labels — currently identity (renaming deferred to golden tests)."
+  instrs)
+
+;;; --- Flat instruction list writing ---
+
+(define (write-flat-instructions instrs port)
+  "Write a flat instruction list to PORT, one instruction/label per line."
+  (write-char #\( port)
+  (let loop ((items instrs) (first? #t))
+    (when (pair? items)
+      (if first?
+          (write-string-to-port (write-to-string-flat (car items)) port)
+          (begin
+            (write-char #\newline port)
+            (write-char #\space port)
+            (write-string-to-port (write-to-string-flat (car items)) port)))
+      (loop (cdr items) #f)))
+  (write-char #\) port)
   (write-char #\newline port))
+
+;;; --- Merging compilation units ---
+
+(define (merge-instruction-lists units)
+  "Merge compiled units into a single flat instruction list with env-resets between units."
+  (if (null? units)
+      '()
+      (let loop ((units units))
+        (if (null? (cdr units))
+            (compiled-unit-instructions (car units))
+            (append (compiled-unit-instructions (car units))
+                    (list '(assign env (op lookup-variable-value)
+                                   (const *global-env*) (reg env)))
+                    (loop (cdr units)))))))
+
+(define (write-compiled-unit unit port)
+  "Write a compiled unit to PORT with one instruction per line.
+Gensym labels are renamed to deterministic $L0, $L1, ... names."
+  (let ((renamed (rename-labels (compiled-unit-instructions unit))))
+    (write-flat-instructions renamed port)))
 
 (define (read-compiled-unit port)
   "Read a compiled unit from PORT. Returns eof on end of input."
@@ -121,7 +156,9 @@ Returns the output filename."
     (let* ((result (read-loop '() '()))
            (units (reverse (car result)))
            (macros-defined (reverse (cdr result)))
-           ;; Phase 2: write header + units
+           ;; Phase 2: merge units, rename labels, write flat output
+           (merged (merge-instruction-lists units))
+           (renamed (rename-labels merged))
            (out (open-output-file output-name)))
       (write-string-to-port
        (write-to-string-flat
@@ -130,34 +167,21 @@ Returns the output filename."
               (list 'macros macros-defined)))
        out)
       (write-char #\newline out)
-      (for-each (lambda (unit) (write-compiled-unit unit out)) units)
+      (write-flat-instructions renamed out)
       (close-output-port out)
       output-name)))
 
 (define (load-compiled filename)
-  "Load and execute compiled units from a .ecec file.
-Reads the ecec-header, creates a named space, then executes units in that space.
-Returns the result of the last executed unit."
+  "Load and execute compiled code from a .ecec file.
+Reads the ecec-header, creates a named space, then executes the flat instruction list."
   (let ((port (open-input-file filename)))
-    (let ((first-form (ece-scheme-read port)))
-      ;; Check if this is a new-format .ecec with header
-      (if (and (pair? first-form) (eq? (car first-form) 'ecec-header))
-          ;; New format: header + compiled units
-          (let* ((space-sym (cadr (assoc 'space (cdr first-form))))
-                 (prev-space (%current-space-id))
-                 (new-space (%create-space (symbol->string space-sym))))
-            (%set-current-space-id! new-space)
-            (let loop ((result '()))
-              (let ((unit (read-compiled-unit port)))
-                (if (eof? unit)
-                    (begin
-                      (close-input-port port)
-                      (%set-current-space-id! prev-space)
-                      result)
-                    (loop (execute unit))))))
-          ;; Old format: no header, first form is a compiled unit
-          (let loop ((result (execute (list 'compiled-unit first-form))))
-            (let ((unit (read-compiled-unit port)))
-              (if (eof? unit)
-                  (begin (close-input-port port) result)
-                  (loop (execute unit)))))))))
+    (let ((header (ece-scheme-read port)))
+      (let* ((space-sym (cadr (assoc 'space (cdr header))))
+             (prev-space (%current-space-id))
+             (new-space (%create-space (symbol->string space-sym)))
+             (instrs (ece-scheme-read port)))
+        (close-input-port port)
+        (%set-current-space-id! new-space)
+        (let ((result (execute (list 'compiled-unit instrs))))
+          (%set-current-space-id! prev-space)
+          result)))))

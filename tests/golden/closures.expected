@@ -1,0 +1,167 @@
+((assign val (op make-compiled-procedure) (label L7) (reg env))
+ (goto (label L6))
+ L7
+ (assign env (op compiled-procedure-env) (reg proc))
+ (assign env (op extend-environment) (const (n)) (reg argl) (reg env) (const 0))
+ (assign val (op make-compiled-procedure) (label L9) (reg env))
+ (goto (reg continue))
+ L9
+ (assign env (op compiled-procedure-env) (reg proc))
+ (assign env (op extend-environment) (const (x)) (reg argl) (reg env) (const 0))
+ (assign proc (op lookup-variable-value) (const +) (reg env))
+ (assign val (op lexical-ref) (const 0) (const 0) (reg env))
+ (assign argl (op list) (reg val))
+ (assign val (op lexical-ref) (const 1) (const 0) (reg env))
+ (assign argl (op cons) (reg val) (reg argl))
+ (test (op primitive-procedure?) (reg proc))
+ (branch (label L14))
+ (test (op continuation?) (reg proc))
+ (branch (label L12))
+ (test (op parameter?) (reg proc))
+ (branch (label L11))
+ L13
+ (assign val (op compiled-procedure-entry) (reg proc))
+ (goto (reg val))
+ L12
+ (assign val (op car) (reg argl))
+ (perform (op do-continuation-winds) (reg proc))
+ (assign stack (op continuation-stack) (reg proc))
+ (assign continue (op continuation-conts) (reg proc))
+ (goto (reg continue))
+ L11
+ (assign val (op apply-parameter) (reg proc) (reg argl))
+ (goto (reg continue))
+ L14
+ (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
+ (goto (reg continue))
+ L10
+ L8
+ L6
+ (perform (op define-variable!) (const make-adder) (reg val) (reg env))
+ (assign val (reg val))
+ (procedure-name L7 make-adder)
+ (assign env (op lookup-variable-value) (const *global-env*) (reg env))
+ (save env)
+ (assign proc (op lookup-variable-value) (const make-adder) (reg env))
+ (assign val (const 5))
+ (assign argl (op list) (reg val))
+ (test (op primitive-procedure?) (reg proc))
+ (branch (label L19))
+ (test (op continuation?) (reg proc))
+ (branch (label L17))
+ (test (op parameter?) (reg proc))
+ (branch (label L16))
+ L18
+ (assign continue (label L15))
+ (assign val (op compiled-procedure-entry) (reg proc))
+ (goto (reg val))
+ L17
+ (assign val (op car) (reg argl))
+ (perform (op do-continuation-winds) (reg proc))
+ (assign stack (op continuation-stack) (reg proc))
+ (assign continue (op continuation-conts) (reg proc))
+ (goto (reg continue))
+ L16
+ (assign val (op apply-parameter) (reg proc) (reg argl))
+ (goto (label L15))
+ L19
+ (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
+ L15
+ (restore env)
+ (perform (op define-variable!) (const add5) (reg val) (reg env))
+ (assign val (reg val))
+ (assign env (op lookup-variable-value) (const *global-env*) (reg env))
+ (assign proc (op lookup-variable-value) (const add5) (reg env))
+ (assign val (const 10))
+ (assign argl (op list) (reg val))
+ (test (op primitive-procedure?) (reg proc))
+ (branch (label L24))
+ (test (op continuation?) (reg proc))
+ (branch (label L22))
+ (test (op parameter?) (reg proc))
+ (branch (label L21))
+ L23
+ (assign continue (label L20))
+ (assign val (op compiled-procedure-entry) (reg proc))
+ (goto (reg val))
+ L22
+ (assign val (op car) (reg argl))
+ (perform (op do-continuation-winds) (reg proc))
+ (assign stack (op continuation-stack) (reg proc))
+ (assign continue (op continuation-conts) (reg proc))
+ (goto (reg continue))
+ L21
+ (assign val (op apply-parameter) (reg proc) (reg argl))
+ (goto (label L20))
+ L24
+ (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
+ L20
+ (assign env (op lookup-variable-value) (const *global-env*) (reg env))
+ (assign val (op make-compiled-procedure) (label L26) (reg env))
+ (goto (label L25))
+ L26
+ (assign env (op compiled-procedure-env) (reg proc))
+ (assign env (op extend-environment) (const (f g)) (reg argl) (reg env) (const 0))
+ (assign val (op make-compiled-procedure) (label L28) (reg env))
+ (goto (reg continue))
+ L28
+ (assign env (op compiled-procedure-env) (reg proc))
+ (assign env (op extend-environment) (const (x)) (reg argl) (reg env) (const 0))
+ (assign proc (op lexical-ref) (const 1) (const 0) (reg env))
+ (save continue)
+ (save proc)
+ (assign proc (op lexical-ref) (const 1) (const 1) (reg env))
+ (assign val (op lexical-ref) (const 0) (const 0) (reg env))
+ (assign argl (op list) (reg val))
+ (test (op primitive-procedure?) (reg proc))
+ (branch (label L33))
+ (test (op continuation?) (reg proc))
+ (branch (label L31))
+ (test (op parameter?) (reg proc))
+ (branch (label L30))
+ L32
+ (assign continue (label L29))
+ (assign val (op compiled-procedure-entry) (reg proc))
+ (goto (reg val))
+ L31
+ (assign val (op car) (reg argl))
+ (perform (op do-continuation-winds) (reg proc))
+ (assign stack (op continuation-stack) (reg proc))
+ (assign continue (op continuation-conts) (reg proc))
+ (goto (reg continue))
+ L30
+ (assign val (op apply-parameter) (reg proc) (reg argl))
+ (goto (label L29))
+ L33
+ (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
+ L29
+ (assign argl (op list) (reg val))
+ (restore proc)
+ (restore continue)
+ (test (op primitive-procedure?) (reg proc))
+ (branch (label L38))
+ (test (op continuation?) (reg proc))
+ (branch (label L36))
+ (test (op parameter?) (reg proc))
+ (branch (label L35))
+ L37
+ (assign val (op compiled-procedure-entry) (reg proc))
+ (goto (reg val))
+ L36
+ (assign val (op car) (reg argl))
+ (perform (op do-continuation-winds) (reg proc))
+ (assign stack (op continuation-stack) (reg proc))
+ (assign continue (op continuation-conts) (reg proc))
+ (goto (reg continue))
+ L35
+ (assign val (op apply-parameter) (reg proc) (reg argl))
+ (goto (reg continue))
+ L38
+ (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
+ (goto (reg continue))
+ L34
+ L27
+ L25
+ (perform (op define-variable!) (const compose) (reg val) (reg env))
+ (assign val (reg val))
+ (procedure-name L26 compose))

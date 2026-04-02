@@ -1,4 +1,4 @@
-.PHONY: test test-rove test-ece test-wasm test-conformance check-test-counts repl run run-lisp bootstrap wasm sandbox site fmt check-fmt setup clean clean-fasl update-test-counts
+.PHONY: test test-rove test-ece test-wasm test-conformance test-golden check-test-counts repl run run-lisp bootstrap wasm sandbox site fmt check-fmt setup clean clean-fasl update-test-counts update-golden
 
 # FASL output goes to project-local .fasl-cache/ (sandbox-friendly, portable)
 export ASDF_OUTPUT_TRANSLATIONS = (:output-translations ("$(CURDIR)/" "$(CURDIR)/.fasl-cache/") :inherit-configuration)
@@ -12,7 +12,9 @@ TEST_OUTPUT_DIR := $(shell mktemp -d)
 BOOTSTRAP_DIR := bootstrap
 BOOTSTRAP_SRCS := src/prelude.scm src/compiler.scm src/reader.scm src/assembler.scm src/compilation-unit.scm src/syntax-rules.scm
 
-test: test-rove test-ece test-wasm test-conformance check-test-counts
+GOLDEN_SRCS := $(wildcard tests/golden/*.scm)
+
+test: test-rove test-ece test-wasm test-conformance test-golden check-test-counts
 
 test-rove:
 	@qlot exec sbcl --disable-debugger --eval '(asdf:load-system :ece)' --eval '(asdf:load-system :ece/tests)' \
@@ -52,6 +54,50 @@ check-test-counts:
 	  [ -n "$$CONF_COUNT" ] && bash scripts/check-test-counts.sh conformance "$$CONF_COUNT" || true
 	@WASM_COUNT=$$(grep -o '[0-9]* passed' $(TEST_OUTPUT_DIR)/test-wasm.txt 2>/dev/null | tail -1 | grep -o '^[0-9]*') && \
 	  [ -n "$$WASM_COUNT" ] && bash scripts/check-test-counts.sh wasm-ece "$$WASM_COUNT" || true
+
+test-golden:
+	@echo "Running golden compiler output tests..."
+	@mkdir -p .tmp
+	@FAIL=0; \
+	for src in $(GOLDEN_SRCS); do \
+	  base=$$(basename "$$src" .scm); \
+	  expected="tests/golden/$$base.expected"; \
+	  actual=".tmp/$$base.actual"; \
+	  qlot exec sbcl --dynamic-space-size 4096 --disable-debugger \
+	    --eval '(asdf:load-system :ece)' \
+	    --eval '(in-package :ece)' \
+	    --eval "(set-variable-value! (intern \"mc-label-counter\" :ece) 0 *global-env*)" \
+	    --eval "(evaluate (list (intern \"compile-file\" :ece) \"$$src\"))" \
+	    --quit 2>/dev/null; \
+	  ecec="tests/golden/$$base.ecec"; \
+	  tail -n +2 "$$ecec" > "$$actual"; \
+	  rm -f "$$ecec"; \
+	  if diff -u "$$expected" "$$actual" > /dev/null 2>&1; then \
+	    echo "  PASS: $$base"; \
+	  else \
+	    echo "  FAIL: $$base"; \
+	    diff -u "$$expected" "$$actual" | head -20; \
+	    FAIL=1; \
+	  fi; \
+	done; \
+	[ $$FAIL -eq 0 ] && echo "All golden tests passed." || (echo "Golden tests FAILED." && exit 1)
+
+update-golden:
+	@echo "Updating golden expected files..."
+	@for src in $(GOLDEN_SRCS); do \
+	  base=$$(basename "$$src" .scm); \
+	  expected="tests/golden/$$base.expected"; \
+	  qlot exec sbcl --dynamic-space-size 4096 --disable-debugger \
+	    --eval '(asdf:load-system :ece)' \
+	    --eval '(in-package :ece)' \
+	    --eval "(set-variable-value! (intern \"mc-label-counter\" :ece) 0 *global-env*)" \
+	    --eval "(evaluate (list (intern \"compile-file\" :ece) \"$$src\"))" \
+	    --quit 2>/dev/null; \
+	  ecec="tests/golden/$$base.ecec"; \
+	  tail -n +2 "$$ecec" > "$$expected"; \
+	  rm -f "$$ecec"; \
+	  echo "  Updated: $$base.expected ($$(wc -l < "$$expected") lines)"; \
+	done
 
 repl:
 	qlot exec sbcl --load ece.asd --eval '(asdf:load-system :ece)' --eval '(ece:repl)'
