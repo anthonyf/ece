@@ -20,7 +20,7 @@ test-rove:
 	  --quit 2>&1 | tee $(TEST_OUTPUT_DIR)/test-rove.txt
 
 test-ece:
-	@qlot exec sbcl --eval '(asdf:load-system :ece)' \
+	@qlot exec sbcl --dynamic-space-size 4096 --disable-debugger --eval '(asdf:load-system :ece)' \
 	  --eval '(handler-case (ece:evaluate (list (quote load) "tests/ece/run-all.scm")) (error ()))' \
 	  --eval '(let ((p (ece::lookup-variable-value (intern "*test-passes*" :ece) ece::*global-env*)) (f (ece::lookup-variable-value (intern "*test-failures*" :ece) ece::*global-env*))) (format t "~%~D passed, ~D failed~%" p f) (when (> f 0) (sb-ext:exit :code 1)))' \
 	  --quit 2>&1 | tee $(TEST_OUTPUT_DIR)/test-ece.txt
