@@ -41,7 +41,7 @@ test-wasm: wasm
 	  --eval '(ece:evaluate (list (intern "compile-file" :ece) ".tmp/ece-wasm-tests.scm"))' \
 	  --quit
 	@echo "Running WASM tests..."
-	@set -o pipefail && node --max-old-space-size=4096 wasm/test.js .tmp/ece-wasm-tests.ecec 2>&1 | tee $(TEST_OUTPUT_DIR)/test-wasm.txt
+	@bash -o pipefail -c 'node --max-old-space-size=4096 wasm/test.js .tmp/ece-wasm-tests.ecec 2>&1 | tee $(TEST_OUTPUT_DIR)/test-wasm.txt'
 
 check-test-counts:
 	@echo ""
