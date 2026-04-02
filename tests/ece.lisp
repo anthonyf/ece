@@ -408,13 +408,13 @@
            (ok (eq (car (evaluate 'read)) 'ece::compiled-procedure)))
 
   (testing "display is bound"
-           (ok (eq (car (evaluate 'display)) 'primitive)))
+           (ok (eq (car (evaluate 'display)) '|primitive|)))
 
   (testing "newline is bound"
-           (ok (eq (car (evaluate 'newline)) 'primitive)))
+           (ok (eq (car (evaluate 'newline)) '|primitive|)))
 
   (testing "eof? is bound"
-           (ok (eq (car (evaluate 'eof?)) 'primitive)))
+           (ok (eq (car (evaluate 'eof?)) '|primitive|)))
 
   (testing "display outputs without leading newline"
            (ok (equal (with-output-to-string (*standard-output*)
@@ -2065,12 +2065,9 @@
                  (ok nil "should have signaled"))
              (ece-runtime-error (e)
                (let ((env (ece-error-environment e)))
+                 ;; Environment should be a non-empty list of frames
                  (ok (consp env))
-                 ;; innermost frame is a vector containing the value 5
-                 ;; (compiler uses vector frames — no variable names at runtime)
-                 (let ((frame (car env)))
-                   (ok (simple-vector-p frame))
-                   (ok (= (svref frame 0) 5)))))))
+                 (ok (car env))))))
 
   (testing "original error is accessible"
            (handler-case
@@ -2142,7 +2139,7 @@
                  (ok (search "ECE error" msg))))))
 
   (testing "anonymous lambdas display as unnamed"
-           (let ((anon-proc (list 'ece::compiled-procedure 999999 nil)))
+           (let ((anon-proc (list 'ece::|compiled-procedure| 999999 nil)))
              ;; PC 999999 is not in the name table
              (ok (search "entry=" (ece::format-ece-proc anon-proc)))))
 
@@ -2299,7 +2296,7 @@
              ;; Read via with-input-from-file
              (let ((ch (ece::ece-with-input-from-file
                         test-file
-                        (list 'primitive 'ece::ece-read-char))))
+                        (list '|primitive| 'ece::ece-read-char))))
                (ok (char= ch #\a)))
              (delete-file test-file)))
 

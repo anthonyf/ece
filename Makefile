@@ -1,4 +1,4 @@
-.PHONY: test test-ece test-wasm test-conformance repl run bootstrap wasm sandbox site fmt check-fmt setup clean clean-fasl
+.PHONY: test test-rove test-ece test-wasm test-conformance repl run bootstrap wasm sandbox site fmt check-fmt setup clean clean-fasl
 
 # FASL output goes to project-local .fasl-cache/ (sandbox-friendly, portable)
 export ASDF_OUTPUT_TRANSLATIONS = (:output-translations ("$(CURDIR)/" "$(CURDIR)/.fasl-cache/") :inherit-configuration)
@@ -9,7 +9,9 @@ WASM_TEST_SRCS := $(shell grep -o '"[^"]*"' tests/ece/run-common.scm | tr -d '"'
 BOOTSTRAP_DIR := bootstrap
 BOOTSTRAP_SRCS := src/prelude.scm src/compiler.scm src/reader.scm src/assembler.scm src/compilation-unit.scm src/syntax-rules.scm
 
-test:
+test: test-rove test-ece test-conformance test-wasm
+
+test-rove:
 	qlot exec sbcl --eval '(asdf:load-system :ece)' --eval '(asdf:load-system :ece/tests)' --eval '(unless (rove:run :ece/tests) (uiop:quit 1))' --quit
 
 test-ece:
