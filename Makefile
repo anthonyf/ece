@@ -15,7 +15,9 @@ BOOTSTRAP_SRCS := src/prelude.scm src/compiler.scm src/reader.scm src/assembler.
 test: test-rove test-ece test-conformance test-wasm check-test-counts
 
 test-rove:
-	qlot exec sbcl --eval '(asdf:load-system :ece)' --eval '(asdf:load-system :ece/tests)' --eval '(unless (rove:run :ece/tests) (uiop:quit 1))' --quit
+	@qlot exec sbcl --disable-debugger --eval '(asdf:load-system :ece)' --eval '(asdf:load-system :ece/tests)' \
+	  --eval '(let ((suite (car (rove/core/suite/package:all-suites)))) (rove/core/suite/package:run-suite suite) (unless (zerop (slot-value (rove/core/suite::suite-stats suite) (quote rove/core/result::failed))) (uiop:quit 1)))' \
+	  --quit 2>&1 | tee $(TEST_OUTPUT_DIR)/test-rove.txt
 
 test-ece:
 	@qlot exec sbcl --eval '(asdf:load-system :ece)' \

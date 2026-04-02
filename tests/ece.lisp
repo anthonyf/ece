@@ -402,19 +402,19 @@
 
 (deftest test-io-primitives
     (testing "print is bound"
-             (ok (eq (car (evaluate 'print)) 'ece::compiled-procedure)))
+             (ok (eq (car (evaluate 'print)) 'ece::|compiled-procedure|)))
 
   (testing "read is bound (ECE reader)"
-           (ok (eq (car (evaluate 'read)) 'ece::compiled-procedure)))
+           (ok (eq (car (evaluate 'read)) 'ece::|compiled-procedure|)))
 
   (testing "display is bound"
-           (ok (eq (car (evaluate 'display)) '|primitive|)))
+           (ok (eq (car (evaluate 'display)) 'ece::|primitive|)))
 
   (testing "newline is bound"
-           (ok (eq (car (evaluate 'newline)) '|primitive|)))
+           (ok (eq (car (evaluate 'newline)) 'ece::|primitive|)))
 
   (testing "eof? is bound"
-           (ok (eq (car (evaluate 'eof?)) '|primitive|)))
+           (ok (eq (car (evaluate 'eof?)) 'ece::|primitive|)))
 
   (testing "display outputs without leading newline"
            (ok (equal (with-output-to-string (*standard-output*)
