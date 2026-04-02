@@ -1,4 +1,4 @@
-.PHONY: test test-rove test-ece test-wasm test-conformance check-test-counts repl run bootstrap wasm sandbox site fmt check-fmt setup clean clean-fasl update-test-counts
+.PHONY: test test-rove test-ece test-wasm test-conformance check-test-counts repl run run-lisp bootstrap wasm sandbox site fmt check-fmt setup clean clean-fasl update-test-counts
 
 # FASL output goes to project-local .fasl-cache/ (sandbox-friendly, portable)
 export ASDF_OUTPUT_TRANSLATIONS = (:output-translations ("$(CURDIR)/" "$(CURDIR)/.fasl-cache/") :inherit-configuration)
@@ -53,6 +53,11 @@ check-test-counts:
 
 repl:
 	qlot exec sbcl --load ece.asd --eval '(asdf:load-system :ece)' --eval '(ece:repl)'
+
+# Run SBCL with ECE loaded — use for ad-hoc evaluation via --eval
+# Example: make run-lisp ARGS="--eval '(ece:evaluate 42)' --quit"
+run-lisp:
+	qlot exec sbcl --dynamic-space-size 4096 --disable-debugger --eval '(asdf:load-system :ece)' $(ARGS)
 
 bootstrap:
 	@mkdir -p $(BOOTSTRAP_DIR)
