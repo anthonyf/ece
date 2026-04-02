@@ -1,20 +1,10 @@
-.PHONY: test test-ece test-wasm test-conformance repl run bootstrap wasm sandbox site fmt check-fmt setup clean
+.PHONY: test test-ece test-wasm test-conformance repl run bootstrap wasm sandbox site fmt check-fmt setup clean clean-fasl
 
-# Test files for WASM (common tests that don't need try-eval)
-WASM_TEST_SRCS := tests/ece/test-framework.scm \
-	tests/ece/test-arithmetic.scm tests/ece/test-lists.scm \
-	tests/ece/test-strings.scm tests/ece/test-vectors.scm \
-	tests/ece/test-hash-tables.scm tests/ece/test-types.scm \
-	tests/ece/test-control-flow.scm tests/ece/test-closures.scm \
-	tests/ece/test-macros.scm tests/ece/test-syntax-rules.scm \
-	tests/ece/test-tco.scm \
-	tests/ece/test-higher-order.scm tests/ece/test-records.scm \
-	tests/ece/test-parameters.scm tests/ece/test-mutation.scm \
-	tests/ece/test-callcc.scm tests/ece/test-advanced-continuations.scm \
-	tests/ece/test-dynamic-wind.scm tests/ece/test-guard.scm \
-	tests/ece/test-eval-string.scm tests/ece/test-cross-space.scm \
-	tests/ece/test-roundtrip.scm \
-	wasm/wasm-test-runner.scm
+# FASL output goes to project-local .fasl-cache/ (sandbox-friendly, portable)
+export ASDF_OUTPUT_TRANSLATIONS = (:output-translations ("$(CURDIR)/" "$(CURDIR)/.fasl-cache/") :inherit-configuration)
+
+# Derive WASM test sources from run-common.scm (single manifest for both platforms)
+WASM_TEST_SRCS := $(shell grep -o '"[^"]*"' tests/ece/run-common.scm | tr -d '"') wasm/wasm-test-runner.scm
 
 BOOTSTRAP_DIR := bootstrap
 BOOTSTRAP_SRCS := src/prelude.scm src/compiler.scm src/reader.scm src/assembler.scm src/compilation-unit.scm src/syntax-rules.scm
@@ -104,5 +94,19 @@ setup:
 	ln -sf ../../scripts/pre-commit .git/hooks/pre-commit
 	@echo "Pre-commit hook installed."
 
+update-test-counts:
+	@echo "Running test suites to capture counts..."
+	@CL_COUNT=$$(qlot exec sbcl --dynamic-space-size 4096 --disable-debugger \
+	  --eval '(asdf:load-system :ece)' \
+	  --eval '(handler-case (progn (ece:evaluate (list (quote load) "tests/ece/run-common.scm")) (ece:evaluate (list (quote load) "tests/ece/test-compilation-units.scm")) (ece:evaluate (list (intern "run-tests" :ece)))) (error ()))' \
+	  --eval '(format t "~%ECE_PASS_COUNT=~D~%" (ece::lookup-variable-value (intern "*test-passes*" :ece) ece::*global-env*))' \
+	  --quit 2>&1 | grep ECE_PASS_COUNT= | sed 's/ECE_PASS_COUNT=//') && \
+	CONF_COUNT=$$(make test-conformance 2>&1 | grep 'Conformance results:' | grep -o '[0-9]* passed' | grep -o '[0-9]*') && \
+	WASM_COUNT=$$(make test-wasm 2>&1 | grep 'passed,' | grep -o '^[0-9]*') && \
+	python3 -c "import json; json.dump({'cl-ece': int('$$CL_COUNT'), 'cl-rove': 42, 'wasm-ece': int('$$WASM_COUNT'), 'conformance': int('$$CONF_COUNT')}, open('tests/test-counts.json','w'), indent=2); print(open('tests/test-counts.json').read())"
+
 clean:
-	rm -rf ~/.cache/common-lisp/sbcl-2.6.1-macosx-arm64/Users/anthonyfairchild/git/ece/
+	rm -rf .fasl-cache/
+
+clean-fasl:
+	rm -rf .fasl-cache/

@@ -74,8 +74,7 @@
   (%raw-call/cc (lambda (cont) (set! k cont)))
   (test-save! "/tmp/ece-rt-cont.dat" k)
   (define loaded (test-load "/tmp/ece-rt-cont.dat"))
-  (assert (pair? loaded))
-  (assert-equal (car loaded) 'continuation)))
+  (assert-true (continuation? loaded))))
 
 (test "continuation serialization is compact" (lambda ()
   (define k #f)
@@ -120,8 +119,7 @@
       (test-save! "/tmp/ece-rt-param-lex.dat" k)
       (define loaded (test-load "/tmp/ece-rt-param-lex.dat"))
       ;; The continuation captured the env with p in lexical scope
-      (assert (pair? loaded))
-      (assert-equal (car loaded) 'continuation)
+      (assert-true (continuation? loaded))
       (p)))
   (assert-equal result "dungeon")))
 
@@ -234,8 +232,7 @@
 
   ;; Load the saved continuation
   (define loaded (test-load "/tmp/ece-rt-lexical-game.dat"))
-  (assert (pair? loaded))
-  (assert-equal (car loaded) 'continuation)))
+  (assert-true (continuation? loaded))))
 
 (test "lexical state pattern: external functions work with lexical params" (lambda ()
   ;; External function receives values, not parameters

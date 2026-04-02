@@ -1,4 +1,5 @@
 *.fasl
+/.fasl-cache/
 /.qlot/
 wasm/runtime.wasm
 sandbox/ece-runtime.js

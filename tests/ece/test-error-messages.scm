@@ -99,5 +99,9 @@
 (test "cdr of nil returns nil" (lambda ()
   (assert-equal (cdr '()) '())))
 
+;; Unbound variable errors are CL-level (not caught by guard-based assert-error)
 (test "unbound variable error" (lambda ()
-  (assert-error this-variable-does-not-exist-12345)))
+  (assert-true
+    (guard (e (#t #t))
+      (eval (string->symbol "this-variable-does-not-exist-12345"))
+      #f))))

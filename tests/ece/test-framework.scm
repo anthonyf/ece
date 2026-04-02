@@ -37,14 +37,14 @@
         (newline))))
 
 (define-macro (assert-error expr)
-  "Check that expr signals an error. Uses try-eval."
-  `(if (eof? (try-eval ',expr))
-       (set! *test-passes* (+ *test-passes* 1))
-       (begin
-         (set! *test-failures* (+ *test-failures* 1))
-         (display "    FAIL: expected error from ")
-         (display ',expr)
-         (newline))))
+  "Check that expr signals an error. Uses guard."
+  `(guard (e (#t (set! *test-passes* (+ *test-passes* 1))))
+     ,expr
+     (begin
+       (set! *test-failures* (+ *test-failures* 1))
+       (display "    FAIL: expected error from ")
+       (display ',expr)
+       (newline))))
 
 (define-macro (assert-error-message expr expected-msg)
   "Check that expr raises an error with the expected message."
