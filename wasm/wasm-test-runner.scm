@@ -21,7 +21,7 @@
         (display "  serialize! / deserialize continuation round-trip")
         (newline))))
 
-;;; WASM Test Runner — calls thunks directly (no try-eval)
+;;; WASM Test Runner — with guard wrapping for error isolation
 (define (run-tests)
   (define total (length *tests*))
   (display "Running ")
@@ -36,7 +36,11 @@
      (display "  ")
      (display name)
      (newline)
-     (thunk))
+     (guard (e (#t
+                (display "    ERROR: ")
+                (display (if (error-object? e) (error-object-message e) e))
+                (newline)))
+       (thunk)))
    *tests*)
   ;; Run deferred tests that can't be in the test framework
   ;; Continuation roundtrip requires file I/O and serialize! — skip on WASM

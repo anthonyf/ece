@@ -128,6 +128,14 @@
   ;; preventing binaryen struct type deduplication.
   (type $js-ref (struct (field $idx i32) (field $tag i32)))
 
+  ;; --- Error sentinel ---
+  ;; Returned by $apply-primitive when a type error or division-by-zero is
+  ;; detected. The execution loop checks for this and bridges to ECE's
+  ;; error function, making the error catchable by guard/raise.
+  (type $error-sentinel (struct
+    (field $message (ref $string))
+    (field $irritants (ref null eq))))
+
   ;; --- Port ---
   ;; Buffer-based I/O port. Used for file I/O (localStorage backing),
   ;; string ports, and console I/O.
@@ -187,6 +195,46 @@
       (i32.const 85)(i32.const 110)(i32.const 98)(i32.const 111)(i32.const 117)(i32.const 110)
       (i32.const 100)(i32.const 32)(i32.const 118)(i32.const 97)(i32.const 114)(i32.const 105)
       (i32.const 97)(i32.const 98)(i32.const 108)(i32.const 101)(i32.const 58)(i32.const 32)))
+
+  ;; Cached symbol for looking up ECE's "error" function at runtime
+  (global $error-sym (mut (ref null $symbol)) (ref.null $symbol))
+
+  ;; Error message prefix strings for type-error sentinels
+  ;; ": not a pair" (12 chars)
+  (global $err-not-pair (ref $string)
+    (array.new_fixed $string 12
+      (i32.const 58)(i32.const 32)(i32.const 110)(i32.const 111)(i32.const 116)(i32.const 32)
+      (i32.const 97)(i32.const 32)(i32.const 112)(i32.const 97)(i32.const 105)(i32.const 114)))
+  ;; ": not a number" (14 chars)
+  (global $err-not-number (ref $string)
+    (array.new_fixed $string 14
+      (i32.const 58)(i32.const 32)(i32.const 110)(i32.const 111)(i32.const 116)(i32.const 32)
+      (i32.const 97)(i32.const 32)(i32.const 110)(i32.const 117)(i32.const 109)(i32.const 98)
+      (i32.const 101)(i32.const 114)))
+  ;; ": division by zero" (18 chars)
+  (global $err-div-zero (ref $string)
+    (array.new_fixed $string 18
+      (i32.const 58)(i32.const 32)(i32.const 100)(i32.const 105)(i32.const 118)(i32.const 105)
+      (i32.const 115)(i32.const 105)(i32.const 111)(i32.const 110)(i32.const 32)(i32.const 98)
+      (i32.const 121)(i32.const 32)(i32.const 122)(i32.const 101)(i32.const 114)(i32.const 111)))
+  ;; ": not a vector" (14 chars)
+  (global $err-not-vector (ref $string)
+    (array.new_fixed $string 14
+      (i32.const 58)(i32.const 32)(i32.const 110)(i32.const 111)(i32.const 116)(i32.const 32)
+      (i32.const 97)(i32.const 32)(i32.const 118)(i32.const 101)(i32.const 99)(i32.const 116)
+      (i32.const 111)(i32.const 114)))
+  ;; ": not a character" (17 chars)
+  (global $err-not-char (ref $string)
+    (array.new_fixed $string 17
+      (i32.const 58)(i32.const 32)(i32.const 110)(i32.const 111)(i32.const 116)(i32.const 32)
+      (i32.const 97)(i32.const 32)(i32.const 99)(i32.const 104)(i32.const 97)(i32.const 114)
+      (i32.const 97)(i32.const 99)(i32.const 116)(i32.const 101)(i32.const 114)))
+  ;; ": not a string" (14 chars)
+  (global $err-not-string (ref $string)
+    (array.new_fixed $string 14
+      (i32.const 58)(i32.const 32)(i32.const 110)(i32.const 111)(i32.const 116)(i32.const 32)
+      (i32.const 97)(i32.const 32)(i32.const 115)(i32.const 116)(i32.const 114)(i32.const 105)
+      (i32.const 110)(i32.const 103)))
 
 
   ;; ═══════════════════════════════════════════════════════════════════
@@ -367,6 +415,130 @@
 
   (func $js-ref-idx (param $v (ref $js-ref)) (result i32)
     (struct.get $js-ref $idx (local.get $v))
+  )
+
+  ;; --- Error sentinel helpers ---
+  ;; Build a type-error sentinel: "name: not a <type>" with the bad value as irritant.
+  (func $make-type-error (param $name (ref $string)) (param $suffix (ref $string))
+                         (param $bad-val (ref null eq)) (result (ref $error-sentinel))
+    (struct.new $error-sentinel
+      (call $string-concat (local.get $name) (local.get $suffix))
+      (call $cons (local.get $bad-val) (global.get $nil))))
+
+  ;; Concatenate two $string arrays into a new one
+  (func $string-concat (param $a (ref $string)) (param $b (ref $string)) (result (ref $string))
+    (local $len-a i32) (local $len-b i32) (local $result (ref $string)) (local $i i32)
+    (local.set $len-a (array.len (local.get $a)))
+    (local.set $len-b (array.len (local.get $b)))
+    (local.set $result (array.new_default $string
+      (i32.add (local.get $len-a) (local.get $len-b))))
+    (local.set $i (i32.const 0))
+    (block $d1 (loop $l1
+      (br_if $d1 (i32.ge_u (local.get $i) (local.get $len-a)))
+      (array.set $string (local.get $result) (local.get $i)
+        (array.get_u $string (local.get $a) (local.get $i)))
+      (local.set $i (i32.add (local.get $i) (i32.const 1)))
+      (br $l1)))
+    (local.set $i (i32.const 0))
+    (block $d2 (loop $l2
+      (br_if $d2 (i32.ge_u (local.get $i) (local.get $len-b)))
+      (array.set $string (local.get $result)
+        (i32.add (local.get $len-a) (local.get $i))
+        (array.get_u $string (local.get $b) (local.get $i)))
+      (local.set $i (i32.add (local.get $i) (i32.const 1)))
+      (br $l2)))
+    (local.get $result))
+
+  ;; Check if all elements in a list are numbers
+  (func $all-numbers (param $args (ref null eq)) (result i32)
+    (local $cur (ref null eq))
+    (local.set $cur (local.get $args))
+    (block $done
+      (loop $loop
+        (br_if $done (ref.is_null (local.get $cur)))
+        (br_if $done (call $is-null (local.get $cur)))
+        (if (i32.eqz (call $is-number (call $car (ref.cast (ref $pair) (local.get $cur)))))
+          (then (return (i32.const 0))))
+        (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $cur))))
+        (br $loop)))
+    (i32.const 1))
+
+  ;; Get the first non-number in a list (for error reporting)
+  (func $first-non-number (param $args (ref null eq)) (result (ref null eq))
+    (local $cur (ref null eq))
+    (local.set $cur (local.get $args))
+    (block $done
+      (loop $loop
+        (br_if $done (ref.is_null (local.get $cur)))
+        (br_if $done (call $is-null (local.get $cur)))
+        (if (i32.eqz (call $is-number (call $car (ref.cast (ref $pair) (local.get $cur)))))
+          (then (return (call $car (ref.cast (ref $pair) (local.get $cur))))))
+        (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $cur))))
+        (br $loop)))
+    (global.get $nil))
+
+  ;; Check if division args contain a zero divisor (skip first arg = dividend)
+  (func $div-has-zero-divisor (param $args (ref null eq)) (result i32)
+    (local $cur (ref null eq))
+    ;; Skip the first argument (the dividend)
+    (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $args))))
+    ;; If only one arg: (/ x) = 1/x, check if x is 0
+    (if (call $is-null (local.get $cur))
+      (then
+        (local.set $cur (local.get $args))))
+    (block $done
+      (loop $loop
+        (br_if $done (ref.is_null (local.get $cur)))
+        (br_if $done (call $is-null (local.get $cur)))
+        (if (f64.eq (call $to-f64 (call $car (ref.cast (ref $pair) (local.get $cur))))
+                    (f64.const 0))
+          (then (return (i32.const 1))))
+        (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $cur))))
+        (br $loop)))
+    (i32.const 0))
+
+  ;; Get primitive name string from ID (for error messages)
+  (func $prim-name-str (param $id i32) (result (ref $string))
+    (if (i32.eqz (local.get $id))
+      (then (return (array.new_fixed $string 1 (i32.const 43)))))  ;; "+"
+    (if (i32.eq (local.get $id) (i32.const 1))
+      (then (return (array.new_fixed $string 1 (i32.const 45)))))  ;; "-"
+    (if (i32.eq (local.get $id) (i32.const 2))
+      (then (return (array.new_fixed $string 1 (i32.const 42)))))  ;; "*"
+    (if (i32.eq (local.get $id) (i32.const 3))
+      (then (return (array.new_fixed $string 1 (i32.const 47)))))  ;; "/"
+    (if (i32.eq (local.get $id) (i32.const 5))
+      (then (return (array.new_fixed $string 3
+        (i32.const 99)(i32.const 97)(i32.const 114)))))  ;; "car"
+    (if (i32.eq (local.get $id) (i32.const 6))
+      (then (return (array.new_fixed $string 3
+        (i32.const 99)(i32.const 100)(i32.const 114)))))  ;; "cdr"
+    (if (i32.eq (local.get $id) (i32.const 9))
+      (then (return (array.new_fixed $string 8
+        (i32.const 115)(i32.const 101)(i32.const 116)(i32.const 45)
+        (i32.const 99)(i32.const 97)(i32.const 114)(i32.const 33)))))  ;; "set-car!"
+    (if (i32.eq (local.get $id) (i32.const 10))
+      (then (return (array.new_fixed $string 8
+        (i32.const 115)(i32.const 101)(i32.const 116)(i32.const 45)
+        (i32.const 99)(i32.const 100)(i32.const 114)(i32.const 33)))))  ;; "set-cdr!"
+    (if (i32.eq (local.get $id) (i32.const 22))
+      (then (return (array.new_fixed $string 1 (i32.const 61)))))  ;; "="
+    (if (i32.eq (local.get $id) (i32.const 23))
+      (then (return (array.new_fixed $string 1 (i32.const 60)))))  ;; "<"
+    (if (i32.eq (local.get $id) (i32.const 24))
+      (then (return (array.new_fixed $string 1 (i32.const 62)))))  ;; ">"
+    (if (i32.eq (local.get $id) (i32.const 43))
+      (then (return (array.new_fixed $string 13
+        (i32.const 99)(i32.const 104)(i32.const 97)(i32.const 114)(i32.const 45)
+        (i32.const 62)(i32.const 105)(i32.const 110)(i32.const 116)(i32.const 101)
+        (i32.const 103)(i32.const 101)(i32.const 114)))))  ;; "char->integer"
+    (if (i32.eq (local.get $id) (i32.const 52))
+      (then (return (array.new_fixed $string 10
+        (i32.const 118)(i32.const 101)(i32.const 99)(i32.const 116)(i32.const 111)
+        (i32.const 114)(i32.const 45)(i32.const 114)(i32.const 101)(i32.const 102)))))  ;; "vector-ref"
+    (array.new_fixed $string 9
+      (i32.const 112)(i32.const 114)(i32.const 105)(i32.const 109)(i32.const 105)
+      (i32.const 116)(i32.const 105)(i32.const 118)(i32.const 101))  ;; "primitive"
   )
 
   ;; Convert f64 to ECE number: fixnum if integer in range, float-box otherwise
@@ -1225,6 +1397,10 @@
     (global.set $do-winds-sym
       (ref.cast (ref $symbol) (call $deref-handle (local.get $sym-handle)))))
 
+  (func (export "set_error_sym") (param $sym-handle i32)
+    (global.set $error-sym
+      (ref.cast (ref $symbol) (call $deref-handle (local.get $sym-handle)))))
+
   (func (export "set_winding_stack_sym") (param $sym-handle i32)
     (global.set $winding-stack-sym
       (ref.cast (ref $symbol) (call $deref-handle (local.get $sym-handle)))))
@@ -1857,7 +2033,44 @@
                     (struct.get $instr $val (local.get $instr))
                     (local.get $val) (local.get $env) (local.get $proc)
                     (local.get $argl) (local.get $cont) (local.get $stack)
-                    (local.get $space-id)))))
+                    (local.get $space-id)))
+                ;; Bridge error sentinel to ECE's error function
+                (if (ref.test (ref $error-sentinel) (local.get $op-result))
+                  (then
+                    ;; Guard: error function must be available (not during early bootstrap)
+                    (if (ref.is_null (global.get $error-sym))
+                      (then (call $signal-error-str
+                        (struct.get $error-sentinel $message
+                          (ref.cast (ref $error-sentinel) (local.get $op-result))))))
+                    (local.set $proc (call $lookup-variable-value
+                      (ref.as_non_null (global.get $error-sym))
+                      (global.get $global-env)))
+                    (if (ref.is_null (local.get $proc))
+                      (then (call $signal-error-str
+                        (struct.get $error-sentinel $message
+                          (ref.cast (ref $error-sentinel) (local.get $op-result))))))
+                    (local.set $argl (call $cons
+                      (struct.get $error-sentinel $message
+                        (ref.cast (ref $error-sentinel) (local.get $op-result)))
+                      (struct.get $error-sentinel $irritants
+                        (ref.cast (ref $error-sentinel) (local.get $op-result)))))
+                    (local.set $addr (call $cons
+                      (call $make-fixnum
+                        (call $compiled-proc-space (ref.cast (ref $compiled-proc) (local.get $proc))))
+                      (call $make-fixnum
+                        (call $compiled-proc-pc (ref.cast (ref $compiled-proc) (local.get $proc))))))
+                    (local.set $addr-pair (ref.cast (ref $pair) (local.get $addr)))
+                    (local.set $dest-space
+                      (call $fixnum-value (ref.cast (ref i31) (call $car (local.get $addr-pair)))))
+                    (local.set $dest-pc
+                      (call $fixnum-value (ref.cast (ref i31) (call $cdr (local.get $addr-pair)))))
+                    (if (i32.ne (local.get $dest-space) (local.get $space-id))
+                      (then
+                        (local.set $space (call $get-space (local.get $dest-space)))
+                        (local.set $instrs (struct.get $comp-space $instrs (local.get $space)))
+                        (local.set $space-id (local.get $dest-space))))
+                    (local.set $pc (local.get $dest-pc))
+                    (br $loop-start)))))
 
             ;; Store result in target register
             (if (i32.eqz (local.get $target))
@@ -1883,6 +2096,34 @@
                 (local.get $val) (local.get $env) (local.get $proc)
                 (local.get $argl) (local.get $cont) (local.get $stack)
                 (local.get $space-id)))
+            ;; Bridge error sentinel to ECE's error function
+            (if (ref.test (ref $error-sentinel) (local.get $op-result))
+              (then
+                (local.set $proc (call $lookup-variable-value
+                  (ref.as_non_null (global.get $error-sym))
+                  (global.get $global-env)))
+                (local.set $argl (call $cons
+                  (struct.get $error-sentinel $message
+                    (ref.cast (ref $error-sentinel) (local.get $op-result)))
+                  (struct.get $error-sentinel $irritants
+                    (ref.cast (ref $error-sentinel) (local.get $op-result)))))
+                (local.set $addr (call $cons
+                  (call $make-fixnum
+                    (call $compiled-proc-space (ref.cast (ref $compiled-proc) (local.get $proc))))
+                  (call $make-fixnum
+                    (call $compiled-proc-pc (ref.cast (ref $compiled-proc) (local.get $proc))))))
+                (local.set $addr-pair (ref.cast (ref $pair) (local.get $addr)))
+                (local.set $dest-space
+                  (call $fixnum-value (ref.cast (ref i31) (call $car (local.get $addr-pair)))))
+                (local.set $dest-pc
+                  (call $fixnum-value (ref.cast (ref i31) (call $cdr (local.get $addr-pair)))))
+                (if (i32.ne (local.get $dest-space) (local.get $space-id))
+                  (then
+                    (local.set $space (call $get-space (local.get $dest-space)))
+                    (local.set $instrs (struct.get $comp-space $instrs (local.get $space)))
+                    (local.set $space-id (local.get $dest-space))))
+                (local.set $pc (local.get $dest-pc))
+                (br $loop-start)))
             ;; Set flag: true unless result is #f
             (local.set $flag
               (i32.eqz (call $is-false (local.get $op-result))))
@@ -1984,12 +2225,40 @@
         ;; ── perform (opcode 6) ──
         (if (i32.eq (local.get $opcode) (i32.const 6))
           (then
-            (drop
+            (local.set $op-result
               (call $dispatch-op (struct.get $instr $c (local.get $instr))
                 (struct.get $instr $val (local.get $instr))
                 (local.get $val) (local.get $env) (local.get $proc)
                 (local.get $argl) (local.get $cont) (local.get $stack)
-                (local.get $space-id)))))
+                (local.get $space-id)))
+            ;; Bridge error sentinel to ECE's error function
+            (if (ref.test (ref $error-sentinel) (local.get $op-result))
+              (then
+                (local.set $proc (call $lookup-variable-value
+                  (ref.as_non_null (global.get $error-sym))
+                  (global.get $global-env)))
+                (local.set $argl (call $cons
+                  (struct.get $error-sentinel $message
+                    (ref.cast (ref $error-sentinel) (local.get $op-result)))
+                  (struct.get $error-sentinel $irritants
+                    (ref.cast (ref $error-sentinel) (local.get $op-result)))))
+                (local.set $addr (call $cons
+                  (call $make-fixnum
+                    (call $compiled-proc-space (ref.cast (ref $compiled-proc) (local.get $proc))))
+                  (call $make-fixnum
+                    (call $compiled-proc-pc (ref.cast (ref $compiled-proc) (local.get $proc))))))
+                (local.set $addr-pair (ref.cast (ref $pair) (local.get $addr)))
+                (local.set $dest-space
+                  (call $fixnum-value (ref.cast (ref i31) (call $car (local.get $addr-pair)))))
+                (local.set $dest-pc
+                  (call $fixnum-value (ref.cast (ref i31) (call $cdr (local.get $addr-pair)))))
+                (if (i32.ne (local.get $dest-space) (local.get $space-id))
+                  (then
+                    (local.set $space (call $get-space (local.get $dest-space)))
+                    (local.set $instrs (struct.get $comp-space $instrs (local.get $space)))
+                    (local.set $space-id (local.get $dest-space))))
+                (local.set $pc (local.get $dest-pc))
+                (br $loop-start)))))
 
         ;; Advance PC and continue
         (local.set $pc (i32.add (local.get $pc) (i32.const 1)))
@@ -3415,40 +3684,87 @@
     ;; Debug: store prim ID for crash diagnosis
     (global.set $dbg-opcode (i32.add (local.get $id) (i32.const 1000)))
 
-    ;; 0 = +
+    ;; 0 = + (type-guarded: all args must be numbers)
     (if (i32.eqz (local.get $id))
-      (then (return (call $fold-add (local.get $args)))))
-    ;; 1 = -
+      (then
+        (if (i32.eqz (call $all-numbers (local.get $args)))
+          (then (return (call $make-type-error
+            (call $prim-name-str (local.get $id)) (global.get $err-not-number)
+            (call $first-non-number (local.get $args))))))
+        (return (call $fold-add (local.get $args)))))
+    ;; 1 = - (type-guarded)
     (if (i32.eq (local.get $id) (i32.const 1))
-      (then (return (call $fold-sub (local.get $args)))))
-    ;; 2 = *
+      (then
+        (if (i32.eqz (call $all-numbers (local.get $args)))
+          (then (return (call $make-type-error
+            (call $prim-name-str (local.get $id)) (global.get $err-not-number)
+            (call $first-non-number (local.get $args))))))
+        (return (call $fold-sub (local.get $args)))))
+    ;; 2 = * (type-guarded)
     (if (i32.eq (local.get $id) (i32.const 2))
-      (then (return (call $fold-mul (local.get $args)))))
-    ;; 3 = /
+      (then
+        (if (i32.eqz (call $all-numbers (local.get $args)))
+          (then (return (call $make-type-error
+            (call $prim-name-str (local.get $id)) (global.get $err-not-number)
+            (call $first-non-number (local.get $args))))))
+        (return (call $fold-mul (local.get $args)))))
+    ;; 3 = / (type-guarded + division by zero check)
     (if (i32.eq (local.get $id) (i32.const 3))
-      (then (return (call $fold-div (local.get $args)))))
+      (then
+        (if (i32.eqz (call $all-numbers (local.get $args)))
+          (then (return (call $make-type-error
+            (call $prim-name-str (local.get $id)) (global.get $err-not-number)
+            (call $first-non-number (local.get $args))))))
+        (if (call $div-has-zero-divisor (local.get $args))
+          (then (return (struct.new $error-sentinel
+            (call $string-concat
+              (call $prim-name-str (local.get $id)) (global.get $err-div-zero))
+            (global.get $nil)))))
+        (return (call $fold-div (local.get $args)))))
     ;; 4 = modulo — migrated to ECE (prelude.scm), derived from floor
-    ;; 5 = car
+    ;; 5 = car (type-guarded: arg must be pair or nil)
     (if (i32.eq (local.get $id) (i32.const 5))
-      (then (return (call $car (ref.cast (ref $pair) (call $arg1 (local.get $args)))))))
-    ;; 6 = cdr
+      (then
+        (if (call $is-null (call $arg1 (local.get $args)))
+          (then (return (global.get $nil))))
+        (if (i32.eqz (call $is-pair (call $arg1 (local.get $args))))
+          (then (return (call $make-type-error
+            (call $prim-name-str (local.get $id)) (global.get $err-not-pair)
+            (call $arg1 (local.get $args))))))
+        (return (call $car (ref.cast (ref $pair) (call $arg1 (local.get $args)))))))
+    ;; 6 = cdr (type-guarded: arg must be pair or nil)
     (if (i32.eq (local.get $id) (i32.const 6))
-      (then (return (call $cdr (ref.cast (ref $pair) (call $arg1 (local.get $args)))))))
+      (then
+        (if (call $is-null (call $arg1 (local.get $args)))
+          (then (return (global.get $nil))))
+        (if (i32.eqz (call $is-pair (call $arg1 (local.get $args))))
+          (then (return (call $make-type-error
+            (call $prim-name-str (local.get $id)) (global.get $err-not-pair)
+            (call $arg1 (local.get $args))))))
+        (return (call $cdr (ref.cast (ref $pair) (call $arg1 (local.get $args)))))))
     ;; 7 = cons
     (if (i32.eq (local.get $id) (i32.const 7))
       (then (return (call $cons (call $arg1 (local.get $args)) (call $arg2 (local.get $args))))))
     ;; 8 = list
     (if (i32.eq (local.get $id) (i32.const 8))
       (then (return (call $prim-list (local.get $args)))))
-    ;; 9 = set-car!
+    ;; 9 = set-car! (type-guarded)
     (if (i32.eq (local.get $id) (i32.const 9))
       (then
+        (if (i32.eqz (call $is-pair (call $arg1 (local.get $args))))
+          (then (return (call $make-type-error
+            (call $prim-name-str (local.get $id)) (global.get $err-not-pair)
+            (call $arg1 (local.get $args))))))
         (call $set-car! (ref.cast (ref $pair) (call $arg1 (local.get $args)))
                         (call $arg2 (local.get $args)))
         (return (global.get $void))))
-    ;; 10 = set-cdr!
+    ;; 10 = set-cdr! (type-guarded)
     (if (i32.eq (local.get $id) (i32.const 10))
       (then
+        (if (i32.eqz (call $is-pair (call $arg1 (local.get $args))))
+          (then (return (call $make-type-error
+            (call $prim-name-str (local.get $id)) (global.get $err-not-pair)
+            (call $arg1 (local.get $args))))))
         (call $set-cdr! (ref.cast (ref $pair) (call $arg1 (local.get $args)))
                         (call $arg2 (local.get $args)))
         (return (global.get $void))))
@@ -3491,22 +3807,47 @@
         (call $eq (call $arg1 (local.get $args)) (call $arg2 (local.get $args)))
         (then (global.get $true)) (else (global.get $false))))))
     ;; 21 = equal? — now in prelude.scm
-    ;; 22 = = (numeric)
+    ;; 22 = = (numeric, type-guarded)
     (if (i32.eq (local.get $id) (i32.const 22))
-      (then (return (call $cmp-eq (local.get $args)))))
-    ;; 23 = <
+      (then
+        (if (i32.eqz (call $all-numbers (local.get $args)))
+          (then (return (call $make-type-error
+            (call $prim-name-str (local.get $id)) (global.get $err-not-number)
+            (call $first-non-number (local.get $args))))))
+        (return (call $cmp-eq (local.get $args)))))
+    ;; 23 = < (type-guarded)
     (if (i32.eq (local.get $id) (i32.const 23))
-      (then (return (call $cmp-lt (local.get $args)))))
-    ;; 24 = >
+      (then
+        (if (i32.eqz (call $all-numbers (local.get $args)))
+          (then (return (call $make-type-error
+            (call $prim-name-str (local.get $id)) (global.get $err-not-number)
+            (call $first-non-number (local.get $args))))))
+        (return (call $cmp-lt (local.get $args)))))
+    ;; 24 = > (type-guarded)
     (if (i32.eq (local.get $id) (i32.const 24))
-      (then (return (call $cmp-gt (local.get $args)))))
-    ;; 25 = string-length
+      (then
+        (if (i32.eqz (call $all-numbers (local.get $args)))
+          (then (return (call $make-type-error
+            (call $prim-name-str (local.get $id)) (global.get $err-not-number)
+            (call $first-non-number (local.get $args))))))
+        (return (call $cmp-gt (local.get $args)))))
+    ;; 25 = string-length (type-guarded)
     (if (i32.eq (local.get $id) (i32.const 25))
-      (then (return (call $prim-string-length (call $arg1 (local.get $args))))))
-    ;; 26 = string-ref
+      (then
+        (if (i32.eqz (call $is-string (call $arg1 (local.get $args))))
+          (then (return (call $make-type-error
+            (call $prim-name-str (local.get $id)) (global.get $err-not-string)
+            (call $arg1 (local.get $args))))))
+        (return (call $prim-string-length (call $arg1 (local.get $args))))))
+    ;; 26 = string-ref (type-guarded)
     (if (i32.eq (local.get $id) (i32.const 26))
-      (then (return (call $prim-string-ref
-        (call $arg1 (local.get $args)) (call $arg2 (local.get $args))))))
+      (then
+        (if (i32.eqz (call $is-string (call $arg1 (local.get $args))))
+          (then (return (call $make-type-error
+            (call $prim-name-str (local.get $id)) (global.get $err-not-string)
+            (call $arg1 (local.get $args))))))
+        (return (call $prim-string-ref
+          (call $arg1 (local.get $args)) (call $arg2 (local.get $args))))))
     ;; 27 = string-append
     (if (i32.eq (local.get $id) (i32.const 27))
       (then (return (call $prim-string-append (local.get $args)))))
@@ -3737,9 +4078,14 @@
     ;; 51 = vector (construct from args)
     (if (i32.eq (local.get $id) (i32.const 51))
       (then (return (call $prim-list-to-vector (local.get $args)))))
-    ;; 52 = vector-ref
+    ;; 52 = vector-ref (type-guarded)
     (if (i32.eq (local.get $id) (i32.const 52))
-      (then (return (array.get $vector
+      (then
+        (if (i32.eqz (ref.test (ref $vector) (call $arg1 (local.get $args))))
+          (then (return (call $make-type-error
+            (call $prim-name-str (local.get $id)) (global.get $err-not-vector)
+            (call $arg1 (local.get $args))))))
+        (return (array.get $vector
         (ref.cast (ref $vector) (call $arg1 (local.get $args)))
         (call $fixnum-value (ref.cast (ref i31) (call $arg2 (local.get $args))))))))
     ;; 53 = vector-set!
@@ -3755,10 +4101,15 @@
       (then (return (call $make-fixnum
         (array.len (ref.cast (ref $vector) (call $arg1 (local.get $args))))))))
     ;; 55-56: vector->list, list->vector — now implemented in prelude.scm
-    ;; 43 = char->integer
+    ;; 43 = char->integer (type-guarded)
     (if (i32.eq (local.get $id) (i32.const 43))
-      (then (return (call $make-fixnum
-        (call $char-codepoint (ref.cast (ref i31) (call $arg1 (local.get $args))))))))
+      (then
+        (if (i32.eqz (call $is-char (call $arg1 (local.get $args))))
+          (then (return (call $make-type-error
+            (call $prim-name-str (local.get $id)) (global.get $err-not-char)
+            (call $arg1 (local.get $args))))))
+        (return (call $make-fixnum
+          (call $char-codepoint (ref.cast (ref i31) (call $arg1 (local.get $args))))))))
     ;; 44 = integer->char
     (if (i32.eq (local.get $id) (i32.const 44))
       (then (return (call $make-char
@@ -5248,10 +5599,6 @@
             (call $cdr (ref.cast (ref $pair)
               (call $cdr (ref.cast (ref $pair) (local.get $header))))))))))))
 
-    ;; Create compilation space (large enough for any bootstrap file)
-    (local.set $space-id (call $create-space-internal
-      (ref.cast (ref $symbol) (local.get $space-name)) (i32.const 65536)))
-
     ;; ── Phase 1: Read all units, collect all labels ──
     (local.set $labels (global.get $nil))
     (local.set $units (global.get $nil))
@@ -5293,6 +5640,10 @@
       (br $read-units)))
     ;; Subtract 1 for the last unit (no env-reset after it)
     (local.set $pc (i32.sub (local.get $pc) (i32.const 1)))
+
+    ;; Create compilation space sized to actual instruction count
+    (local.set $space-id (call $create-space-internal
+      (ref.cast (ref $symbol) (local.get $space-name)) (local.get $pc)))
 
     ;; ── Phase 2: Create instructions with all labels resolved ──
     (local.set $units (call $prim-reverse (local.get $units)))

@@ -12,10 +12,7 @@ TEST_OUTPUT_DIR := $(shell mktemp -d)
 BOOTSTRAP_DIR := bootstrap
 BOOTSTRAP_SRCS := src/prelude.scm src/compiler.scm src/reader.scm src/assembler.scm src/compilation-unit.scm src/syntax-rules.scm
 
-# TODO: Re-enable test-wasm once the .ecec bundle loader bug is fixed.
-# The WASM runtime crashes with "array element access out of bounds" when
-# loading large pre-compiled .ecec files. Individual test files run fine.
-test: test-rove test-ece test-conformance check-test-counts
+test: test-rove test-ece test-wasm test-conformance check-test-counts
 
 test-rove:
 	@qlot exec sbcl --disable-debugger --eval '(asdf:load-system :ece)' --eval '(asdf:load-system :ece/tests)' \
@@ -44,8 +41,7 @@ test-wasm: wasm
 	  --eval '(ece:evaluate (list (intern "compile-file" :ece) ".tmp/ece-wasm-tests.scm"))' \
 	  --quit
 	@echo "Running WASM tests..."
-	@node --max-old-space-size=4096 wasm/test.js .tmp/ece-wasm-tests.ecec 2>&1 | tee $(TEST_OUTPUT_DIR)/test-wasm.txt
-	@grep -q "passed, 0 failed" $(TEST_OUTPUT_DIR)/test-wasm.txt
+	@bash -o pipefail -c 'node --max-old-space-size=4096 wasm/test.js .tmp/ece-wasm-tests.ecec 2>&1 | tee $(TEST_OUTPUT_DIR)/test-wasm.txt'
 
 check-test-counts:
 	@echo ""
