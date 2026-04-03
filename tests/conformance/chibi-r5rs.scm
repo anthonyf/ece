@@ -118,8 +118,7 @@
            (f)))
 
 ;; Do
-;; skipped: equal? doesn't deeply compare vectors in ECE
-;; (test '#(0 1 2 3 4) (do ((vec (make-vector 5)) (i 0 (+ i 1))) ((= i 5) vec) (vector-set! vec i i)))
+(test '#(0 1 2 3 4) (do ((vec (make-vector 5)) (i 0 (+ i 1))) ((= i 5) vec) (vector-set! vec i i)))
 
 (test 25
     (let ((x '(1 3 5 7 9)))
@@ -166,8 +165,7 @@
 (test #f (equal? "abc" "abcd"))
 (test #f (equal? "a" "b"))
 (test #t (equal? 2 2))
-;; skipped: equal? doesn't deeply compare vectors in ECE
-;; (test #t (equal? (make-vector 5 'a) (make-vector 5 'a)))
+(test #t (equal? (make-vector 5 'a) (make-vector 5 'a)))
 
 ;; Arithmetic
 (test 4 (max 3 4))
@@ -256,9 +254,11 @@
 (test "abc" (string-append "a" "bc"))
 
 ;; Vectors
-;; skipped: equal? doesn't deeply compare vectors in ECE
-;; (test '#(0 ("Sue" "Sue") "Anna") ...)
-;; (test '#(dididit dah) (list->vector '(dididit dah)))
+(test '#(0 ("Sue" "Sue") "Anna")
+    (let ((vec (vector 0 '(2 2 2 2) "Anna")))
+      (vector-set! vec 1 '("Sue" "Sue"))
+      vec))
+(test '#(dididit dah) (list->vector '(dididit dah)))
 (test '(dah dah didah) (vector->list '#(dah dah didah)))
 
 ;; Procedures
@@ -273,8 +273,7 @@
 ;; Apply and map
 (test 7 (apply + (list 3 4)))
 (test '(b e h) (map cadr '((a b) (d e) (g h))))
-;; skipped: equal? doesn't deeply compare vectors in ECE
-;; (test '#(0 1 4 9 16) (let ((v (make-vector 5))) (for-each (lambda (i) (vector-set! v i (* i i))) '(0 1 2 3 4)) v))
+(test '#(0 1 4 9 16) (let ((v (make-vector 5))) (for-each (lambda (i) (vector-set! v i (* i i))) '(0 1 2 3 4)) v))
 
 ;; Shadowing keywords
 (test 'ok (let ((else 1)) (cond (else 'ok) (#t 'bad))))
