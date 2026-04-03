@@ -10,7 +10,7 @@ WASM_TEST_SRCS := $(shell grep -o '"[^"]*"' tests/ece/run-common.scm | tr -d '"'
 TEST_OUTPUT_DIR := $(shell mktemp -d)
 
 BOOTSTRAP_DIR := bootstrap
-BOOTSTRAP_SRCS := src/prelude.scm src/compiler.scm src/reader.scm src/assembler.scm src/compilation-unit.scm src/syntax-rules.scm
+BOOTSTRAP_SRCS := src/prelude.scm src/compiler.scm src/reader.scm src/assembler.scm src/compilation-unit.scm src/syntax-rules.scm src/browser-lib.scm
 
 GOLDEN_SRCS := $(wildcard tests/golden/*.scm)
 
@@ -117,7 +117,7 @@ bootstrap:
 	qlot exec sbcl --eval '(asdf:load-system :ece)' \
 	  --eval '(in-package :ece)' \
 	  --eval '(evaluate (list (quote eval) (list (quote read) (list (quote open-input-string) "(load \"src/compilation-unit.scm\")"))))' \
-	  --eval '(dolist (f (list "src/prelude.scm" "src/compiler.scm" "src/reader.scm" "src/assembler.scm" "src/compilation-unit.scm" "src/syntax-rules.scm")) (format t "Compiling ~A~%" f) (evaluate (list (quote eval) (list (quote read) (list (quote open-input-string) (format nil "(compile-file ~S)" f))))))' \
+	  --eval '(dolist (f (list "src/prelude.scm" "src/compiler.scm" "src/reader.scm" "src/assembler.scm" "src/compilation-unit.scm" "src/syntax-rules.scm" "src/browser-lib.scm")) (format t "Compiling ~A~%" f) (evaluate (list (quote eval) (list (quote read) (list (quote open-input-string) (format nil "(compile-file ~S)" f))))))' \
 	  --quit
 	mv -f src/*.ecec $(BOOTSTRAP_DIR)/
 	@echo "Bootstrap .ecec files regenerated in $(BOOTSTRAP_DIR)/"
