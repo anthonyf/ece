@@ -30,15 +30,19 @@ function runIntegrationTests(w, envH) {
     if (!cond) throw new Error(msg || "assertion failed");
   }
 
-  // ── Op-id exhaustive check ──
+  // ── Op-id exhaustive check (canonical IDs from operations.def) ──
   const opNames = [
-    'lookup-variable-value', 'compiled-procedure-entry', 'compiled-procedure-env',
-    'make-compiled-procedure', 'extend-environment', 'primitive-procedure?',
-    'apply-primitive-procedure', 'continuation?', 'continuation-stack',
-    'continuation-conts', 'parameter?', 'apply-parameter', 'false?',
-    'list', 'cons', 'car', 'cdr', 'lexical-ref', 'lexical-set!',
-    'define-variable!', 'set-variable-value!', 'capture-continuation',
-    'do-continuation-winds', 'lookup-global-variable'
+    'lookup-variable-value', 'lookup-global-variable',
+    'set-variable-value!', 'define-variable!', 'extend-environment',
+    'lexical-ref', 'lexical-set!',
+    'make-compiled-procedure', 'compiled-procedure-entry', 'compiled-procedure-env',
+    'primitive-procedure?', 'continuation?', 'parameter?',
+    'apply-primitive-procedure', 'apply-parameter',
+    'parameter-ref', 'parameter-set!', 'parameter-raw-set!',
+    'capture-continuation', 'do-continuation-winds',
+    'continuation-stack', 'continuation-conts',
+    'false?',
+    'list', 'cons', 'car', 'cdr'
   ];
   for (let i = 0; i < opNames.length; i++) {
     iTest(`op-id ${opNames[i]} = ${i}`, () => {

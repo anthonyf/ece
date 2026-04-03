@@ -401,31 +401,34 @@ const ECE = {
       'val', 'env', 'proc', 'argl', 'continue', 'stack',
       // 13-16: source/dest types
       'const', 'reg', 'label', 'op',
-      // 17-38: operation names (op-id = slot - 17)
+      // 17-43: operation names from operations.def (op-id = slot - 17)
       'lookup-variable-value',       // 17 → op 0
-      'compiled-procedure-entry',    // 18 → op 1
-      'compiled-procedure-env',      // 19 → op 2
-      'make-compiled-procedure',     // 20 → op 3
+      'lookup-global-variable',      // 18 → op 1
+      'set-variable-value!',         // 19 → op 2
+      'define-variable!',            // 20 → op 3
       'extend-environment',          // 21 → op 4
-      'primitive-procedure?',        // 22 → op 5
-      'apply-primitive-procedure',   // 23 → op 6
-      'continuation?',               // 24 → op 7
-      'continuation-stack',          // 25 → op 8
-      'continuation-conts',          // 26 → op 9
-      'parameter?',                  // 27 → op 10
-      'apply-parameter',             // 28 → op 11
-      'false?',                      // 29 → op 12
-      'list',                        // 30 → op 13
-      'cons',                        // 31 → op 14
-      'car',                         // 32 → op 15
-      'cdr',                         // 33 → op 16
-      'lexical-ref',                 // 34 → op 17
-      'lexical-set!',                // 35 → op 18
-      'define-variable!',            // 36 → op 19
-      'set-variable-value!',         // 37 → op 20
-      'capture-continuation',        // 38 → op 21
-      'do-continuation-winds',       // 39 → op 22
-      'lookup-global-variable',      // 40 → op 23
+      'lexical-ref',                 // 22 → op 5
+      'lexical-set!',                // 23 → op 6
+      'make-compiled-procedure',     // 24 → op 7
+      'compiled-procedure-entry',    // 25 → op 8
+      'compiled-procedure-env',      // 26 → op 9
+      'primitive-procedure?',        // 27 → op 10
+      'continuation?',               // 28 → op 11
+      'parameter?',                  // 29 → op 12
+      'apply-primitive-procedure',   // 30 → op 13
+      'apply-parameter',             // 31 → op 14
+      'parameter-ref',               // 32 → op 15
+      'parameter-set!',              // 33 → op 16
+      'parameter-raw-set!',          // 34 → op 17
+      'capture-continuation',        // 35 → op 18
+      'do-continuation-winds',       // 36 → op 19
+      'continuation-stack',          // 37 → op 20
+      'continuation-conts',          // 38 → op 21
+      'false?',                      // 39 → op 22
+      'list',                        // 40 → op 23
+      'cons',                        // 41 → op 24
+      'car',                         // 42 → op 25
+      'cdr',                         // 43 → op 26
     ];
     w.init_asm_syms(names.length);
     for (let i = 0; i < names.length; i++) {

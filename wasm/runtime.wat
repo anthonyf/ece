@@ -1376,7 +1376,7 @@
   ;; Slots: 0-6 = instr types (assign,test,branch,goto,save,restore,perform)
   ;;        7-12 = register names (val,env,proc,argl,continue,stack)
   ;;        13-16 = source types (const,reg,label,op)
-  ;;        17-38 = operation names (op-id = slot - 17)
+  ;;        17-43 = operation names from operations.def (op-id = slot - 17)
   (type $i32-array (array (mut i32)))
   (global $asm-sym-ids (mut (ref null $i32-array)) (ref.null none))
 
@@ -1446,17 +1446,17 @@
       (then (return (i32.const 5))))  ;; stack
     (i32.const 0))  ;; default: val
 
-  ;; --- Resolve operation name symbol to op ID (0-20) ---
+  ;; --- Resolve operation name symbol to op ID (0-26) ---
   (func $resolve-op-name (param $sym (ref $symbol)) (result i32)
     (local $id i32)
     (local $syms (ref $i32-array))
     (local $i i32)
     (local.set $id (struct.get $symbol $id (local.get $sym)))
     (local.set $syms (ref.as_non_null (global.get $asm-sym-ids)))
-    ;; Linear scan slots 17-39 (ops 0-22)
+    ;; Linear scan slots 17-43 (ops 0-26, from operations.def)
     (local.set $i (i32.const 17))
     (block $done (loop $scan
-      (br_if $done (i32.gt_u (local.get $i) (i32.const 39)))
+      (br_if $done (i32.gt_u (local.get $i) (i32.const 43)))
       (if (i32.eq (local.get $id) (array.get $i32-array (local.get $syms) (local.get $i)))
         (then (return (i32.sub (local.get $i) (i32.const 17)))))
       (local.set $i (i32.add (local.get $i) (i32.const 1)))
@@ -1822,24 +1822,25 @@
     (struct.new $instr (i32.const 6) (i32.const 0) (i32.const 0) (i32.const 0) (ref.null eq))
   )
 
-  ;; --- Machine operation IDs ---
+  ;; --- Machine operation IDs (from operations.def) ---
   ;; These are internal register machine operations, NOT ECE primitives.
   ;; The compiler emits (op-fn <name>); the .ececb loader maps names
-  ;; to these numeric IDs.
+  ;; to these numeric IDs. IDs match operations.def canonical assignment.
   ;;
-  ;;  0 = lookup-variable-value     10 = parameter?
-  ;;  1 = compiled-procedure-entry  11 = apply-parameter
-  ;;  2 = compiled-procedure-env    12 = false?
-  ;;  3 = make-compiled-procedure   13 = list
-  ;;  4 = extend-environment        14 = cons
-  ;;  5 = primitive-procedure?      15 = car
-  ;;  6 = apply-primitive-procedure 16 = cdr
-  ;;  7 = continuation?             17 = lexical-ref
-  ;;  8 = continuation-stack        18 = lexical-set!
-  ;;  9 = continuation-conts        19 = define-variable!
-  ;;                                20 = set-variable-value!
-  ;;                                21 = capture-continuation
-  ;;                                22 = do-continuation-winds
+  ;;  0 = lookup-variable-value     14 = apply-parameter
+  ;;  1 = lookup-global-variable    15 = parameter-ref
+  ;;  2 = set-variable-value!       16 = parameter-set!
+  ;;  3 = define-variable!          17 = parameter-raw-set!
+  ;;  4 = extend-environment        18 = capture-continuation
+  ;;  5 = lexical-ref               19 = do-continuation-winds
+  ;;  6 = lexical-set!              20 = continuation-stack
+  ;;  7 = make-compiled-procedure   21 = continuation-conts
+  ;;  8 = compiled-procedure-entry  22 = false?
+  ;;  9 = compiled-procedure-env    23 = list
+  ;; 10 = primitive-procedure?      24 = cons
+  ;; 11 = continuation?             25 = car
+  ;; 12 = parameter?                26 = cdr
+  ;; 13 = apply-primitive-procedure
 
   ;; --- Evaluate a single operand ---
   ;; Operand is a pair: (type . value)
@@ -2318,48 +2319,38 @@
                   (local.get $argl) (local.get $cont) (local.get $stack)
                   (local.get $space-id)))))))))
 
-    ;; Dispatch on operation ID
+    ;; Dispatch on operation ID (canonical IDs from operations.def)
+
     ;; 0 = lookup-variable-value(name, env)
     (if (result (ref null eq)) (i32.eqz (local.get $op-id))
       (then (call $lookup-variable-value
               (ref.cast (ref $symbol) (local.get $a))
               (local.get $b)))
 
-    ;; 1 = compiled-procedure-entry(proc) → space-qualified pair
+    ;; 1 = lookup-global-variable(name) — bypasses lexical frames for %global-ref hygiene
     (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 1))
       (then
-        (call $cons
-          (call $make-fixnum
-            (call $compiled-proc-space (ref.cast (ref $compiled-proc) (local.get $a))))
-          (call $make-fixnum
-            (call $compiled-proc-pc (ref.cast (ref $compiled-proc) (local.get $a))))))
+        (return (call $lookup-variable-value
+          (ref.cast (ref $symbol) (local.get $a))
+          (global.get $global-env))))
 
-    ;; 2 = compiled-procedure-env(proc)
+    ;; 2 = set-variable-value!(name, value, env)
     (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 2))
-      (then (call $compiled-proc-env (ref.cast (ref $compiled-proc) (local.get $a))))
+      (then
+        (call $set-variable-value!
+          (ref.cast (ref $symbol) (local.get $a))
+          (local.get $b)
+          (local.get $c))
+        (global.get $void))
 
-    ;; 3 = make-compiled-procedure(label, env) → procedure
-    ;; $a = evaluated label operand = pair (space-id . pc)
-    ;; $b = env
+    ;; 3 = define-variable!(name, value, env)
     (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 3))
       (then
-        (if (result (ref null eq)) (ref.test (ref $pair) (local.get $a))
-          ;; Label operand was evaluated to a space-qualified pair
-          (then
-            (call $make-compiled-proc
-              (call $fixnum-value (ref.cast (ref i31)
-                (call $car (ref.cast (ref $pair) (local.get $a)))))
-              (call $fixnum-value (ref.cast (ref i31)
-                (call $cdr (ref.cast (ref $pair) (local.get $a)))))
-              (local.get $b)))
-          ;; Fallback: bare fixnum PC (same space)
-          (else
-            (call $make-compiled-proc
-              (local.get $space-id)
-              (if (result i32) (ref.test (ref i31) (local.get $a))
-                (then (call $fixnum-value (ref.cast (ref i31) (local.get $a))))
-                (else (i32.const 0)))
-              (local.get $b)))))
+        (call $define-variable!
+          (ref.cast (ref $symbol) (local.get $a))
+          (local.get $b)
+          (local.get $c))
+        (global.get $void))
 
     ;; 4 = extend-environment(names, vals, env, nvals)
     (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 4))
@@ -2382,95 +2373,15 @@
                   (local.get $space-id)))))
             (else (i32.const 0)))))
 
-    ;; 5 = primitive-procedure?(val) → bool
+    ;; 5 = lexical-ref(depth, offset, env)
     (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 5))
-      (then (if (result (ref null eq)) (call $is-primitive (local.get $a))
-        (then (global.get $true))
-        (else (global.get $false))))
-
-    ;; 6 = apply-primitive-procedure(proc, args) → result
-    (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 6))
-      (then (call $apply-primitive
-              (ref.cast (ref $primitive) (local.get $a))
-              (local.get $b)))
-
-    ;; 7 = continuation?(val) → bool
-    (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 7))
-      (then (if (result (ref null eq)) (call $is-continuation (local.get $a))
-        (then (global.get $true))
-        (else (global.get $false))))
-
-    ;; 8 = continuation-stack(cont)
-    (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 8))
-      (then (struct.get $continuation $stack
-              (ref.cast (ref $continuation) (local.get $a))))
-
-    ;; 9 = continuation-conts(cont)
-    (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 9))
-      (then (struct.get $continuation $conts
-              (ref.cast (ref $continuation) (local.get $a))))
-
-    ;; 10 = parameter?(val) → bool
-    (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 10))
-      (then (if (result (ref null eq)) (call $is-parameter (local.get $a))
-        (then (global.get $true))
-        (else (global.get $false))))
-
-    ;; 11 = apply-parameter(param, args)
-    (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 11))
-      (then
-        ;; If no args, return value. If args, set value.
-        (if (result (ref null eq)) (call $is-null (local.get $b))
-          (then (struct.get $parameter $value
-                  (ref.cast (ref $parameter) (local.get $a))))
-          (else
-            (struct.set $parameter $value
-              (ref.cast (ref $parameter) (local.get $a))
-              (call $car (ref.cast (ref $pair) (local.get $b))))
-            (global.get $void))))
-
-    ;; 12 = false?(val) → bool
-    (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 12))
-      (then (if (result (ref null eq)) (call $is-false (local.get $a))
-        (then (global.get $true))
-        (else (global.get $false))))
-
-    ;; 13 = list(args...) → list built from operands
-    (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 13))
-      (then
-        ;; Operands are already evaluated into a, b, c...
-        ;; But list can have variable args. Build from evaluated operands.
-        ;; Simple case: (list a), (list a b)
-        (if (result (ref null eq)) (ref.is_null (local.get $b))
-          (then (call $cons (local.get $a) (global.get $nil)))
-          (else (if (result (ref null eq)) (ref.is_null (local.get $c))
-            (then (call $cons (local.get $a)
-                    (call $cons (local.get $b) (global.get $nil))))
-            (else (call $cons (local.get $a)
-                    (call $cons (local.get $b)
-                      (call $cons (local.get $c) (global.get $nil)))))))))
-
-    ;; 14 = cons(a, b)
-    (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 14))
-      (then (call $cons (local.get $a) (local.get $b)))
-
-    ;; 15 = car(pair)
-    (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 15))
-      (then (call $car (ref.cast (ref $pair) (local.get $a))))
-
-    ;; 16 = cdr(pair)
-    (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 16))
-      (then (call $cdr (ref.cast (ref $pair) (local.get $a))))
-
-    ;; 17 = lexical-ref(depth, offset, env)
-    (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 17))
       (then (call $lexical-ref
               (call $fixnum-value (ref.cast (ref i31) (local.get $a)))
               (call $fixnum-value (ref.cast (ref i31) (local.get $b)))
               (local.get $c)))
 
-    ;; 18 = lexical-set!(depth, offset, value, env)
-    (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 18))
+    ;; 6 = lexical-set!(depth, offset, value, env)
+    (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 6))
       (then
         ;; 4th operand is env
         (local.set $rest (call $cdr (ref.cast (ref $pair)
@@ -2492,27 +2403,105 @@
             (else (local.get $env))))
         (global.get $void))
 
-    ;; 19 = define-variable!(name, value, env)
-    (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 19))
+    ;; 7 = make-compiled-procedure(label, env) → procedure
+    ;; $a = evaluated label operand = pair (space-id . pc)
+    ;; $b = env
+    (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 7))
       (then
-        (call $define-variable!
-          (ref.cast (ref $symbol) (local.get $a))
-          (local.get $b)
-          (local.get $c))
+        (if (result (ref null eq)) (ref.test (ref $pair) (local.get $a))
+          ;; Label operand was evaluated to a space-qualified pair
+          (then
+            (call $make-compiled-proc
+              (call $fixnum-value (ref.cast (ref i31)
+                (call $car (ref.cast (ref $pair) (local.get $a)))))
+              (call $fixnum-value (ref.cast (ref i31)
+                (call $cdr (ref.cast (ref $pair) (local.get $a)))))
+              (local.get $b)))
+          ;; Fallback: bare fixnum PC (same space)
+          (else
+            (call $make-compiled-proc
+              (local.get $space-id)
+              (if (result i32) (ref.test (ref i31) (local.get $a))
+                (then (call $fixnum-value (ref.cast (ref i31) (local.get $a))))
+                (else (i32.const 0)))
+              (local.get $b)))))
+
+    ;; 8 = compiled-procedure-entry(proc) → space-qualified pair
+    (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 8))
+      (then
+        (call $cons
+          (call $make-fixnum
+            (call $compiled-proc-space (ref.cast (ref $compiled-proc) (local.get $a))))
+          (call $make-fixnum
+            (call $compiled-proc-pc (ref.cast (ref $compiled-proc) (local.get $a))))))
+
+    ;; 9 = compiled-procedure-env(proc)
+    (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 9))
+      (then (call $compiled-proc-env (ref.cast (ref $compiled-proc) (local.get $a))))
+
+    ;; 10 = primitive-procedure?(val) → bool
+    (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 10))
+      (then (if (result (ref null eq)) (call $is-primitive (local.get $a))
+        (then (global.get $true))
+        (else (global.get $false))))
+
+    ;; 11 = continuation?(val) → bool
+    (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 11))
+      (then (if (result (ref null eq)) (call $is-continuation (local.get $a))
+        (then (global.get $true))
+        (else (global.get $false))))
+
+    ;; 12 = parameter?(val) → bool
+    (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 12))
+      (then (if (result (ref null eq)) (call $is-parameter (local.get $a))
+        (then (global.get $true))
+        (else (global.get $false))))
+
+    ;; 13 = apply-primitive-procedure(proc, args) → result
+    (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 13))
+      (then (call $apply-primitive
+              (ref.cast (ref $primitive) (local.get $a))
+              (local.get $b)))
+
+    ;; 14 = apply-parameter(param, args)
+    (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 14))
+      (then
+        ;; If no args, return value. If args, set value.
+        (if (result (ref null eq)) (call $is-null (local.get $b))
+          (then (struct.get $parameter $value
+                  (ref.cast (ref $parameter) (local.get $a))))
+          (else
+            (struct.set $parameter $value
+              (ref.cast (ref $parameter) (local.get $a))
+              (call $car (ref.cast (ref $pair) (local.get $b))))
+            (global.get $void))))
+
+    ;; 15 = parameter-ref(param) — get current value of parameter
+    (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 15))
+      (then (struct.get $parameter $value
+              (ref.cast (ref $parameter) (local.get $a))))
+
+    ;; 16 = parameter-set!(param, value) — set with guard
+    (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 16))
+      (then
+        ;; If parameter has a guard, call it; otherwise set directly
+        ;; For now, set directly (guards are handled at ECE level)
+        (struct.set $parameter $value
+          (ref.cast (ref $parameter) (local.get $a))
+          (local.get $b))
         (global.get $void))
 
-    ;; 20 = set-variable-value!(name, value, env)
-    (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 20))
+    ;; 17 = parameter-raw-set!(param, value) — set without guard
+    (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 17))
       (then
-        (call $set-variable-value!
-          (ref.cast (ref $symbol) (local.get $a))
-          (local.get $b)
-          (local.get $c))
+        (struct.set $parameter $value
+          (ref.cast (ref $parameter) (local.get $a))
+          (local.get $b))
         (global.get $void))
 
-    ;; 21 = capture-continuation(stack, continue) → continuation struct
+    ;; 18 = capture-continuation(stack, continue) → continuation struct
     ;; Also captures the current winding stack from the ECE *winding-stack* variable.
-    (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 21))
+    (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 18))
       (then
         (local.set $c  ;; reuse $c for winds
           (if (result (ref null eq)) (ref.is_null (global.get $winding-stack-sym))
@@ -2526,10 +2515,10 @@
             (then (global.get $nil))
             (else (local.get $c)))))
 
-    ;; 22 = do-continuation-winds(proc) — transition winding stack before resuming
+    ;; 19 = do-continuation-winds(proc) — transition winding stack before resuming
     ;; If the continuation's saved winds differ from the current *winding-stack*,
     ;; look up do-winds! and call it to run before/after thunks.
-    (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 22))
+    (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 19))
       (then
         ;; $a = continuation's saved winds
         (local.set $a (struct.get $continuation $winds
@@ -2563,16 +2552,52 @@
           (call $compiled-proc-env (ref.cast (ref $compiled-proc) (local.get $c)))))
         (global.get $void))
 
-    ;; 23 = lookup-global-variable(name) — bypasses lexical frames for %global-ref hygiene
+    ;; 20 = continuation-stack(cont)
+    (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 20))
+      (then (struct.get $continuation $stack
+              (ref.cast (ref $continuation) (local.get $a))))
+
+    ;; 21 = continuation-conts(cont)
+    (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 21))
+      (then (struct.get $continuation $conts
+              (ref.cast (ref $continuation) (local.get $a))))
+
+    ;; 22 = false?(val) → bool
+    (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 22))
+      (then (if (result (ref null eq)) (call $is-false (local.get $a))
+        (then (global.get $true))
+        (else (global.get $false))))
+
+    ;; 23 = list(args...) → list built from operands
     (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 23))
       (then
-        (return (call $lookup-variable-value
-          (ref.cast (ref $symbol) (local.get $a))
-          (global.get $global-env))))
+        ;; Operands are already evaluated into a, b, c...
+        ;; But list can have variable args. Build from evaluated operands.
+        ;; Simple case: (list a), (list a b)
+        (if (result (ref null eq)) (ref.is_null (local.get $b))
+          (then (call $cons (local.get $a) (global.get $nil)))
+          (else (if (result (ref null eq)) (ref.is_null (local.get $c))
+            (then (call $cons (local.get $a)
+                    (call $cons (local.get $b) (global.get $nil))))
+            (else (call $cons (local.get $a)
+                    (call $cons (local.get $b)
+                      (call $cons (local.get $c) (global.get $nil)))))))))
+
+    ;; 24 = cons(a, b)
+    (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 24))
+      (then (call $cons (local.get $a) (local.get $b)))
+
+    ;; 25 = car(pair)
+    (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 25))
+      (then (call $car (ref.cast (ref $pair) (local.get $a))))
+
+    ;; 26 = cdr(pair)
+    (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 26))
+      (then (call $cdr (ref.cast (ref $pair) (local.get $a))))
 
     ;; Unknown op — return void
     (else (global.get $void)
-    ))))))))))))))))))))))))))))))))))))))))))))))))
+    ))))))))))))))))))))))))))))))))))))))))))))))))))))))
   )
 
 
@@ -2580,7 +2605,7 @@
   ;; Section 9: Primitive Dispatch
   ;; ═══════════════════════════════════════════════════════════════════
   ;; ECE primitives dispatched by numeric ID from primitives.def.
-  ;; Called via machine op 6 (apply-primitive-procedure).
+  ;; Called via machine op 13 (apply-primitive-procedure).
 
   ;; --- Argument extraction helpers ---
   ;; Args are an ECE list. These extract the 1st, 2nd, 3rd elements.
@@ -5345,10 +5370,10 @@
     (local $id i32)
     (local $i i32)
     (local.set $id (struct.get $symbol $id (local.get $sym)))
-    ;; Op names are in asm-sym-ids slots 17-40 (ops 0-23, op-id = slot - 17)
+    ;; Op names are in asm-sym-ids slots 17-43 (ops 0-26, from operations.def)
     (local.set $i (i32.const 17))
     (block $done (loop $scan
-      (br_if $done (i32.gt_u (local.get $i) (i32.const 40)))
+      (br_if $done (i32.gt_u (local.get $i) (i32.const 43)))
       (if (i32.eq (local.get $id) (array.get $i32-array (ref.as_non_null (global.get $asm-sym-ids)) (local.get $i)))
         (then (return (i32.sub (local.get $i) (i32.const 17)))))
       (local.set $i (i32.add (local.get $i) (i32.const 1)))
@@ -6058,7 +6083,7 @@
   ;; ── Test validation exports ──
 
   ;; Check if a symbol resolves to a valid op-id via $ecec-op-id.
-  ;; Returns the op-id (0-21) or -1 if unrecognized.
+  ;; Returns the op-id (0-26) or -1 if unrecognized.
   (func (export "check_op_id") (param $sym-handle i32) (result i32)
     (call $ecec-op-id (ref.cast (ref $symbol)
       (call $deref-handle (local.get $sym-handle)))))
@@ -6093,13 +6118,13 @@
       ;; Check: opcode must be 0-6
       (if (i32.gt_u (local.get $op) (i32.const 6))
         (then (return (i32.sub (i32.const 0) (i32.add (local.get $i) (i32.const 1))))))
-      ;; Check: for assign-op (op=0,b=3), test (op=1), perform (op=6): c (op-id) must be 0-23
+      ;; Check: for assign-op (op=0,b=3), test (op=1), perform (op=6): c (op-id) must be 0-26
       (if (i32.or (i32.and (i32.eqz (local.get $op)) (i32.eq (local.get $b) (i32.const 3)))
                   (i32.or (i32.eq (local.get $op) (i32.const 1))
                           (i32.eq (local.get $op) (i32.const 6))))
         (then
           (if (i32.or (i32.lt_s (local.get $c) (i32.const 0))
-                      (i32.gt_s (local.get $c) (i32.const 23)))
+                      (i32.gt_s (local.get $c) (i32.const 26)))
             (then (return (i32.sub (i32.const 0) (i32.add (local.get $i) (i32.const 1))))))))
       ;; Check: for branch (op=2), goto-label (op=3,b=0), assign-label (op=0,b=2): c must be 0..len
       (if (i32.or (i32.eq (local.get $op) (i32.const 2))

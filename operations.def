@@ -1,0 +1,58 @@
+;;; ECE Operations Manifest
+;;; Canonical registry of all register machine operations with stable numeric IDs.
+;;;
+;;; Format: (id name arity description)
+;;;   id          - Stable numeric ID (never reused once assigned)
+;;;   name        - ECE operation symbol name
+;;;   arity       - Exact argument count, or -1 for variadic
+;;;   description - Human-readable description
+;;;
+;;; These are internal register machine operations, NOT ECE primitives.
+;;; The compiler emits (op name) in instructions; each host runtime must
+;;; implement every operation. Operation IDs and primitive IDs are
+;;; independent numbering spaces.
+;;;
+;;; IMPORTANT: IDs are permanent. Never reuse an ID for a different operation.
+
+;;; --- Environment operations (0-6) ---
+(0   lookup-variable-value     2   "Look up variable by name in environment")
+(1   lookup-global-variable    1   "Look up variable in global environment only")
+(2   set-variable-value!       3   "Set existing variable's value in environment")
+(3   define-variable!          3   "Define or redefine variable in first frame")
+(4   extend-environment       -1   "Extend environment with new frame (names, vals, env [, nvals])")
+(5   lexical-ref               3   "Lexical variable reference by depth and offset")
+(6   lexical-set!              4   "Lexical variable assignment by depth and offset")
+
+;;; --- Compiled procedure operations (7-9) ---
+(7   make-compiled-procedure   2   "Create compiled procedure from label and environment")
+(8   compiled-procedure-entry  1   "Get entry point of compiled procedure")
+(9   compiled-procedure-env    1   "Get captured environment of compiled procedure")
+
+;;; --- Type predicates (10-12) ---
+(10  primitive-procedure?      1   "Test if value is a primitive procedure")
+(11  continuation?             1   "Test if value is a continuation")
+(12  parameter?                1   "Test if value is a parameter object")
+
+;;; --- Primitive/parameter dispatch (13-17) ---
+(13  apply-primitive-procedure 2   "Apply primitive procedure to argument list")
+(14  apply-parameter           2   "Apply parameter object (get or set value)")
+(15  parameter-ref             1   "Get current value of parameter")
+(16  parameter-set!            2   "Set parameter value with guard")
+(17  parameter-raw-set!        2   "Set parameter value without guard")
+
+;;; --- Continuation operations (18-19) ---
+(18  capture-continuation      2   "Capture continuation from stack and continue register")
+(19  do-continuation-winds     1   "Execute winding thunks for continuation transition")
+
+;;; --- Continuation accessors (20-21) ---
+(20  continuation-stack        1   "Get saved stack from continuation")
+(21  continuation-conts        1   "Get saved continue register from continuation")
+
+;;; --- Boolean test (22) ---
+(22  false?                    1   "Test if value is #f")
+
+;;; --- Data constructors/accessors (23-26) ---
+(23  list                     -1   "Construct list from arguments")
+(24  cons                      2   "Construct pair")
+(25  car                       1   "First element of pair")
+(26  cdr                       1   "Rest of pair")
