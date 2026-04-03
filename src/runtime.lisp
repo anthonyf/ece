@@ -405,18 +405,24 @@ Used by %global-ref for syntax-rules hygiene."
 
 ;;; Primitives and global environment
 
-;;; --- Legacy primitive lists (used to build dispatch table) ---
-;;; These map ECE names to CL function symbols.
-;;; Direct mappings: ECE name = CL function name, or (ece-name . cl-name)
+;;; --- Override table for non-conventional CL mappings ---
+;;; Most primitives resolve via naming convention (ece-<name> or CL <name>).
+;;; These ~13 entries have CL function names that don't follow convention.
 
-(defparameter *primitive-procedures*
-  '(+ - * / car cdr cons list
-    (char->integer . char-code) (integer->char . code-char)
+(defparameter *primitive-cl-overrides*
+  '((char->integer . char-code)
+    (integer->char . code-char)
     (%raw-error . error)
-    (vector-length . length) (vector-ref . aref)
-    (bitwise-and . logand) (bitwise-or . logior)
-    (bitwise-xor . logxor) (bitwise-not . lognot)
-    (arithmetic-shift . ash)))
+    (vector-length . length)
+    (vector-ref . aref)
+    (string-length . length)
+    (bitwise-and . logand)
+    (bitwise-or . logior)
+    (bitwise-xor . logxor)
+    (bitwise-not . lognot)
+    (arithmetic-shift . ash)
+    (set-car! . rplaca)
+    (set-cdr! . rplacd)))
 
 ;;; Boolean-returning primitive wrappers
 ;;; These CL functions return t/nil; we convert nil → *scheme-false*.
@@ -481,57 +487,74 @@ Used by %global-ref for syntax-rules hygiene."
   "Convert a CL symbol to its lowercase ECE equivalent."
   (intern (string-downcase (symbol-name cl-sym)) :ece))
 
-(defun build-cl-function-map ()
-  "Build a hash table mapping ECE name symbols (lowercase) to CL functions.
-Combines *primitive-procedures* and *wrapper-primitives*."
-  (let ((ht (make-hash-table :test 'eq)))
-    ;; Direct CL mappings
-    (dolist (p *primitive-procedures*)
-      (if (listp p)
-          (setf (gethash (ece-sym (car p)) ht) (symbol-function (cdr p)))
-          (setf (gethash (ece-sym p) ht) (symbol-function p))))
-    ;; Wrapper mappings
-    (dolist (entry *wrapper-primitives*)
-      (setf (gethash (ece-sym (car entry)) ht) (symbol-function (cdr entry))))
-    ht))
+(defun resolve-cl-primitive (ece-name-sym)
+  "Resolve ECE primitive name to CL function via override table or naming convention.
+Tries: override table → ece-<name> in ECE package → <name> in CL package → <name> in ECE package."
+  (let* ((name-str (symbol-name ece-name-sym))       ; lowercase ECE name
+         (name-up (string-upcase name-str))           ; uppercase for CL symbol lookup
+         (override (assoc name-up *primitive-cl-overrides*
+                          :test #'string-equal
+                          :key #'symbol-name)))
+    (cond
+      ;; Explicit override
+      (override
+       (let ((cl-sym (cdr override)))
+         (and (fboundp cl-sym) (symbol-function cl-sym))))
+      ;; Convention 1: ECE-<NAME> in ECE package
+      ((let ((sym (find-symbol (concatenate 'string "ECE-" name-up) :ece)))
+         (and sym (fboundp sym) (symbol-function sym))))
+      ;; Convention 2: <NAME> in CL package
+      ((let ((sym (find-symbol name-up :cl)))
+         (and sym (fboundp sym) (symbol-function sym))))
+      ;; Convention 3: <NAME> in ECE package
+      ((let ((sym (find-symbol name-up :ece)))
+         (and sym (fboundp sym) (symbol-function sym)))))))
 
 (defun init-primitive-dispatch-tables ()
-  "Initialize dispatch tables from manifest + CL function map."
-  (let ((cl-fns (build-cl-function-map)))
+  "Initialize dispatch tables from manifest via convention-based resolution."
+  (dolist (entry *manifest-entries*)
+    (destructuring-bind (id name arity platform) entry
+      (declare (ignore arity))
+      (let ((name-sym (intern (string-downcase (symbol-name name)) :ece)))
+        ;; Populate name table
+        (setf (aref *primitive-name-table* id) name-sym)
+        ;; Populate reverse lookup
+        (setf (gethash name-sym *primitive-name-to-id*) id)
+        ;; Populate dispatch table
+        (let ((cl-fn (resolve-cl-primitive name-sym)))
+          (cond
+            (cl-fn
+             (setf (aref *primitive-dispatch-table* id) cl-fn)
+             (setf (gethash id *primitive-available-ids*) t))
+            ;; ECE-platform and browser-platform primitives don't need CL implementations
+            ((member platform '(ece browser))
+             (let ((captured-name name-sym)
+                   (captured-platform platform))
+               (setf (aref *primitive-dispatch-table* id)
+                     (lambda (&rest args)
+                       (declare (ignore args))
+                       (error "Primitive ~A requires ~A platform"
+                              captured-name captured-platform)))))
+            ;; Core/CL primitive with no implementation — stub for now, validated later
+            (t
+             (let ((captured-name name-sym))
+               (setf (aref *primitive-dispatch-table* id)
+                     (lambda (&rest args)
+                       (declare (ignore args))
+                       (error "Primitive ~A is not implemented" captured-name)))))))))))
+
+(defun validate-primitive-dispatch-tables ()
+  "Error if any core/cl primitive is still unresolved after all registrations."
+  (let ((missing nil))
     (dolist (entry *manifest-entries*)
       (destructuring-bind (id name arity platform) entry
         (declare (ignore arity))
-        (let ((name-sym (intern (string-downcase (symbol-name name)) :ece)))
-          ;; Populate name table
-          (setf (aref *primitive-name-table* id) name-sym)
-          ;; Populate reverse lookup
-          (setf (gethash name-sym *primitive-name-to-id*) id)
-          ;; Populate dispatch table
-          (let ((cl-fn (gethash name-sym cl-fns)))
-            (cond
-              (cl-fn
-               (setf (aref *primitive-dispatch-table* id) cl-fn)
-               (setf (gethash id *primitive-available-ids*) t))
-              ;; Platform primitives not available on CL get a stub
-              ((member platform '(browser))
-               (let ((captured-name name-sym)
-                     (captured-platform platform))
-                 (setf (aref *primitive-dispatch-table* id)
-                       (lambda (&rest args)
-                         (declare (ignore args))
-                         (error "Primitive ~A requires ~A platform"
-                                captured-name captured-platform)))))
-              ;; Core/CL primitive with no implementation — warn
-              (t
-               (warn "Manifest entry ~A (id ~D) has no CL implementation" name id)
-               (let ((captured-name name-sym))
-                 (setf (aref *primitive-dispatch-table* id)
-                       (lambda (&rest args)
-                         (declare (ignore args))
-                         (error "Primitive ~A is not implemented" captured-name))))))))))))
-
-;; Dispatch table initialization deferred until after *wrapper-primitives*
-;; and platform discovery functions are defined (see below).
+        (when (and (member platform '(core cl))
+                   (not (gethash id *primitive-available-ids*)))
+          (push (format nil "~A (id ~D, platform ~A)" name id platform) missing))))
+    (when missing
+      (error "Boot failed: ~D primitive~:P have no CL implementation:~%~{  ~A~%~}"
+             (length missing) (nreverse missing)))))
 
 (defun make-hash-frame (names objects)
   "Build a hash-table frame (:hash-frame . ht) from parallel name/object lists."
@@ -566,7 +589,7 @@ Combines *primitive-procedures* and *wrapper-primitives*."
 ;;; Custom readtable for ECE: ` → quasiquote, , → unquote, ,@ → unquote-splicing
 ;;; I/O primitives with custom wrappers
 
-(defun ece-hash-table-p (obj)
+(defun ece-hash-table? (obj)
   "ECE primitive: returns scheme bool. Use hash-table-p for CL-side checks."
   (scheme-bool (hash-table-p obj)))
 
@@ -640,7 +663,7 @@ Combines *primitive-procedures* and *wrapper-primitives*."
     (finish-output stream)
     nil))
 
-(defun ece-eof-p (obj)
+(defun ece-eof? (obj)
   "Test if obj is the EOF sentinel."
   (scheme-bool (eq obj *eof-sentinel*)))
 
@@ -669,7 +692,7 @@ Combines *primitive-procedures* and *wrapper-primitives*."
   "Return the name of symbol s."
   (symbol-name s))
 
-(defun ece-vector-p (x)
+(defun ece-vector? (x)
   "Test if x is a vector (but not a string)."
   (scheme-bool (and (vectorp x) (not (stringp x)))))
 
@@ -750,6 +773,19 @@ print without CL pipe escaping."
   (finish-output)
   nil)
 
+(defun ece-%yield! (k)
+  "No-op yield on CL — cooperative scheduling is browser-only."
+  k)
+
+(defun ece-current-milliseconds ()
+  "Milliseconds since SBCL start (CL approximation of performance.now)."
+  (truncate (* (/ (get-internal-real-time) internal-time-units-per-second) 1000)))
+
+(defun ece-wall-clock-ms ()
+  "Milliseconds since midnight local time."
+  (multiple-value-bind (sec min hour) (get-decoded-time)
+    (+ (* hour 3600000) (* min 60000) (* sec 1000))))
+
 (defun ece-string-trim (str)
   "Trim whitespace from both ends of a string."
   (string-trim '(#\Space #\Tab #\Newline #\Return) str))
@@ -788,13 +824,13 @@ print without CL pipe escaping."
 (defun ece-make-output-port (stream)
   (list 'output-port stream))
 
-(defun ece-input-port-p (x)
+(defun ece-input-port? (x)
   (scheme-bool (and (consp x) (eq (car x) 'input-port))))
 
-(defun ece-output-port-p (x)
+(defun ece-output-port? (x)
   (scheme-bool (and (consp x) (eq (car x) 'output-port))))
 
-(defun ece-port-p (x)
+(defun ece-port? (x)
   (scheme-bool (or (and (consp x) (eq (car x) 'input-port))
                    (and (consp x) (eq (car x) 'output-port)))))
 
@@ -870,7 +906,7 @@ print without CL pipe escaping."
   (write-byte byte (ece-port-stream port))
   byte)
 
-(defun ece-char-ready-p (&optional port)
+(defun ece-char-ready? (&optional port)
   (let ((p (or port *current-input-port*)))
     (scheme-bool (listen (ece-port-stream p)))))
 
@@ -919,154 +955,18 @@ print without CL pipe escaping."
 (defvar *compile-time-macros* (make-hash-table :test 'eq)
   "Hash table mapping macro names to compiled transformer procedures.")
 
-;;; Register wrapper primitives that don't depend on the compiler.
-;;; (try-eval, load, save-image!, and load-image! are registered in compiler.lisp.)
-
-(defparameter *wrapper-primitives*
-  '((= . ece-=) (< . ece-<) (> . ece->)
-    (null? . ece-null?) (pair? . ece-pair?)
-    (number? . ece-number?) (string? . ece-string?) (symbol? . ece-symbol?)
-    (integer? . ece-integer?)
-    (eq? . ece-eq?)
-    (char? . ece-char?)
-    (write . ece-write)
-    (display . ece-display)
-    (newline . ece-newline)
-    (eof? . ece-eof-p)
-    (string-length . length)
-    (string-ref . ece-string-ref)
-    (string-append . ece-string-append)
-    (substring . ece-substring)
-    (string->symbol . ece-string->symbol)
-    (symbol->string . ece-symbol->string)
-    (keyword? . ece-keyword?)
-    (vector? . ece-vector-p)
-    (make-vector . ece-make-vector)
-    (vector . ece-vector)
-    (vector-set! . ece-vector-set!)
-    (read-line . ece-read-line)
-    (write-to-string . ece-write-to-string)
-    (write-to-string-flat . ece-write-to-string-flat)
-    (sleep . ece-sleep)
-    (clear-screen . ece-clear-screen)
-    (trace . ece-trace)
-    (untrace . ece-untrace)
-    (input-port? . ece-input-port-p)
-    (output-port? . ece-output-port-p)
-    (port? . ece-port-p)
-    (current-input-port . ece-current-input-port)
-    (current-output-port . ece-current-output-port)
-    (open-input-file . ece-open-input-file)
-    (open-output-file . ece-open-output-file)
-    (close-input-port . ece-close-input-port)
-    (close-output-port . ece-close-output-port)
-    (open-input-string . ece-open-input-string)
-    (open-output-string . ece-open-output-string)
-    (get-output-string . ece-get-output-string)
-    (read-char . ece-read-char)
-    (peek-char . ece-peek-char)
-    (write-char . ece-write-char)
-    (char-ready? . ece-char-ready-p)
-    (with-input-from-file . ece-with-input-from-file)
-    (with-output-to-file . ece-with-output-to-file)
-    (call-with-input-file . ece-call-with-input-file)
-    (call-with-output-file . ece-call-with-output-file)
-    (write-byte . ece-write-byte)
-    (open-binary-output-file . ece-open-binary-output-file)
-    (string . string)
-    (%intern-ece . ece-%intern-ece)
-    (%instruction-vector-length . ece-%instruction-vector-length)
-    (%instruction-vector-push! . ece-%instruction-vector-push!)
-    (%label-table-set! . ece-%label-table-set!)
-    (%label-table-ref . ece-%label-table-ref)
-    (%procedure-name-set! . ece-%procedure-name-set!)
-    (%label-table-entries . ece-%label-table-entries)
-    (%macro-table-entries . ece-%macro-table-entries)
-    (parameter? . ece-parameter-p)
-    (%eq-hash-table . ece-%eq-hash-table)
-    (%eq-hash-ref . ece-%eq-hash-ref)
-    (%eq-hash-set! . ece-%eq-hash-set!)
-    (%eq-hash-has-key? . ece-%eq-hash-has-key-p)
-    (%eq-hash-keys . ece-%eq-hash-keys)
-    (%hash-frame? . ece-%hash-frame-p)
-    (%hash-frame-entries . ece-%hash-frame-entries)
-    (%make-hash-frame . ece-%make-hash-frame)
-    (%hash-frame-set! . ece-%hash-frame-set!)
-    (%create-space . ece-%create-space)
-    (%get-space . ece-%get-space)
-    (%space-instruction-length . ece-%space-instruction-length)
-    (%space-name . ece-%space-name)
-    (%current-space-id . ece-%current-space-id)
-    (%set-current-space-id! . ece-%set-current-space-id!)
-    (%space-instruction-push! . ece-%space-instruction-push!)
-    (%space-label-set! . ece-%space-label-set!)
-    (%space-label-ref . ece-%space-label-ref)
-    (%space-count . ece-%space-count)
-    (%space-source-ref . ece-%space-source-ref)
-    (%space-label-entries . ece-%space-label-entries)
-    (%primitive-name . ece-%primitive-name)
-    (%primitive-id . ece-%primitive-id)
-    (%global-env-frame . ece-%global-env-frame)
-    (set-car! . rplaca)
-    (set-cdr! . rplacd)
-    (extend-environment . extend-environment)
-    (platform-has? . ece-platform-has-p)
-    (%platform-primitives . ece-%platform-primitives)
-    ;; Compiler-support primitives (previously registered implicitly)
-    (execute-from-pc . ece-execute-from-pc)
-    (get-macro . ece-get-macro)
-    (set-macro! . ece-set-macro!)
-    (make-parameter . ece-make-parameter-value)
-    (apply-compiled-procedure . ece-apply-compiled-procedure)
-    ;; Platform hash table primitives (core IDs 141-149)
-    (%make-hash-table . ece-%make-hash-table)
-    (hash-table? . ece-hash-table-p)
-    (hash-ref . ece-hash-ref)
-    (hash-set! . ece-hash-set!)
-    (hash-remove! . ece-hash-remove!)
-    (hash-has-key? . ece-hash-has-key-p)
-    (hash-keys . ece-hash-keys)
-    (hash-values . ece-hash-values)
-    (hash-count . ece-hash-count)
-    ;; Type introspection (core IDs 155-165)
-    (compiled-procedure? . ece-compiled-procedure-p)
-    (continuation? . ece-continuation-p)
-    (primitive? . ece-primitive-p)
-    (compiled-procedure-entry . ece-compiled-procedure-entry)
-    (compiled-procedure-env . ece-compiled-procedure-env)
-    (continuation-stack . ece-continuation-stack)
-    (continuation-conts . ece-continuation-conts)
-    (%primitive-id-of . ece-%primitive-id-of)
-    (%make-compiled-procedure . ece-%make-compiled-procedure)
-    (%make-continuation . ece-%make-continuation)
-    (%make-primitive . ece-%make-primitive)
-    ;; Env-frame introspection (core IDs 166-170)
-    (%env-frame? . ece-%env-frame-p)
-    (%env-frame-names . ece-%env-frame-names)
-    (%env-frame-vals . ece-%env-frame-vals)
-    (%env-frame-enclosing . ece-%env-frame-enclosing)
-    (%make-env-frame . ece-%make-env-frame)
-    ;; Winding stack support (core IDs 171-173)
-    (%set-winding-stack! . ece-%set-winding-stack!)
-    (%get-winding-stack . ece-%get-winding-stack)
-    (continuation-winds . ece-continuation-winds)
-    ;; Integer rounding (core IDs 108-109)
-    (truncate . ece-truncate)
-    (floor . ece-floor)
-    (exact->inexact . ece-exact->inexact)))
-
-;;; Wrapper primitives are now registered via the manifest-based dispatch table.
-;;; *wrapper-primitives* is still used by build-cl-function-map to map names to CL functions.
+;;; Primitive dispatch is now convention-based via resolve-cl-primitive.
+;;; No manual wrapper list needed — functions named ece-<name> resolve automatically.
 
 ;;; --- Type introspection primitives ---
 
-(defun ece-compiled-procedure-p (x)
+(defun ece-compiled-procedure? (x)
   (scheme-bool (and (listp x) (eq (car x) '|compiled-procedure|))))
 
-(defun ece-continuation-p (x)
+(defun ece-continuation? (x)
   (scheme-bool (and (listp x) (eq (car x) '|continuation|))))
 
-(defun ece-primitive-p (x)
+(defun ece-primitive? (x)
   (scheme-bool (and (listp x) (eq (car x) '|primitive|))))
 
 (defun ece-compiled-procedure-entry (proc)
@@ -1097,7 +997,7 @@ print without CL pipe escaping."
   (list '|primitive| id))
 
 ;; Env-frame introspection (CL frames are vectors for O(1) lexical access)
-(defun ece-%env-frame-p (x)
+(defun ece-%env-frame? (x)
   (scheme-bool (vectorp x)))
 
 (defun ece-%env-frame-names (frame)
@@ -1127,7 +1027,7 @@ print without CL pipe escaping."
 
 ;;; --- Platform discovery primitives ---
 
-(defun ece-platform-has-p (name)
+(defun ece-platform-has? (name)
   "Check if the named primitive is available on this platform.
 Returns ECE #t if the primitive exists and has a non-stub implementation, #f otherwise."
   (let ((id (gethash name *primitive-name-to-id*)))
@@ -1178,7 +1078,7 @@ Used by the serializer to detect the global environment sentinel."
     ((compiled-procedure-p proc) (execute-compiled-call proc args))
     (t (error "Not a procedure: ~S" proc))))
 
-(defun ece-make-parameter-value (init &optional converter)
+(defun ece-make-parameter (init &optional converter)
   "Create a parameter object: (parameter (<value> . <converter>)).
 The prelude wrapper applies the converter before calling this,
 so INIT is already converted. We just store it with the converter."
@@ -1265,7 +1165,7 @@ for backward compat with old images."
   "Test if PROC is a parameter object: (parameter (<value> . <converter>))"
   (and (listp proc) (eq (car proc) 'parameter)))
 
-(defun ece-parameter-p (x)
+(defun ece-parameter? (x)
   "ECE-accessible: test if X is a parameter."
   (scheme-bool (parameter-p x)))
 
@@ -1901,7 +1801,7 @@ Returns a raw CL hash table — use %eq-hash-ref/set!/has-key? to access."
   (setf (gethash key ht) val)
   ht)
 
-(defun ece-%eq-hash-has-key-p (ht key)
+(defun ece-%eq-hash-has-key? (ht key)
   "Test if KEY exists in an eq-based hash table."
   (multiple-value-bind (val found) (gethash key ht)
     (declare (ignore val))
@@ -1936,7 +1836,7 @@ Returns a raw CL hash table — use %eq-hash-ref/set!/has-key? to access."
   (remhash key ht)
   *scheme-false*)
 
-(defun ece-hash-has-key-p (ht key)
+(defun ece-hash-has-key? (ht key)
   "Test if KEY exists in hash table."
   (multiple-value-bind (val found) (gethash key ht)
     (declare (ignore val))
@@ -1960,7 +1860,7 @@ Returns a raw CL hash table — use %eq-hash-ref/set!/has-key? to access."
 
 ;;; Hash-table frame primitives (for compaction.scm)
 
-(defun ece-%hash-frame-p (frame)
+(defun ece-%hash-frame? (frame)
   "Test if FRAME is a hash-table-backed environment frame."
   (scheme-bool (hash-frame-p frame)))
 
@@ -2197,7 +2097,11 @@ Downcases ECE-package symbols for CL→ECE boundary compatibility."
 ;;; Register try-eval dispatch now that ece-try-eval is defined
 (let ((id (gethash (intern "try-eval" :ece) *primitive-name-to-id*)))
   (when id
-    (setf (aref *primitive-dispatch-table* id) #'ece-try-eval)))
+    (setf (aref *primitive-dispatch-table* id) #'ece-try-eval)
+    (setf (gethash id *primitive-available-ids*) t)))
+
+;;; All late registrations done — validate that every core/cl primitive resolved.
+(validate-primitive-dispatch-tables)
 
 ;;; .ecec → .ececb binary conversion
 ;;; CL reads the .ecec (handles #S(SCHEME-FALSE), NIL, etc.), then

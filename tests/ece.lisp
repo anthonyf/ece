@@ -2245,18 +2245,18 @@ VARS are CL symbols (auto-downcased to ECE package)."
 (deftest test-ports
     (testing "port predicates"
              (let ((ip (ece::ece-open-input-string "test")))
-               (ok (ece::ece-input-port-p ip))
-               (ok (ece::scheme-false-p (ece::ece-output-port-p ip)))
-               (ok (ece::ece-port-p ip)))
-             (ok (ece::scheme-false-p (ece::ece-port-p 42)))
-             (ok (ece::scheme-false-p (ece::ece-port-p "hello")))
-             (ok (ece::scheme-false-p (ece::ece-input-port-p nil))))
+               (ok (ece::ece-input-port? ip))
+               (ok (ece::scheme-false-p (ece::ece-output-port? ip)))
+               (ok (ece::ece-port? ip)))
+             (ok (ece::scheme-false-p (ece::ece-port? 42)))
+             (ok (ece::scheme-false-p (ece::ece-port? "hello")))
+             (ok (ece::scheme-false-p (ece::ece-input-port? nil))))
 
   (testing "string port: open, read chars, EOF"
            (let ((p (ece::ece-open-input-string "hi")))
              (ok (char= (ece::ece-read-char p) #\h))
              (ok (char= (ece::ece-read-char p) #\i))
-             (ok (ece::ece-eof-p (ece::ece-read-char p)))))
+             (ok (ece::ece-eof? (ece::ece-read-char p)))))
 
   (testing "read-char and peek-char"
            (let ((p (ece::ece-open-input-string "ab")))
@@ -2267,8 +2267,8 @@ VARS are CL symbols (auto-downcased to ECE package)."
              (ok (char= (ece::ece-read-char p) #\a))
              (ok (char= (ece::ece-read-char p) #\b))
              ;; EOF
-             (ok (ece::ece-eof-p (ece::ece-peek-char p)))
-             (ok (ece::ece-eof-p (ece::ece-read-char p)))))
+             (ok (ece::ece-eof? (ece::ece-peek-char p)))
+             (ok (ece::ece-eof? (ece::ece-read-char p)))))
 
   (testing "write-char"
            (let* ((result nil)
@@ -2294,11 +2294,11 @@ VARS are CL symbols (auto-downcased to ECE package)."
            (let ((p (ece::ece-open-input-string (format nil "hello~%world"))))
              (ok (string= "hello" (ece::ece-read-line p)))
              (ok (string= "world" (ece::ece-read-line p)))
-             (ok (ece::ece-eof-p (ece::ece-read-line p)))))
+             (ok (ece::ece-eof? (ece::ece-read-line p)))))
 
   (testing "current-input-port and current-output-port"
-           (ok (ece::ece-input-port-p (ece::ece-current-input-port)))
-           (ok (ece::ece-output-port-p (ece::ece-current-output-port))))
+           (ok (ece::ece-input-port? (ece::ece-current-input-port)))
+           (ok (ece::ece-output-port? (ece::ece-current-output-port))))
 
   (testing "with-input-from-file reads from file"
            (ensure-directories-exist ".tmp/x")
@@ -2323,7 +2323,7 @@ VARS are CL symbols (auto-downcased to ECE package)."
                (write-string "xyz" s))
              ;; Open, read, close
              (let ((p (ece::ece-open-input-file test-file)))
-               (ok (ece::ece-input-port-p p))
+               (ok (ece::ece-input-port? p))
                (ok (char= (ece::ece-read-char p) #\x))
                (ok (char= (ece::ece-read-char p) #\y))
                (ece::ece-close-input-port p))
