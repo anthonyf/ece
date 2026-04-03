@@ -22,7 +22,24 @@ Once a numeric ID is assigned to a primitive name in the manifest, that ID SHALL
 Core primitives SHALL use IDs 0-99. CL platform primitives SHALL use IDs 100-199. Browser platform primitives SHALL use IDs 200-299. Future platforms SHALL use ranges 300+.
 
 ### Requirement: all existing primitives are in manifest
-Every primitive currently registered in `*primitive-procedures*` and `*wrapper-primitives*` SHALL have a corresponding entry in `primitives.def` with platform tag `core` or `cl`.
+Every primitive with a CL implementation (resolved via naming convention or override table) SHALL have a corresponding entry in `primitives.def` with platform tag `core` or `cl`.
+
+### Requirement: Boot-time validation of CL implementations
+The CL runtime SHALL validate at boot that every `core` and `cl` platform primitive (excluding `ece`-platform entries) resolves to a CL function.
+
+#### Scenario: Missing core primitive fails boot
+- **WHEN** `primitives.def` contains a `core` primitive named `foo`
+- **AND** no CL function can be resolved for `foo`
+- **THEN** boot SHALL signal an error (not a warning)
+
+#### Scenario: ECE-platform primitive skipped
+- **WHEN** `primitives.def` contains an `ece` platform primitive
+- **THEN** boot SHALL NOT require a CL function for it
+- **AND** the dispatch table slot SHALL contain a stub
+
+#### Scenario: Browser-platform primitive skipped
+- **WHEN** `primitives.def` contains a `browser` platform primitive
+- **THEN** boot SHALL NOT require a CL function for it
 
 #### Scenario: core primitives present
 - **WHEN** the manifest is loaded
