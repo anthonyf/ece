@@ -20,6 +20,7 @@ test-rove:
 	@qlot exec sbcl --disable-debugger --eval '(asdf:load-system :ece)' --eval '(asdf:load-system :ece/tests)' \
 	  --eval '(let ((suite (car (rove/core/suite/package:all-suites)))) (rove/core/suite/package:run-suite suite) (unless (zerop (slot-value (rove/core/suite::suite-stats suite) (quote rove/core/result::failed))) (uiop:quit 1)))' \
 	  --quit 2>&1 | tee $(TEST_OUTPUT_DIR)/test-rove.txt
+	@grep -q "tests passed" $(TEST_OUTPUT_DIR)/test-rove.txt
 
 test-ece:
 	@mkdir -p .tmp
@@ -30,9 +31,12 @@ test-ece:
 	@grep -q "0 failed" $(TEST_OUTPUT_DIR)/test-ece.txt
 
 test-conformance:
-	@qlot exec sbcl --dynamic-space-size 4096 --eval '(asdf:load-system :ece)' \
-	  --eval '(handler-case (ece:evaluate (list (quote load) "tests/conformance/run-conformance.scm")) (error (c) (format t "Error: ~A~%" c)))' \
+	@qlot exec sbcl --dynamic-space-size 4096 --disable-debugger --eval '(asdf:load-system :ece)' \
+	  --eval '(handler-case (ece:evaluate (list (quote load) "tests/conformance/run-conformance.scm")) (error (c) (format t "Error: ~A~%" c) (sb-ext:exit :code 1)))' \
+	  --eval '(let ((f (ece::lookup-variable-value (intern "*conformance-failures*" :ece) ece::*global-env*))) (format t "~%~D conformance failures~%" f) (when (> f 0) (sb-ext:exit :code 1)))' \
 	  --quit 2>&1 | tee $(TEST_OUTPUT_DIR)/test-conformance.txt
+	@grep -q "Conformance results:" $(TEST_OUTPUT_DIR)/test-conformance.txt
+	@! grep -q "[1-9][0-9]* failed" $(TEST_OUTPUT_DIR)/test-conformance.txt
 
 test-wasm: wasm
 	@mkdir -p .tmp
@@ -43,17 +47,18 @@ test-wasm: wasm
 	  --eval '(ece:evaluate (list (intern "compile-file" :ece) ".tmp/ece-wasm-tests.scm"))' \
 	  --quit
 	@echo "Running WASM tests..."
-	@bash -o pipefail -c 'node --max-old-space-size=4096 wasm/test.js .tmp/ece-wasm-tests.ecec 2>&1 | tee $(TEST_OUTPUT_DIR)/test-wasm.txt'
+	@node --max-old-space-size=4096 wasm/test.js .tmp/ece-wasm-tests.ecec 2>&1 | tee $(TEST_OUTPUT_DIR)/test-wasm.txt
+	@grep -q "0 failed" $(TEST_OUTPUT_DIR)/test-wasm.txt
 
 check-test-counts:
 	@echo ""
 	@echo "=== Test Count Baseline Check ==="
-	@ECE_COUNT=$$(grep -o '[0-9]* passed' $(TEST_OUTPUT_DIR)/test-ece.txt 2>/dev/null | tail -1 | grep -o '^[0-9]*') && \
-	  [ -n "$$ECE_COUNT" ] && bash scripts/check-test-counts.sh cl-ece "$$ECE_COUNT" || true
-	@CONF_COUNT=$$(grep 'Conformance results:' $(TEST_OUTPUT_DIR)/test-conformance.txt 2>/dev/null | grep -o '[0-9]* passed' | grep -o '[0-9]*') && \
-	  [ -n "$$CONF_COUNT" ] && bash scripts/check-test-counts.sh conformance "$$CONF_COUNT" || true
-	@WASM_COUNT=$$(grep -o '[0-9]* passed' $(TEST_OUTPUT_DIR)/test-wasm.txt 2>/dev/null | tail -1 | grep -o '^[0-9]*') && \
-	  [ -n "$$WASM_COUNT" ] && bash scripts/check-test-counts.sh wasm-ece "$$WASM_COUNT" || true
+	@ECE_COUNT=$$(grep -o '[0-9]* passed' $(TEST_OUTPUT_DIR)/test-ece.txt 2>/dev/null | tail -1 | grep -o '^[0-9]*'); \
+	  if [ -n "$$ECE_COUNT" ]; then bash scripts/check-test-counts.sh cl-ece "$$ECE_COUNT"; fi
+	@CONF_COUNT=$$(grep 'Conformance results:' $(TEST_OUTPUT_DIR)/test-conformance.txt 2>/dev/null | grep -o '[0-9]* passed' | grep -o '[0-9]*'); \
+	  if [ -n "$$CONF_COUNT" ]; then bash scripts/check-test-counts.sh conformance "$$CONF_COUNT"; fi
+	@WASM_COUNT=$$(grep -o '[0-9]* passed' $(TEST_OUTPUT_DIR)/test-wasm.txt 2>/dev/null | tail -1 | grep -o '^[0-9]*'); \
+	  if [ -n "$$WASM_COUNT" ]; then bash scripts/check-test-counts.sh wasm-ece "$$WASM_COUNT"; fi
 
 test-golden:
 	@echo "Running golden compiler output tests..."

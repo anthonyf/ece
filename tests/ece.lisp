@@ -12,6 +12,18 @@
   "Read and evaluate SOURCE using the ECE reader in the image."
   (ece::evaluate (list 'eval (list 'read (list 'open-input-string source)))))
 
+(defun ece-sym (name)
+  "Intern NAME (a string or symbol) as a lowercase ECE-package symbol."
+  (intern (string-downcase (string name)) :ece))
+
+(defun make-test-env (vars vals &optional (base-env ece:*global-env*))
+  "Create a hash-frame test environment extending BASE-ENV.
+VARS are CL symbols (auto-downcased to ECE package)."
+  (let ((ht (make-hash-table :test 'eq)))
+    (loop for var in vars for val in vals
+          do (setf (gethash (ece-sym var) ht) val))
+    (cons (cons :hash-frame ht) base-env)))
+
 ;; NOTE: To run this test file, execute `(asdf:test-system :ece)' in your Lisp.
 
 (defun image-available-p ()
@@ -26,20 +38,21 @@
 
 (deftest test-variable-eval
     (testing "variables evaluate to their bound values"
-             (ok (= (evaluate 'x (list (cons '(x y) '(5 10)))) 5))
-             (ok (= (evaluate 'y (list (cons '(x y) '(5 10)))) 10))
-             (ok (= (evaluate 'z (list (cons '(x y z) '(5 10 -3)))) -3)))
+             (ok (= (evaluate (ece-sym 'x) (make-test-env '(x y) '(5 10))) 5))
+             (ok (= (evaluate (ece-sym 'y) (make-test-env '(x y) '(5 10))) 10))
+             (ok (= (evaluate (ece-sym 'z) (make-test-env '(x y z) '(5 10 -3))) -3)))
 
   (testing "unbound variables signal an error"
-           (signals (evaluate 'a (list (cons '(b c) '(2 3)))))
-           (signals (evaluate 'foo nil))))
+           (signals (evaluate (ece-sym 'a) (make-test-env '(b c) '(2 3))))
+           (signals (evaluate (ece-sym 'foo) nil))))
 
 
 (deftest test-quote-eval
     (testing "quote special form returns the quoted expression without evaluating it"
              (ok (equal (evaluate '(quote a) nil) 'a))
              (ok (equal (evaluate '(quote (1 2 3)) nil) '(1 2 3)))
-             (ok (equal (evaluate '(quote (x y z)) (list (cons '(x y z) '(10 20 30)))) '(x y z)))))
+             (ok (equal (evaluate '(quote (x y z)) (make-test-env '(x y z) '(10 20 30)))
+                        '(x y z)))))
 
 
 (deftest test-lambda-eval
@@ -49,10 +62,10 @@
              (ok (= (evaluate '((lambda (a b c) (- a b c)) 10 3 2)) 5)))
 
   (testing "lambda expressions with variable bindings"
-           (ok (= (evaluate '((lambda (x) (+ x y)) 5) (cons (cons '(y) '(10))
-                                                            *global-env*)) 15))
-           (ok (= (evaluate '((lambda (a b) (+ a b)) b 2) (cons (cons '(b) '(8))
-                                                                *global-env*)) 10))))
+           (ok (= (evaluate `((lambda (,(ece-sym 'x)) (+ ,(ece-sym 'x) ,(ece-sym 'y))) 5)
+                            (make-test-env '(y) '(10))) 15))
+           (ok (= (evaluate `((lambda (,(ece-sym 'a) ,(ece-sym 'b)) (+ ,(ece-sym 'a) ,(ece-sym 'b))) ,(ece-sym 'b) 2)
+                            (make-test-env '(b) '(8))) 10))))
 
 (deftest test-begin-eval
     (testing "begin evaluates sequence and returns last value"
@@ -2288,6 +2301,7 @@
            (ok (ece::ece-output-port-p (ece::ece-current-output-port))))
 
   (testing "with-input-from-file reads from file"
+           (ensure-directories-exist ".tmp/x")
            (let ((test-file ".tmp/ece-port-test.txt"))
              ;; Write a test file
              (with-open-file (s test-file :direction :output
@@ -2301,6 +2315,7 @@
              (delete-file test-file)))
 
   (testing "file ports: open, read, close"
+           (ensure-directories-exist ".tmp/x")
            (let ((test-file ".tmp/ece-port-test2.txt"))
              ;; Write a test file
              (with-open-file (s test-file :direction :output
