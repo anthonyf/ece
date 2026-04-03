@@ -2301,6 +2301,7 @@ VARS are CL symbols (auto-downcased to ECE package)."
            (ok (ece::ece-output-port-p (ece::ece-current-output-port))))
 
   (testing "with-input-from-file reads from file"
+           (ensure-directories-exist ".tmp/x")
            (let ((test-file ".tmp/ece-port-test.txt"))
              ;; Write a test file
              (with-open-file (s test-file :direction :output
@@ -2314,6 +2315,7 @@ VARS are CL symbols (auto-downcased to ECE package)."
              (delete-file test-file)))
 
   (testing "file ports: open, read, close"
+           (ensure-directories-exist ".tmp/x")
            (let ((test-file ".tmp/ece-port-test2.txt"))
              ;; Write a test file
              (with-open-file (s test-file :direction :output
