@@ -1377,35 +1377,103 @@ call do-winds! to transition. Uses nested execute-compiled-call."
        :message (format nil "Unbound variable: ~A" var)
        :irritants nil))))
 
+;;; Operations manifest — parallels primitives manifest infrastructure
+
+(defun parse-operations-manifest (filename)
+  "Parse operations.def and return a list of (id name arity) entries."
+  (let ((entries nil))
+    (with-open-file (stream filename :direction :input)
+      (loop for form = (cl:read stream nil :eof)
+            until (eq form :eof)
+            when (and (listp form) (>= (length form) 3))
+            do (push (list (first form)    ; id
+                           (second form)   ; name
+                           (third form))   ; arity
+                     entries)))
+    (nreverse entries)))
+
+(defparameter *operations-manifest-path*
+  (asdf:system-relative-pathname :ece "operations.def"))
+
+(defparameter *operations-manifest-entries*
+  (parse-operations-manifest *operations-manifest-path*))
+
+(defparameter *operation-max-id*
+  (reduce #'max *operations-manifest-entries* :key #'first))
+
+;; Dispatch table: vector indexed by operation ID → CL function
+(defparameter *operation-dispatch-table*
+  (make-array (1+ *operation-max-id*) :initial-element nil))
+
+;; Reverse lookup: ECE name symbol → operation ID
+(defparameter *operation-name-to-id*
+  (make-hash-table :test 'eq))
+
+(defun build-operation-function-map ()
+  "Build a hash table mapping ECE operation name symbols to CL functions."
+  (let ((ht (make-hash-table :test 'eq)))
+    (setf (gethash (intern "lookup-variable-value" :ece) ht) #'safe-lookup-variable-value)
+    (setf (gethash (intern "lookup-global-variable" :ece) ht) #'safe-lookup-global-variable)
+    (setf (gethash (intern "set-variable-value!" :ece) ht) #'set-variable-value!)
+    (setf (gethash (intern "define-variable!" :ece) ht) #'define-variable!)
+    (setf (gethash (intern "extend-environment" :ece) ht) #'extend-environment)
+    (setf (gethash (intern "lexical-ref" :ece) ht) #'lexical-ref)
+    (setf (gethash (intern "lexical-set!" :ece) ht) #'lexical-set!)
+    (setf (gethash (intern "make-compiled-procedure" :ece) ht) #'make-compiled-procedure)
+    (setf (gethash (intern "compiled-procedure-entry" :ece) ht) #'compiled-procedure-entry)
+    (setf (gethash (intern "compiled-procedure-env" :ece) ht) #'compiled-procedure-env)
+    (setf (gethash (intern "primitive-procedure?" :ece) ht) #'primitive-procedure-p)
+    (setf (gethash (intern "continuation?" :ece) ht) #'continuation-p)
+    (setf (gethash (intern "parameter?" :ece) ht) #'parameter-p)
+    (setf (gethash (intern "apply-primitive-procedure" :ece) ht) #'apply-primitive-procedure)
+    (setf (gethash (intern "apply-parameter" :ece) ht) #'apply-parameter)
+    (setf (gethash (intern "parameter-ref" :ece) ht) #'parameter-ref)
+    (setf (gethash (intern "parameter-set!" :ece) ht) #'parameter-set!)
+    (setf (gethash (intern "parameter-raw-set!" :ece) ht) #'parameter-raw-set!)
+    (setf (gethash (intern "capture-continuation" :ece) ht) #'capture-continuation)
+    (setf (gethash (intern "do-continuation-winds" :ece) ht) #'do-continuation-winds)
+    (setf (gethash (intern "continuation-stack" :ece) ht) #'continuation-stack)
+    (setf (gethash (intern "continuation-conts" :ece) ht) #'continuation-conts)
+    (setf (gethash (intern "false?" :ece) ht) #'scheme-false-p)
+    (setf (gethash (intern "list" :ece) ht) #'list)
+    (setf (gethash (intern "cons" :ece) ht) #'cons)
+    (setf (gethash (intern "car" :ece) ht) #'car)
+    (setf (gethash (intern "cdr" :ece) ht) #'cdr)
+    ht))
+
+(defun init-operation-dispatch-tables ()
+  "Initialize operation dispatch tables from manifest + function map."
+  (let ((op-fns (build-operation-function-map)))
+    (dolist (entry *operations-manifest-entries*)
+      (destructuring-bind (id name arity) entry
+        (declare (ignore arity))
+        (let ((name-sym (intern (string-downcase (symbol-name name)) :ece)))
+          ;; Populate reverse lookup
+          (setf (gethash name-sym *operation-name-to-id*) id)
+          ;; Populate dispatch table
+          (let ((cl-fn (gethash name-sym op-fns)))
+            (if cl-fn
+                (setf (aref *operation-dispatch-table* id) cl-fn)
+                (warn "Operations manifest entry ~A (id ~D) has no CL implementation"
+                      name id))))))))
+
+(defun get-operation-by-id (id)
+  "Get the CL function for an operation by numeric ID."
+  (aref *operation-dispatch-table* id))
+
+(defun get-operation-id (name)
+  "Get the numeric ID for an operation name symbol."
+  (or (gethash name *operation-name-to-id*)
+      (error "Unknown operation: ~A" name)))
+
 (defun get-operation (name)
-  "Get the CL function for a compiled operation name."
-  (ecase name
-    (|lookup-variable-value| #'safe-lookup-variable-value)
-    (|lookup-global-variable| #'safe-lookup-global-variable)
-    (|set-variable-value!| #'set-variable-value!)
-    (|define-variable!| #'define-variable!)
-    (|lexical-ref| #'lexical-ref)
-    (|lexical-set!| #'lexical-set!)
-    (|extend-environment| #'extend-environment)
-    (|make-compiled-procedure| #'make-compiled-procedure)
-    (|compiled-procedure-entry| #'compiled-procedure-entry)
-    (|compiled-procedure-env| #'compiled-procedure-env)
-    (|primitive-procedure?| #'primitive-procedure-p)
-    (|continuation?| #'continuation-p)
-    (|parameter?| #'parameter-p)
-    (|parameter-ref| #'parameter-ref)
-    (|parameter-set!| #'parameter-set!)
-    (|parameter-raw-set!| #'parameter-raw-set!)
-    (|apply-parameter| #'apply-parameter)
-    (|apply-primitive-procedure| #'apply-primitive-procedure)
-    (|capture-continuation| #'capture-continuation)
-    (|do-continuation-winds| #'do-continuation-winds)
-    (|continuation-stack| #'continuation-stack)
-    (|continuation-conts| #'continuation-conts)
-    (|false?| #'scheme-false-p)
-    (|list| #'list)
-    (|cons| #'cons)
-    (|car| #'car)))
+  "Get the CL function for a compiled operation name.
+Uses the manifest-driven dispatch table via name→ID→function lookup."
+  (let ((id (gethash name *operation-name-to-id*)))
+    (unless id
+      (error "Unknown operation: ~A" name))
+    (or (aref *operation-dispatch-table* id)
+        (error "Operation ~A (id ~D) has no implementation" name id))))
 
 ;;; Instruction executor
 
@@ -2015,6 +2083,7 @@ When ENV is supplied, it is passed to mc-compile-and-go."
 ;;; Now that all primitives and wrapper functions are defined, initialize
 ;;; the dispatch tables from the manifest, then build *global-env*.
 (init-primitive-dispatch-tables)
+(init-operation-dispatch-tables)
 (defparameter *global-env* (build-global-env-from-manifest))
 
 ;;;; ========================================================================
