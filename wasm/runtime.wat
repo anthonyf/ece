@@ -297,6 +297,20 @@
     (struct.get $pair $cdr (local.get $p))
   )
 
+  ;; Casting car/cdr: accept (ref null eq), cast to $pair internally
+  (func $xcar (param $v (ref null eq)) (result (ref null eq))
+    (struct.get $pair $car (ref.cast (ref $pair) (local.get $v))))
+
+  (func $xcdr (param $v (ref null eq)) (result (ref null eq))
+    (struct.get $pair $cdr (ref.cast (ref $pair) (local.get $v))))
+
+  ;; Composed accessors
+  (func $cadr (param $v (ref null eq)) (result (ref null eq))
+    (call $xcar (call $xcdr (local.get $v))))
+
+  (func $caddr (param $v (ref null eq)) (result (ref null eq))
+    (call $xcar (call $xcdr (call $xcdr (local.get $v)))))
+
   (func $set-car! (param $p (ref $pair)) (param $v (ref null eq))
     (struct.set $pair $car (local.get $p) (local.get $v))
   )
@@ -457,9 +471,9 @@
       (loop $loop
         (br_if $done (ref.is_null (local.get $cur)))
         (br_if $done (call $is-null (local.get $cur)))
-        (if (i32.eqz (call $is-number (call $car (ref.cast (ref $pair) (local.get $cur)))))
+        (if (i32.eqz (call $is-number (call $xcar (local.get $cur))))
           (then (return (i32.const 0))))
-        (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $cur))))
+        (local.set $cur (call $xcdr (local.get $cur)))
         (br $loop)))
     (i32.const 1))
 
@@ -471,9 +485,9 @@
       (loop $loop
         (br_if $done (ref.is_null (local.get $cur)))
         (br_if $done (call $is-null (local.get $cur)))
-        (if (i32.eqz (call $is-number (call $car (ref.cast (ref $pair) (local.get $cur)))))
-          (then (return (call $car (ref.cast (ref $pair) (local.get $cur))))))
-        (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $cur))))
+        (if (i32.eqz (call $is-number (call $xcar (local.get $cur))))
+          (then (return (call $xcar (local.get $cur)))))
+        (local.set $cur (call $xcdr (local.get $cur)))
         (br $loop)))
     (global.get $nil))
 
@@ -481,7 +495,7 @@
   (func $div-has-zero-divisor (param $args (ref null eq)) (result i32)
     (local $cur (ref null eq))
     ;; Skip the first argument (the dividend)
-    (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $args))))
+    (local.set $cur (call $xcdr (local.get $args)))
     ;; If only one arg: (/ x) = 1/x, check if x is 0
     (if (call $is-null (local.get $cur))
       (then
@@ -490,10 +504,10 @@
       (loop $loop
         (br_if $done (ref.is_null (local.get $cur)))
         (br_if $done (call $is-null (local.get $cur)))
-        (if (f64.eq (call $to-f64 (call $car (ref.cast (ref $pair) (local.get $cur))))
+        (if (f64.eq (call $to-f64 (call $xcar (local.get $cur)))
                     (f64.const 0))
           (then (return (i32.const 1))))
-        (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $cur))))
+        (local.set $cur (call $xcdr (local.get $cur)))
         (br $loop)))
     (i32.const 0))
 
@@ -938,7 +952,7 @@
         (if (call $is-pair (local.get $cur-names))
           (then
             (local.set $positional-count (i32.add (local.get $positional-count) (i32.const 1)))
-            (local.set $cur-names (call $cdr (ref.cast (ref $pair) (local.get $cur-names))))
+            (local.set $cur-names (call $xcdr (local.get $cur-names)))
             (br $count))
           (else
             ;; Dotted pair tail = rest parameter
@@ -958,8 +972,8 @@
         (br_if $done (call $is-null (local.get $cur-vals)))
         (br_if $done (ref.is_null (local.get $cur-vals)))
         (array.set $val-array (local.get $arr) (local.get $i)
-          (call $car (ref.cast (ref $pair) (local.get $cur-vals))))
-        (local.set $cur-vals (call $cdr (ref.cast (ref $pair) (local.get $cur-vals))))
+          (call $xcar (local.get $cur-vals)))
+        (local.set $cur-vals (call $xcdr (local.get $cur-vals)))
         (local.set $i (i32.add (local.get $i) (i32.const 1)))
         (br $fill)))
     ;; If rest param, store remaining vals list in the next slot
@@ -1046,11 +1060,11 @@
             ;; Compare symbol IDs
             (if (ref.test (ref $pair) (local.get $cur))
               (then
-                (if (ref.test (ref $symbol) (call $car (ref.cast (ref $pair) (local.get $cur))))
+                (if (ref.test (ref $symbol) (call $xcar (local.get $cur)))
                   (then
                     (local.set $name-sym
                       (ref.cast (ref $symbol)
-                        (call $car (ref.cast (ref $pair) (local.get $cur)))))
+                        (call $xcar (local.get $cur))))
                     (if (i32.eq
                           (struct.get $symbol $id (local.get $name))
                           (struct.get $symbol $id (local.get $name-sym)))
@@ -1060,7 +1074,7 @@
                           (local.get $i)))))))))
             (if (ref.test (ref $pair) (local.get $cur))
               (then
-                (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $cur)))))
+                (local.set $cur (call $xcdr (local.get $cur))))
               (else
                 (br $next-frame)))
             (local.set $i (i32.add (local.get $i) (i32.const 1)))
@@ -1095,11 +1109,11 @@
         (br_if $not-found (call $is-null (local.get $cur)))
         (if (ref.test (ref $pair) (local.get $cur))
           (then
-            (if (ref.test (ref $symbol) (call $car (ref.cast (ref $pair) (local.get $cur))))
+            (if (ref.test (ref $symbol) (call $xcar (local.get $cur)))
               (then
                 (local.set $name-sym
                   (ref.cast (ref $symbol)
-                    (call $car (ref.cast (ref $pair) (local.get $cur)))))
+                    (call $xcar (local.get $cur))))
                 (if (i32.eq
                       (struct.get $symbol $id (local.get $name))
                       (struct.get $symbol $id (local.get $name-sym)))
@@ -1112,7 +1126,7 @@
                     (return)))))))
         (if (ref.test (ref $pair) (local.get $cur))
           (then
-            (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $cur)))))
+            (local.set $cur (call $xcdr (local.get $cur))))
           (else (br $not-found)))
         (local.set $i (i32.add (local.get $i) (i32.const 1)))
         (br $scan)))
@@ -1156,7 +1170,7 @@
         (if (call $is-pair (local.get $cur))
           (then
             (local.set $names-count (i32.add (local.get $names-count) (i32.const 1)))
-            (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $cur))))
+            (local.set $cur (call $xcdr (local.get $cur)))
             (br $cnt)))))
     ;; Target index = names-count (matches the position of the appended name)
     (local.set $target-idx (local.get $names-count))
@@ -1192,9 +1206,9 @@
           (i32.or (ref.is_null (local.get $cur)) (call $is-null (local.get $cur))))
         (local.set $reversed
           (call $cons
-            (call $car (ref.cast (ref $pair) (local.get $cur)))
+            (call $xcar (local.get $cur))
             (local.get $reversed)))
-        (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $cur))))
+        (local.set $cur (call $xcdr (local.get $cur)))
         (br $rev)))
     ;; Step 2: fold reversed list onto (new-name) to get (old1 old2 ... new-name)
     (local.set $new-names (call $cons (local.get $name) (global.get $nil)))
@@ -1204,9 +1218,9 @@
           (i32.or (ref.is_null (local.get $reversed)) (call $is-null (local.get $reversed))))
         (local.set $new-names
           (call $cons
-            (call $car (ref.cast (ref $pair) (local.get $reversed)))
+            (call $xcar (local.get $reversed))
             (local.get $new-names)))
-        (local.set $reversed (call $cdr (ref.cast (ref $pair) (local.get $reversed))))
+        (local.set $reversed (call $xcdr (local.get $reversed)))
         (br $build)))
     ;; Update names
     (struct.set $env-frame $names (local.get $frame) (local.get $new-names))
@@ -1236,11 +1250,11 @@
             (br_if $next-frame (call $is-null (local.get $cur)))
             (if (ref.test (ref $pair) (local.get $cur))
               (then
-                (if (ref.test (ref $symbol) (call $car (ref.cast (ref $pair) (local.get $cur))))
+                (if (ref.test (ref $symbol) (call $xcar (local.get $cur)))
                   (then
                     (local.set $name-sym
                       (ref.cast (ref $symbol)
-                        (call $car (ref.cast (ref $pair) (local.get $cur)))))
+                        (call $xcar (local.get $cur))))
                     (if (i32.eq
                           (struct.get $symbol $id (local.get $name))
                           (struct.get $symbol $id (local.get $name-sym)))
@@ -1252,7 +1266,7 @@
                         (return)))))))
             (if (ref.test (ref $pair) (local.get $cur))
               (then
-                (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $cur)))))
+                (local.set $cur (call $xcdr (local.get $cur))))
               (else (br $next-frame)))
             (local.set $i (i32.add (local.get $i) (i32.const 1)))
             (br $scan)))
@@ -1562,7 +1576,7 @@
       (br_if $done (call $is-null (local.get $cur)))
       ;; Get current operand: (type value)
       (local.set $op-pair (ref.cast (ref $pair)
-        (call $car (ref.cast (ref $pair) (local.get $cur)))))
+        (call $xcar (local.get $cur))))
       (local.set $type-sym (ref.cast (ref $symbol) (call $car (local.get $op-pair))))
       (local.set $src-type (call $resolve-src-type (local.get $type-sym)))
       ;; const → (0 . value)
@@ -1570,7 +1584,7 @@
         (then
           (local.set $operand (call $cons
             (call $make-fixnum (i32.const 0))
-            (call $car (ref.cast (ref $pair) (call $cdr (local.get $op-pair))))))))
+            (call $cadr (local.get $op-pair))))))
       ;; reg → (1 . reg-id)
       (if (i32.eq (local.get $src-type) (i32.const 1))
         (then
@@ -1578,7 +1592,7 @@
             (call $make-fixnum (i32.const 1))
             (call $make-fixnum (call $resolve-reg-name
               (ref.cast (ref $symbol)
-                (call $car (ref.cast (ref $pair) (call $cdr (local.get $op-pair)))))))))))
+                (call $cadr (local.get $op-pair)))))))))
       ;; label → (2 . pc)
       (if (i32.eq (local.get $src-type) (i32.const 2))
         (then
@@ -1587,10 +1601,10 @@
             (call $make-fixnum
               (call $space-label-ref
                 (call $get-space (local.get $space-id))
-                (call $car (ref.cast (ref $pair) (call $cdr (local.get $op-pair))))))))))
+                (call $cadr (local.get $op-pair))))))))
       ;; Prepend to result (reverse order for now)
       (local.set $result (call $cons (local.get $operand) (local.get $result)))
-      (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $cur))))
+      (local.set $cur (call $xcdr (local.get $cur)))
       (br $iter)))
     ;; Reverse the list
     (call $reverse-list (local.get $result)))
@@ -1605,9 +1619,9 @@
       (br_if $done (ref.is_null (local.get $cur)))
       (br_if $done (call $is-null (local.get $cur)))
       (local.set $result (call $cons
-        (call $car (ref.cast (ref $pair) (local.get $cur)))
+        (call $xcar (local.get $cur))
         (local.get $result)))
-      (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $cur))))
+      (local.set $cur (call $xcdr (local.get $cur)))
       (br $iter)))
     (local.get $result))
 
@@ -1633,7 +1647,7 @@
       (br_if $done (call $is-null (local.get $cur)))
       ;; Each entry is (space-id pc . instr-list)
       (local.set $entry (ref.cast (ref $pair)
-        (call $car (ref.cast (ref $pair) (local.get $cur)))))
+        (call $xcar (local.get $cur))))
       (local.set $space-id
         (call $fixnum-value (ref.cast (ref i31) (call $car (local.get $entry)))))
       (local.set $entry (ref.cast (ref $pair) (call $cdr (local.get $entry))))
@@ -1660,7 +1674,7 @@
           (local.set $instrs (local.get $new-instrs))))
       (array.set $instr-vec (local.get $instrs) (local.get $pc)
         (call $ece-instr-to-wasm-instr (local.get $instr-list) (local.get $space-id)))
-      (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $cur))))
+      (local.set $cur (call $xcdr (local.get $cur)))
       (br $iter))))
 
   ;; --- Convert ECE list instruction to $instr struct ---
@@ -1681,8 +1695,8 @@
     (local $syms (ref $i32-array))
     ;; Parse instruction type
     (local.set $type-sym (ref.cast (ref $symbol)
-      (call $car (ref.cast (ref $pair) (local.get $instr-list)))))
-    (local.set $rest (call $cdr (ref.cast (ref $pair) (local.get $instr-list))))
+      (call $xcar (local.get $instr-list))))
+    (local.set $rest (call $xcdr (local.get $instr-list)))
     (local.set $syms (ref.as_non_null (global.get $asm-sym-ids)))
     ;; Determine type by comparing symbol ID
     (local.set $type-id (struct.get $symbol $id (local.get $type-sym)))
@@ -1692,40 +1706,40 @@
       (then
         ;; (assign <target-reg> <source>)
         (local.set $target (call $resolve-reg-name
-          (ref.cast (ref $symbol) (call $car (ref.cast (ref $pair) (local.get $rest))))))
-        (local.set $rest (call $cdr (ref.cast (ref $pair) (local.get $rest))))
+          (ref.cast (ref $symbol) (call $xcar (local.get $rest)))))
+        (local.set $rest (call $xcdr (local.get $rest)))
         ;; Source is a pair (type ...) — e.g. (const val), (reg name), (label name), (op name ...)
         (local.set $src-pair (ref.cast (ref $pair)
-          (call $car (ref.cast (ref $pair) (local.get $rest)))))
+          (call $xcar (local.get $rest))))
         (local.set $src-type (call $resolve-src-type
           (ref.cast (ref $symbol) (call $car (local.get $src-pair)))))
         ;; const → b=0, val=value
         (if (i32.eqz (local.get $src-type))
           (then (return (struct.new $instr
             (i32.const 0) (local.get $target) (i32.const 0) (i32.const 0)
-            (call $car (ref.cast (ref $pair) (call $cdr (local.get $src-pair))))))))
+            (call $cadr (local.get $src-pair))))))
         ;; reg → b=1, c=reg-id
         (if (i32.eq (local.get $src-type) (i32.const 1))
           (then (return (struct.new $instr
             (i32.const 0) (local.get $target) (i32.const 1)
             (call $resolve-reg-name
-              (ref.cast (ref $symbol) (call $car (ref.cast (ref $pair) (call $cdr (local.get $src-pair))))))
+              (ref.cast (ref $symbol) (call $cadr (local.get $src-pair))))
             (ref.null eq)))))
         ;; label → b=2, c=pc
         (if (i32.eq (local.get $src-type) (i32.const 2))
           (then
             (local.set $label-pc (call $space-label-ref
               (call $get-space (local.get $space-id))
-              (call $car (ref.cast (ref $pair) (call $cdr (local.get $src-pair))))))
+              (call $cadr (local.get $src-pair))))
             (return (struct.new $instr
               (i32.const 0) (local.get $target) (i32.const 2)
               (local.get $label-pc) (ref.null eq)))))
         ;; op → b=3, c=op-id, val=operand list
         (local.set $op-id (call $resolve-op-name
-          (ref.cast (ref $symbol) (call $car (ref.cast (ref $pair) (call $cdr (local.get $src-pair)))))))
+          (ref.cast (ref $symbol) (call $cadr (local.get $src-pair)))))
         ;; Remaining operands after (op name) start at cddr of rest
         (local.set $operands (call $build-operand-list
-          (call $cdr (ref.cast (ref $pair) (local.get $rest)))
+          (call $xcdr (local.get $rest))
           (local.get $space-id)))
         (return (struct.new $instr
           (i32.const 0) (local.get $target) (i32.const 3)
@@ -1736,11 +1750,11 @@
       (then
         ;; (test (op <name>) <operands>...)
         (local.set $src-pair (ref.cast (ref $pair)
-          (call $car (ref.cast (ref $pair) (local.get $rest)))))
+          (call $xcar (local.get $rest))))
         (local.set $op-id (call $resolve-op-name
-          (ref.cast (ref $symbol) (call $car (ref.cast (ref $pair) (call $cdr (local.get $src-pair)))))))
+          (ref.cast (ref $symbol) (call $cadr (local.get $src-pair)))))
         (local.set $operands (call $build-operand-list
-          (call $cdr (ref.cast (ref $pair) (local.get $rest)))
+          (call $xcdr (local.get $rest))
           (local.get $space-id)))
         (return (struct.new $instr
           (i32.const 1) (i32.const 0) (i32.const 0)
@@ -1751,10 +1765,10 @@
       (then
         ;; (branch (label <name>))
         (local.set $src-pair (ref.cast (ref $pair)
-          (call $car (ref.cast (ref $pair) (local.get $rest)))))
+          (call $xcar (local.get $rest))))
         (local.set $label-pc (call $space-label-ref
           (call $get-space (local.get $space-id))
-          (call $car (ref.cast (ref $pair) (call $cdr (local.get $src-pair))))))
+          (call $cadr (local.get $src-pair))))
         (return (struct.new $instr
           (i32.const 2) (i32.const 0) (i32.const 0)
           (local.get $label-pc) (ref.null eq)))))
@@ -1764,7 +1778,7 @@
       (then
         ;; (goto (label <name>)) or (goto (reg <name>))
         (local.set $src-pair (ref.cast (ref $pair)
-          (call $car (ref.cast (ref $pair) (local.get $rest)))))
+          (call $xcar (local.get $rest))))
         (local.set $src-type (call $resolve-src-type
           (ref.cast (ref $symbol) (call $car (local.get $src-pair)))))
         ;; label → b=0, c=pc
@@ -1772,7 +1786,7 @@
           (then
             (local.set $label-pc (call $space-label-ref
               (call $get-space (local.get $space-id))
-              (call $car (ref.cast (ref $pair) (call $cdr (local.get $src-pair))))))
+              (call $cadr (local.get $src-pair))))
             (return (struct.new $instr
               (i32.const 3) (i32.const 0) (i32.const 0)
               (local.get $label-pc) (ref.null eq)))))
@@ -1780,7 +1794,7 @@
         (return (struct.new $instr
           (i32.const 3) (i32.const 0) (i32.const 1)
           (call $resolve-reg-name
-            (ref.cast (ref $symbol) (call $car (ref.cast (ref $pair) (call $cdr (local.get $src-pair))))))
+            (ref.cast (ref $symbol) (call $cadr (local.get $src-pair))))
           (ref.null eq)))))
 
     ;; === SAVE (type slot 4) ===
@@ -1790,7 +1804,7 @@
         (return (struct.new $instr
           (i32.const 4)
           (call $resolve-reg-name
-            (ref.cast (ref $symbol) (call $car (ref.cast (ref $pair) (local.get $rest)))))
+            (ref.cast (ref $symbol) (call $xcar (local.get $rest))))
           (i32.const 0) (i32.const 0) (ref.null eq)))))
 
     ;; === RESTORE (type slot 5) ===
@@ -1800,7 +1814,7 @@
         (return (struct.new $instr
           (i32.const 5)
           (call $resolve-reg-name
-            (ref.cast (ref $symbol) (call $car (ref.cast (ref $pair) (local.get $rest)))))
+            (ref.cast (ref $symbol) (call $xcar (local.get $rest))))
           (i32.const 0) (i32.const 0) (ref.null eq)))))
 
     ;; === PERFORM (type slot 6) ===
@@ -1808,11 +1822,11 @@
       (then
         ;; (perform (op <name>) <operands>...)
         (local.set $src-pair (ref.cast (ref $pair)
-          (call $car (ref.cast (ref $pair) (local.get $rest)))))
+          (call $xcar (local.get $rest))))
         (local.set $op-id (call $resolve-op-name
-          (ref.cast (ref $symbol) (call $car (ref.cast (ref $pair) (call $cdr (local.get $src-pair)))))))
+          (ref.cast (ref $symbol) (call $cadr (local.get $src-pair)))))
         (local.set $operands (call $build-operand-list
-          (call $cdr (ref.cast (ref $pair) (local.get $rest)))
+          (call $xcdr (local.get $rest))
           (local.get $space-id)))
         (return (struct.new $instr
           (i32.const 6) (i32.const 0) (i32.const 0)
@@ -2192,7 +2206,7 @@
               (then (call $js-trace-sr (local.get $pc) (local.get $space-id)
                 (i32.const 1) ;; is-save
                 (struct.get $instr $a (local.get $instr))
-                (call $type-id (call $car (ref.cast (ref $pair) (local.get $stack))))
+                (call $type-id (call $xcar (local.get $stack)))
                 (call $stack-depth (local.get $stack)))))))
 
         ;; ── restore (opcode 5) ──
@@ -2200,9 +2214,9 @@
           (then
             (local.set $target (struct.get $instr $a (local.get $instr)))
             (local.set $op-result
-              (call $car (ref.cast (ref $pair) (local.get $stack))))
+              (call $xcar (local.get $stack)))
             (local.set $stack
-              (call $cdr (ref.cast (ref $pair) (local.get $stack))))
+              (call $xcdr (local.get $stack)))
             ;; Set target register
             (if (i32.eqz (local.get $target))
               (then (local.set $val (local.get $op-result))))
@@ -2292,29 +2306,29 @@
           (i32.eqz (call $is-null (local.get $operands))))
       (then
         (local.set $a (call $eval-operand
-          (call $car (ref.cast (ref $pair) (local.get $operands)))
+          (call $xcar (local.get $operands))
           (local.get $val) (local.get $env) (local.get $proc)
           (local.get $argl) (local.get $cont) (local.get $stack)
           (local.get $space-id)))
-        (local.set $rest (call $cdr (ref.cast (ref $pair) (local.get $operands))))
+        (local.set $rest (call $xcdr (local.get $operands)))
         ;; Second operand
         (if (i32.and
               (i32.eqz (ref.is_null (local.get $rest)))
               (i32.eqz (call $is-null (local.get $rest))))
           (then
             (local.set $b (call $eval-operand
-              (call $car (ref.cast (ref $pair) (local.get $rest)))
+              (call $xcar (local.get $rest))
               (local.get $val) (local.get $env) (local.get $proc)
               (local.get $argl) (local.get $cont) (local.get $stack)
               (local.get $space-id)))
-            (local.set $rest (call $cdr (ref.cast (ref $pair) (local.get $rest))))
+            (local.set $rest (call $xcdr (local.get $rest)))
             ;; Third operand
             (if (i32.and
                   (i32.eqz (ref.is_null (local.get $rest)))
                   (i32.eqz (call $is-null (local.get $rest))))
               (then
                 (local.set $c (call $eval-operand
-                  (call $car (ref.cast (ref $pair) (local.get $rest)))
+                  (call $xcar (local.get $rest))
                   (local.get $val) (local.get $env) (local.get $proc)
                   (local.get $argl) (local.get $cont) (local.get $stack)
                   (local.get $space-id)))))))))
@@ -2356,9 +2370,8 @@
     (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 4))
       (then
         ;; a=names, b=vals, c=env; 4th operand is nvals
-        (local.set $rest (call $cdr (ref.cast (ref $pair)
-          (call $cdr (ref.cast (ref $pair)
-            (call $cdr (ref.cast (ref $pair) (local.get $operands))))))))
+        (local.set $rest (call $xcdr (call $xcdr
+            (call $xcdr (local.get $operands)))))
         (call $extend-env (local.get $a) (local.get $b) (local.get $c)
           (if (result i32)
             (i32.and
@@ -2367,7 +2380,7 @@
             (then
               (call $fixnum-value (ref.cast (ref i31)
                 (call $eval-operand
-                  (call $car (ref.cast (ref $pair) (local.get $rest)))
+                  (call $xcar (local.get $rest))
                   (local.get $val) (local.get $env) (local.get $proc)
                   (local.get $argl) (local.get $cont) (local.get $stack)
                   (local.get $space-id)))))
@@ -2384,9 +2397,8 @@
     (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 6))
       (then
         ;; 4th operand is env
-        (local.set $rest (call $cdr (ref.cast (ref $pair)
-          (call $cdr (ref.cast (ref $pair)
-            (call $cdr (ref.cast (ref $pair) (local.get $operands))))))))
+        (local.set $rest (call $xcdr (call $xcdr
+            (call $xcdr (local.get $operands)))))
         (call $lexical-set!
           (call $fixnum-value (ref.cast (ref i31) (local.get $a)))
           (call $fixnum-value (ref.cast (ref i31) (local.get $b)))
@@ -2396,7 +2408,7 @@
               (i32.eqz (ref.is_null (local.get $rest)))
               (i32.eqz (call $is-null (local.get $rest))))
             (then (call $eval-operand
-              (call $car (ref.cast (ref $pair) (local.get $rest)))
+              (call $xcar (local.get $rest))
               (local.get $val) (local.get $env) (local.get $proc)
               (local.get $argl) (local.get $cont) (local.get $stack)
               (local.get $space-id)))
@@ -2413,9 +2425,9 @@
           (then
             (call $make-compiled-proc
               (call $fixnum-value (ref.cast (ref i31)
-                (call $car (ref.cast (ref $pair) (local.get $a)))))
+                (call $xcar (local.get $a))))
               (call $fixnum-value (ref.cast (ref i31)
-                (call $cdr (ref.cast (ref $pair) (local.get $a)))))
+                (call $xcdr (local.get $a))))
               (local.get $b)))
           ;; Fallback: bare fixnum PC (same space)
           (else
@@ -2473,7 +2485,7 @@
           (else
             (struct.set $parameter $value
               (ref.cast (ref $parameter) (local.get $a))
-              (call $car (ref.cast (ref $pair) (local.get $b))))
+              (call $xcar (local.get $b)))
             (global.get $void))))
 
     ;; 15 = parameter-ref(param) — get current value of parameter
@@ -2589,11 +2601,11 @@
 
     ;; 25 = car(pair)
     (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 25))
-      (then (call $car (ref.cast (ref $pair) (local.get $a))))
+      (then (call $xcar (local.get $a)))
 
     ;; 26 = cdr(pair)
     (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 26))
-      (then (call $cdr (ref.cast (ref $pair) (local.get $a))))
+      (then (call $xcdr (local.get $a)))
 
     ;; Unknown op — return void
     (else (global.get $void)
@@ -2610,14 +2622,11 @@
   ;; --- Argument extraction helpers ---
   ;; Args are an ECE list. These extract the 1st, 2nd, 3rd elements.
   (func $arg1 (param $args (ref null eq)) (result (ref null eq))
-    (call $car (ref.cast (ref $pair) (local.get $args))))
+    (call $xcar (local.get $args)))
   (func $arg2 (param $args (ref null eq)) (result (ref null eq))
-    (call $car (ref.cast (ref $pair)
-      (call $cdr (ref.cast (ref $pair) (local.get $args))))))
+    (call $cadr (local.get $args)))
   (func $arg3 (param $args (ref null eq)) (result (ref null eq))
-    (call $car (ref.cast (ref $pair)
-      (call $cdr (ref.cast (ref $pair)
-        (call $cdr (ref.cast (ref $pair) (local.get $args))))))))
+    (call $caddr (local.get $args)))
 
   ;; --- Numeric helpers ---
   ;; Extract numeric value as f64 (works for both fixnum and float-box)
@@ -2678,11 +2687,11 @@
       (loop $loop
         (br_if $done (ref.is_null (local.get $cur)))
         (br_if $done (call $is-null (local.get $cur)))
-        (if (i32.eqz (call $is-fixnum (call $car (ref.cast (ref $pair) (local.get $cur)))))
+        (if (i32.eqz (call $is-fixnum (call $xcar (local.get $cur))))
           (then (local.set $all-int (i32.const 0))))
         (local.set $acc (f64.add (local.get $acc)
-          (call $to-f64 (call $car (ref.cast (ref $pair) (local.get $cur))))))
-        (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $cur))))
+          (call $to-f64 (call $xcar (local.get $cur)))))
+        (local.set $cur (call $xcdr (local.get $cur)))
         (br $loop)))
     (if (result (ref null eq)) (local.get $all-int)
       (then (call $wrap-i32 (call $safe-trunc-i32 (local.get $acc))))
@@ -2700,11 +2709,11 @@
       (loop $loop
         (br_if $done (ref.is_null (local.get $cur)))
         (br_if $done (call $is-null (local.get $cur)))
-        (if (i32.eqz (call $is-fixnum (call $car (ref.cast (ref $pair) (local.get $cur)))))
+        (if (i32.eqz (call $is-fixnum (call $xcar (local.get $cur))))
           (then (local.set $all-int (i32.const 0))))
         (local.set $acc (f64.mul (local.get $acc)
-          (call $to-f64 (call $car (ref.cast (ref $pair) (local.get $cur))))))
-        (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $cur))))
+          (call $to-f64 (call $xcar (local.get $cur)))))
+        (local.set $cur (call $xcdr (local.get $cur)))
         (br $loop)))
     (if (result (ref null eq)) (local.get $all-int)
       (then (call $wrap-i32 (call $safe-trunc-i32 (local.get $acc))))
@@ -2717,7 +2726,7 @@
     (local $cur (ref null eq))
     (local $all-int i32)
     (local.set $first (call $to-f64 (call $arg1 (local.get $args))))
-    (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $args))))
+    (local.set $cur (call $xcdr (local.get $args)))
     (local.set $all-int (i32.const 1))
     ;; Check first arg for float (loop only checks remaining args)
     (if (i32.eqz (call $is-fixnum (call $arg1 (local.get $args))))
@@ -2732,11 +2741,11 @@
       (loop $loop
         (br_if $done (ref.is_null (local.get $cur)))
         (br_if $done (call $is-null (local.get $cur)))
-        (if (i32.eqz (call $is-fixnum (call $car (ref.cast (ref $pair) (local.get $cur)))))
+        (if (i32.eqz (call $is-fixnum (call $xcar (local.get $cur))))
           (then (local.set $all-int (i32.const 0))))
         (local.set $acc (f64.sub (local.get $acc)
-          (call $to-f64 (call $car (ref.cast (ref $pair) (local.get $cur))))))
-        (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $cur))))
+          (call $to-f64 (call $xcar (local.get $cur)))))
+        (local.set $cur (call $xcdr (local.get $cur)))
         (br $loop)))
     (if (result (ref null eq)) (local.get $all-int)
       (then (call $wrap-i32 (call $safe-trunc-i32 (local.get $acc))))
@@ -2747,14 +2756,14 @@
     (local $acc f64)
     (local $cur (ref null eq))
     (local.set $acc (call $to-f64 (call $arg1 (local.get $args))))
-    (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $args))))
+    (local.set $cur (call $xcdr (local.get $args)))
     (block $done
       (loop $loop
         (br_if $done (ref.is_null (local.get $cur)))
         (br_if $done (call $is-null (local.get $cur)))
         (local.set $acc (f64.div (local.get $acc)
-          (call $to-f64 (call $car (ref.cast (ref $pair) (local.get $cur))))))
-        (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $cur))))
+          (call $to-f64 (call $xcar (local.get $cur)))))
+        (local.set $cur (call $xcdr (local.get $cur)))
         (br $loop)))
     (call $wrap-f64 (local.get $acc))
   )
@@ -2765,16 +2774,16 @@
     (local $prev f64)
     (local $val f64)
     (local.set $prev (call $to-f64 (call $arg1 (local.get $args))))
-    (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $args))))
+    (local.set $cur (call $xcdr (local.get $args)))
     (block $done
       (loop $loop
         (br_if $done (ref.is_null (local.get $cur)))
         (br_if $done (call $is-null (local.get $cur)))
-        (local.set $val (call $to-f64 (call $car (ref.cast (ref $pair) (local.get $cur)))))
+        (local.set $val (call $to-f64 (call $xcar (local.get $cur))))
         (if (i32.eqz (f64.eq (local.get $prev) (local.get $val)))
           (then (return (global.get $false))))
         (local.set $prev (local.get $val))
-        (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $cur))))
+        (local.set $cur (call $xcdr (local.get $cur)))
         (br $loop)))
     (global.get $true)
   )
@@ -2784,16 +2793,16 @@
     (local $prev f64)
     (local $val f64)
     (local.set $prev (call $to-f64 (call $arg1 (local.get $args))))
-    (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $args))))
+    (local.set $cur (call $xcdr (local.get $args)))
     (block $done
       (loop $loop
         (br_if $done (ref.is_null (local.get $cur)))
         (br_if $done (call $is-null (local.get $cur)))
-        (local.set $val (call $to-f64 (call $car (ref.cast (ref $pair) (local.get $cur)))))
+        (local.set $val (call $to-f64 (call $xcar (local.get $cur))))
         (if (i32.eqz (f64.lt (local.get $prev) (local.get $val)))
           (then (return (global.get $false))))
         (local.set $prev (local.get $val))
-        (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $cur))))
+        (local.set $cur (call $xcdr (local.get $cur)))
         (br $loop)))
     (global.get $true)
   )
@@ -2803,16 +2812,16 @@
     (local $prev f64)
     (local $val f64)
     (local.set $prev (call $to-f64 (call $arg1 (local.get $args))))
-    (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $args))))
+    (local.set $cur (call $xcdr (local.get $args)))
     (block $done
       (loop $loop
         (br_if $done (ref.is_null (local.get $cur)))
         (br_if $done (call $is-null (local.get $cur)))
-        (local.set $val (call $to-f64 (call $car (ref.cast (ref $pair) (local.get $cur)))))
+        (local.set $val (call $to-f64 (call $xcar (local.get $cur))))
         (if (i32.eqz (f64.gt (local.get $prev) (local.get $val)))
           (then (return (global.get $false))))
         (local.set $prev (local.get $val))
-        (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $cur))))
+        (local.set $cur (call $xcdr (local.get $cur)))
         (br $loop)))
     (global.get $true)
   )
@@ -2846,8 +2855,8 @@
         (br_if $done1 (call $is-null (local.get $cur)))
         (local.set $total-len (i32.add (local.get $total-len)
           (array.len (ref.cast (ref $string)
-            (call $car (ref.cast (ref $pair) (local.get $cur)))))))
-        (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $cur))))
+            (call $xcar (local.get $cur))))))
+        (local.set $cur (call $xcdr (local.get $cur)))
         (br $len-loop)))
     ;; Allocate result
     (local.set $result (array.new_default $string (local.get $total-len)))
@@ -2859,7 +2868,7 @@
         (br_if $done2 (ref.is_null (local.get $cur)))
         (br_if $done2 (call $is-null (local.get $cur)))
         (local.set $s (ref.cast (ref $string)
-          (call $car (ref.cast (ref $pair) (local.get $cur)))))
+          (call $xcar (local.get $cur))))
         (local.set $slen (array.len (local.get $s)))
         (local.set $i (i32.const 0))
         (block $done-inner
@@ -2871,7 +2880,7 @@
             (local.set $i (i32.add (local.get $i) (i32.const 1)))
             (br $inner)))
         (local.set $pos (i32.add (local.get $pos) (local.get $slen)))
-        (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $cur))))
+        (local.set $cur (call $xcdr (local.get $cur)))
         (br $copy-loop)))
     (local.get $result)
   )
@@ -2967,12 +2976,12 @@
       (then
         (if (call $is-false
               (call $prim-equal
-                (call $car (ref.cast (ref $pair) (local.get $a)))
-                (call $car (ref.cast (ref $pair) (local.get $b)))))
+                (call $xcar (local.get $a))
+                (call $xcar (local.get $b))))
           (then (return (global.get $false))))
         (return (call $prim-equal
-          (call $cdr (ref.cast (ref $pair) (local.get $a)))
-          (call $cdr (ref.cast (ref $pair) (local.get $b)))))))
+          (call $xcdr (local.get $a))
+          (call $xcdr (local.get $b))))))
     ;; Both vectors — element-wise
     (if (i32.and (call $is-vector (local.get $a)) (call $is-vector (local.get $b)))
       (then
@@ -3180,9 +3189,9 @@
         (if (call $is-pair (local.get $cur))
           (then
             (local.set $parts (call $cons
-              (call $write-to-string-impl (call $car (ref.cast (ref $pair) (local.get $cur))))
+              (call $write-to-string-impl (call $xcar (local.get $cur)))
               (local.get $parts)))
-            (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $cur))))
+            (local.set $cur (call $xcdr (local.get $cur)))
             (br $loop))
           (else
             ;; Dotted pair
@@ -3247,9 +3256,9 @@
         (br_if $done (ref.is_null (local.get $cur)))
         (br_if $done (call $is-null (local.get $cur)))
         (local.set $result (call $cons
-          (call $car (ref.cast (ref $pair) (local.get $cur)))
+          (call $xcar (local.get $cur))
           (local.get $result)))
-        (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $cur))))
+        (local.set $cur (call $xcdr (local.get $cur)))
         (br $loop)))
     (local.get $result)
   )
@@ -3435,12 +3444,11 @@
     (if (i32.eqz (call $is-false (local.get $result)))
       (then (return (local.get $result))))
     ;; Not found — check for 3rd arg (default)
-    (local.set $rest (call $cdr (ref.cast (ref $pair)
-      (call $cdr (ref.cast (ref $pair) (local.get $args))))))
+    (local.set $rest (call $xcdr (call $xcdr (local.get $args))))
     (if (i32.and
           (i32.eqz (ref.is_null (local.get $rest)))
           (i32.eqz (call $is-null (local.get $rest))))
-      (then (return (call $car (ref.cast (ref $pair) (local.get $rest))))))
+      (then (return (call $xcar (local.get $rest)))))
     ;; No default — return #f
     (global.get $false)
   )
@@ -3478,7 +3486,7 @@
         (br_if $counted (ref.is_null (local.get $cur)))
         (br_if $counted (call $is-null (local.get $cur)))
         (local.set $len (i32.add (local.get $len) (i32.const 1)))
-        (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $cur))))
+        (local.set $cur (call $xcdr (local.get $cur)))
         (br $count)))
     ;; Fill
     (local.set $vec (array.new_default $vector (local.get $len)))
@@ -3488,8 +3496,8 @@
       (loop $fill
         (br_if $done (i32.ge_u (local.get $i) (local.get $len)))
         (array.set $vector (local.get $vec) (local.get $i)
-          (call $car (ref.cast (ref $pair) (local.get $cur))))
-        (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $cur))))
+          (call $xcar (local.get $cur)))
+        (local.set $cur (call $xcdr (local.get $cur)))
         (local.set $i (i32.add (local.get $i) (i32.const 1)))
         (br $fill)))
     (local.get $vec)
@@ -3648,8 +3656,8 @@
       (then
         (i32.store16 (i32.const 0) (i32.const 40))  ;; '('
         (call $js-display-string (i32.const 1))
-        (call $display-value (call $car (ref.cast (ref $pair) (local.get $v))))
-        (call $display-list-tail (call $cdr (ref.cast (ref $pair) (local.get $v))))
+        (call $display-value (call $xcar (local.get $v)))
+        (call $display-list-tail (call $xcdr (local.get $v)))
         (return)))
     ;; JS ref: display as #<js-ref N>
     (if (call $is-js-ref (local.get $v))
@@ -3682,8 +3690,8 @@
       (then
         (i32.store16 (i32.const 0) (i32.const 32))  ;; ' '
         (call $js-display-string (i32.const 1))
-        (call $display-value (call $car (ref.cast (ref $pair) (local.get $v))))
-        (call $display-list-tail (call $cdr (ref.cast (ref $pair) (local.get $v))))
+        (call $display-value (call $xcar (local.get $v)))
+        (call $display-list-tail (call $xcdr (local.get $v)))
         (return)))
     ;; Dotted pair
     (i32.store16 (i32.const 0) (i32.const 32))  ;; ' '
@@ -3756,7 +3764,7 @@
           (then (return (call $make-type-error
             (call $prim-name-str (local.get $id)) (global.get $err-not-pair)
             (call $arg1 (local.get $args))))))
-        (return (call $car (ref.cast (ref $pair) (call $arg1 (local.get $args)))))))
+        (return (call $xcar (call $arg1 (local.get $args))))))
     ;; 6 = cdr (type-guarded: arg must be pair or nil)
     (if (i32.eq (local.get $id) (i32.const 6))
       (then
@@ -3766,7 +3774,7 @@
           (then (return (call $make-type-error
             (call $prim-name-str (local.get $id)) (global.get $err-not-pair)
             (call $arg1 (local.get $args))))))
-        (return (call $cdr (ref.cast (ref $pair) (call $arg1 (local.get $args)))))))
+        (return (call $xcdr (call $arg1 (local.get $args))))))
     ;; 7 = cons
     (if (i32.eq (local.get $id) (i32.const 7))
       (then (return (call $cons (call $arg1 (local.get $args)) (call $arg2 (local.get $args))))))
@@ -3905,8 +3913,8 @@
       (then
         ;; Check for port as 2nd arg
         (if (i32.and
-              (i32.eqz (ref.is_null (call $cdr (ref.cast (ref $pair) (local.get $args)))))
-              (i32.eqz (call $is-null (call $cdr (ref.cast (ref $pair) (local.get $args))))))
+              (i32.eqz (ref.is_null (call $xcdr (local.get $args))))
+              (i32.eqz (call $is-null (call $xcdr (local.get $args)))))
           (then
             (if (ref.test (ref $port) (call $arg2 (local.get $args)))
               (then
@@ -3921,8 +3929,8 @@
       (then
         (global.set $write-mode (i32.const 1))
         (if (i32.and
-              (i32.eqz (ref.is_null (call $cdr (ref.cast (ref $pair) (local.get $args)))))
-              (i32.eqz (call $is-null (call $cdr (ref.cast (ref $pair) (local.get $args))))))
+              (i32.eqz (ref.is_null (call $xcdr (local.get $args))))
+              (i32.eqz (call $is-null (call $xcdr (local.get $args)))))
           (then
             (if (ref.test (ref $port) (call $arg2 (local.get $args)))
               (then
@@ -4042,8 +4050,8 @@
       (then
         ;; Check for port as 2nd arg
         (if (i32.and
-              (i32.eqz (ref.is_null (call $cdr (ref.cast (ref $pair) (local.get $args)))))
-              (i32.eqz (call $is-null (call $cdr (ref.cast (ref $pair) (local.get $args))))))
+              (i32.eqz (ref.is_null (call $xcdr (local.get $args))))
+              (i32.eqz (call $is-null (call $xcdr (local.get $args)))))
           (then
             ;; Write to port
             (if (ref.test (ref $port) (call $arg2 (local.get $args)))
@@ -4092,8 +4100,8 @@
         ;; Check for fill value (2nd arg)
         (if (result (ref null eq))
           (i32.and
-            (i32.eqz (ref.is_null (call $cdr (ref.cast (ref $pair) (local.get $args)))))
-            (i32.eqz (call $is-null (call $cdr (ref.cast (ref $pair) (local.get $args))))))
+            (i32.eqz (ref.is_null (call $xcdr (local.get $args))))
+            (i32.eqz (call $is-null (call $xcdr (local.get $args)))))
           (then
             (return (array.new $vector
               (call $arg2 (local.get $args))
@@ -4187,15 +4195,15 @@
     ;; 117 = %eq-hash-ref(table, key) → value or #f (identity-based lookup)
     (if (i32.eq (local.get $id) (i32.const 117))
       (then
-        (local.set $cur (call $car (ref.cast (ref $pair) (call $arg1 (local.get $args)))))
+        (local.set $cur (call $xcar (call $arg1 (local.get $args))))
         (local.set $key (call $arg2 (local.get $args)))
         (block $not-found (loop $scan
           (br_if $not-found (call $is-null (local.get $cur)))
           (br_if $not-found (ref.is_null (local.get $cur)))
-          (if (ref.eq (call $car (ref.cast (ref $pair) (call $car (ref.cast (ref $pair) (local.get $cur)))))
+          (if (ref.eq (call $xcar (call $xcar (local.get $cur)))
                       (local.get $key))
-            (then (return (call $cdr (ref.cast (ref $pair) (call $car (ref.cast (ref $pair) (local.get $cur))))))))
-          (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $cur))))
+            (then (return (call $xcdr (call $xcar (local.get $cur))))))
+          (local.set $cur (call $xcdr (local.get $cur)))
           (br $scan)))
         (return (global.get $false))))
     ;; 118 = %eq-hash-set!(table, key, value) → void (mutates table cell)
@@ -4205,7 +4213,7 @@
           (ref.cast (ref $pair) (call $arg1 (local.get $args)))
           (call $cons
             (call $cons (call $arg2 (local.get $args)) (call $arg3 (local.get $args)))
-            (call $car (ref.cast (ref $pair) (call $arg1 (local.get $args))))))
+            (call $xcar (call $arg1 (local.get $args)))))
         (return (global.get $void))))
     ;; 81 = %raw-error (fatal error — throws JS exception)
     (if (i32.eq (local.get $id) (i32.const 81))
@@ -4310,9 +4318,9 @@
         ;; arg1 = qualified address pair (space-id . pc)
         (return (call $execute
           (call $fixnum-value (ref.cast (ref i31)
-            (call $car (ref.cast (ref $pair) (call $arg1 (local.get $args))))))
+            (call $xcar (call $arg1 (local.get $args)))))
           (call $fixnum-value (ref.cast (ref i31)
-            (call $cdr (ref.cast (ref $pair) (call $arg1 (local.get $args))))))
+            (call $xcdr (call $arg1 (local.get $args)))))
           (global.get $global-env)))))
 
     ;; 89 = apply-compiled-procedure (proc, args)
@@ -4348,10 +4356,7 @@
           (call $arg2 (local.get $args))
           (call $arg3 (local.get $args))
           (call $fixnum-value (ref.cast (ref i31)
-            (call $car (ref.cast (ref $pair)
-              (call $cdr (ref.cast (ref $pair)
-                (call $cdr (ref.cast (ref $pair)
-                  (call $cdr (ref.cast (ref $pair) (local.get $args)))))))))))))))
+            (call $xcar (call $xcdr (call $xcdr (call $xcdr (local.get $args)))))))))))
 
     ;; 92 = %intern-ece (string) — intern string as symbol
     (if (i32.eq (local.get $id) (i32.const 92))
@@ -4785,8 +4790,8 @@
     ;; entry is (space-id . pc) pair
     (if (i32.eq (local.get $id) (i32.const 163))
       (then (return (struct.new $compiled-proc
-        (call $fixnum-value (ref.cast (ref i31) (call $car (ref.cast (ref $pair) (call $arg1 (local.get $args))))))
-        (call $fixnum-value (ref.cast (ref i31) (call $cdr (ref.cast (ref $pair) (call $arg1 (local.get $args))))))
+        (call $fixnum-value (ref.cast (ref i31) (call $xcar (call $arg1 (local.get $args)))))
+        (call $fixnum-value (ref.cast (ref i31) (call $xcdr (call $arg1 (local.get $args)))))
         (call $arg2 (local.get $args))))))
 
     ;; 164 = %make-continuation(stack, conts, winds) → continuation
@@ -4851,7 +4856,7 @@
           (br_if $cnt (ref.is_null (local.get $cur)))
           (br_if $cnt (call $is-null (local.get $cur)))
           (local.set $id (i32.add (local.get $id) (i32.const 1)))
-          (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $cur))))
+          (local.set $cur (call $xcdr (local.get $cur)))
           (br $c)))
         ;; Build vals array from list
         (local.set $key (array.new_default $val-array (local.get $id)))
@@ -4862,8 +4867,8 @@
           (br_if $fill (call $is-null (local.get $cur)))
           (array.set $val-array (ref.cast (ref $val-array) (local.get $key))
             (local.get $id)
-            (call $car (ref.cast (ref $pair) (local.get $cur))))
-          (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $cur))))
+            (call $xcar (local.get $cur)))
+          (local.set $cur (call $xcdr (local.get $cur)))
           (local.set $id (i32.add (local.get $id) (i32.const 1)))
           (br $f)))
         ;; Enclosing: nil → null
@@ -5227,9 +5232,9 @@
         (block $fold-done (loop $fold
           (br_if $fold-done (call $is-null (local.get $acc)))
           (local.set $elem (call $cons
-            (call $car (ref.cast (ref $pair) (local.get $acc)))
+            (call $xcar (local.get $acc))
             (local.get $elem)))
-          (local.set $acc (call $cdr (ref.cast (ref $pair) (local.get $acc))))
+          (local.set $acc (call $xcdr (local.get $acc)))
           (br $fold)))
         (return (local.get $elem))))
     ;; Proper list: reverse
@@ -5261,8 +5266,8 @@
     (block $done2 (loop $fill
       (br_if $done2 (i32.ge_u (local.get $i) (local.get $len)))
       (array.set $vector (local.get $vec) (local.get $i)
-        (call $car (ref.cast (ref $pair) (local.get $cur))))
-      (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $cur))))
+        (call $xcar (local.get $cur)))
+      (local.set $cur (call $xcdr (local.get $cur)))
       (local.set $i (i32.add (local.get $i) (i32.const 1)))
       (br $fill)))
     (local.get $vec))
@@ -5386,7 +5391,7 @@
     (local $tag (ref $symbol))
     (local $tag-id i32)
     (local.set $tag (ref.cast (ref $symbol)
-      (call $car (ref.cast (ref $pair) (local.get $sexp)))))
+      (call $xcar (local.get $sexp))))
     (local.set $tag-id (struct.get $symbol $id (local.get $tag)))
     ;; const (slot 13)
     (if (i32.eq (local.get $tag-id)
@@ -5395,7 +5400,7 @@
         (global.set $ecec-op-type (i32.const 0))
         (global.set $ecec-op-arg (i32.const 0))
         (global.set $ecec-op-val
-          (call $car (ref.cast (ref $pair) (call $cdr-safe (local.get $sexp)))))
+          (call $xcar (call $cdr-safe (local.get $sexp))))
         (return)))
     ;; reg (slot 14)
     (if (i32.eq (local.get $tag-id)
@@ -5404,7 +5409,7 @@
         (global.set $ecec-op-type (i32.const 1))
         (global.set $ecec-op-arg
           (call $ecec-reg-id (ref.cast (ref $symbol)
-            (call $car (ref.cast (ref $pair) (call $cdr-safe (local.get $sexp)))))))
+            (call $xcar (call $cdr-safe (local.get $sexp))))))
         (global.set $ecec-op-val (global.get $nil))
         (return)))
     ;; label (slot 15)
@@ -5414,7 +5419,7 @@
         (global.set $ecec-op-type (i32.const 2))
         (global.set $ecec-op-arg (i32.const 0))
         (global.set $ecec-op-val
-          (call $car (ref.cast (ref $pair) (call $cdr-safe (local.get $sexp)))))
+          (call $xcar (call $cdr-safe (local.get $sexp))))
         (return)))
     ;; op (slot 16)
     (if (i32.eq (local.get $tag-id)
@@ -5423,7 +5428,7 @@
         (global.set $ecec-op-type (i32.const 3))
         (global.set $ecec-op-arg
           (call $ecec-op-id (ref.cast (ref $symbol)
-            (call $car (ref.cast (ref $pair) (call $cdr-safe (local.get $sexp)))))))
+            (call $xcar (call $cdr-safe (local.get $sexp))))))
         (global.set $ecec-op-val (global.get $nil))
         (return)))
     ;; Unknown
@@ -5434,7 +5439,7 @@
   ;; Safe cdr that handles nil
   (func $cdr-safe (param $v (ref null eq)) (result (ref null eq))
     (if (result (ref null eq)) (call $is-pair (local.get $v))
-      (then (call $cdr (ref.cast (ref $pair) (local.get $v))))
+      (then (call $xcdr (local.get $v)))
       (else (global.get $nil))))
 
   ;; Build operand list from s-exp list of operands
@@ -5449,7 +5454,7 @@
       (br_if $done (call $is-null (local.get $cur)))
       (br_if $done (i32.eqz (call $is-pair (local.get $cur))))
       (call $ecec-parse-operand
-        (call $car (ref.cast (ref $pair) (local.get $cur))))
+        (call $xcar (local.get $cur)))
       (local.set $result (call $cons
         (call $cons (call $make-fixnum (global.get $ecec-op-type))
           (if (result (ref null eq)) (i32.eq (global.get $ecec-op-type) (i32.const 1))
@@ -5461,7 +5466,7 @@
                   (call $ecec-label-pc (global.get $ecec-op-val) (local.get $labels))))
                 (else (global.get $ecec-op-val))))))  ;; const value
         (local.get $result)))
-      (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $cur))))
+      (local.set $cur (call $xcdr (local.get $cur)))
       (br $again)))
     ;; Reverse
     (call $prim-reverse (local.get $result)))
@@ -5496,19 +5501,19 @@
       (then (return (ref.null $instr))))
     ;; Must be a list: (opcode ...)
     (local.set $tag (ref.cast (ref $symbol)
-      (call $car (ref.cast (ref $pair) (local.get $sexp)))))
+      (call $xcar (local.get $sexp))))
     (local.set $tag-id (struct.get $symbol $id (local.get $tag)))
-    (local.set $rest (call $cdr (ref.cast (ref $pair) (local.get $sexp))))
+    (local.set $rest (call $xcdr (local.get $sexp)))
 
     ;; assign (slot 0): (assign reg source)
     (if (i32.eq (local.get $tag-id)
           (array.get $i32-array (ref.as_non_null (global.get $asm-sym-ids)) (i32.const 0)))
       (then
         (local.set $target-reg (call $ecec-reg-id (ref.cast (ref $symbol)
-          (call $car (ref.cast (ref $pair) (local.get $rest))))))
-        (local.set $rest (call $cdr (ref.cast (ref $pair) (local.get $rest))))
+          (call $xcar (local.get $rest)))))
+        (local.set $rest (call $xcdr (local.get $rest)))
         (call $ecec-parse-operand
-          (call $car (ref.cast (ref $pair) (local.get $rest))))
+          (call $xcar (local.get $rest)))
         (local.set $src-type (global.get $ecec-op-type))
         (local.set $src-arg (global.get $ecec-op-arg))
         (local.set $src-val (global.get $ecec-op-val))
@@ -5516,7 +5521,7 @@
         (if (i32.eq (local.get $src-type) (i32.const 3))
           (then
             (local.set $src-val (call $ecec-build-operand-list
-              (call $cdr (ref.cast (ref $pair) (local.get $rest)))
+              (call $xcdr (local.get $rest))
               (local.get $labels)))
             (return (struct.new $instr
               (i32.const 0) (local.get $target-reg) (i32.const 3) (local.get $src-arg)
@@ -5538,10 +5543,10 @@
           (array.get $i32-array (ref.as_non_null (global.get $asm-sym-ids)) (i32.const 1)))
       (then
         (call $ecec-parse-operand
-          (call $car (ref.cast (ref $pair) (local.get $rest))))
+          (call $xcar (local.get $rest)))
         (local.set $src-arg (global.get $ecec-op-arg))
         (local.set $src-val (call $ecec-build-operand-list
-          (call $cdr (ref.cast (ref $pair) (local.get $rest)))
+          (call $xcdr (local.get $rest))
           (local.get $labels)))
         (return (struct.new $instr
           (i32.const 1) (i32.const 0) (i32.const 0) (local.get $src-arg)
@@ -5552,7 +5557,7 @@
           (array.get $i32-array (ref.as_non_null (global.get $asm-sym-ids)) (i32.const 2)))
       (then
         (call $ecec-parse-operand
-          (call $car (ref.cast (ref $pair) (local.get $rest))))
+          (call $xcar (local.get $rest)))
         (return (struct.new $instr
           (i32.const 2) (i32.const 0) (i32.const 0)
           (call $ecec-label-pc (global.get $ecec-op-val) (local.get $labels))
@@ -5563,7 +5568,7 @@
           (array.get $i32-array (ref.as_non_null (global.get $asm-sym-ids)) (i32.const 3)))
       (then
         (call $ecec-parse-operand
-          (call $car (ref.cast (ref $pair) (local.get $rest))))
+          (call $xcar (local.get $rest)))
         (if (i32.eq (global.get $ecec-op-type) (i32.const 1))
           (then
             (return (struct.new $instr
@@ -5582,7 +5587,7 @@
         (return (struct.new $instr
           (i32.const 4)
           (call $ecec-reg-id (ref.cast (ref $symbol)
-            (call $car (ref.cast (ref $pair) (local.get $rest)))))
+            (call $xcar (local.get $rest))))
           (i32.const 0) (i32.const 0) (global.get $nil)))))
 
     ;; restore (slot 5): (restore reg)
@@ -5592,7 +5597,7 @@
         (return (struct.new $instr
           (i32.const 5)
           (call $ecec-reg-id (ref.cast (ref $symbol)
-            (call $car (ref.cast (ref $pair) (local.get $rest)))))
+            (call $xcar (local.get $rest))))
           (i32.const 0) (i32.const 0) (global.get $nil)))))
 
     ;; perform (slot 6): (perform (op name) operands...)
@@ -5600,10 +5605,10 @@
           (array.get $i32-array (ref.as_non_null (global.get $asm-sym-ids)) (i32.const 6)))
       (then
         (call $ecec-parse-operand
-          (call $car (ref.cast (ref $pair) (local.get $rest))))
+          (call $xcar (local.get $rest)))
         (local.set $src-arg (global.get $ecec-op-arg))
         (local.set $src-val (call $ecec-build-operand-list
-          (call $cdr (ref.cast (ref $pair) (local.get $rest)))
+          (call $xcdr (local.get $rest))
           (local.get $labels)))
         (return (struct.new $instr
           (i32.const 6) (i32.const 0) (i32.const 0) (local.get $src-arg)
@@ -5634,17 +5639,10 @@
     (local.set $header (call $ecec-read-sexp))
     ;; Extract space name: (cadr (cadr header))
     (local.set $space-name
-      (call $car (ref.cast (ref $pair)
-        (call $cdr (ref.cast (ref $pair)
-          (call $car (ref.cast (ref $pair)
-            (call $cdr (ref.cast (ref $pair) (local.get $header))))))))))
+      (call $cadr (call $cadr (local.get $header))))
     ;; Extract macros list: (cadr (caddr header))
     (local.set $macros
-      (call $car (ref.cast (ref $pair)
-        (call $cdr (ref.cast (ref $pair)
-          (call $car (ref.cast (ref $pair)
-            (call $cdr (ref.cast (ref $pair)
-              (call $cdr (ref.cast (ref $pair) (local.get $header))))))))))))
+      (call $cadr (call $caddr (local.get $header))))
 
     ;; Read single flat instruction list
     (local.set $instrs (call $ecec-read-sexp))
@@ -5657,25 +5655,24 @@
       (br_if $end-scan (ref.is_null (local.get $item)))
       (br_if $end-scan (call $is-null (local.get $item)))
       (br_if $end-scan (i32.eqz (call $is-pair (local.get $item))))
-      (if (call $is-symbol (call $car (ref.cast (ref $pair) (local.get $item))))
+      (if (call $is-symbol (call $xcar (local.get $item)))
         (then
           ;; Label: record (symbol . pc)
           (local.set $labels (call $cons
             (call $cons
-              (call $car (ref.cast (ref $pair) (local.get $item)))
+              (call $xcar (local.get $item))
               (call $make-fixnum (local.get $pc)))
             (local.get $labels))))
         (else
           ;; List item: instruction or metadata
           ;; Only count if it's a recognized instruction
-          (if (call $is-pair (call $car (ref.cast (ref $pair) (local.get $item))))
+          (if (call $is-pair (call $xcar (local.get $item)))
             (then
               (if (call $ecec-is-instr-keyword
-                    (call $car (ref.cast (ref $pair)
-                      (call $car (ref.cast (ref $pair) (local.get $item))))))
+                    (call $xcar (call $xcar (local.get $item))))
                 (then
                   (local.set $pc (i32.add (local.get $pc) (i32.const 1)))))))))
-      (local.set $item (call $cdr (ref.cast (ref $pair) (local.get $item))))
+      (local.set $item (call $xcdr (local.get $item)))
       (br $scan)))
 
     ;; Create compilation space sized to actual instruction count
@@ -5689,18 +5686,18 @@
       (br_if $end-build (ref.is_null (local.get $item)))
       (br_if $end-build (call $is-null (local.get $item)))
       (br_if $end-build (i32.eqz (call $is-pair (local.get $item))))
-      (if (i32.eqz (call $is-symbol (call $car (ref.cast (ref $pair) (local.get $item)))))
+      (if (i32.eqz (call $is-symbol (call $xcar (local.get $item))))
         (then
           ;; Instruction or metadata: parse (returns null for unknown types)
           (local.set $instr (call $ecec-parse-instr
-            (call $car (ref.cast (ref $pair) (local.get $item)))
+            (call $xcar (local.get $item))
             (local.get $space-id) (local.get $pc) (local.get $labels)))
           (if (i32.eqz (ref.is_null (local.get $instr)))
             (then
               (call $space-set-instr (local.get $space-id) (local.get $pc)
                 (ref.as_non_null (local.get $instr)))
               (local.set $pc (i32.add (local.get $pc) (i32.const 1)))))))
-      (local.set $item (call $cdr (ref.cast (ref $pair) (local.get $item))))
+      (local.set $item (call $xcdr (local.get $item)))
       (br $build)))
 
     ;; Set final instruction count
@@ -5740,11 +5737,11 @@
     (block $done (loop $scan
       (br_if $done (call $is-null (local.get $cur)))
       (local.set $entry (ref.cast (ref $pair)
-        (call $car (ref.cast (ref $pair) (local.get $cur)))))
+        (call $xcar (local.get $cur))))
       (if (ref.eq (struct.get $pair $car (local.get $entry)) (local.get $sym))
         (then (return (call $fixnum-value
           (ref.cast (ref i31) (struct.get $pair $cdr (local.get $entry)))))))
-      (local.set $cur (call $cdr (ref.cast (ref $pair) (local.get $cur))))
+      (local.set $cur (call $xcdr (local.get $cur)))
       (br $scan)))
     (i32.const 0))  ;; label not found — should not happen
 
@@ -6164,7 +6161,7 @@
       (br_if $done (call $is-null (local.get $s)))
       (br_if $done (ref.is_null (local.get $s)))
       (br_if $done (i32.eqz (call $is-pair (local.get $s))))
-      (local.set $s (call $cdr (ref.cast (ref $pair) (local.get $s))))
+      (local.set $s (call $xcdr (local.get $s)))
       (local.set $d (i32.add (local.get $d) (i32.const 1)))
       (br $count)))
     (local.get $d))
@@ -6269,10 +6266,10 @@
     (call $string-to-memory (ref.cast (ref $string) (call $deref-handle (local.get $handle)))))
 
   (func (export "pair_car") (param $handle i32) (result i32)
-    (call $alloc-handle (call $car (ref.cast (ref $pair) (call $deref-handle (local.get $handle))))))
+    (call $alloc-handle (call $xcar (call $deref-handle (local.get $handle)))))
 
   (func (export "pair_cdr") (param $handle i32) (result i32)
-    (call $alloc-handle (call $cdr (ref.cast (ref $pair) (call $deref-handle (local.get $handle))))))
+    (call $alloc-handle (call $xcdr (call $deref-handle (local.get $handle)))))
 
   ;; Execute from a space + PC with a given environment
   (func (export "run") (param $space-id i32) (param $pc i32)
