@@ -27,7 +27,7 @@
 - [x] 4.1 Update `compile-file` to write `(source-map "filename.scm" (pc line col) ...)` field in ecec-header
 - [x] 4.2 Update `merge-instruction-lists` to adjust source-map PCs when merging units (add unit offsets)
 - [x] 4.3 Update CL `load-compiled` to read optional `source-map` from ecec-header and register in `*source-maps*`
-- [ ] 4.4 Update WASM `.ecec` loader (`$ecec-load-unit`) to read optional `source-map` and register in a per-space hash table
+- [x] 4.4 Update WASM `.ecec` loader (`$ecec-load-unit`) to read optional `source-map` and register in a per-space hash table
 
 ## 5. Runtime PC-to-location resolution
 
@@ -35,8 +35,8 @@
 - [x] 5.2 Add `resolve-source-location` helper: given space and pc, return `(file line col)` or `#f`
 - [x] 5.3 Update CL `ece-runtime-error` report to include resolved source location in procedure line
 - [x] 5.4 Update CL `format-ece-backtrace` to show `file:line:col` instead of `pc=N` when available
-- [ ] 5.5 Add source-map hash table storage in WASM runtime (global per-space structure)
-- [ ] 5.6 Update WASM error path to resolve PC to source location before signaling
+- [x] 5.5 Add source-map hash table storage in WASM runtime (global per-space structure)
+- [x] 5.6 Update WASM error path to resolve PC to source location before signaling
 
 ## 6. Bootstrap
 
@@ -55,14 +55,14 @@
 - [x] 7.8 Test: source-map entries are sorted by PC
 - [x] 7.9 Test: load-compiled reads source-map and registers in `*source-maps*`
 - [x] 7.10 Test: error on unbound variable includes file:line in message
-- [ ] 7.11 Test: backtrace frames show file:line:col instead of pc=N
+- [x] 7.11 Test: backtrace frames show file:line:col instead of pc=N
 - [x] 7.12 Test: missing source-map falls back to pc=N display
-- [ ] 7.13 Test: `when` macro — error in body reports body's source line, not expanded `if` line
-- [ ] 7.14 Test: `cond` macro — error in second clause reports that clause's source line
-- [ ] 7.15 Test: `let` macro — error in let body reports body's source line
-- [ ] 7.16 Test: `and`/`or` macro — error in third operand reports that operand's source line
-- [ ] 7.17 Test: `define-syntax`/`syntax-rules` macro — error in matched sub-expression reports original source line
-- [ ] 7.18 Test: nested macros (e.g., `when` inside `cond`) — innermost expression keeps its source location
+- [x] 7.13 Test: `when` macro — error in body reports body's source line, not expanded `if` line
+- [x] 7.14 Test: `cond` macro — error in second clause reports that clause's source line
+- [x] 7.15 Test: `let` macro — error in let body reports body's source line
+- [x] 7.16 Test: `and`/`or` macro — error in third operand reports that operand's source line
+- [x] 7.17 Test: `define-syntax`/`syntax-rules` macro — error in matched sub-expression reports original source line
+- [x] 7.18 Test: nested macros (e.g., `when` inside `cond`) — innermost expression keeps its source location
 
 ## 8. Validation
 

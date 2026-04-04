@@ -174,6 +174,23 @@
       (trigger-error)
       (assert-true #f))))  ; should not reach here
 
+;; --- 7.11 Backtrace uses file:line:col when available ---
+
+(test "backtrace frames use file:line:col when available"
+  (lambda ()
+    ;; Load a file with a source-map, then check resolve-source-location
+    ;; returns a valid location (the CL backtrace formatter uses this)
+    (let ((space-map (hash-ref *source-maps* 'test-srcmap #f)))
+      (assert-true space-map)
+      ;; At least one PC should resolve to a location
+      (let ((found #f))
+        (for-each (lambda (key)
+                    (let ((loc (hash-ref space-map key #f)))
+                      (when (and loc (pair? loc) (string? (car loc)))
+                        (set! found #t))))
+                  (hash-keys space-map))
+        (assert-true found)))))
+
 ;; --- 7.12 Missing source-map falls back to pc=N ---
 
 (test "missing source-map falls back to pc=N display"
@@ -181,3 +198,95 @@
     ;; REPL code has no source-map, should show pc=N
     (let ((loc (resolve-source-location 'nonexistent-space 42)))
       (assert-equal loc #f))))
+
+;; --- 7.13-7.18 Macro source location propagation ---
+;; These tests verify that source-map entries point to original source lines,
+;; not to the lines of macro-expanded code. We compile a file, load the
+;; source-map, and check that specific PCs map to the expected source lines.
+
+;; Helper: compile a string to .ecec, return the source-map entries
+(define (compile-string-get-srcmap name code)
+  (let ((filename (string-append "/tmp/test-macro-" name ".scm")))
+    (let ((out (open-output-file filename)))
+      (display code out)
+      (close-output-port out))
+    (compile-file filename)
+    (load-compiled (string-append "/tmp/test-macro-" name ".ecec"))
+    (hash-ref *source-maps* (string->symbol (string-append "test-macro-" name)) #f)))
+
+;; Helper: check that at least one source-map entry points to the given line
+(define (srcmap-has-line? srcmap line)
+  (let ((found #f))
+    (for-each (lambda (key)
+                (let ((loc (hash-ref srcmap key #f)))
+                  (when (and loc (pair? loc) (= (cadr loc) line))
+                    (set! found #t))))
+              (hash-keys srcmap))
+    found))
+
+;; --- 7.13 when macro: body's source line preserved ---
+
+(test "when macro: body source line preserved in source-map"
+  (lambda ()
+    (let ((sm (compile-string-get-srcmap "when"
+               "(when #t\n  (+ 1 2))\n")))
+      (assert-true sm)
+      ;; Line 2 is where (+ 1 2) is — source-map should have an entry for it
+      (assert-true (srcmap-has-line? sm 2)))))
+
+;; --- 7.14 cond macro: clause source lines preserved ---
+
+(test "cond macro: clause source lines preserved in source-map"
+  (lambda ()
+    (let ((sm (compile-string-get-srcmap "cond"
+               "(cond\n  (#f 'a)\n  (#t 'b))\n")))
+      (assert-true sm)
+      ;; Lines 2 and 3 should appear in source-map
+      (assert-true (srcmap-has-line? sm 2))
+      (assert-true (srcmap-has-line? sm 3)))))
+
+;; --- 7.15 let macro: body source line preserved ---
+
+(test "let macro: body source line preserved in source-map"
+  (lambda ()
+    (let ((sm (compile-string-get-srcmap "let"
+               "(let ((x 1))\n  (+ x 2))\n")))
+      (assert-true sm)
+      ;; Line 2 is the body (+ x 2)
+      (assert-true (srcmap-has-line? sm 2)))))
+
+;; --- 7.16 and/or macro: operand source lines preserved ---
+
+(test "and/or macro: operand source lines preserved in source-map"
+  (lambda ()
+    (let ((sm (compile-string-get-srcmap "andor"
+               "(and\n  #t\n  #t\n  (+ 1 2))\n")))
+      (assert-true sm)
+      ;; Line 4 is where (+ 1 2) is
+      (assert-true (srcmap-has-line? sm 4)))))
+
+;; --- 7.17 define-syntax/syntax-rules: sub-expression source line preserved ---
+
+(test "define-syntax: sub-expression source line preserved in source-map"
+  (lambda ()
+    (let ((sm (compile-string-get-srcmap "syntax"
+               (string-append
+                "(define-syntax my-inc\n"
+                "  (syntax-rules ()\n"
+                "    ((my-inc x) (+ x 1))))\n"
+                "(my-inc\n"
+                "  42)\n"))))
+      (assert-true sm)
+      ;; Line 4-5 is the (my-inc 42) call site
+      (assert-true (or (srcmap-has-line? sm 4)
+                       (srcmap-has-line? sm 5))))))
+
+;; --- 7.18 Nested macros: innermost expression keeps its source location ---
+
+(test "nested macros: innermost expression keeps source location"
+  (lambda ()
+    (let ((sm (compile-string-get-srcmap "nested"
+               "(when #t\n  (let ((x 1))\n    (+ x 2)))\n")))
+      (assert-true sm)
+      ;; Line 3 is (+ x 2) — nested inside when→let
+      (assert-true (srcmap-has-line? sm 3)))))

@@ -1383,6 +1383,50 @@
         (local.get $sym-id)))
   )
 
+  ;; --- Source-map registry (parallel to $spaces, indexed by symbol ID) ---
+  ;; Each entry is a hash-table mapping fixnum-PC → (file line col) list, or null.
+  (type $srcmap-array (array (mut (ref null $hash-table))))
+  (global $source-maps (mut (ref null $srcmap-array))
+    (array.new_default $srcmap-array (i32.const 65536)))
+
+  ;; Register a source-map for a space (called during .ecec loading)
+  (func $register-source-map (param $space-id i32) (param $ht (ref $hash-table))
+    (local $old-arr (ref $srcmap-array))
+    (local $new-arr (ref $srcmap-array))
+    (local $i i32)
+    (local.set $old-arr (ref.as_non_null (global.get $source-maps)))
+    ;; Grow if needed
+    (if (i32.ge_u (local.get $space-id) (array.len (local.get $old-arr)))
+      (then
+        (local.set $new-arr (array.new_default $srcmap-array
+          (i32.mul (array.len (local.get $old-arr)) (i32.const 2))))
+        (local.set $i (i32.const 0))
+        (block $done (loop $copy
+          (br_if $done (i32.ge_u (local.get $i) (array.len (local.get $old-arr))))
+          (array.set $srcmap-array (local.get $new-arr) (local.get $i)
+            (array.get $srcmap-array (local.get $old-arr) (local.get $i)))
+          (local.set $i (i32.add (local.get $i) (i32.const 1)))
+          (br $copy)))
+        (global.set $source-maps (local.get $new-arr))
+        (local.set $old-arr (local.get $new-arr))))
+    (array.set $srcmap-array (local.get $old-arr) (local.get $space-id) (local.get $ht))
+  )
+
+  ;; Look up source location: given space-id and PC, return (file line col) or null
+  (func $resolve-source-location (param $space-id i32) (param $pc i32)
+                                 (result (ref null eq))
+    (local $arr (ref $srcmap-array))
+    (local $ht (ref null $hash-table))
+    (local.set $arr (ref.as_non_null (global.get $source-maps)))
+    (if (i32.ge_u (local.get $space-id) (array.len (local.get $arr)))
+      (then (return (ref.null eq))))
+    (local.set $ht (array.get $srcmap-array (local.get $arr) (local.get $space-id)))
+    (if (ref.is_null (local.get $ht))
+      (then (return (ref.null eq))))
+    (call $hash-ref-impl (ref.as_non_null (local.get $ht))
+      (call $make-fixnum (local.get $pc)))
+  )
+
   ;; --- Current assembler target space ---
   (global $current-space-id (mut i32) (i32.const 0))
 
@@ -2069,6 +2113,9 @@
                 ;; Bridge error sentinel to ECE's error function
                 (if (ref.test (ref $error-sentinel) (local.get $op-result))
                   (then
+                    ;; Record execution position for source-location in error messages
+                    (global.set $error-space-id (local.get $space-id))
+                    (global.set $error-pc (local.get $pc))
                     ;; Guard: error function must be available (not during early bootstrap)
                     (if (ref.is_null (global.get $error-sym))
                       (then (call $signal-error-str
@@ -2131,6 +2178,9 @@
             ;; Bridge error sentinel to ECE's error function
             (if (ref.test (ref $error-sentinel) (local.get $op-result))
               (then
+                ;; Record execution position for source-location in error messages
+                (global.set $error-space-id (local.get $space-id))
+                (global.set $error-pc (local.get $pc))
                 (local.set $proc (call $lookup-variable-value
                   (ref.as_non_null (global.get $error-sym))
                   (global.get $global-env)))
@@ -2266,6 +2316,9 @@
             ;; Bridge error sentinel to ECE's error function
             (if (ref.test (ref $error-sentinel) (local.get $op-result))
               (then
+                ;; Record execution position for source-location in error messages
+                (global.set $error-space-id (local.get $space-id))
+                (global.set $error-pc (local.get $pc))
                 (local.set $proc (call $lookup-variable-value
                   (ref.as_non_null (global.get $error-sym))
                   (global.get $global-env)))
@@ -5659,12 +5712,18 @@
     (local $instr (ref null $instr))
     (local $pc i32)
     (local $labels (ref null eq))   ;; alist of (symbol . pc)
+    (local $srcmap-rest (ref null eq))  ;; cdddr of header (source-map field or nil)
+    (local $srcmap-field (ref null eq)) ;; (source-map "file" (pc line col) ...)
+    (local $srcmap-file (ref null eq))  ;; filename string
+    (local $srcmap-entries (ref null eq)) ;; list of (pc line col) triples
+    (local $srcmap-ht (ref $hash-table))
+    (local $entry (ref null eq))
 
     ;; Set up cursor
     (global.set $ecec-pos (local.get $offset))
     (global.set $ecec-end (i32.add (local.get $offset) (local.get $len)))
 
-    ;; Read header: (ecec-header (space name) (macros (...)))
+    ;; Read header: (ecec-header (space name) (macros (...)) [(source-map ...)])
     (local.set $header (call $ecec-read-sexp))
     ;; Extract space name: (cadr (cadr header))
     (local.set $space-name
@@ -5737,6 +5796,50 @@
     ;; Register macros in the macro table
     (call $ecec-register-macros (local.get $macros) (local.get $space-id))
 
+    ;; ── Parse optional source-map from header ──
+    ;; Header: (ecec-header (space N) (macros M) [(source-map "file" (pc l c) ...)])
+    ;; cdddr header = ((source-map ...)) or nil
+    (local.set $srcmap-rest
+      (call $xcdr (call $xcdr (call $xcdr (local.get $header)))))
+    (if (i32.and (i32.eqz (ref.is_null (local.get $srcmap-rest)))
+                 (call $is-pair (local.get $srcmap-rest)))
+      (then
+        ;; (car srcmap-rest) = (source-map "file" (pc line col) ...)
+        (local.set $srcmap-field (call $xcar (local.get $srcmap-rest)))
+        (if (call $is-pair (local.get $srcmap-field))
+          (then
+            ;; filename = (cadr srcmap-field)
+            (local.set $srcmap-file (call $cadr (local.get $srcmap-field)))
+            ;; entries = (cddr srcmap-field)
+            (local.set $srcmap-entries
+              (call $xcdr (call $xcdr (local.get $srcmap-field))))
+            ;; Build hash table: PC (fixnum) → (file line col) list
+            (local.set $srcmap-ht (struct.new $hash-table
+              (array.new_default $hash-keys (i32.const 256))
+              (array.new_default $hash-vals (i32.const 256))
+              (i32.const 0)))
+            (local.set $item (local.get $srcmap-entries))
+            (block $sm-done (loop $sm-loop
+              (br_if $sm-done (ref.is_null (local.get $item)))
+              (br_if $sm-done (call $is-null (local.get $item)))
+              (br_if $sm-done (i32.eqz (call $is-pair (local.get $item))))
+              ;; entry = (car item) = (pc line col)
+              (local.set $entry (call $xcar (local.get $item)))
+              (if (call $is-pair (local.get $entry))
+                (then
+                  ;; key = (make-fixnum (car entry))  [PC as fixnum for hash lookup]
+                  ;; val = (list file (cadr entry) (caddr entry))
+                  (call $hash-set-impl (local.get $srcmap-ht)
+                    (call $xcar (local.get $entry))  ;; PC already a fixnum from ecec reader
+                    (call $cons (local.get $srcmap-file)
+                      (call $cons (call $cadr (local.get $entry))
+                        (call $cons (call $caddr (local.get $entry))
+                          (global.get $nil)))))))
+              (local.set $item (call $xcdr (local.get $item)))
+              (br $sm-loop)))
+            ;; Register the source-map for this space
+            (call $register-source-map (local.get $space-id) (local.get $srcmap-ht))))))
+
     (local.get $space-id))
 
   ;; Create a compilation space (internal, returns space-id = symbol-id)
@@ -5793,11 +5896,63 @@
   ;; 1 page = 64KB linear memory for string transfer only
   (memory $transfer (export "memory") 1)
 
+  ;; ── Source location for error messages ──
+  ;; Set by the executor before signaling errors.
+  (global $error-space-id (mut i32) (i32.const -1))
+  (global $error-pc (mut i32) (i32.const -1))
+
+  ;; Write an ECE $string to linear memory starting at byte offset $off.
+  ;; Returns the number of chars written.
+  (func $mem-write-string (param $str (ref $string)) (param $off i32) (result i32)
+    (local $len i32)
+    (local $i i32)
+    (local.set $len (array.len (local.get $str)))
+    (local.set $i (i32.const 0))
+    (block $done (loop $copy
+      (br_if $done (i32.ge_u (local.get $i) (local.get $len)))
+      (i32.store16 (i32.add (local.get $off) (i32.shl (local.get $i) (i32.const 1)))
+        (array.get_u $string (local.get $str) (local.get $i)))
+      (local.set $i (i32.add (local.get $i) (i32.const 1)))
+      (br $copy)))
+    (local.get $len))
+
+  ;; Write an integer (decimal) to linear memory starting at char offset $off.
+  ;; Returns the number of chars written.
+  (func $mem-write-int (param $n i32) (param $off i32) (result i32)
+    (local $digits i32)
+    (local $tmp i32)
+    (local $pos i32)
+    ;; Count digits
+    (local.set $tmp (local.get $n))
+    (local.set $digits (i32.const 1))
+    (block $cnt-done (loop $cnt
+      (local.set $tmp (i32.div_u (local.get $tmp) (i32.const 10)))
+      (br_if $cnt-done (i32.eqz (local.get $tmp)))
+      (local.set $digits (i32.add (local.get $digits) (i32.const 1)))
+      (br $cnt)))
+    ;; Write digits right-to-left
+    (local.set $tmp (local.get $n))
+    (local.set $pos (i32.sub (i32.add (local.get $off) (local.get $digits)) (i32.const 1)))
+    (block $wr-done (loop $wr
+      (i32.store16 (i32.shl (local.get $pos) (i32.const 1))
+        (i32.add (i32.const 48) (i32.rem_u (local.get $tmp) (i32.const 10))))
+      (local.set $tmp (i32.div_u (local.get $tmp) (i32.const 10)))
+      (local.set $pos (i32.sub (local.get $pos) (i32.const 1)))
+      (br_if $wr (i32.gt_s (local.get $pos) (i32.sub (local.get $off) (i32.const 1))))
+    ))
+    (local.get $digits))
+
   ;; ── Runtime error helpers ──
   ;; Write a plain string to linear memory, then call runtime_error.
+  ;; If $error-space-id is set and has a source-map entry, appends " at file:line:col".
   (func $signal-error-str (param $msg (ref $string))
     (local $len i32)
     (local $i i32)
+    (local $loc (ref null eq))
+    (local $file (ref $string))
+    (local $line i32)
+    (local $col i32)
+    ;; Write main message
     (local.set $len (array.len (local.get $msg)))
     (local.set $i (i32.const 0))
     (block $done (loop $copy
@@ -5806,6 +5961,46 @@
         (array.get_u $string (local.get $msg) (local.get $i)))
       (local.set $i (i32.add (local.get $i) (i32.const 1)))
       (br $copy)))
+    ;; Try to append source location
+    (if (i32.ge_s (global.get $error-space-id) (i32.const 0))
+      (then
+        (local.set $loc (call $resolve-source-location
+          (global.get $error-space-id) (global.get $error-pc)))
+        (if (i32.eqz (ref.is_null (local.get $loc)))
+          (then
+            ;; loc = (file line col) — append " at file:line:col"
+            (if (ref.test (ref $string) (call $xcar (local.get $loc)))
+              (then
+                (local.set $file (ref.cast (ref $string) (call $xcar (local.get $loc))))
+                (local.set $line (call $fixnum-value
+                  (ref.cast (ref i31) (call $cadr (local.get $loc)))))
+                (local.set $col (call $fixnum-value
+                  (ref.cast (ref i31) (call $caddr (local.get $loc)))))
+                ;; Write " at "
+                (i32.store16 (i32.shl (local.get $len) (i32.const 1)) (i32.const 32))  ;; space
+                (i32.store16 (i32.shl (i32.add (local.get $len) (i32.const 1)) (i32.const 1)) (i32.const 97))  ;; a
+                (i32.store16 (i32.shl (i32.add (local.get $len) (i32.const 2)) (i32.const 1)) (i32.const 116)) ;; t
+                (i32.store16 (i32.shl (i32.add (local.get $len) (i32.const 3)) (i32.const 1)) (i32.const 32))  ;; space
+                (local.set $len (i32.add (local.get $len) (i32.const 4)))
+                ;; Write filename
+                (local.set $len (i32.add (local.get $len)
+                  (call $mem-write-string (local.get $file)
+                    (i32.shl (local.get $len) (i32.const 1)))))
+                ;; Write ":"
+                (i32.store16 (i32.shl (local.get $len) (i32.const 1)) (i32.const 58))
+                (local.set $len (i32.add (local.get $len) (i32.const 1)))
+                ;; Write line
+                (local.set $len (i32.add (local.get $len)
+                  (call $mem-write-int (local.get $line) (local.get $len))))
+                ;; Write ":"
+                (i32.store16 (i32.shl (local.get $len) (i32.const 1)) (i32.const 58))
+                (local.set $len (i32.add (local.get $len) (i32.const 1)))
+                ;; Write col
+                (local.set $len (i32.add (local.get $len)
+                  (call $mem-write-int (local.get $col) (local.get $len))))))))))
+    ;; Reset error location
+    (global.set $error-space-id (i32.const -1))
+    (global.set $error-pc (i32.const -1))
     (call $js-runtime-error (local.get $len)))
 
   ;; Write a prefix string + symbol name to linear memory, then call runtime_error.
