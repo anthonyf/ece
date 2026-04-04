@@ -14,8 +14,10 @@
   <canvas id="app-canvas"></canvas>
   <pre id="output"></pre>
 
-  <!-- ECE Runtime glue (no embedded WASM — loaded via fetch) -->
+  <!-- ECE Runtime, Bootstrap, and App — loaded via script src for file:// compat -->
   <script src="ece-runtime.js"></script>
+  <script src="ece-bootstrap.js"></script>
+  <script src="app.js"></script>
 
   <script>
     (async function() {
@@ -33,7 +35,8 @@
         outputEl.textContent += "\n";
       };
 
-      // Load WASM via fetch + instantiateStreaming
+      // Decode WASM from base64 and instantiate
+      const wasmBytes = Uint8Array.from(atob(ECE_WASM_BASE64), c => c.charCodeAt(0));
       const imports = {
         io: ECE.io,
         loader: ECE.loader,
@@ -43,21 +46,18 @@
         math: ECE.math,
         ffi: ECE.ffi
       };
-      const { instance } = await WebAssembly.instantiateStreaming(
-        fetch("runtime.wasm"), imports);
+      const { instance } = await WebAssembly.instantiate(wasmBytes, imports);
       ECE.wasm = instance.exports;
       const envHandle = ECE.buildGlobalEnv();
 
-      // Boot bootstrap from fetched bundle
+      // Boot bootstrap from single bundle
       ECE.globalEnvHandle = envHandle;
-      const bootResp = await fetch("bootstrap.ecec");
-      const bootText = await bootResp.text();
+      const bootText = atob(ECE_BOOTSTRAP_BUNDLE);
       ECE.loadEcecBundleText(bootText);
       ECE.wasm.mark_handles();
 
       // Load and execute app bundle
-      const appResp = await fetch("app.ecec");
-      const appText = await appResp.text();
+      const appText = atob(ECE_APP_BUNDLE);
       ECE.loadEcecBundleText(appText);
     })();
   </script>

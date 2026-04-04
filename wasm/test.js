@@ -204,14 +204,27 @@ async function run() {
   // Build global environment
   const envH = ECE.buildGlobalEnv();
 
-  // Boot bootstrap files via WAT-native .ecec reader
-  const bootFiles = ["prelude", "compiler", "reader", "assembler", "compilation-unit"];
-  for (const name of bootFiles) {
-    const text = fs.readFileSync(path.join(bootstrapDir, name + ".ecec"), "utf-8");
-    const spaceId = ECE.loadEcecText(text);
-    w.run(spaceId, 0, envH);
-    console.log(`Loaded space "${name}"`);
+  // Boot from bootstrap bundle (skip syntax-rules and browser-lib for tests —
+  // loading them exposes a continuation/guard interaction that causes the test
+  // runner's for-each to re-enter via a stale continuation).
+  ECE.globalEnvHandle = envH;
+  const bundlePath = path.join(bootstrapDir, "bootstrap.ecec");
+  const bundleText = fs.readFileSync(bundlePath, "utf-8").trimEnd();
+  console.log("Loading bootstrap bundle...");
+  const needed = bundleText.length * 2;
+  if (needed > w.memory.buffer.byteLength) {
+    w.memory.grow(Math.ceil((needed - w.memory.buffer.byteLength) / 65536));
   }
+  const mem = new Uint16Array(w.memory.buffer);
+  for (let i = 0; i < bundleText.length; i++) mem[i] = bundleText.charCodeAt(i);
+  // Load first 5 sections: prelude, compiler, reader, assembler, compilation-unit
+  let spaceId = w.load_ecec(0, bundleText.length);
+  w.run(spaceId, 0, envH);
+  for (let s = 1; s < 5 && w.ecec_has_more(); s++) {
+    spaceId = w.load_ecec_continue();
+    w.run(spaceId, 0, envH);
+  }
+  console.log("Bootstrap loaded.");
 
   // Mark handles after bootstrap so reset_handles() preserves bootstrap state
   w.mark_handles();
