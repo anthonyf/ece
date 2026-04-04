@@ -2084,13 +2084,16 @@ the downcased (source-map filename (pc line col) ...) cdr."
     (when space-map
       (gethash pc space-map))))
 
-(defun load-ecec-file (pathname)
-  "Load a .ecec file: read header, create named space, assemble and execute.
-Reads the ecec-header followed by a single flat instruction list.
-Uses the CL reader (not the ECE reader) so this works at boot before the ECE reader exists."
-  (with-open-file (stream pathname)
-    (let* ((raw-header (cl:read stream))
-           (header (downcase-ece-symbols raw-header))
+(defun load-ecec-section (stream)
+  "Load one ecec section (header + instructions) from STREAM.
+Creates a named space, registers source-map, assembles, and executes.
+Returns T if a section was loaded, NIL on EOF."
+  ;; Bind *package* to :ece so cl:read interns symbols in the ECE package,
+  ;; regardless of caller context (e.g., CL-USER from run.lisp).
+  (let* ((*package* (find-package :ece))
+         (raw-header (cl:read stream nil :eof)))
+    (when (eq raw-header :eof) (return-from load-ecec-section nil))
+    (let* ((header (downcase-ece-symbols raw-header))
            (space-sym (cadr (assoc '|space| (cdr header))))
            (source-map-raw (cdr (assoc '|source-map| (cdr header))))
            (sid (create-space (symbol-name space-sym))))
@@ -2102,7 +2105,15 @@ Uses the CL reader (not the ECE reader) so this works at boot before the ECE rea
                (fixed (downcase-ece-symbols
                        (canonicalize-ecec-constants instrs)))
                (start-pc (assemble-into-space sid fixed)))
-          (execute-instructions sid start-pc *global-env*))))))
+          (execute-instructions sid start-pc *global-env*))))
+    t))
+
+(defun load-ecec-file (pathname)
+  "Load a .ecec file: read sections, create named spaces, assemble and execute.
+Supports multi-space bundles (loops until EOF).
+Uses the CL reader (not the ECE reader) so this works at boot before the ECE reader exists."
+  (with-open-file (stream pathname)
+    (loop while (load-ecec-section stream))))
 
 (defun boot-from-compiled ()
   "Boot ECE by loading .ecec files from bootstrap/ in fixed order."

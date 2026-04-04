@@ -5699,10 +5699,10 @@
     ;; Unknown instruction type (e.g. procedure-name metadata) — skip
     (ref.null $instr))
 
-  ;; Load a complete .ecec file from linear memory
+  ;; Load one ecec section from current cursor position.
   ;; Two-phase: (1) read all units + collect all labels, (2) create instructions with resolved labels.
-  ;; Returns the space ID.
-  (func (export "load_ecec") (param $offset i32) (param $len i32) (result i32)
+  ;; Returns the space ID. Cursor must be set up before calling.
+  (func $load_ecec_impl (result i32)
     (local $header (ref null eq))
     (local $space-name (ref null eq))
     (local $macros (ref null eq))
@@ -5718,10 +5718,6 @@
     (local $srcmap-entries (ref null eq)) ;; list of (pc line col) triples
     (local $srcmap-ht (ref $hash-table))
     (local $entry (ref null eq))
-
-    ;; Set up cursor
-    (global.set $ecec-pos (local.get $offset))
-    (global.set $ecec-end (i32.add (local.get $offset) (local.get $len)))
 
     ;; Read header: (ecec-header (space name) (macros (...)) [(source-map ...)])
     (local.set $header (call $ecec-read-sexp))
@@ -5841,6 +5837,24 @@
             (call $register-source-map (local.get $space-id) (local.get $srcmap-ht))))))
 
     (local.get $space-id))
+
+  ;; Load a complete .ecec file from linear memory (single-space, backward compatible).
+  ;; Sets up cursor and loads one section. Returns the space ID.
+  (func (export "load_ecec") (param $offset i32) (param $len i32) (result i32)
+    ;; Set up cursor
+    (global.set $ecec-pos (local.get $offset))
+    (global.set $ecec-end (i32.add (local.get $offset) (local.get $len)))
+    (call $load_ecec_impl))
+
+  ;; Load next ecec section from current cursor position (for multi-space bundles).
+  ;; Cursor must have been set up by a prior load_ecec call. Returns the space ID.
+  (func (export "load_ecec_continue") (result i32)
+    (call $load_ecec_impl))
+
+  ;; Check if there are more sections to read in the current ecec buffer.
+  ;; Returns 1 if cursor has not reached end, 0 otherwise.
+  (func (export "ecec_has_more") (result i32)
+    (i32.lt_u (global.get $ecec-pos) (global.get $ecec-end)))
 
   ;; Create a compilation space (internal, returns space-id = symbol-id)
   (func $create-space-internal (param $name-sym (ref $symbol)) (param $cap i32) (result i32)
