@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ECE App</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; background: #000; color: #d4d4d4; font-family: monospace; }
+  canvas { display: block; width: 100%; height: 100%; }
+  #output { padding: 8px; white-space: pre-wrap; font-size: 14px; }
+</style>
+</head>
+<body>
+  <canvas id="app-canvas"></canvas>
+  <pre id="output"></pre>
+
+  <!-- ECE Runtime, Bootstrap, and App — loaded via script src for file:// compat -->
+  <script src="ece-runtime.js"></script>
+  <script src="ece-bootstrap.js"></script>
+  <script src="app.js"></script>
+
+  <script>
+    (async function() {
+      const outputEl = document.getElementById("output");
+
+      // Override I/O to write to the page
+      ECE.io.display_string = function(len) {
+        const mem = new Uint16Array(ECE.wasm.memory.buffer, 0, len);
+        outputEl.textContent += String.fromCharCode(...mem);
+      };
+      ECE.io.display_number = function(n) {
+        outputEl.textContent += String(n);
+      };
+      ECE.io.newline = function() {
+        outputEl.textContent += "\n";
+      };
+
+      // Decode WASM from base64 and instantiate
+      const wasmBytes = Uint8Array.from(atob(ECE_WASM_BASE64), c => c.charCodeAt(0));
+      const imports = {
+        io: ECE.io,
+        loader: ECE.loader,
+        storage: ECE.storage,
+        canvas: ECE.canvas,
+        timing: ECE.timing,
+        math: ECE.math,
+        ffi: ECE.ffi
+      };
+      const { instance } = await WebAssembly.instantiate(wasmBytes, imports);
+      ECE.wasm = instance.exports;
+      const envHandle = ECE.buildGlobalEnv();
+
+      // Boot bootstrap
+      for (const name of ["prelude", "compiler", "reader", "assembler", "compilation-unit", "browser-lib"]) {
+        if (ECE_BOOTSTRAP[name]) {
+          const text = atob(ECE_BOOTSTRAP[name]);
+          const spaceId = ECE.loadEcecText(text);
+          ECE.wasm.run(spaceId, 0, envHandle);
+        }
+      }
+      ECE.wasm.mark_handles();
+
+      // Load and execute app bundle
+      const appText = atob(ECE_APP_BUNDLE);
+      ECE.loadEcecBundleText(appText);
+    })();
+  </script>
+</body>
+</html>

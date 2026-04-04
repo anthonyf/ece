@@ -292,7 +292,7 @@ const ECE = {
     return ECE.wasm.make_string(offset, len);
   },
 
-  // Load .ecec text via WAT-native reader
+  // Load .ecec text via WAT-native reader (single-space)
   loadEcecText(text) {
     const w = ECE.wasm;
     // Ensure linear memory is large enough for UTF-16 text
@@ -307,6 +307,31 @@ const ECE = {
       mem[i] = text.charCodeAt(i);
     }
     return w.load_ecec(0, text.length);
+  },
+
+  // Load multi-space .ecec bundle text. Each section is loaded and executed
+  // sequentially so definitions from earlier sections are available to later ones.
+  loadEcecBundleText(text) {
+    const w = ECE.wasm;
+    const needed = text.length * 2;
+    const currentBytes = w.memory.buffer.byteLength;
+    if (needed > currentBytes) {
+      const pages = Math.ceil((needed - currentBytes) / 65536);
+      w.memory.grow(pages);
+    }
+    const mem = new Uint16Array(w.memory.buffer);
+    for (let i = 0; i < text.length; i++) {
+      mem[i] = text.charCodeAt(i);
+    }
+    // Load and execute first section
+    let spaceId = w.load_ecec(0, text.length);
+    w.run(spaceId, 0, ECE.globalEnvHandle);
+    // Load and execute remaining sections
+    while (w.ecec_has_more()) {
+      spaceId = w.load_ecec_continue();
+      w.run(spaceId, 0, ECE.globalEnvHandle);
+    }
+    return spaceId;
   },
 
   // ── Bootstrap and run ──

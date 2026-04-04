@@ -135,16 +135,12 @@ sorted by PC. Source-location markers are removed from the instruction list."
       (substring filename (+ i 1) (string-length filename)))
      (else (loop (- i 1))))))
 
-(define (compile-file filename)
-  "Compile all forms in FILENAME, write compiled units to a .ecec file.
-Emits an ecec-header with space name, macro list, and source-map,
-followed by compiled units.
-Macro definitions are executed at compile time so subsequent forms can use them.
-Returns the output filename."
+(define (compile-file-to-port filename port)
+  "Compile all forms in FILENAME and write one ecec section (header + instructions)
+to PORT. Macro definitions are executed at compile time so subsequent forms can
+use them. Returns the space name symbol."
   (let* ((space-name
           (string->symbol (filename-strip-extension (filename-basename filename) ".scm")))
-         (output-name
-          (string-append (filename-strip-extension filename ".scm") ".ecec"))
          (basename (filename-basename filename)))
     ;; Set up source location tracking for this file
     (set! *source-locations* (%make-hash-table))
@@ -200,8 +196,7 @@ Returns the output filename."
              (renamed (rename-labels merged))
              (extracted (extract-source-map renamed))
              (clean-instrs (car extracted))
-             (source-map-entries (cdr extracted))
-             (out (open-output-file output-name)))
+             (source-map-entries (cdr extracted)))
         ;; Write ecec-header with source-map
         (write-string-to-port
          (write-to-string-flat
@@ -213,14 +208,37 @@ Returns the output filename."
                     (list 'space space-name)
                     (list 'macros macros-defined)
                     (cons 'source-map (cons basename source-map-entries)))))
-         out)
-        (write-char #\newline out)
-        (write-flat-instructions clean-instrs out)
-        (close-output-port out)
+         port)
+        (write-char #\newline port)
+        (write-flat-instructions clean-instrs port)
         ;; Clean up source location tracking state
         (set! *source-locations* (%make-hash-table))
         (set! *source-file-name* #f)
-        output-name))))
+        space-name))))
+
+(define (compile-file filename)
+  "Compile all forms in FILENAME, write compiled units to a .ecec file.
+Emits an ecec-header with space name, macro list, and source-map,
+followed by compiled units.
+Returns the output filename."
+  (let* ((output-name
+          (string-append (filename-strip-extension filename ".scm") ".ecec"))
+         (out (open-output-file output-name)))
+    (compile-file-to-port filename out)
+    (close-output-port out)
+    output-name))
+
+(define (compile-system filenames output-path)
+  "Compile a list of .scm FILENAMES into a single multi-space .ecec bundle
+at OUTPUT-PATH. Each file is compiled to its own named space with its own
+source-map. Returns OUTPUT-PATH."
+  (let ((out (open-output-file output-path)))
+    (let loop ((files filenames))
+      (when (pair? files)
+        (compile-file-to-port (car files) out)
+        (loop (cdr files))))
+    (close-output-port out)
+    output-path))
 
 ;;; --- Source-map registration ---
 
@@ -246,23 +264,43 @@ SPACE-NAME is a symbol, SOURCE-MAP-FIELD is (filename (pc line col) ...)."
         (hash-ref space-map pc #f)
         #f)))
 
+(define (load-section-from-port port)
+  "Load one ecec section (header + instructions) from PORT.
+Creates a named space, registers source-map if present, and executes.
+Returns the result of executing the section, or eof if no more sections."
+  (let ((header (ece-scheme-read port)))
+    (if (eof? header)
+        header
+        (let* ((space-sym (cadr (assoc 'space (cdr header))))
+               (source-map-field (let ((sm (assoc 'source-map (cdr header))))
+                                   (if sm (cdr sm) #f)))
+               (prev-space (%current-space-id))
+               (new-space (%create-space (symbol->string space-sym)))
+               (instrs (ece-scheme-read port)))
+          ;; Register source-map if present in header
+          (when source-map-field
+            (register-source-map! space-sym source-map-field))
+          (%set-current-space-id! new-space)
+          (let ((result (execute (list 'compiled-unit instrs))))
+            (%set-current-space-id! prev-space)
+            result)))))
+
 (define (load-compiled filename)
-  "Load and execute compiled code from a .ecec file.
-Reads the ecec-header, creates a named space, registers source-map if present,
-then executes the flat instruction list."
+  "Load and execute compiled code from a .ecec file (first section only).
+For multi-space bundles, only the first section is loaded."
   (let ((port (open-input-file filename)))
-    (let ((header (ece-scheme-read port)))
-      (let* ((space-sym (cadr (assoc 'space (cdr header))))
-             (source-map-field (let ((sm (assoc 'source-map (cdr header))))
-                                 (if sm (cdr sm) #f)))
-             (prev-space (%current-space-id))
-             (new-space (%create-space (symbol->string space-sym)))
-             (instrs (ece-scheme-read port)))
-        (close-input-port port)
-        ;; Register source-map if present in header
-        (when source-map-field
-          (register-source-map! space-sym source-map-field))
-        (%set-current-space-id! new-space)
-        (let ((result (execute (list 'compiled-unit instrs))))
-          (%set-current-space-id! prev-space)
-          result)))))
+    (let ((result (load-section-from-port port)))
+      (close-input-port port)
+      result)))
+
+(define (load-bundle filename)
+  "Load and execute all sections from a .ecec bundle file.
+Each section creates a new space, registers its source-map, and executes
+sequentially. Definitions from earlier sections are available to later ones.
+Returns the result of the last section."
+  (let ((port (open-input-file filename)))
+    (let loop ((last-result #f))
+      (let ((result (load-section-from-port port)))
+        (if (eof? result)
+            (begin (close-input-port port) last-result)
+            (loop result))))))
