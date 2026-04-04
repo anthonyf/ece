@@ -254,6 +254,8 @@
 ;;; --- String output ports (R7RS) ---
 (175 open-output-string         0  core   "Create output port that accumulates to string")
 (176 get-output-string          1  core   "Extract accumulated string from output string port")
+(177 port-line                  1  core   "Get current line number of port")
+(178 port-col                   1  core   "Get current column number of port")
 
 ;;; ═══════════════════════════════════════════════════════════════════════
 ;;; BROWSER PLATFORM PRIMITIVES (200-299) — Canvas and DOM

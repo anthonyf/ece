@@ -17,6 +17,9 @@
          (let ((pc (%space-label-ref sid (cadr item))))
            (when pc
              (%procedure-name-set! (cons sid pc) (caddr item)))))
+        ;; Source-location marker — skip (used by compile-file for source-map)
+        ((and (pair? item) (eq? (car item) 'source-location))
+         #f)
         ;; Regular instruction — push to space's arrays
         (else
          (%space-instruction-push! sid item))))

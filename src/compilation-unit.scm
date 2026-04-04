@@ -2,10 +2,18 @@
 ;;; First-class compiled unit values: compile, inspect, execute, serialize.
 ;;; Loaded after compiler.scm and assembler.scm.
 
+;;; Source-location tracking globals.
+;;; Defined here (in addition to reader.scm and compiler.scm) because
+;;; this file may be loaded before those are re-compiled during bootstrap.
+(define *source-locations* (%make-hash-table))
+(define *source-file-name* #f)
+(define *current-source-location* #f)
+
 ;;; --- Compiled unit type ---
 
 (define (compile-form expr)
   "Compile a single expression and return a compiled unit value."
+  (set! *current-source-location* #f)
   (let ((compiled (mc-compile expr 'val 'next)))
     (list 'compiled-unit (mc-instructions compiled))))
 
@@ -81,6 +89,32 @@ Gensym labels are renamed to deterministic $L0, $L1, ... names."
         instructions
         (list 'compiled-unit instructions))))
 
+;;; --- Source-map extraction ---
+
+(define (extract-source-map instrs)
+  "Extract source-map entries from instruction list containing source-location markers.
+Returns (stripped-instrs . source-map-entries) where entries are (pc line col) triples
+sorted by PC. Source-location markers are removed from the instruction list."
+  (let loop ((items instrs) (pc 0) (stripped '()) (entries '()))
+    (if (null? items)
+        (cons (reverse stripped)
+              (reverse entries))
+        (let ((item (car items)))
+          (cond
+           ;; Source-location marker: record entry, don't increment PC
+           ((and (pair? item) (eq? (car item) 'source-location))
+            (loop (cdr items) pc stripped
+                  (cons (list pc (caddr item) (cadddr item)) entries)))
+           ;; Label: keep it, don't increment PC
+           ((symbol? item)
+            (loop (cdr items) pc (cons item stripped) entries))
+           ;; Pseudo-instruction procedure-name: keep it, don't increment PC
+           ((and (pair? item) (eq? (car item) 'procedure-name))
+            (loop (cdr items) pc (cons item stripped) entries))
+           ;; Regular instruction: keep it, increment PC
+           (else
+            (loop (cdr items) (+ pc 1) (cons item stripped) entries)))))))
+
 ;;; --- File compilation and loading ---
 
 (define (filename-strip-extension filename ext)
@@ -103,84 +137,131 @@ Gensym labels are renamed to deterministic $L0, $L1, ... names."
 
 (define (compile-file filename)
   "Compile all forms in FILENAME, write compiled units to a .ecec file.
-Emits an ecec-header with space name and macro list, followed by compiled units.
+Emits an ecec-header with space name, macro list, and source-map,
+followed by compiled units.
 Macro definitions are executed at compile time so subsequent forms can use them.
 Returns the output filename."
   (let* ((space-name
           (string->symbol (filename-strip-extension (filename-basename filename) ".scm")))
          (output-name
           (string-append (filename-strip-extension filename ".scm") ".ecec"))
-         (in (open-input-file filename)))
-    ;; Phase 1: compile all forms, track macros
-    ;; Returns (units-reversed . macros-reversed)
-    ;; For define-macro forms, we:
-    ;;   1. Execute at compile time (so later forms can use the macro)
-    ;;   2. Compile a set-macro! + lambda expression for the .ecec file
-    ;;      (so macros are registered at load time, not just compile time)
-    (define (define-macro-to-set-macro expr)
-      "Transform (define-macro (name params...) body...) into
+         (basename (filename-basename filename)))
+    ;; Set up source location tracking for this file
+    (set! *source-locations* (%make-hash-table))
+    (set! *source-file-name* basename)
+    (let ((in (open-input-file filename)))
+      ;; Phase 1: compile all forms, track macros
+      ;; Returns (units-reversed . macros-reversed)
+      ;; For define-macro forms, we:
+      ;;   1. Execute at compile time (so later forms can use the macro)
+      ;;   2. Compile a set-macro! + lambda expression for the .ecec file
+      ;;      (so macros are registered at load time, not just compile time)
+      (define (define-macro-to-set-macro expr)
+        "Transform (define-macro (name params...) body...) into
        (begin (set-macro! 'name (lambda (params...) body...)) 'name)"
-      (let* ((name (if (pair? (cadr expr)) (car (cadr expr)) (cadr expr)))
-             (params (if (pair? (cadr expr)) (cdr (cadr expr)) (list (cadr expr))))
-             (body (cddr expr)))
-        (list 'begin
-              (list 'set-macro! (list 'quote name)
-                    (cons 'lambda (cons params body)))
-              (list 'quote name))))
-    (define (maybe-expand-define-syntax expr)
-      "If EXPR is (define-syntax ...), expand to (define-macro ...) so it gets
+        (let* ((name (if (pair? (cadr expr)) (car (cadr expr)) (cadr expr)))
+               (params (if (pair? (cadr expr)) (cdr (cadr expr)) (list (cadr expr))))
+               (body (cddr expr)))
+          (list 'begin
+                (list 'set-macro! (list 'quote name)
+                      (cons 'lambda (cons params body)))
+                (list 'quote name))))
+      (define (maybe-expand-define-syntax expr)
+        "If EXPR is (define-syntax ...), expand to (define-macro ...) so it gets
        compile-time execution and load-time set-macro! treatment."
-      (if (and (pair? expr) (eq? (car expr) 'define-syntax)
-               (get-macro 'define-syntax))
-          (mc-expand-macro-at-compile-time
-           (get-macro 'define-syntax) (cdr expr))
-          expr))
-    (define (read-loop units macros)
-      (let ((expr (maybe-expand-define-syntax (ece-scheme-read in))))
-        (if (eof? expr)
-            (begin (close-input-port in) (cons units macros))
-            (begin
-              ;; Track and execute macro definitions at compile time
-              (when (and (pair? expr) (eq? (car expr) 'define-macro))
-                (mc-compile-and-go expr))
-              (read-loop
-               (cons (compile-form
-                      (if (and (pair? expr) (eq? (car expr) 'define-macro))
-                          (define-macro-to-set-macro expr)
-                          expr))
-                     units)
-               (if (and (pair? expr) (eq? (car expr) 'define-macro))
-                   (cons (if (pair? (cadr expr)) (car (cadr expr)) (cadr expr))
-                         macros)
-                   macros))))))
-    (let* ((result (read-loop '() '()))
-           (units (reverse (car result)))
-           (macros-defined (reverse (cdr result)))
-           ;; Phase 2: merge units, rename labels, write flat output
-           (merged (merge-instruction-lists units))
-           (renamed (rename-labels merged))
-           (out (open-output-file output-name)))
-      (write-string-to-port
-       (write-to-string-flat
-        (list 'ecec-header
-              (list 'space space-name)
-              (list 'macros macros-defined)))
-       out)
-      (write-char #\newline out)
-      (write-flat-instructions renamed out)
-      (close-output-port out)
-      output-name)))
+        (if (and (pair? expr) (eq? (car expr) 'define-syntax)
+                 (get-macro 'define-syntax))
+            (mc-expand-macro-at-compile-time
+             (get-macro 'define-syntax) (cdr expr))
+            expr))
+      (define (read-loop units macros)
+        (let ((expr (maybe-expand-define-syntax (ece-scheme-read in))))
+          (if (eof? expr)
+              (begin (close-input-port in) (cons units macros))
+              (begin
+                ;; Track and execute macro definitions at compile time
+                (when (and (pair? expr) (eq? (car expr) 'define-macro))
+                  (mc-compile-and-go expr))
+                (read-loop
+                 (cons (compile-form
+                        (if (and (pair? expr) (eq? (car expr) 'define-macro))
+                            (define-macro-to-set-macro expr)
+                            expr))
+                       units)
+                 (if (and (pair? expr) (eq? (car expr) 'define-macro))
+                     (cons (if (pair? (cadr expr)) (car (cadr expr)) (cadr expr))
+                           macros)
+                     macros))))))
+      (let* ((result (read-loop '() '()))
+             (units (reverse (car result)))
+             (macros-defined (reverse (cdr result)))
+             ;; Phase 2: merge units, rename labels, extract source-map, write flat output
+             (merged (merge-instruction-lists units))
+             (renamed (rename-labels merged))
+             (extracted (extract-source-map renamed))
+             (clean-instrs (car extracted))
+             (source-map-entries (cdr extracted))
+             (out (open-output-file output-name)))
+        ;; Write ecec-header with source-map
+        (write-string-to-port
+         (write-to-string-flat
+          (if (null? source-map-entries)
+              (list 'ecec-header
+                    (list 'space space-name)
+                    (list 'macros macros-defined))
+              (list 'ecec-header
+                    (list 'space space-name)
+                    (list 'macros macros-defined)
+                    (cons 'source-map (cons basename source-map-entries)))))
+         out)
+        (write-char #\newline out)
+        (write-flat-instructions clean-instrs out)
+        (close-output-port out)
+        ;; Clean up source location tracking state
+        (set! *source-locations* (%make-hash-table))
+        (set! *source-file-name* #f)
+        output-name))))
+
+;;; --- Source-map registration ---
+
+(define *source-maps* (%make-hash-table))
+
+(define (register-source-map! space-name source-map-field)
+  "Register source-map entries from an ecec-header source-map field.
+SPACE-NAME is a symbol, SOURCE-MAP-FIELD is (filename (pc line col) ...)."
+  (when (and source-map-field (pair? (cdr source-map-field)))
+    (let ((filename (car source-map-field))
+          (ht (%make-hash-table)))
+      (let loop ((entries (cdr source-map-field)))
+        (when (pair? entries)
+          (let ((entry (car entries)))
+            (hash-set! ht (car entry) (list filename (cadr entry) (caddr entry))))
+          (loop (cdr entries))))
+      (hash-set! *source-maps* space-name ht))))
+
+(define (resolve-source-location space-name pc)
+  "Look up PC in source-map for SPACE-NAME. Returns (file line col) or #f."
+  (let ((space-map (hash-ref *source-maps* space-name #f)))
+    (if space-map
+        (hash-ref space-map pc #f)
+        #f)))
 
 (define (load-compiled filename)
   "Load and execute compiled code from a .ecec file.
-Reads the ecec-header, creates a named space, then executes the flat instruction list."
+Reads the ecec-header, creates a named space, registers source-map if present,
+then executes the flat instruction list."
   (let ((port (open-input-file filename)))
     (let ((header (ece-scheme-read port)))
       (let* ((space-sym (cadr (assoc 'space (cdr header))))
+             (source-map-field (let ((sm (assoc 'source-map (cdr header))))
+                                 (if sm (cdr sm) #f)))
              (prev-space (%current-space-id))
              (new-space (%create-space (symbol->string space-sym)))
              (instrs (ece-scheme-read port)))
         (close-input-port port)
+        ;; Register source-map if present in header
+        (when source-map-field
+          (register-source-map! space-sym source-map-field))
         (%set-current-space-id! new-space)
         (let ((result (execute (list 'compiled-unit instrs))))
           (%set-current-space-id! prev-space)

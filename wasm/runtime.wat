@@ -148,7 +148,9 @@
     (field $cap  (mut i32))                   ;; buffer capacity
     (field $name (ref null $string))          ;; filename (null for string/console ports)
     (field $dir  i32)                         ;; 0=input, 1=output
-    (field $open (mut i32))))                ;; 1=open, 0=closed
+    (field $open (mut i32))                   ;; 1=open, 0=closed
+    (field $line (mut i32))                   ;; current line number (1-based)
+    (field $col  (mut i32))))                 ;; current column number (0-based)
 
   ;; --- Environment frame ---
   ;; SICP-style: a frame holds variable values and a link to the
@@ -591,14 +593,16 @@
   (func $make-input-port (param $buf (ref $port-buf)) (param $len i32)
                          (param $name (ref null $string)) (result (ref $port))
     (struct.new $port (local.get $buf) (i32.const 0) (local.get $len)
-                      (local.get $name) (i32.const 0) (i32.const 1))
+                      (local.get $name) (i32.const 0) (i32.const 1)
+                      (i32.const 1) (i32.const 0))  ;; line=1, col=0
   )
 
   (func $make-output-port (param $name (ref null $string)) (result (ref $port))
     (struct.new $port
       (array.new_default $port-buf (i32.const 1024))
       (i32.const 0) (i32.const 1024)
-      (local.get $name) (i32.const 1) (i32.const 1))
+      (local.get $name) (i32.const 1) (i32.const 1)
+      (i32.const 1) (i32.const 0))  ;; line=1, col=0
   )
 
   (func $is-port (param $v (ref null eq)) (result i32)
@@ -615,17 +619,30 @@
       (else (i32.const 0))))
 
   ;; Read one char from an input port. Returns eof sentinel at end.
+  ;; Updates line/col tracking: newline increments line and resets col,
+  ;; other characters increment col.
   (func $port-read-char (param $p (ref $port)) (result (ref null eq))
     (local $pos i32)
     (local $buf (ref $port-buf))
+    (local $ch i32)
     (local.set $pos (struct.get $port $pos (local.get $p)))
     (if (ref.is_null (struct.get $port $buf (local.get $p)))
       (then (return (global.get $eof))))
     (local.set $buf (ref.as_non_null (struct.get $port $buf (local.get $p))))
     (if (i32.ge_u (local.get $pos) (array.len (local.get $buf)))
       (then (return (global.get $eof))))
+    (local.set $ch (array.get_u $port-buf (local.get $buf) (local.get $pos)))
     (struct.set $port $pos (local.get $p) (i32.add (local.get $pos) (i32.const 1)))
-    (call $make-char (array.get_u $port-buf (local.get $buf) (local.get $pos)))
+    ;; Track line/col
+    (if (i32.eq (local.get $ch) (i32.const 10))  ;; newline
+      (then
+        (struct.set $port $line (local.get $p)
+          (i32.add (struct.get $port $line (local.get $p)) (i32.const 1)))
+        (struct.set $port $col (local.get $p) (i32.const 0)))
+      (else
+        (struct.set $port $col (local.get $p)
+          (i32.add (struct.get $port $col (local.get $p)) (i32.const 1)))))
+    (call $make-char (local.get $ch))
   )
 
   ;; Peek one char without advancing.
@@ -4906,6 +4923,18 @@
     (if (i32.eq (local.get $id) (i32.const 176))
       (then (return (call $get-output-string-port
         (ref.cast (ref $port) (call $arg1 (local.get $args)))))))
+
+    ;; 177 = port-line(port) — get current line number
+    (if (i32.eq (local.get $id) (i32.const 177))
+      (then (return (call $make-fixnum
+        (struct.get $port $line
+          (ref.cast (ref $port) (call $arg1 (local.get $args))))))))
+
+    ;; 178 = port-col(port) — get current column number
+    (if (i32.eq (local.get $id) (i32.const 178))
+      (then (return (call $make-fixnum
+        (struct.get $port $col
+          (ref.cast (ref $port) (call $arg1 (local.get $args))))))))
 
     ;; Unknown primitive — return void
     (global.get $void)
