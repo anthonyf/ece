@@ -136,7 +136,7 @@ sandbox: wasm
 	  --quit 2>/dev/null
 	@echo '// Pre-compiled ECE programs — auto-generated' > sandbox/ece-compiled.js
 	@echo 'const ECE_COMPILED = {};' >> sandbox/ece-compiled.js
-	@echo -n 'ECE_COMPILED["Hello World"] = "' >> sandbox/ece-compiled.js
+	@printf '%s' 'ECE_COMPILED["Hello World"] = "' >> sandbox/ece-compiled.js
 	@base64 -i .tmp/ece-hello.ecec | tr -d '\n' >> sandbox/ece-compiled.js
 	@echo '";' >> sandbox/ece-compiled.js
 	@echo "Sandbox assets built in sandbox/"
