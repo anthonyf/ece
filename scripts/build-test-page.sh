@@ -1,6 +1,6 @@
 #!/bin/bash
 # Build browser test runner page
-# Compiles ECE test suite to .ececb, embeds everything into a self-contained HTML file.
+# Compiles ECE test suite to .ecec, embeds everything into a self-contained HTML file.
 set -e
 
 SITE_DIR="${1:-_site/tests}"
@@ -9,7 +9,7 @@ SANDBOX_DIR="sandbox"
 mkdir -p .tmp
 echo "Building browser test page..."
 
-# 1. Compile test suite to .ececb (same as make test-wasm)
+# 1. Compile test suite to .ecec
 cat $(cat <<'SOURCES'
 tests/ece/test-framework.scm
 tests/ece/test-arithmetic.scm
@@ -32,12 +32,10 @@ echo '(run-tests)' >> .tmp/ece-wasm-tests.scm
 
 qlot exec sbcl --eval '(asdf:load-system :ece)' \
   --eval '(ece:evaluate (list (intern "compile-file" :ece) ".tmp/ece-wasm-tests.scm"))' \
-  --eval '(ece:evaluate (list (quote load) "src/ecec-to-binary.scm"))' \
-  --eval '(ece::convert-ecec-to-ececb ".tmp/ece-wasm-tests.ecec" ".tmp/ece-wasm-tests.ececb")' \
   --quit
 
-# 2. Encode test .ececb as base64
-TEST_B64=$(base64 -i .tmp/ece-wasm-tests.ececb | tr -d '\n')
+# 2. Encode test .ecec as base64
+TEST_B64=$(base64 -i .tmp/ece-wasm-tests.ecec | tr -d '\n')
 
 # 3. Build the HTML page
 mkdir -p "$SITE_DIR"
@@ -96,22 +94,24 @@ async function runTests() {
   const lines = [];
 
   try {
-    // Decode WASM
+    // Override I/O to capture test output
+    ECE.io.display_string = function(len) {
+      const mem = new Uint16Array(ECE.wasm.memory.buffer, 0, len);
+      lines.push(String.fromCharCode(...mem));
+    };
+    ECE.io.display_number = function(n) { lines.push(String(n)); };
+    ECE.io.newline = function() { lines.push("\n"); };
+
+    // Decode WASM and instantiate with full imports
     const wasmBytes = Uint8Array.from(atob(ECE_WASM_BASE64), c => c.charCodeAt(0));
     const imports = {
-      io: {
-        display_string(len) {
-          const mem = new Uint16Array(ECE.wasm.memory.buffer, 0, len);
-          lines.push(String.fromCharCode(...mem));
-        },
-        display_number(n) { lines.push(String(n)); },
-        newline() { lines.push("\n"); },
-        trace_pc() {}
-      },
-      loader: { fetch_ececb() { return null; } },
+      io: ECE.io,
+      loader: ECE.loader,
       storage: ECE.storage,
       canvas: ECE.canvas,
-      timing: ECE.timing
+      timing: ECE.timing,
+      math: ECE.math,
+      ffi: ECE.ffi
     };
 
     const { instance } = await WebAssembly.instantiate(wasmBytes, imports);
@@ -119,23 +119,19 @@ async function runTests() {
     const envH = ECE.buildGlobalEnv();
 
     statusEl.textContent = "Loading bootstrap...";
-    for (const name of ["prelude", "compiler", "reader", "assembler", "compilation-unit"]) {
-      const bytes = Uint8Array.from(atob(ECE_BOOTSTRAP[name]), c => c.charCodeAt(0));
-      const parsed = ECE.parseBinary(bytes);
-      ECE.loadParsed(parsed);
-      ECE.wasm.run(ECE.wasm.sym_id(ECE.internSym(parsed.spaceName)), 0, envH);
-    }
+    ECE.globalEnvHandle = envH;
+    const bootText = atob(ECE_BOOTSTRAP_BUNDLE);
+    ECE.loadEcecBundleText(bootText);
+    ECE.wasm.mark_handles();
 
     statusEl.textContent = "Running tests...";
 
     // Load and run test suite
-    const testBytes = Uint8Array.from(atob(ECE_TEST_B64), c => c.charCodeAt(0));
-    const testParsed = ECE.parseBinary(testBytes);
-    ECE.loadParsed(testParsed);
+    const testSpaceId = ECE.loadEcecText(atob(ECE_TEST_B64));
 
     const t0 = performance.now();
     try {
-      ECE.wasm.run(ECE.wasm.sym_id(ECE.internSym(testParsed.spaceName)), 0, envH);
+      ECE.wasm.run(testSpaceId, 0, envH);
     } catch(e) { /* some tests may trap */ }
     const elapsed = Math.round(performance.now() - t0);
 

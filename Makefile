@@ -14,7 +14,7 @@ BOOTSTRAP_SRCS := src/prelude.scm src/compiler.scm src/reader.scm src/assembler.
 
 GOLDEN_SRCS := $(wildcard tests/golden/*.scm)
 
-test: test-rove test-ece test-wasm test-conformance test-golden check-test-counts test-web-server
+test: test-rove test-ece test-wasm test-conformance test-golden check-test-counts test-web-server test-web-apps
 
 test-rove:
 	@qlot exec sbcl --disable-debugger --eval '(asdf:load-system :ece)' --eval '(asdf:load-system :ece/tests)' \
@@ -123,6 +123,10 @@ print(r.stdout, end=""); \
 print(r.stderr, end="", file=sys.stderr); \
 srv.shutdown(); \
 sys.exit(r.returncode)'
+
+test-web-apps: sandbox
+	@echo "Running web apps smoke test..."
+	@node wasm/test-web-apps.js
 
 repl:
 	qlot exec sbcl --load ece.asd --eval '(asdf:load-system :ece)' --eval '(ece:repl)'
