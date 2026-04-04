@@ -12,24 +12,36 @@ A Scheme-like language with two runtimes: Common Lisp and WebAssembly. Inspired 
 - **Dual runtime** — runs on Common Lisp (desktop) and WebAssembly (browser), sharing the same compiler, reader, and standard library
 - **Full tail call optimization** — all tail positions (if, begin, cond, let, let*, when, unless, and, or, case, do) run in constant stack space
 - **First-class continuations** — `call/cc` captures the full continuation stack; `yield` enables cooperative multitasking for game loops and animations
-- **Hygienic-ish macros** — `define-macro` with quasiquote, unquote, and unquote-splicing
+- **Two macro systems** — `define-macro` (CL-style unhygienic with quasiquote) and `define-syntax` / `syntax-rules` (R7RS hygienic pattern-matching)
 - **Record system** — `define-record` generates constructors, predicates, accessors, mutators, and copy functions
 - **Hash tables** — with `{}` literal syntax and functional update via `hash-set`
 - **Canvas 2D drawing** — `canvas-clear`, `canvas-fill-rect`, `canvas-fill-circle`, `canvas-draw-text` (WASM/browser)
 - **Self-hosting** — compiler, reader, assembler, and standard library are all written in ECE
-- **Per-file compiled boot** — bootstraps from `.ececb` files (pre-compiled binary instruction units), not a monolithic image
+- **Single-bundle bootstrap** — bootstraps from `.ecec` files (pre-compiled instruction units), not a monolithic image
 
 ## Architecture
 
-ECE has two runtimes that execute the same register machine instruction set. The compiler, reader, assembler, and standard library are written in ECE itself and shared between both runtimes via pre-compiled `.ececb` bootstrap files.
+ECE has two runtimes that execute the same register machine instruction set. The compiler, reader, assembler, and standard library are written in ECE itself and shared between both runtimes via pre-compiled `.ecec` bootstrap files.
 
 ### CL Runtime
 
-The Common Lisp runtime (~2,100 lines) provides the register machine executor, environment, and primitives. It's the development host — used for compiling ECE source, running tests, and bootstrapping.
+The Common Lisp runtime (~2,300 lines) provides the register machine executor, environment, and primitives. It's the development host — used for compiling ECE source, running tests, and bootstrapping.
 
 ### WASM Runtime
 
-The WebAssembly runtime (~4,500 lines of hand-written WAT) uses WasmGC for memory management. It runs in the browser with a thin JS glue layer for I/O, canvas, and file storage (localStorage). The self-hosted compiler works on WASM, enabling runtime compilation in the browser REPL.
+The WebAssembly runtime (~6,500 lines of hand-written WAT) uses WasmGC for memory management. It runs in the browser with a thin JS glue layer for I/O, canvas, and file storage (localStorage). The self-hosted compiler works on WASM, enabling runtime compilation in the browser REPL.
+
+### What Makes ECE Different
+
+ECE compiles to a register machine with an explicit stack — it never uses the host language's call stack. This single architectural choice enables several features that are difficult or impossible in hosted Scheme implementations:
+
+**First-class continuations.** Because the entire machine state (stack, environment, program counter) lives in ECE-managed data structures, `call/cc` captures a complete snapshot of the computation. There's no need to copy host stack frames or use platform-specific tricks — the continuation is just an ECE value.
+
+**Full tail call optimization.** All tail positions — including `if`, `begin`, `cond`, `let`, `let*`, `when`, `unless`, `and`, `or`, `case`, and `do` — execute in constant stack space. The explicit stack means TCO is a property of the instruction set, not a compiler optimization that the host may or may not support.
+
+**Serializable continuations.** Since the machine state is ECE data structures (not opaque host stack frames), continuations can be serialized to disk and restored later. This enables save/restore for games, persistent workflows, and checkpointing long-running computations.
+
+**Dual runtime, small kernel.** The same `.ecec` bootstrap files run unmodified on both the CL and WASM runtimes. The CL kernel is ~2,300 lines; everything else — compiler, reader, assembler, standard library — is written in ECE. Porting ECE to a new host means reimplementing only the kernel.
 
 ### Shared ECE Modules
 
@@ -40,12 +52,14 @@ The WebAssembly runtime (~4,500 lines of hand-written WAT) uses WasmGC for memor
 | `src/reader.scm` | S-expression reader with string interpolation |
 | `src/assembler.scm` | Instruction assembler, `load` function |
 | `src/compilation-unit.scm` | `compile-file`, multi-unit compilation |
+| `src/syntax-rules.scm` | R7RS `define-syntax` / `syntax-rules` hygienic pattern-matching macros |
+| `src/browser-lib.scm` | Browser DOM access, event handling, and CSS helpers (WASM/browser) |
 
 ## Language Overview
 
 ### Core Forms
 
-`lambda`, `if`, `begin`, `define`, `set!`, `quote`, `call/cc`, `define-macro`, `apply`
+`lambda`, `if`, `begin`, `define`, `set!`, `quote`, `call/cc`, `define-macro`, `define-syntax`, `apply`
 
 ### Derived Forms (via macros)
 
@@ -57,7 +71,7 @@ Numbers (integer, float), strings, characters, booleans (`#t`/`#f`), symbols, pa
 
 ### Standard Library
 
-`map`, `filter`, `reduce`, `for-each`, `any`, `every`, `range`, `reverse`, `assoc`, `member`, `list-ref`, `list-tail`, `append`, `apply`, `compose`, `identity`, `fmt`, `lines`, `random`, `define-record`, `dynamic-wind`, `with-exception-handler`, `guard`
+`map`, `filter`, `reduce`, `for-each`, `any`, `every`, `range`, `reverse`, `assoc`, `member`, `list-ref`, `list-tail`, `append`, `apply`, `compose`, `identity`, `random`, `define-record`, `dynamic-wind`, `with-exception-handler`, `guard`
 
 ### I/O
 
@@ -110,7 +124,7 @@ The `yield` function pauses execution and returns control to the browser. On the
 
 ### Serializable Continuations
 
-Continuations can be saved to disk and restored later with `save-continuation!` / `load-continuation`. This enables save/restore for games and persistent workflows.
+Continuations can be saved to disk and restored later with `save-continuation!` / `load-saved`. This enables save/restore for games and persistent workflows.
 
 ```scheme
 (define (run-game)
@@ -125,7 +139,7 @@ Continuations can be saved to disk and restored later with `save-continuation!` 
   (newline))
 
 ;; Later: restore
-(define k (load-continuation "save.dat"))
+(define k (load-saved "save.dat"))
 (k 'resume)  ;; resumes inside run-game
 ```
 
@@ -187,9 +201,10 @@ qlot exec sbcl --load ece.asd --eval '(asdf:load-system :ece)'
 ### Testing
 
 ```sh
-make test       # CL + ECE self-hosted tests
-make test-wasm  # WASM tests (requires binaryen + Node.js)
+make test       # full suite: CL (rove), ECE self-hosted, WASM, conformance, golden
 ```
+
+Individual targets (`make test-cl`, `make test-ece`, `make test-wasm`, `make test-conformance`, `make test-golden`) can be run separately.
 
 ### Building a Web App
 
@@ -239,6 +254,30 @@ bin/ece-build --target web -o dist/ lib/utils.scm lib/drawing.scm main.scm
 You can customize I/O by overriding `ECE.io.display_string`, `ECE.io.display_number`, and `ECE.io.newline` before booting. See `templates/web/index.html` (server mode) or `templates/web/standalone.html` for the full templates.
 
 **Prerequisites:** SBCL, qlot, binaryen (`wasm-as`), and a built WASM runtime (`make wasm`).
+
+### Building a CL App
+
+Use `ece-build` with `--target cl` to package an ECE program for standalone CL execution:
+
+```sh
+bin/ece-build --target cl -o dist/ my-app.scm
+```
+
+```
+dist/
+  runtime.lisp        # ECE runtime
+  ece.asd             # ASDF system definition
+  primitives.def      # primitive dispatch table
+  operations.def      # operations manifest
+  bootstrap/
+    bootstrap.ecec    # standard library bundle
+  run.lisp            # entry point (loads runtime + bootstrap + app)
+  app.ecec            # your compiled application
+```
+
+Run with: `sbcl --load dist/run.lisp`
+
+**Prerequisites:** SBCL, qlot.
 
 ### Building the WASM Sandbox
 
