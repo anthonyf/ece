@@ -191,6 +191,70 @@ make test       # CL + ECE self-hosted tests
 make test-wasm  # WASM tests (requires binaryen + Node.js)
 ```
 
+### Building a Web App
+
+Use `ece-build` to compile ECE source files into a self-contained web app that runs in the browser:
+
+```sh
+bin/ece-build --target web -o dist/ my-app.scm
+```
+
+This produces a `dist/` directory with everything needed to run:
+
+```
+dist/
+  index.html          # page with canvas + text output
+  ece-runtime.js      # WASM runtime and JS glue
+  ece-bootstrap.js    # standard library, compiler, reader, assembler
+  app.js              # your compiled application
+```
+
+Open `dist/index.html` in a browser — no server required (works from `file://`).
+
+Multiple source files are compiled in order, so earlier files can define macros and functions used by later ones:
+
+```sh
+bin/ece-build --target web -o dist/ lib/utils.scm lib/drawing.scm main.scm
+```
+
+To use your own HTML instead of the generated `index.html`, load the three JS files and boot the runtime:
+
+```html
+<script src="ece-runtime.js"></script>
+<script src="ece-bootstrap.js"></script>
+<script src="app.js"></script>
+
+<script>
+  (async function() {
+    // Instantiate WASM
+    const wasmBytes = Uint8Array.from(atob(ECE_WASM_BASE64), c => c.charCodeAt(0));
+    const imports = {
+      io: ECE.io, loader: ECE.loader, storage: ECE.storage,
+      canvas: ECE.canvas, timing: ECE.timing, math: ECE.math, ffi: ECE.ffi
+    };
+    const { instance } = await WebAssembly.instantiate(wasmBytes, imports);
+    ECE.wasm = instance.exports;
+    ECE.buildGlobalEnv();
+
+    // Boot standard library
+    for (const name of ["prelude", "compiler", "reader", "assembler", "compilation-unit", "browser-lib"]) {
+      if (ECE_BOOTSTRAP[name]) {
+        const spaceId = ECE.loadEcecText(atob(ECE_BOOTSTRAP[name]));
+        ECE.wasm.run(spaceId, 0, ECE.globalEnvHandle);
+      }
+    }
+    ECE.wasm.mark_handles();
+
+    // Run your app
+    ECE.loadEcecBundleText(atob(ECE_APP_BUNDLE));
+  })();
+</script>
+```
+
+You can customize I/O by overriding `ECE.io.display_string`, `ECE.io.display_number`, and `ECE.io.newline` before booting. The default template writes to a `<canvas>` and `<pre>` element — see `templates/web/index.html` for the full example.
+
+**Prerequisites:** SBCL, qlot, binaryen (`wasm-as`), and a built WASM runtime (`make wasm`).
+
 ### Building the WASM Sandbox
 
 ```sh
