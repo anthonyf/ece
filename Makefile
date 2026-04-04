@@ -1,4 +1,4 @@
-.PHONY: test test-rove test-ece test-wasm test-conformance test-golden check-test-counts repl run run-lisp bootstrap wasm sandbox site fmt check-fmt setup clean clean-fasl update-test-counts update-golden
+.PHONY: test test-rove test-ece test-wasm test-conformance test-golden check-test-counts test-web-server repl run run-lisp bootstrap wasm sandbox site fmt check-fmt setup clean clean-fasl update-test-counts update-golden
 
 # FASL output goes to project-local .fasl-cache/ (sandbox-friendly, portable)
 export ASDF_OUTPUT_TRANSLATIONS = (:output-translations ("$(CURDIR)/" "$(CURDIR)/.fasl-cache/") :inherit-configuration)
@@ -14,7 +14,7 @@ BOOTSTRAP_SRCS := src/prelude.scm src/compiler.scm src/reader.scm src/assembler.
 
 GOLDEN_SRCS := $(wildcard tests/golden/*.scm)
 
-test: test-rove test-ece test-wasm test-conformance test-golden check-test-counts
+test: test-rove test-ece test-wasm test-conformance test-golden check-test-counts test-web-server
 
 test-rove:
 	@qlot exec sbcl --disable-debugger --eval '(asdf:load-system :ece)' --eval '(asdf:load-system :ece/tests)' \
@@ -104,6 +104,26 @@ update-golden:
 	  echo "  Updated: $$base.expected ($$(wc -l < "$$expected") lines)"; \
 	done
 
+test-web-server: wasm
+	@echo "Building hello-world in server mode..."
+	@mkdir -p .tmp/server-mode-test
+	@printf '(display "Hello, World!")\n(newline)\n' > .tmp/server-mode-hello.scm
+	@bin/ece-build --target web -o .tmp/server-mode-test .tmp/server-mode-hello.scm
+	@echo "Starting HTTP server..."
+	@python3 -c '\
+import http.server, socketserver, threading, sys, subprocess, functools; \
+handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=".tmp/server-mode-test"); \
+srv = socketserver.TCPServer(("127.0.0.1", 0), handler); \
+port = srv.server_address[1]; \
+print(f"Serving on port {port}"); \
+t = threading.Thread(target=srv.serve_forever, daemon=True); \
+t.start(); \
+r = subprocess.run(["node", "wasm/test-server-mode.js", f"http://127.0.0.1:{port}"], capture_output=True, text=True); \
+print(r.stdout, end=""); \
+print(r.stderr, end="", file=sys.stderr); \
+srv.shutdown(); \
+sys.exit(r.returncode)'
+
 repl:
 	qlot exec sbcl --load ece.asd --eval '(asdf:load-system :ece)' --eval '(ece:repl)'
 
@@ -117,15 +137,14 @@ bootstrap:
 	qlot exec sbcl --eval '(asdf:load-system :ece)' \
 	  --eval '(in-package :ece)' \
 	  --eval '(evaluate (list (quote eval) (list (quote read) (list (quote open-input-string) "(load \"src/compilation-unit.scm\")"))))' \
-	  --eval '(dolist (f (list "src/prelude.scm" "src/compiler.scm" "src/reader.scm" "src/assembler.scm" "src/compilation-unit.scm" "src/syntax-rules.scm" "src/browser-lib.scm")) (format t "Compiling ~A~%" f) (evaluate (list (quote eval) (list (quote read) (list (quote open-input-string) (format nil "(compile-file ~S)" f))))))' \
+	  --eval '(evaluate (list (quote eval) (list (quote read) (list (quote open-input-string) "(compile-system (quote (\"src/prelude.scm\" \"src/compiler.scm\" \"src/reader.scm\" \"src/assembler.scm\" \"src/compilation-unit.scm\" \"src/syntax-rules.scm\" \"src/browser-lib.scm\")) \"bootstrap/bootstrap.ecec\")"))))' \
 	  --quit
-	mv -f src/*.ecec $(BOOTSTRAP_DIR)/
-	@echo "Bootstrap .ecec files regenerated in $(BOOTSTRAP_DIR)/"
+	@echo "Bootstrap bundle regenerated: $(BOOTSTRAP_DIR)/bootstrap.ecec"
 
 sandbox: wasm
 	@mkdir -p .tmp/sandbox-build sandbox
 	@echo '(void)' > .tmp/sandbox-stub.scm
-	@bin/ece-build --target web -o .tmp/sandbox-build .tmp/sandbox-stub.scm
+	@bin/ece-build --target web --standalone -o .tmp/sandbox-build .tmp/sandbox-stub.scm
 	@cp .tmp/sandbox-build/ece-runtime.js sandbox/ece-runtime.js
 	@cp .tmp/sandbox-build/ece-bootstrap.js sandbox/ece-bootstrap.js
 	@# Pre-compile canned programs (Hello World .scm → .ecec → base64 in JS)

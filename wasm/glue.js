@@ -313,6 +313,7 @@ const ECE = {
   // sequentially so definitions from earlier sections are available to later ones.
   loadEcecBundleText(text) {
     const w = ECE.wasm;
+    text = text.trimEnd();  // remove trailing whitespace so ecec_has_more stops cleanly
     const needed = text.length * 2;
     const currentBytes = w.memory.buffer.byteLength;
     if (needed > currentBytes) {
@@ -462,24 +463,17 @@ const ECE = {
   },
 
   async bootstrap(baseUrl) {
-    const files = [
-      "prelude.ececb",
-      "compiler.ececb",
-      "reader.ececb",
-      "assembler.ececb",
-      "compilation-unit.ececb"
-    ];
-
     // Build global environment first
     ECE.globalEnvHandle = ECE.buildGlobalEnv();
     console.log("Global environment built.");
 
-    for (const file of files) {
-      const url = `${baseUrl}/${file}`;
-      console.log(`Loading ${file}...`);
-      const parsed = await ECE.loadEcecb(url);
-      ECE.loadParsed(parsed);
-    }
+    // Load single bootstrap bundle
+    const url = `${baseUrl}/bootstrap.ecec`;
+    console.log("Loading bootstrap bundle...");
+    const resp = await fetch(url);
+    const text = await resp.text();
+    ECE.loadEcecBundleText(text);
+    ECE.wasm.mark_handles();
 
     console.log("Bootstrap complete.");
   },

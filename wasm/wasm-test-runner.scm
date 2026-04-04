@@ -42,11 +42,8 @@
                 (newline)))
        (thunk)))
    *tests*)
-  ;; Run deferred tests that can't be in the test framework
-  ;; Continuation roundtrip requires file I/O and serialize! — skip on WASM
-  ;; (serialize! walks continuation internals that differ between CL and WASM)
-  (if (platform-has? 'write-byte)
-      (run-continuation-roundtrip-test))
+  ;; Continuation roundtrip test is CL-only — serialize! walks CL-specific
+  ;; continuation internals. Skipped on WASM (run in CL tests instead).
   (newline)
   (display *test-passes*)
   (display " passed, ")

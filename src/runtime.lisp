@@ -2084,9 +2084,10 @@ the downcased (source-map filename (pc line col) ...) cdr."
     (when space-map
       (gethash pc space-map))))
 
-(defun load-ecec-section (stream)
+(defun load-ecec-section (stream &key skip)
   "Load one ecec section (header + instructions) from STREAM.
 Creates a named space, registers source-map, assembles, and executes.
+If SKIP is a list of strings, skip sections whose space name matches.
 Returns T if a section was loaded, NIL on EOF."
   ;; Bind *package* to :ece so cl:read interns symbols in the ECE package,
   ;; regardless of caller context (e.g., CL-USER from run.lisp).
@@ -2095,28 +2096,34 @@ Returns T if a section was loaded, NIL on EOF."
     (when (eq raw-header :eof) (return-from load-ecec-section nil))
     (let* ((header (downcase-ece-symbols raw-header))
            (space-sym (cadr (assoc '|space| (cdr header))))
-           (source-map-raw (cdr (assoc '|source-map| (cdr header))))
-           (sid (create-space (symbol-name space-sym))))
-      ;; Register source-map if present
-      (when source-map-raw
-        (register-ecec-source-map space-sym source-map-raw))
-      (let ((*current-space-id* sid))
-        (let* ((instrs (cl:read stream))
-               (fixed (downcase-ece-symbols
-                       (canonicalize-ecec-constants instrs)))
-               (start-pc (assemble-into-space sid fixed)))
-          (execute-instructions sid start-pc *global-env*))))
+           (space-name (symbol-name space-sym)))
+      ;; Skip this section if its name is in the skip list
+      (when (and skip (member space-name skip :test #'string=))
+        (cl:read stream)  ; read and discard instruction forms
+        (return-from load-ecec-section t))
+      (let ((source-map-raw (cdr (assoc '|source-map| (cdr header))))
+            (sid (create-space space-name)))
+        ;; Register source-map if present
+        (when source-map-raw
+          (register-ecec-source-map space-sym source-map-raw))
+        (let ((*current-space-id* sid))
+          (let* ((instrs (cl:read stream))
+                 (fixed (downcase-ece-symbols
+                         (canonicalize-ecec-constants instrs)))
+                 (start-pc (assemble-into-space sid fixed)))
+            (execute-instructions sid start-pc *global-env*)))))
     t))
 
-(defun load-ecec-file (pathname)
+(defun load-ecec-file (pathname &key skip)
   "Load a .ecec file: read sections, create named spaces, assemble and execute.
 Supports multi-space bundles (loops until EOF).
+If SKIP is a list of strings, skip sections whose space name matches.
 Uses the CL reader (not the ECE reader) so this works at boot before the ECE reader exists."
   (with-open-file (stream pathname)
-    (loop while (load-ecec-section stream))))
+    (loop while (load-ecec-section stream :skip skip))))
 
 (defun boot-from-compiled ()
-  "Boot ECE by loading .ecec files from bootstrap/ in fixed order."
+  "Boot ECE by loading the bootstrap bundle, skipping browser-lib."
   ;; Pre-define keyword symbols that ECE source code references as variables.
   ;; The ECE reader interns :foo as a symbol named ":foo" in the ECE package
   ;; (not a CL keyword). These must be in the environment for compiled code
@@ -2128,13 +2135,9 @@ Uses the CL reader (not the ECE reader) so this works at boot before the ECE rea
   ;; Define *global-env* as an ECE variable BEFORE boot so that env-reset
   ;; instructions in flat .ecec files can look it up during execution.
   (define-variable! (intern "*global-env*" :ece) *global-env* *global-env*)
-  (dolist (name '("prelude" "compiler" "reader" "assembler"
-                  "compilation-unit" "syntax-rules"))
-    (let ((path (asdf:system-relative-pathname :ece
-                                               (format nil "bootstrap/~A.ecec" name))))
-      (when (probe-file path)
-        (load-ecec-file path))))
-  )
+  (let ((path (asdf:system-relative-pathname :ece "bootstrap/bootstrap.ecec")))
+    (when (probe-file path)
+      (load-ecec-file path :skip '("browser-lib")))))
 
 ;;; Boot from .ecec files
 (boot-from-compiled)
