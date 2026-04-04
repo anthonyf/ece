@@ -123,7 +123,23 @@ bootstrap:
 	@echo "Bootstrap .ecec files regenerated in $(BOOTSTRAP_DIR)/"
 
 sandbox: wasm
-	bash scripts/build-sandbox.sh
+	@mkdir -p .tmp/sandbox-build sandbox
+	@echo '(void)' > .tmp/sandbox-stub.scm
+	@bin/ece-build --target web -o .tmp/sandbox-build .tmp/sandbox-stub.scm
+	@cp .tmp/sandbox-build/ece-runtime.js sandbox/ece-runtime.js
+	@cp .tmp/sandbox-build/ece-bootstrap.js sandbox/ece-bootstrap.js
+	@# Pre-compile canned programs (Hello World .scm → .ecec → base64 in JS)
+	@echo "Compiling canned programs..."
+	@printf '(display "Hello, World!")\n(newline)\n' > .tmp/ece-hello.scm
+	@qlot exec sbcl --disable-debugger --eval '(asdf:load-system :ece)' \
+	  --eval '(ece:evaluate (list (intern "compile-file" :ece) ".tmp/ece-hello.scm"))' \
+	  --quit 2>/dev/null
+	@echo '// Pre-compiled ECE programs — auto-generated' > sandbox/ece-compiled.js
+	@echo 'const ECE_COMPILED = {};' >> sandbox/ece-compiled.js
+	@echo -n 'ECE_COMPILED["Hello World"] = "' >> sandbox/ece-compiled.js
+	@base64 -i .tmp/ece-hello.ecec | tr -d '\n' >> sandbox/ece-compiled.js
+	@echo '";' >> sandbox/ece-compiled.js
+	@echo "Sandbox assets built in sandbox/"
 
 site: sandbox
 	@echo "Assembling site..."

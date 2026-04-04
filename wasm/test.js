@@ -226,12 +226,12 @@ async function run() {
   }
 
   const testText = fs.readFileSync(testFile, "utf-8");
-  const testSpaceId = ECE.loadEcecText(testText);
+  ECE.globalEnvHandle = envH;
 
   const t0 = Date.now();
   let eceCrash = null;
   try {
-    w.run(testSpaceId, 0, envH);
+    ECE.loadEcecBundleText(testText);
   } catch (e) {
     eceCrash = e.message;
   }
