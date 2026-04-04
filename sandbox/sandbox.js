@@ -74,15 +74,10 @@ const Sandbox = {
 
     Sandbox.envHandle = ECE.buildGlobalEnv();
 
-    // Boot bootstrap from base64-encoded .ecec text
-    for (const name of ["prelude", "compiler", "reader", "assembler", "compilation-unit", "browser-lib"]) {
-      const text = (typeof atob === "function")
-        ? atob(ECE_BOOTSTRAP[name])
-        : Buffer.from(ECE_BOOTSTRAP[name], "base64").toString("binary");
-      const spaceId = ECE.loadEcecText(text);
-      ECE.wasm.run(spaceId, 0, Sandbox.envHandle);
-    }
-    // Mark all bootstrap handles as permanent so reset_handles() doesn't free them
+    // Boot bootstrap from single bundle
+    ECE.globalEnvHandle = Sandbox.envHandle;
+    const bootText = atob(ECE_BOOTSTRAP_BUNDLE);
+    ECE.loadEcecBundleText(bootText);
     ECE.wasm.mark_handles();
   },
 
