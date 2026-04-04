@@ -36,3 +36,6 @@ jobs:
 
       - name: Run all tests
         run: make test
+
+      - name: Run server mode integration test
+        run: make test-web-server
