@@ -2,6 +2,20 @@
 ;;; S-expression reader written in ECE, using port-based character I/O.
 ;;; Replaces CL's read after bootstrap.
 
+;;; Source location tracking
+;;; Maps cons cell identity (eq?) → (file line col) for each list read.
+;;; Populated during reading, consumed by the compiler for source-map emission.
+(define *source-locations* (%make-hash-table))
+(define *source-file-name* #f)
+
+;;; Helper: record source location for a list expression.
+;;; Only records when *source-file-name* is set (compile-file context).
+;;; REPL and eval-string expressions don't need source locations.
+(define (record-source-location! expr file line col)
+  (when (and file (pair? expr))
+    (hash-set! *source-locations* expr (list file line col)))
+  expr)
+
 ;;; Helper: is this a delimiter character?
 (define (reader-delimiter? ch)
   (or (char-whitespace? ch)
@@ -303,27 +317,56 @@
     (cond
      ;; EOF
      ((eof? ch) ch)
-     ;; List
+     ;; List — capture position of opening paren
      ((char=? ch #\()
-      (read-char port)
-      (read-list port))
-     ;; Quote shorthand
+      (if *source-file-name*
+          (let ((file *source-file-name*)
+                (line (port-line port))
+                (col (port-col port)))
+            (read-char port)
+            (record-source-location! (read-list port) file line col))
+          (begin (read-char port) (read-list port))))
+     ;; Quote shorthand — capture position of '
      ((char=? ch #\')
-      (read-char port)
-      (list 'quote (ece-scheme-read port)))
+      (if *source-file-name*
+          (let ((file *source-file-name*)
+                (line (port-line port))
+                (col (port-col port)))
+            (read-char port)
+            (record-source-location!
+             (list 'quote (ece-scheme-read port)) file line col))
+          (begin (read-char port) (list 'quote (ece-scheme-read port)))))
      ;; Quasiquote
      ((char=? ch #\`)
-      (read-char port)
-      (list 'quasiquote (ece-scheme-read port)))
+      (if *source-file-name*
+          (let ((file *source-file-name*)
+                (line (port-line port))
+                (col (port-col port)))
+            (read-char port)
+            (record-source-location!
+             (list 'quasiquote (ece-scheme-read port)) file line col))
+          (begin (read-char port) (list 'quasiquote (ece-scheme-read port)))))
      ;; Unquote / unquote-splicing
      ((char=? ch #\,)
-      (read-char port)
-      (let ((next (peek-char port)))
-        (if (and (not (eof? next)) (char=? next #\@))
-            (begin
-              (read-char port)
-              (list 'unquote-splicing (ece-scheme-read port)))
-            (list 'unquote (ece-scheme-read port)))))
+      (if *source-file-name*
+          (let ((file *source-file-name*)
+                (line (port-line port))
+                (col (port-col port)))
+            (read-char port)
+            (let ((next (peek-char port)))
+              (if (and (not (eof? next)) (char=? next #\@))
+                  (begin
+                    (read-char port)
+                    (record-source-location!
+                     (list 'unquote-splicing (ece-scheme-read port)) file line col))
+                  (record-source-location!
+                   (list 'unquote (ece-scheme-read port)) file line col))))
+          (begin
+            (read-char port)
+            (let ((next (peek-char port)))
+              (if (and (not (eof? next)) (char=? next #\@))
+                  (begin (read-char port) (list 'unquote-splicing (ece-scheme-read port)))
+                  (list 'unquote (ece-scheme-read port)))))))
      ;; String
      ((char=? ch #\")
       (read-char port)

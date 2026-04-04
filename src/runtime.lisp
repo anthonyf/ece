@@ -243,24 +243,31 @@
                    (format stream "~%  backtrace:")
                    (loop for entry in bt
                          for i from 0
-                         do (format stream "~%    [~D] ~A at pc=~D" i
-                                    (if (car entry)
-                                        (format-ece-proc (car entry))
-                                        "<unknown>")
-                                    (cdr entry)))))))))
+                         do (let ((space-sym (cadr entry))
+                                  (local-pc (cddr entry)))
+                              (format stream "~%    [~D] ~A at ~A" i
+                                      (if (car entry)
+                                          (format-ece-proc (car entry))
+                                          "<unknown>")
+                                      (format-ece-location space-sym local-pc))))))))))
 
 (defun format-ece-proc (proc)
-  "Format a procedure value for display in errors."
+  "Format a procedure value for display in errors.
+Includes source location if available."
   (cond
     ((and (listp proc) (eq (car proc) '|compiled-procedure|))
      (let* ((entry (cadr proc))
             (name (or (gethash entry *procedure-name-table*)
                       ;; Backward compat: try bare local-pc if entry is qualified
                       (when (consp entry)
-                        (gethash (cdr entry) *procedure-name-table*)))))
-       (if name
-           (format nil "~A" name)
-           (format nil "<compiled-procedure entry=~A>" entry))))
+                        (gethash (cdr entry) *procedure-name-table*))))
+            (loc (when (consp entry)
+                   (resolve-ece-source-location (car entry) (cdr entry)))))
+       (cond
+         ((and name loc)
+          (format nil "~A (~A:~D:~D)" name (car loc) (cadr loc) (caddr loc)))
+         (name (format nil "~A" name))
+         (t (format nil "<compiled-procedure entry=~A>" entry)))))
     ((and (listp proc) (eq (car proc) '|primitive|))
      (let ((id-or-name (cadr proc)))
        (if (integerp id-or-name)
@@ -280,7 +287,7 @@
 
 (defun extract-ece-backtrace (stack)
   "Walk the register stack to extract a backtrace.
-Returns a list of (proc . pc) pairs, limited to 10 frames.
+Returns a list of (proc space-sym . local-pc) entries, limited to 10 frames.
 The stack interleaves saved registers; we look for saved proc values
 and saved continue values (integers = PCs). A continue value paired with
 a nearby proc gives a named frame; a lone continue gives an anonymous frame."
@@ -298,17 +305,32 @@ a nearby proc gives a named frame; a lone continue gives an anonymous frame."
          (setf last-proc item))
         ;; An integer or qualified address on the stack is likely a saved continue
         ((or (integerp item) (qualified-address-p item))
-         (push (cons last-proc (qualified-local-pc item)) frames)
+         (push (cons last-proc
+                     (cons (qualified-space-id item)
+                           (qualified-local-pc item)))
+               frames)
          (setf last-proc nil))))
     (nreverse frames)))
 
+(defun format-ece-location (space-sym local-pc)
+  "Format a source location for SPACE-SYM at LOCAL-PC.
+Returns \"file:line:col\" if source-map has an entry, otherwise \"pc=N\"."
+  (let ((loc (resolve-ece-source-location space-sym local-pc)))
+    (if loc
+        (format nil "~A:~D:~D" (car loc) (cadr loc) (caddr loc))
+        (format nil "pc=~D" local-pc))))
+
 (defun format-ece-backtrace (backtrace)
-  "Format a backtrace as readable text."
+  "Format a backtrace as readable text.
+Each entry is (proc space-sym . local-pc)."
   (with-output-to-string (s)
     (loop for entry in backtrace
           for i from 0
-          do (format s "~%  [~D] ~A at pc=~D"
-                     i (format-ece-proc (car entry)) (cdr entry)))))
+          do (let ((space-sym (cadr entry))
+                   (local-pc (cddr entry)))
+               (format s "~%  [~D] ~A at ~A"
+                       i (format-ece-proc (car entry))
+                       (format-ece-location space-sym local-pc))))))
 
 ;;; Frame-based environment (SICP Section 4.1.3)
 ;;; A frame is one of:
@@ -818,11 +840,11 @@ print without CL pipe escaping."
 
 ;;; Ports (R7RS-style I/O abstraction)
 
-(defun ece-make-input-port (stream)
-  (list 'input-port stream))
+(defun ece-make-input-port (stream &optional name)
+  (list 'input-port stream name 1 0))
 
-(defun ece-make-output-port (stream)
-  (list 'output-port stream))
+(defun ece-make-output-port (stream &optional name)
+  (list 'output-port stream name 1 0))
 
 (defun ece-input-port? (x)
   (scheme-bool (and (consp x) (eq (car x) 'input-port))))
@@ -836,6 +858,15 @@ print without CL pipe escaping."
 
 (defun ece-port-stream (port)
   (cadr port))
+
+(defun ece-port-name (port)
+  (caddr port))
+
+(defun ece-port-line (port)
+  (cadddr port))
+
+(defun ece-port-col (port)
+  (car (cddddr port)))
 
 (defvar *current-input-port*
   (ece-make-input-port *standard-input*))
@@ -852,12 +883,16 @@ print without CL pipe escaping."
 ;;; File and string port constructors
 
 (defun ece-open-input-file (filename)
-  (ece-make-input-port (open filename :direction :input)))
+  (ece-make-input-port (open filename :direction :input)
+                       (if (stringp filename) filename
+                           (namestring filename))))
 
 (defun ece-open-output-file (filename)
   (ece-make-output-port (open filename :direction :output
                               :if-exists :supersede
-                              :if-does-not-exist :create)))
+                              :if-does-not-exist :create)
+                        (if (stringp filename) filename
+                            (namestring filename))))
 
 (defun ece-close-input-port (port)
   (close (ece-port-stream port))
@@ -881,6 +916,12 @@ print without CL pipe escaping."
 (defun ece-read-char (&optional port)
   (let* ((p (or port *current-input-port*))
          (ch (read-char (ece-port-stream p) nil nil)))
+    (when ch
+      (if (char= ch #\Newline)
+          (progn
+            (setf (cadddr p) (1+ (cadddr p)))        ; increment line
+            (setf (car (cddddr p)) 0))               ; reset col
+          (setf (car (cddddr p)) (1+ (car (cddddr p)))))) ; increment col
     (or ch *eof-sentinel*)))
 
 (defun ece-peek-char (&optional port)
@@ -899,7 +940,9 @@ print without CL pipe escaping."
   (ece-make-output-port (open filename :direction :output
                               :element-type '(unsigned-byte 8)
                               :if-exists :supersede
-                              :if-does-not-exist :create)))
+                              :if-does-not-exist :create)
+                        (if (stringp filename) filename
+                            (namestring filename))))
 
 (defun ece-write-byte (byte port)
   "Write BYTE (integer 0-255) to output PORT as a raw byte."
@@ -1740,6 +1783,8 @@ Returns the index."
            (when local-pc
              (setf (gethash (cons space-id local-pc) *procedure-name-table*)
                    (caddr item)))))
+        ;; Source-location marker — skip (used by compile-file for source-map)
+        ((and (consp item) (eq (car item) '|source-location|)))
         (t
          (vector-push-extend item instrs)
          (vector-push-extend (resolve-operations item) resolved))))
@@ -2018,6 +2063,27 @@ Preserves T, NIL, and symbols from other packages."
                             (downcase-ece-symbols (cdr form))))
         (t form)))
 
+;;; Source-map table: space-name → hash-table of pc → (file line col)
+(defvar *ece-source-maps* (make-hash-table :test 'eq))
+
+(defun register-ecec-source-map (space-sym source-map-field)
+  "Register source-map entries from an ecec-header. SOURCE-MAP-FIELD is
+the downcased (source-map filename (pc line col) ...) cdr."
+  (when source-map-field
+    (let ((filename (car source-map-field))
+          (ht (make-hash-table :test 'eql)))
+      (dolist (entry (cdr source-map-field))
+        (when (consp entry)
+          (setf (gethash (car entry) ht)
+                (list filename (cadr entry) (caddr entry)))))
+      (setf (gethash space-sym *ece-source-maps*) ht))))
+
+(defun resolve-ece-source-location (space-sym pc)
+  "Look up PC in source-map for SPACE-SYM. Returns (file line col) or NIL."
+  (let ((space-map (gethash space-sym *ece-source-maps*)))
+    (when space-map
+      (gethash pc space-map))))
+
 (defun load-ecec-file (pathname)
   "Load a .ecec file: read header, create named space, assemble and execute.
 Reads the ecec-header followed by a single flat instruction list.
@@ -2026,7 +2092,11 @@ Uses the CL reader (not the ECE reader) so this works at boot before the ECE rea
     (let* ((raw-header (cl:read stream))
            (header (downcase-ece-symbols raw-header))
            (space-sym (cadr (assoc '|space| (cdr header))))
+           (source-map-raw (cdr (assoc '|source-map| (cdr header))))
            (sid (create-space (symbol-name space-sym))))
+      ;; Register source-map if present
+      (when source-map-raw
+        (register-ecec-source-map space-sym source-map-raw))
       (let ((*current-space-id* sid))
         (let* ((instrs (cl:read stream))
                (fixed (downcase-ece-symbols

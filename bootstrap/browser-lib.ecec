@@ -1,42 +1,42 @@
-(ecec-header (space browser-lib) (macros NIL))
-((assign val (op make-compiled-procedure) (label L48529) (reg env))
- (goto (label L48528))
- L48529
+(ecec-header (space browser-lib) (macros NIL) (source-map "browser-lib.scm" (0 7 22) (0 7 22) (4 7 22) (27 8 26) (27 8 26) (31 8 26) (56 9 31) (56 9 31) (60 9 31) (87 10 27) (87 10 27) (91 10 27) (114 11 29) (114 11 29) (118 11 29) (141 12 29) (141 12 29) (145 12 29) (168 13 22) (168 13 22) (172 13 22) (195 14 22) (195 14 22) (199 14 22) (222 15 23) (222 15 23) (226 15 23) (249 16 26) (249 16 26) (253 16 26) (276 17 22) (276 17 22) (280 17 22) (303 22 2) (303 22 2) (307 22 2) (334 26 0) (338 29 8) (338 29 8) (343 29 8) (343 29 8) (344 29 8) (367 30 24) (367 30 24) (368 30 24) (399 34 42) (399 34 42) (403 34 42) (407 34 42) (432 34 11) (475 37 44) (475 37 44) (479 37 44) (483 37 44) (508 37 11) (551 40 28) (551 40 28) (555 40 28) (559 40 28) (607 43 26) (607 43 26) (611 43 26) (615 43 26) (663 50 11) (663 50 11) (667 50 11) (671 50 11) (695 49 11) (744 55 41) (744 55 41) (748 55 41) (752 55 41) (777 55 11) (823 58 44) (823 58 44) (827 58 44) (831 58 44) (856 58 11) (902 62 0) (906 63 0) (910 66 8) (910 66 8) (915 66 8) (915 66 8) (916 66 8) (939 69 32) (939 69 32) (940 69 32) (943 69 32) (968 68 19) (1019 77 21) (1019 77 21) (1023 77 21) (1023 77 21) (1023 77 21) (1027 77 21) (1031 77 21) (1036 77 21) (1082 76 21) (1087 76 21) (1134 75 27) (1159 75 13) (1207 73 13) (1249 82 83) (1249 82 83) (1253 82 83) (1257 82 83) (1259 82 83) (1265 82 83) (1292 82 60) (1318 82 37) (1384 80 11) (1427 86 53) (1427 86 53) (1431 86 53) (1435 86 53) (1459 86 39) (1484 86 25) (1509 86 11) (1535 85 11) (1578 94 4) (1578 94 4) (1582 94 4) (1582 94 4) (1582 94 4) (1588 90 4) (1614 93 27) (1617 93 27) (1641 93 13) (1666 92 41) (1691 92 27) (1716 92 13) (1763 94 4) (1787 89 13) (1829 99 58) (1829 99 58) (1833 99 58) (1833 99 58) (1833 99 58) (1839 98 24) (1842 98 24) (1888 99 58) (1892 99 58) (1916 99 44) (1941 99 28) (1989 97 13) (2031 102 34) (2031 102 34) (2035 102 34) (2038 102 34) (2043 102 34) (2048 102 34) (2130 105 34) (2130 105 34) (2134 105 34) (2137 105 34) (2142 105 34) (2147 105 34) (2229 110 8) (2229 110 8) (2234 110 8) (2234 110 8) (2235 110 8) (2258 111 20) (2258 111 20) (2259 111 20) (2290 115 43) (2290 115 43) (2294 115 43) (2297 115 43) (2300 115 43) (2325 115 27) (2387 118 43) (2387 118 43) (2391 118 43) (2394 118 43) (2397 118 43) (2422 118 27) (2484 129 19) (2484 129 19) (2488 129 19) (2488 129 19) (2488 129 19) (2488 129 19) (2492 129 19) (2492 129 19) (2492 129 19) (2492 129 19) (2496 129 19) (2496 129 19) (2496 129 19) (2496 129 19) (2500 129 19) (2500 129 19) (2500 129 19) (2500 129 19) (2504 129 19) (2504 129 19) (2504 129 19) (2504 129 19) (2508 129 19) (2508 129 19) (2510 128 4) (2532 129 19) (2538 129 19) (2543 129 19) (2548 129 19) (2553 129 19) (2558 129 19) (2683 127 29) (2685 127 29) (2748 126 28) (2750 126 28) (2813 125 28) (2815 125 28) (2878 124 28) (2880 124 28) (2943 123 12)))
+((assign val (op make-compiled-procedure) (label L51297) (reg env))
+ (goto (label L51296))
+ L51297
  (assign env (op compiled-procedure-env) (reg proc))
  (assign env (op extend-environment) (const (str)) (reg argl) (reg env) (const 0))
  (assign proc (op lookup-variable-value) (const %js-eval) (reg env))
  (assign val (op lexical-ref) (const 0) (const 0) (reg env))
  (assign argl (op list) (reg val))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48534))
+ (branch (label L51302))
  (test (op continuation?) (reg proc))
- (branch (label L48532))
+ (branch (label L51300))
  (test (op parameter?) (reg proc))
- (branch (label L48531))
- L48533
+ (branch (label L51299))
+ L51301
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48532
+ L51300
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48531
+ L51299
  (assign val (op apply-parameter) (reg proc) (reg argl))
  (goto (reg continue))
- L48534
+ L51302
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
  (goto (reg continue))
- L48530
- L48528
+ L51298
+ L51296
  (perform (op define-variable!) (const js-eval) (reg val) (reg env))
  (assign val (reg val))
- (procedure-name L48529 js-eval)
+ (procedure-name L51297 js-eval)
  (assign env (op lookup-variable-value) (const *global-env*) (reg env))
- (assign val (op make-compiled-procedure) (label L48536) (reg env))
- (goto (label L48535))
- L48536
+ (assign val (op make-compiled-procedure) (label L51304) (reg env))
+ (goto (label L51303))
+ L51304
  (assign env (op compiled-procedure-env) (reg proc))
  (assign env (op extend-environment) (const (obj prop)) (reg argl) (reg env) (const 0))
  (assign proc (op lookup-variable-value) (const %js-get) (reg env))
@@ -45,35 +45,35 @@
  (assign val (op lexical-ref) (const 0) (const 0) (reg env))
  (assign argl (op cons) (reg val) (reg argl))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48541))
+ (branch (label L51309))
  (test (op continuation?) (reg proc))
- (branch (label L48539))
+ (branch (label L51307))
  (test (op parameter?) (reg proc))
- (branch (label L48538))
- L48540
+ (branch (label L51306))
+ L51308
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48539
+ L51307
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48538
+ L51306
  (assign val (op apply-parameter) (reg proc) (reg argl))
  (goto (reg continue))
- L48541
+ L51309
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
  (goto (reg continue))
- L48537
- L48535
+ L51305
+ L51303
  (perform (op define-variable!) (const js-get) (reg val) (reg env))
  (assign val (reg val))
- (procedure-name L48536 js-get)
+ (procedure-name L51304 js-get)
  (assign env (op lookup-variable-value) (const *global-env*) (reg env))
- (assign val (op make-compiled-procedure) (label L48543) (reg env))
- (goto (label L48542))
- L48543
+ (assign val (op make-compiled-procedure) (label L51311) (reg env))
+ (goto (label L51310))
+ L51311
  (assign env (op compiled-procedure-env) (reg proc))
  (assign env (op extend-environment) (const (obj prop val)) (reg argl) (reg env) (const 0))
  (assign proc (op lookup-variable-value) (const %js-set!) (reg env))
@@ -84,315 +84,315 @@
  (assign val (op lexical-ref) (const 0) (const 0) (reg env))
  (assign argl (op cons) (reg val) (reg argl))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48548))
+ (branch (label L51316))
  (test (op continuation?) (reg proc))
- (branch (label L48546))
+ (branch (label L51314))
  (test (op parameter?) (reg proc))
- (branch (label L48545))
- L48547
+ (branch (label L51313))
+ L51315
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48546
+ L51314
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48545
+ L51313
  (assign val (op apply-parameter) (reg proc) (reg argl))
  (goto (reg continue))
- L48548
+ L51316
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
  (goto (reg continue))
- L48544
- L48542
+ L51312
+ L51310
  (perform (op define-variable!) (const js-set!) (reg val) (reg env))
  (assign val (reg val))
- (procedure-name L48543 js-set!)
+ (procedure-name L51311 js-set!)
  (assign env (op lookup-variable-value) (const *global-env*) (reg env))
- (assign val (op make-compiled-procedure) (label L48550) (reg env))
- (goto (label L48549))
- L48550
+ (assign val (op make-compiled-procedure) (label L51318) (reg env))
+ (goto (label L51317))
+ L51318
  (assign env (op compiled-procedure-env) (reg proc))
  (assign env (op extend-environment) (const (proc)) (reg argl) (reg env) (const 0))
  (assign proc (op lookup-variable-value) (const %js-callback) (reg env))
  (assign val (op lexical-ref) (const 0) (const 0) (reg env))
  (assign argl (op list) (reg val))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48555))
+ (branch (label L51323))
  (test (op continuation?) (reg proc))
- (branch (label L48553))
+ (branch (label L51321))
  (test (op parameter?) (reg proc))
- (branch (label L48552))
- L48554
+ (branch (label L51320))
+ L51322
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48553
+ L51321
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48552
+ L51320
  (assign val (op apply-parameter) (reg proc) (reg argl))
  (goto (reg continue))
- L48555
+ L51323
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
  (goto (reg continue))
- L48551
- L48549
+ L51319
+ L51317
  (perform (op define-variable!) (const js-callback) (reg val) (reg env))
  (assign val (reg val))
- (procedure-name L48550 js-callback)
+ (procedure-name L51318 js-callback)
  (assign env (op lookup-variable-value) (const *global-env*) (reg env))
- (assign val (op make-compiled-procedure) (label L48557) (reg env))
- (goto (label L48556))
- L48557
+ (assign val (op make-compiled-procedure) (label L51325) (reg env))
+ (goto (label L51324))
+ L51325
  (assign env (op compiled-procedure-env) (reg proc))
  (assign env (op extend-environment) (const (ref)) (reg argl) (reg env) (const 0))
  (assign proc (op lookup-variable-value) (const %js-ref->number) (reg env))
  (assign val (op lexical-ref) (const 0) (const 0) (reg env))
  (assign argl (op list) (reg val))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48562))
+ (branch (label L51330))
  (test (op continuation?) (reg proc))
- (branch (label L48560))
+ (branch (label L51328))
  (test (op parameter?) (reg proc))
- (branch (label L48559))
- L48561
+ (branch (label L51327))
+ L51329
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48560
+ L51328
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48559
+ L51327
  (assign val (op apply-parameter) (reg proc) (reg argl))
  (goto (reg continue))
- L48562
+ L51330
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
  (goto (reg continue))
- L48558
- L48556
+ L51326
+ L51324
  (perform (op define-variable!) (const js-ref->number) (reg val) (reg env))
  (assign val (reg val))
- (procedure-name L48557 js-ref->number)
+ (procedure-name L51325 js-ref->number)
  (assign env (op lookup-variable-value) (const *global-env*) (reg env))
- (assign val (op make-compiled-procedure) (label L48564) (reg env))
- (goto (label L48563))
- L48564
+ (assign val (op make-compiled-procedure) (label L51332) (reg env))
+ (goto (label L51331))
+ L51332
  (assign env (op compiled-procedure-env) (reg proc))
  (assign env (op extend-environment) (const (ref)) (reg argl) (reg env) (const 0))
  (assign proc (op lookup-variable-value) (const %js-ref->string) (reg env))
  (assign val (op lexical-ref) (const 0) (const 0) (reg env))
  (assign argl (op list) (reg val))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48569))
+ (branch (label L51337))
  (test (op continuation?) (reg proc))
- (branch (label L48567))
+ (branch (label L51335))
  (test (op parameter?) (reg proc))
- (branch (label L48566))
- L48568
+ (branch (label L51334))
+ L51336
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48567
+ L51335
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48566
+ L51334
  (assign val (op apply-parameter) (reg proc) (reg argl))
  (goto (reg continue))
- L48569
+ L51337
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
  (goto (reg continue))
- L48565
- L48563
+ L51333
+ L51331
  (perform (op define-variable!) (const js-ref->string) (reg val) (reg env))
  (assign val (reg val))
- (procedure-name L48564 js-ref->string)
+ (procedure-name L51332 js-ref->string)
  (assign env (op lookup-variable-value) (const *global-env*) (reg env))
- (assign val (op make-compiled-procedure) (label L48571) (reg env))
- (goto (label L48570))
- L48571
+ (assign val (op make-compiled-procedure) (label L51339) (reg env))
+ (goto (label L51338))
+ L51339
  (assign env (op compiled-procedure-env) (reg proc))
  (assign env (op extend-environment) (const (n)) (reg argl) (reg env) (const 0))
  (assign proc (op lookup-variable-value) (const %js-number) (reg env))
  (assign val (op lexical-ref) (const 0) (const 0) (reg env))
  (assign argl (op list) (reg val))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48576))
+ (branch (label L51344))
  (test (op continuation?) (reg proc))
- (branch (label L48574))
+ (branch (label L51342))
  (test (op parameter?) (reg proc))
- (branch (label L48573))
- L48575
+ (branch (label L51341))
+ L51343
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48574
+ L51342
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48573
+ L51341
  (assign val (op apply-parameter) (reg proc) (reg argl))
  (goto (reg continue))
- L48576
+ L51344
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
  (goto (reg continue))
- L48572
- L48570
+ L51340
+ L51338
  (perform (op define-variable!) (const js-number) (reg val) (reg env))
  (assign val (reg val))
- (procedure-name L48571 js-number)
+ (procedure-name L51339 js-number)
  (assign env (op lookup-variable-value) (const *global-env*) (reg env))
- (assign val (op make-compiled-procedure) (label L48578) (reg env))
- (goto (label L48577))
- L48578
+ (assign val (op make-compiled-procedure) (label L51346) (reg env))
+ (goto (label L51345))
+ L51346
  (assign env (op compiled-procedure-env) (reg proc))
  (assign env (op extend-environment) (const (s)) (reg argl) (reg env) (const 0))
  (assign proc (op lookup-variable-value) (const %js-string) (reg env))
  (assign val (op lexical-ref) (const 0) (const 0) (reg env))
  (assign argl (op list) (reg val))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48583))
+ (branch (label L51351))
  (test (op continuation?) (reg proc))
- (branch (label L48581))
+ (branch (label L51349))
  (test (op parameter?) (reg proc))
- (branch (label L48580))
- L48582
+ (branch (label L51348))
+ L51350
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48581
+ L51349
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48580
+ L51348
  (assign val (op apply-parameter) (reg proc) (reg argl))
  (goto (reg continue))
- L48583
+ L51351
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
  (goto (reg continue))
- L48579
- L48577
+ L51347
+ L51345
  (perform (op define-variable!) (const js-string) (reg val) (reg env))
  (assign val (reg val))
- (procedure-name L48578 js-string)
+ (procedure-name L51346 js-string)
  (assign env (op lookup-variable-value) (const *global-env*) (reg env))
- (assign val (op make-compiled-procedure) (label L48585) (reg env))
- (goto (label L48584))
- L48585
+ (assign val (op make-compiled-procedure) (label L51353) (reg env))
+ (goto (label L51352))
+ L51353
  (assign env (op compiled-procedure-env) (reg proc))
  (assign env (op extend-environment) (const (ref)) (reg argl) (reg env) (const 0))
  (assign proc (op lookup-variable-value) (const %js-null?) (reg env))
  (assign val (op lexical-ref) (const 0) (const 0) (reg env))
  (assign argl (op list) (reg val))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48590))
+ (branch (label L51358))
  (test (op continuation?) (reg proc))
- (branch (label L48588))
+ (branch (label L51356))
  (test (op parameter?) (reg proc))
- (branch (label L48587))
- L48589
+ (branch (label L51355))
+ L51357
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48588
+ L51356
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48587
+ L51355
  (assign val (op apply-parameter) (reg proc) (reg argl))
  (goto (reg continue))
- L48590
+ L51358
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
  (goto (reg continue))
- L48586
- L48584
+ L51354
+ L51352
  (perform (op define-variable!) (const js-null?) (reg val) (reg env))
  (assign val (reg val))
- (procedure-name L48585 js-null?)
+ (procedure-name L51353 js-null?)
  (assign env (op lookup-variable-value) (const *global-env*) (reg env))
- (assign val (op make-compiled-procedure) (label L48592) (reg env))
- (goto (label L48591))
- L48592
+ (assign val (op make-compiled-procedure) (label L51360) (reg env))
+ (goto (label L51359))
+ L51360
  (assign env (op compiled-procedure-env) (reg proc))
  (assign env (op extend-environment) (const (ref)) (reg argl) (reg env) (const 0))
  (assign proc (op lookup-variable-value) (const %js-release!) (reg env))
  (assign val (op lexical-ref) (const 0) (const 0) (reg env))
  (assign argl (op list) (reg val))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48597))
+ (branch (label L51365))
  (test (op continuation?) (reg proc))
- (branch (label L48595))
+ (branch (label L51363))
  (test (op parameter?) (reg proc))
- (branch (label L48594))
- L48596
+ (branch (label L51362))
+ L51364
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48595
+ L51363
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48594
+ L51362
  (assign val (op apply-parameter) (reg proc) (reg argl))
  (goto (reg continue))
- L48597
+ L51365
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
  (goto (reg continue))
- L48593
- L48591
+ L51361
+ L51359
  (perform (op define-variable!) (const js-release!) (reg val) (reg env))
  (assign val (reg val))
- (procedure-name L48592 js-release!)
+ (procedure-name L51360 js-release!)
  (assign env (op lookup-variable-value) (const *global-env*) (reg env))
- (assign val (op make-compiled-procedure) (label L48599) (reg env))
- (goto (label L48598))
- L48599
+ (assign val (op make-compiled-procedure) (label L51367) (reg env))
+ (goto (label L51366))
+ L51367
  (assign env (op compiled-procedure-env) (reg proc))
  (assign env (op extend-environment) (const (val)) (reg argl) (reg env) (const 0))
  (assign proc (op lookup-variable-value) (const %js-ref?) (reg env))
  (assign val (op lexical-ref) (const 0) (const 0) (reg env))
  (assign argl (op list) (reg val))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48604))
+ (branch (label L51372))
  (test (op continuation?) (reg proc))
- (branch (label L48602))
+ (branch (label L51370))
  (test (op parameter?) (reg proc))
- (branch (label L48601))
- L48603
+ (branch (label L51369))
+ L51371
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48602
+ L51370
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48601
+ L51369
  (assign val (op apply-parameter) (reg proc) (reg argl))
  (goto (reg continue))
- L48604
+ L51372
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
  (goto (reg continue))
- L48600
- L48598
+ L51368
+ L51366
  (perform (op define-variable!) (const js-ref?) (reg val) (reg env))
  (assign val (reg val))
- (procedure-name L48599 js-ref?)
+ (procedure-name L51367 js-ref?)
  (assign env (op lookup-variable-value) (const *global-env*) (reg env))
- (assign val (op make-compiled-procedure) (label L48606) (reg env))
- (goto (label L48605))
- L48606
+ (assign val (op make-compiled-procedure) (label L51374) (reg env))
+ (goto (label L51373))
+ L51374
  (assign env (op compiled-procedure-env) (reg proc))
  (assign env (op extend-environment) (const (obj method . args)) (reg argl) (reg env) (const 0))
  (assign proc (op lookup-variable-value) (const %js-call) (reg env))
@@ -403,39 +403,39 @@
  (assign val (op lexical-ref) (const 0) (const 0) (reg env))
  (assign argl (op cons) (reg val) (reg argl))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48611))
+ (branch (label L51379))
  (test (op continuation?) (reg proc))
- (branch (label L48609))
+ (branch (label L51377))
  (test (op parameter?) (reg proc))
- (branch (label L48608))
- L48610
+ (branch (label L51376))
+ L51378
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48609
+ L51377
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48608
+ L51376
  (assign val (op apply-parameter) (reg proc) (reg argl))
  (goto (reg continue))
- L48611
+ L51379
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
  (goto (reg continue))
- L48607
- L48605
+ L51375
+ L51373
  (perform (op define-variable!) (const js-call) (reg val) (reg env))
  (assign val (reg val))
- (procedure-name L48606 js-call)
+ (procedure-name L51374 js-call)
  (assign env (op lookup-variable-value) (const *global-env*) (reg env))
  (assign val (const #S(SCHEME-FALSE)))
  (perform (op define-variable!) (const *js-document*) (reg val) (reg env))
  (assign val (reg val))
  (assign env (op lookup-variable-value) (const *global-env*) (reg env))
- (assign val (op make-compiled-procedure) (label L48613) (reg env))
- (goto (label L48612))
- L48613
+ (assign val (op make-compiled-procedure) (label L51381) (reg env))
+ (goto (label L51380))
+ L51381
  (assign env (op compiled-procedure-env) (reg proc))
  (assign env (op extend-environment) (const NIL) (reg argl) (reg env) (const 0))
  (save continue)
@@ -444,75 +444,75 @@
  (assign val (op lookup-variable-value) (const *js-document*) (reg env))
  (assign argl (op list) (reg val))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48626))
+ (branch (label L51394))
  (test (op continuation?) (reg proc))
- (branch (label L48624))
+ (branch (label L51392))
  (test (op parameter?) (reg proc))
- (branch (label L48623))
- L48625
- (assign continue (label L48622))
+ (branch (label L51391))
+ L51393
+ (assign continue (label L51390))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48624
+ L51392
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48623
+ L51391
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L48622))
- L48626
+ (goto (label L51390))
+ L51394
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L48622
+ L51390
  (restore env)
  (test (op false?) (reg val))
- (branch (label L48615))
- L48616
+ (branch (label L51383))
+ L51384
  (save env)
  (assign proc (op lookup-variable-value) (const js-eval) (reg env))
  (assign val (const "document"))
  (assign argl (op list) (reg val))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48621))
+ (branch (label L51389))
  (test (op continuation?) (reg proc))
- (branch (label L48619))
+ (branch (label L51387))
  (test (op parameter?) (reg proc))
- (branch (label L48618))
- L48620
- (assign continue (label L48617))
+ (branch (label L51386))
+ L51388
+ (assign continue (label L51385))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48619
+ L51387
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48618
+ L51386
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L48617))
- L48621
+ (goto (label L51385))
+ L51389
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L48617
+ L51385
  (restore env)
  (perform (op set-variable-value!) (const *js-document*) (reg val) (reg env))
  (assign val (reg val))
- (goto (label L48614))
- L48615
+ (goto (label L51382))
+ L51383
  (assign val (const #S(SCHEME-FALSE)))
- L48614
+ L51382
  (restore continue)
  (assign val (op lookup-variable-value) (const *js-document*) (reg env))
  (goto (reg continue))
- L48612
+ L51380
  (perform (op define-variable!) (const js-document) (reg val) (reg env))
  (assign val (reg val))
- (procedure-name L48613 js-document)
+ (procedure-name L51381 js-document)
  (assign env (op lookup-variable-value) (const *global-env*) (reg env))
- (assign val (op make-compiled-procedure) (label L48628) (reg env))
- (goto (label L48627))
- L48628
+ (assign val (op make-compiled-procedure) (label L51396) (reg env))
+ (goto (label L51395))
+ L51396
  (assign env (op compiled-procedure-env) (reg proc))
  (assign env (op extend-environment) (const (id)) (reg argl) (reg env) (const 0))
  (assign proc (op lookup-variable-value) (const js-call) (reg env))
@@ -523,27 +523,27 @@
  (assign val (op lexical-ref) (const 0) (const 0) (reg env))
  (assign argl (op list) (reg val))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48638))
+ (branch (label L51406))
  (test (op continuation?) (reg proc))
- (branch (label L48636))
+ (branch (label L51404))
  (test (op parameter?) (reg proc))
- (branch (label L48635))
- L48637
- (assign continue (label L48634))
+ (branch (label L51403))
+ L51405
+ (assign continue (label L51402))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48636
+ L51404
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48635
+ L51403
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L48634))
- L48638
+ (goto (label L51402))
+ L51406
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L48634
+ L51402
  (assign argl (op list) (reg val))
  (restore env)
  (assign val (const "getElementById"))
@@ -552,61 +552,61 @@
  (assign proc (op lookup-variable-value) (const js-document) (reg env))
  (assign argl (const NIL))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48633))
+ (branch (label L51401))
  (test (op continuation?) (reg proc))
- (branch (label L48631))
+ (branch (label L51399))
  (test (op parameter?) (reg proc))
- (branch (label L48630))
- L48632
- (assign continue (label L48629))
+ (branch (label L51398))
+ L51400
+ (assign continue (label L51397))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48631
+ L51399
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48630
+ L51398
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L48629))
- L48633
+ (goto (label L51397))
+ L51401
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L48629
+ L51397
  (restore argl)
  (assign argl (op cons) (reg val) (reg argl))
  (restore proc)
  (restore continue)
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48643))
+ (branch (label L51411))
  (test (op continuation?) (reg proc))
- (branch (label L48641))
+ (branch (label L51409))
  (test (op parameter?) (reg proc))
- (branch (label L48640))
- L48642
+ (branch (label L51408))
+ L51410
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48641
+ L51409
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48640
+ L51408
  (assign val (op apply-parameter) (reg proc) (reg argl))
  (goto (reg continue))
- L48643
+ L51411
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
  (goto (reg continue))
- L48639
- L48627
+ L51407
+ L51395
  (perform (op define-variable!) (const get-element-by-id) (reg val) (reg env))
  (assign val (reg val))
- (procedure-name L48628 get-element-by-id)
+ (procedure-name L51396 get-element-by-id)
  (assign env (op lookup-variable-value) (const *global-env*) (reg env))
- (assign val (op make-compiled-procedure) (label L48645) (reg env))
- (goto (label L48644))
- L48645
+ (assign val (op make-compiled-procedure) (label L51413) (reg env))
+ (goto (label L51412))
+ L51413
  (assign env (op compiled-procedure-env) (reg proc))
  (assign env (op extend-environment) (const (sel)) (reg argl) (reg env) (const 0))
  (assign proc (op lookup-variable-value) (const js-call) (reg env))
@@ -617,27 +617,27 @@
  (assign val (op lexical-ref) (const 0) (const 0) (reg env))
  (assign argl (op list) (reg val))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48655))
+ (branch (label L51423))
  (test (op continuation?) (reg proc))
- (branch (label L48653))
+ (branch (label L51421))
  (test (op parameter?) (reg proc))
- (branch (label L48652))
- L48654
- (assign continue (label L48651))
+ (branch (label L51420))
+ L51422
+ (assign continue (label L51419))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48653
+ L51421
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48652
+ L51420
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L48651))
- L48655
+ (goto (label L51419))
+ L51423
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L48651
+ L51419
  (assign argl (op list) (reg val))
  (restore env)
  (assign val (const "querySelectorAll"))
@@ -646,61 +646,61 @@
  (assign proc (op lookup-variable-value) (const js-document) (reg env))
  (assign argl (const NIL))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48650))
+ (branch (label L51418))
  (test (op continuation?) (reg proc))
- (branch (label L48648))
+ (branch (label L51416))
  (test (op parameter?) (reg proc))
- (branch (label L48647))
- L48649
- (assign continue (label L48646))
+ (branch (label L51415))
+ L51417
+ (assign continue (label L51414))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48648
+ L51416
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48647
+ L51415
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L48646))
- L48650
+ (goto (label L51414))
+ L51418
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L48646
+ L51414
  (restore argl)
  (assign argl (op cons) (reg val) (reg argl))
  (restore proc)
  (restore continue)
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48660))
+ (branch (label L51428))
  (test (op continuation?) (reg proc))
- (branch (label L48658))
+ (branch (label L51426))
  (test (op parameter?) (reg proc))
- (branch (label L48657))
- L48659
+ (branch (label L51425))
+ L51427
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48658
+ L51426
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48657
+ L51425
  (assign val (op apply-parameter) (reg proc) (reg argl))
  (goto (reg continue))
- L48660
+ L51428
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
  (goto (reg continue))
- L48656
- L48644
+ L51424
+ L51412
  (perform (op define-variable!) (const query-selector-all) (reg val) (reg env))
  (assign val (reg val))
- (procedure-name L48645 query-selector-all)
+ (procedure-name L51413 query-selector-all)
  (assign env (op lookup-variable-value) (const *global-env*) (reg env))
- (assign val (op make-compiled-procedure) (label L48662) (reg env))
- (goto (label L48661))
- L48662
+ (assign val (op make-compiled-procedure) (label L51430) (reg env))
+ (goto (label L51429))
+ L51430
  (assign env (op compiled-procedure-env) (reg proc))
  (assign env (op extend-environment) (const (el text)) (reg argl) (reg env) (const 0))
  (assign proc (op lookup-variable-value) (const js-set!) (reg env))
@@ -711,27 +711,27 @@
  (assign val (op lexical-ref) (const 0) (const 1) (reg env))
  (assign argl (op list) (reg val))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48667))
+ (branch (label L51435))
  (test (op continuation?) (reg proc))
- (branch (label L48665))
+ (branch (label L51433))
  (test (op parameter?) (reg proc))
- (branch (label L48664))
- L48666
- (assign continue (label L48663))
+ (branch (label L51432))
+ L51434
+ (assign continue (label L51431))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48665
+ L51433
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48664
+ L51432
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L48663))
- L48667
+ (goto (label L51431))
+ L51435
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L48663
+ L51431
  (assign argl (op list) (reg val))
  (restore env)
  (assign val (const "textContent"))
@@ -741,35 +741,35 @@
  (restore proc)
  (restore continue)
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48672))
+ (branch (label L51440))
  (test (op continuation?) (reg proc))
- (branch (label L48670))
+ (branch (label L51438))
  (test (op parameter?) (reg proc))
- (branch (label L48669))
- L48671
+ (branch (label L51437))
+ L51439
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48670
+ L51438
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48669
+ L51437
  (assign val (op apply-parameter) (reg proc) (reg argl))
  (goto (reg continue))
- L48672
+ L51440
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
  (goto (reg continue))
- L48668
- L48661
+ L51436
+ L51429
  (perform (op define-variable!) (const set-text!) (reg val) (reg env))
  (assign val (reg val))
- (procedure-name L48662 set-text!)
+ (procedure-name L51430 set-text!)
  (assign env (op lookup-variable-value) (const *global-env*) (reg env))
- (assign val (op make-compiled-procedure) (label L48674) (reg env))
- (goto (label L48673))
- L48674
+ (assign val (op make-compiled-procedure) (label L51442) (reg env))
+ (goto (label L51441))
+ L51442
  (assign env (op compiled-procedure-env) (reg proc))
  (assign env (op extend-environment) (const (el html)) (reg argl) (reg env) (const 0))
  (assign proc (op lookup-variable-value) (const js-set!) (reg env))
@@ -780,27 +780,27 @@
  (assign val (op lexical-ref) (const 0) (const 1) (reg env))
  (assign argl (op list) (reg val))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48679))
+ (branch (label L51447))
  (test (op continuation?) (reg proc))
- (branch (label L48677))
+ (branch (label L51445))
  (test (op parameter?) (reg proc))
- (branch (label L48676))
- L48678
- (assign continue (label L48675))
+ (branch (label L51444))
+ L51446
+ (assign continue (label L51443))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48677
+ L51445
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48676
+ L51444
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L48675))
- L48679
+ (goto (label L51443))
+ L51447
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L48675
+ L51443
  (assign argl (op list) (reg val))
  (restore env)
  (assign val (const "innerHTML"))
@@ -810,35 +810,35 @@
  (restore proc)
  (restore continue)
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48684))
+ (branch (label L51452))
  (test (op continuation?) (reg proc))
- (branch (label L48682))
+ (branch (label L51450))
  (test (op parameter?) (reg proc))
- (branch (label L48681))
- L48683
+ (branch (label L51449))
+ L51451
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48682
+ L51450
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48681
+ L51449
  (assign val (op apply-parameter) (reg proc) (reg argl))
  (goto (reg continue))
- L48684
+ L51452
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
  (goto (reg continue))
- L48680
- L48673
+ L51448
+ L51441
  (perform (op define-variable!) (const set-html!) (reg val) (reg env))
  (assign val (reg val))
- (procedure-name L48674 set-html!)
+ (procedure-name L51442 set-html!)
  (assign env (op lookup-variable-value) (const *global-env*) (reg env))
- (assign val (op make-compiled-procedure) (label L48686) (reg env))
- (goto (label L48685))
- L48686
+ (assign val (op make-compiled-procedure) (label L51454) (reg env))
+ (goto (label L51453))
+ L51454
  (assign env (op compiled-procedure-env) (reg proc))
  (assign env (op extend-environment) (const (el event handler)) (reg argl) (reg env) (const 0))
  (assign proc (op lookup-variable-value) (const js-call) (reg env))
@@ -849,27 +849,27 @@
  (assign val (op lexical-ref) (const 0) (const 2) (reg env))
  (assign argl (op list) (reg val))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48696))
+ (branch (label L51464))
  (test (op continuation?) (reg proc))
- (branch (label L48694))
+ (branch (label L51462))
  (test (op parameter?) (reg proc))
- (branch (label L48693))
- L48695
- (assign continue (label L48692))
+ (branch (label L51461))
+ L51463
+ (assign continue (label L51460))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48694
+ L51462
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48693
+ L51461
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L48692))
- L48696
+ (goto (label L51460))
+ L51464
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L48692
+ L51460
  (assign argl (op list) (reg val))
  (restore env)
  (save env)
@@ -878,27 +878,27 @@
  (assign val (op lexical-ref) (const 0) (const 1) (reg env))
  (assign argl (op list) (reg val))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48691))
+ (branch (label L51459))
  (test (op continuation?) (reg proc))
- (branch (label L48689))
+ (branch (label L51457))
  (test (op parameter?) (reg proc))
- (branch (label L48688))
- L48690
- (assign continue (label L48687))
+ (branch (label L51456))
+ L51458
+ (assign continue (label L51455))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48689
+ L51457
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48688
+ L51456
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L48687))
- L48691
+ (goto (label L51455))
+ L51459
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L48687
+ L51455
  (restore argl)
  (assign argl (op cons) (reg val) (reg argl))
  (restore env)
@@ -909,35 +909,35 @@
  (restore proc)
  (restore continue)
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48701))
+ (branch (label L51469))
  (test (op continuation?) (reg proc))
- (branch (label L48699))
+ (branch (label L51467))
  (test (op parameter?) (reg proc))
- (branch (label L48698))
- L48700
+ (branch (label L51466))
+ L51468
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48699
+ L51467
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48698
+ L51466
  (assign val (op apply-parameter) (reg proc) (reg argl))
  (goto (reg continue))
- L48701
+ L51469
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
  (goto (reg continue))
- L48697
- L48685
+ L51465
+ L51453
  (perform (op define-variable!) (const add-event-listener!) (reg val) (reg env))
  (assign val (reg val))
- (procedure-name L48686 add-event-listener!)
+ (procedure-name L51454 add-event-listener!)
  (assign env (op lookup-variable-value) (const *global-env*) (reg env))
- (assign val (op make-compiled-procedure) (label L48703) (reg env))
- (goto (label L48702))
- L48703
+ (assign val (op make-compiled-procedure) (label L51471) (reg env))
+ (goto (label L51470))
+ L51471
  (assign env (op compiled-procedure-env) (reg proc))
  (assign env (op extend-environment) (const (el cls)) (reg argl) (reg env) (const 0))
  (assign proc (op lookup-variable-value) (const js-call) (reg env))
@@ -948,27 +948,27 @@
  (assign val (op lexical-ref) (const 0) (const 1) (reg env))
  (assign argl (op list) (reg val))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48713))
+ (branch (label L51481))
  (test (op continuation?) (reg proc))
- (branch (label L48711))
+ (branch (label L51479))
  (test (op parameter?) (reg proc))
- (branch (label L48710))
- L48712
- (assign continue (label L48709))
+ (branch (label L51478))
+ L51480
+ (assign continue (label L51477))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48711
+ L51479
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48710
+ L51478
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L48709))
- L48713
+ (goto (label L51477))
+ L51481
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L48709
+ L51477
  (assign argl (op list) (reg val))
  (restore env)
  (assign val (const "add"))
@@ -980,61 +980,61 @@
  (assign val (op lexical-ref) (const 0) (const 0) (reg env))
  (assign argl (op cons) (reg val) (reg argl))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48708))
+ (branch (label L51476))
  (test (op continuation?) (reg proc))
- (branch (label L48706))
+ (branch (label L51474))
  (test (op parameter?) (reg proc))
- (branch (label L48705))
- L48707
- (assign continue (label L48704))
+ (branch (label L51473))
+ L51475
+ (assign continue (label L51472))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48706
+ L51474
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48705
+ L51473
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L48704))
- L48708
+ (goto (label L51472))
+ L51476
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L48704
+ L51472
  (restore argl)
  (assign argl (op cons) (reg val) (reg argl))
  (restore proc)
  (restore continue)
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48718))
+ (branch (label L51486))
  (test (op continuation?) (reg proc))
- (branch (label L48716))
+ (branch (label L51484))
  (test (op parameter?) (reg proc))
- (branch (label L48715))
- L48717
+ (branch (label L51483))
+ L51485
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48716
+ L51484
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48715
+ L51483
  (assign val (op apply-parameter) (reg proc) (reg argl))
  (goto (reg continue))
- L48718
+ L51486
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
  (goto (reg continue))
- L48714
- L48702
+ L51482
+ L51470
  (perform (op define-variable!) (const class-add!) (reg val) (reg env))
  (assign val (reg val))
- (procedure-name L48703 class-add!)
+ (procedure-name L51471 class-add!)
  (assign env (op lookup-variable-value) (const *global-env*) (reg env))
- (assign val (op make-compiled-procedure) (label L48720) (reg env))
- (goto (label L48719))
- L48720
+ (assign val (op make-compiled-procedure) (label L51488) (reg env))
+ (goto (label L51487))
+ L51488
  (assign env (op compiled-procedure-env) (reg proc))
  (assign env (op extend-environment) (const (el cls)) (reg argl) (reg env) (const 0))
  (assign proc (op lookup-variable-value) (const js-call) (reg env))
@@ -1045,27 +1045,27 @@
  (assign val (op lexical-ref) (const 0) (const 1) (reg env))
  (assign argl (op list) (reg val))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48730))
+ (branch (label L51498))
  (test (op continuation?) (reg proc))
- (branch (label L48728))
+ (branch (label L51496))
  (test (op parameter?) (reg proc))
- (branch (label L48727))
- L48729
- (assign continue (label L48726))
+ (branch (label L51495))
+ L51497
+ (assign continue (label L51494))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48728
+ L51496
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48727
+ L51495
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L48726))
- L48730
+ (goto (label L51494))
+ L51498
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L48726
+ L51494
  (assign argl (op list) (reg val))
  (restore env)
  (assign val (const "remove"))
@@ -1077,57 +1077,57 @@
  (assign val (op lexical-ref) (const 0) (const 0) (reg env))
  (assign argl (op cons) (reg val) (reg argl))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48725))
+ (branch (label L51493))
  (test (op continuation?) (reg proc))
- (branch (label L48723))
+ (branch (label L51491))
  (test (op parameter?) (reg proc))
- (branch (label L48722))
- L48724
- (assign continue (label L48721))
+ (branch (label L51490))
+ L51492
+ (assign continue (label L51489))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48723
+ L51491
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48722
+ L51490
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L48721))
- L48725
+ (goto (label L51489))
+ L51493
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L48721
+ L51489
  (restore argl)
  (assign argl (op cons) (reg val) (reg argl))
  (restore proc)
  (restore continue)
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48735))
+ (branch (label L51503))
  (test (op continuation?) (reg proc))
- (branch (label L48733))
+ (branch (label L51501))
  (test (op parameter?) (reg proc))
- (branch (label L48732))
- L48734
+ (branch (label L51500))
+ L51502
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48733
+ L51501
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48732
+ L51500
  (assign val (op apply-parameter) (reg proc) (reg argl))
  (goto (reg continue))
- L48735
+ L51503
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
  (goto (reg continue))
- L48731
- L48719
+ L51499
+ L51487
  (perform (op define-variable!) (const class-remove!) (reg val) (reg env))
  (assign val (reg val))
- (procedure-name L48720 class-remove!)
+ (procedure-name L51488 class-remove!)
  (assign env (op lookup-variable-value) (const *global-env*) (reg env))
  (assign val (const #S(SCHEME-FALSE)))
  (perform (op define-variable!) (const *canvas-ctx*) (reg val) (reg env))
@@ -1137,9 +1137,9 @@
  (perform (op define-variable!) (const *js-math*) (reg val) (reg env))
  (assign val (reg val))
  (assign env (op lookup-variable-value) (const *global-env*) (reg env))
- (assign val (op make-compiled-procedure) (label L48737) (reg env))
- (goto (label L48736))
- L48737
+ (assign val (op make-compiled-procedure) (label L51505) (reg env))
+ (goto (label L51504))
+ L51505
  (assign env (op compiled-procedure-env) (reg proc))
  (assign env (op extend-environment) (const NIL) (reg argl) (reg env) (const 0))
  (save continue)
@@ -1148,31 +1148,31 @@
  (assign val (op lookup-variable-value) (const *canvas-ctx*) (reg env))
  (assign argl (op list) (reg val))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48760))
+ (branch (label L51528))
  (test (op continuation?) (reg proc))
- (branch (label L48758))
+ (branch (label L51526))
  (test (op parameter?) (reg proc))
- (branch (label L48757))
- L48759
- (assign continue (label L48756))
+ (branch (label L51525))
+ L51527
+ (assign continue (label L51524))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48758
+ L51526
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48757
+ L51525
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L48756))
- L48760
+ (goto (label L51524))
+ L51528
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L48756
+ L51524
  (restore env)
  (test (op false?) (reg val))
- (branch (label L48739))
- L48740
+ (branch (label L51507))
+ L51508
  (save env)
  (assign proc (op lookup-variable-value) (const js-call) (reg env))
  (save proc)
@@ -1181,27 +1181,27 @@
  (assign val (const "2d"))
  (assign argl (op list) (reg val))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48750))
+ (branch (label L51518))
  (test (op continuation?) (reg proc))
- (branch (label L48748))
+ (branch (label L51516))
  (test (op parameter?) (reg proc))
- (branch (label L48747))
- L48749
- (assign continue (label L48746))
+ (branch (label L51515))
+ L51517
+ (assign continue (label L51514))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48748
+ L51516
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48747
+ L51515
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L48746))
- L48750
+ (goto (label L51514))
+ L51518
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L48746
+ L51514
  (assign argl (op list) (reg val))
  (restore env)
  (assign val (const "getContext"))
@@ -1211,75 +1211,75 @@
  (assign val (const "sandbox-canvas"))
  (assign argl (op list) (reg val))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48745))
+ (branch (label L51513))
  (test (op continuation?) (reg proc))
- (branch (label L48743))
+ (branch (label L51511))
  (test (op parameter?) (reg proc))
- (branch (label L48742))
- L48744
- (assign continue (label L48741))
+ (branch (label L51510))
+ L51512
+ (assign continue (label L51509))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48743
+ L51511
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48742
+ L51510
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L48741))
- L48745
+ (goto (label L51509))
+ L51513
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L48741
+ L51509
  (restore argl)
  (assign argl (op cons) (reg val) (reg argl))
  (restore proc)
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48755))
+ (branch (label L51523))
  (test (op continuation?) (reg proc))
- (branch (label L48753))
+ (branch (label L51521))
  (test (op parameter?) (reg proc))
- (branch (label L48752))
- L48754
- (assign continue (label L48751))
+ (branch (label L51520))
+ L51522
+ (assign continue (label L51519))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48753
+ L51521
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48752
+ L51520
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L48751))
- L48755
+ (goto (label L51519))
+ L51523
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L48751
+ L51519
  (restore env)
  (perform (op set-variable-value!) (const *canvas-ctx*) (reg val) (reg env))
  (assign val (reg val))
- (goto (label L48738))
- L48739
+ (goto (label L51506))
+ L51507
  (assign val (const #S(SCHEME-FALSE)))
- L48738
+ L51506
  (restore continue)
  (assign val (op lookup-variable-value) (const *canvas-ctx*) (reg env))
  (goto (reg continue))
- L48736
+ L51504
  (perform (op define-variable!) (const canvas-ctx) (reg val) (reg env))
  (assign val (reg val))
- (procedure-name L48737 canvas-ctx)
+ (procedure-name L51505 canvas-ctx)
  (assign env (op lookup-variable-value) (const *global-env*) (reg env))
- (assign val (op make-compiled-procedure) (label L48762) (reg env))
- (goto (label L48761))
- L48762
+ (assign val (op make-compiled-procedure) (label L51530) (reg env))
+ (goto (label L51529))
+ L51530
  (assign env (op compiled-procedure-env) (reg proc))
  (assign env (op extend-environment) (const NIL) (reg argl) (reg env) (const 0))
- (assign proc (op make-compiled-procedure) (label L48769) (reg env))
- (goto (label L48768))
- L48769
+ (assign proc (op make-compiled-procedure) (label L51537) (reg env))
+ (goto (label L51536))
+ L51537
  (assign env (op compiled-procedure-env) (reg proc))
  (assign env (op extend-environment) (const (ctx)) (reg argl) (reg env) (const 0))
  (assign proc (op lookup-variable-value) (const js-call) (reg env))
@@ -1297,52 +1297,52 @@
  (assign val (op lexical-ref) (const 0) (const 0) (reg env))
  (assign argl (op cons) (reg val) (reg argl))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48794))
+ (branch (label L51562))
  (test (op continuation?) (reg proc))
- (branch (label L48792))
+ (branch (label L51560))
  (test (op parameter?) (reg proc))
- (branch (label L48791))
- L48793
- (assign continue (label L48790))
+ (branch (label L51559))
+ L51561
+ (assign continue (label L51558))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48792
+ L51560
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48791
+ L51559
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L48790))
- L48794
+ (goto (label L51558))
+ L51562
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L48790
+ L51558
  (restore argl)
  (assign argl (op cons) (reg val) (reg argl))
  (restore proc)
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48799))
+ (branch (label L51567))
  (test (op continuation?) (reg proc))
- (branch (label L48797))
+ (branch (label L51565))
  (test (op parameter?) (reg proc))
- (branch (label L48796))
- L48798
- (assign continue (label L48795))
+ (branch (label L51564))
+ L51566
+ (assign continue (label L51563))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48797
+ L51565
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48796
+ L51564
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L48795))
- L48799
+ (goto (label L51563))
+ L51567
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L48795
+ L51563
  (assign argl (op list) (reg val))
  (restore env)
  (save env)
@@ -1358,52 +1358,52 @@
  (assign val (op lexical-ref) (const 0) (const 0) (reg env))
  (assign argl (op cons) (reg val) (reg argl))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48784))
+ (branch (label L51552))
  (test (op continuation?) (reg proc))
- (branch (label L48782))
+ (branch (label L51550))
  (test (op parameter?) (reg proc))
- (branch (label L48781))
- L48783
- (assign continue (label L48780))
+ (branch (label L51549))
+ L51551
+ (assign continue (label L51548))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48782
+ L51550
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48781
+ L51549
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L48780))
- L48784
+ (goto (label L51548))
+ L51552
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L48780
+ L51548
  (restore argl)
  (assign argl (op cons) (reg val) (reg argl))
  (restore proc)
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48789))
+ (branch (label L51557))
  (test (op continuation?) (reg proc))
- (branch (label L48787))
+ (branch (label L51555))
  (test (op parameter?) (reg proc))
- (branch (label L48786))
- L48788
- (assign continue (label L48785))
+ (branch (label L51554))
+ L51556
+ (assign continue (label L51553))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48787
+ L51555
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48786
+ L51554
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L48785))
- L48789
+ (goto (label L51553))
+ L51557
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L48785
+ L51553
  (restore argl)
  (assign argl (op cons) (reg val) (reg argl))
  (restore env)
@@ -1413,27 +1413,27 @@
  (assign val (const 0))
  (assign argl (op list) (reg val))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48779))
+ (branch (label L51547))
  (test (op continuation?) (reg proc))
- (branch (label L48777))
+ (branch (label L51545))
  (test (op parameter?) (reg proc))
- (branch (label L48776))
- L48778
- (assign continue (label L48775))
+ (branch (label L51544))
+ L51546
+ (assign continue (label L51543))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48777
+ L51545
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48776
+ L51544
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L48775))
- L48779
+ (goto (label L51543))
+ L51547
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L48775
+ L51543
  (restore argl)
  (assign argl (op cons) (reg val) (reg argl))
  (restore env)
@@ -1443,27 +1443,27 @@
  (assign val (const 0))
  (assign argl (op list) (reg val))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48774))
+ (branch (label L51542))
  (test (op continuation?) (reg proc))
- (branch (label L48772))
+ (branch (label L51540))
  (test (op parameter?) (reg proc))
- (branch (label L48771))
- L48773
- (assign continue (label L48770))
+ (branch (label L51539))
+ L51541
+ (assign continue (label L51538))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48772
+ L51540
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48771
+ L51539
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L48770))
- L48774
+ (goto (label L51538))
+ L51542
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L48770
+ L51538
  (restore argl)
  (assign argl (op cons) (reg val) (reg argl))
  (restore env)
@@ -1474,87 +1474,87 @@
  (restore proc)
  (restore continue)
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48804))
+ (branch (label L51572))
  (test (op continuation?) (reg proc))
- (branch (label L48802))
+ (branch (label L51570))
  (test (op parameter?) (reg proc))
- (branch (label L48801))
- L48803
+ (branch (label L51569))
+ L51571
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48802
+ L51570
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48801
+ L51569
  (assign val (op apply-parameter) (reg proc) (reg argl))
  (goto (reg continue))
- L48804
+ L51572
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
  (goto (reg continue))
- L48800
- L48768
+ L51568
+ L51536
  (save continue)
  (save proc)
  (assign proc (op lookup-variable-value) (const canvas-ctx) (reg env))
  (assign argl (const NIL))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48767))
+ (branch (label L51535))
  (test (op continuation?) (reg proc))
- (branch (label L48765))
+ (branch (label L51533))
  (test (op parameter?) (reg proc))
- (branch (label L48764))
- L48766
- (assign continue (label L48763))
+ (branch (label L51532))
+ L51534
+ (assign continue (label L51531))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48765
+ L51533
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48764
+ L51532
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L48763))
- L48767
+ (goto (label L51531))
+ L51535
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L48763
+ L51531
  (assign argl (op list) (reg val))
  (restore proc)
  (restore continue)
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48809))
+ (branch (label L51577))
  (test (op continuation?) (reg proc))
- (branch (label L48807))
+ (branch (label L51575))
  (test (op parameter?) (reg proc))
- (branch (label L48806))
- L48808
+ (branch (label L51574))
+ L51576
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48807
+ L51575
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48806
+ L51574
  (assign val (op apply-parameter) (reg proc) (reg argl))
  (goto (reg continue))
- L48809
+ L51577
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
  (goto (reg continue))
- L48805
- L48761
+ L51573
+ L51529
  (perform (op define-variable!) (const canvas-clear) (reg val) (reg env))
  (assign val (reg val))
- (procedure-name L48762 canvas-clear)
+ (procedure-name L51530 canvas-clear)
  (assign env (op lookup-variable-value) (const *global-env*) (reg env))
- (assign val (op make-compiled-procedure) (label L48811) (reg env))
- (goto (label L48810))
- L48811
+ (assign val (op make-compiled-procedure) (label L51579) (reg env))
+ (goto (label L51578))
+ L51579
  (assign env (op compiled-procedure-env) (reg proc))
  (assign env (op extend-environment) (const (r g b)) (reg argl) (reg env) (const 0))
  (assign proc (op lookup-variable-value) (const js-set!) (reg env))
@@ -1573,27 +1573,27 @@
  (assign val (op lexical-ref) (const 0) (const 2) (reg env))
  (assign argl (op list) (reg val))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48831))
+ (branch (label L51599))
  (test (op continuation?) (reg proc))
- (branch (label L48829))
+ (branch (label L51597))
  (test (op parameter?) (reg proc))
- (branch (label L48828))
- L48830
- (assign continue (label L48827))
+ (branch (label L51596))
+ L51598
+ (assign continue (label L51595))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48829
+ L51597
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48828
+ L51596
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L48827))
- L48831
+ (goto (label L51595))
+ L51599
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L48827
+ L51595
  (restore argl)
  (assign argl (op cons) (reg val) (reg argl))
  (restore env)
@@ -1605,27 +1605,27 @@
  (assign val (op lexical-ref) (const 0) (const 1) (reg env))
  (assign argl (op list) (reg val))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48826))
+ (branch (label L51594))
  (test (op continuation?) (reg proc))
- (branch (label L48824))
+ (branch (label L51592))
  (test (op parameter?) (reg proc))
- (branch (label L48823))
- L48825
- (assign continue (label L48822))
+ (branch (label L51591))
+ L51593
+ (assign continue (label L51590))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48824
+ L51592
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48823
+ L51591
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L48822))
- L48826
+ (goto (label L51590))
+ L51594
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L48822
+ L51590
  (restore argl)
  (assign argl (op cons) (reg val) (reg argl))
  (restore env)
@@ -1636,78 +1636,78 @@
  (assign val (op lexical-ref) (const 0) (const 0) (reg env))
  (assign argl (op list) (reg val))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48821))
+ (branch (label L51589))
  (test (op continuation?) (reg proc))
- (branch (label L48819))
+ (branch (label L51587))
  (test (op parameter?) (reg proc))
- (branch (label L48818))
- L48820
- (assign continue (label L48817))
+ (branch (label L51586))
+ L51588
+ (assign continue (label L51585))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48819
+ L51587
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48818
+ L51586
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L48817))
- L48821
+ (goto (label L51585))
+ L51589
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L48817
+ L51585
  (restore argl)
  (assign argl (op cons) (reg val) (reg argl))
  (assign val (const "rgb("))
  (assign argl (op cons) (reg val) (reg argl))
  (restore proc)
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48836))
+ (branch (label L51604))
  (test (op continuation?) (reg proc))
- (branch (label L48834))
+ (branch (label L51602))
  (test (op parameter?) (reg proc))
- (branch (label L48833))
- L48835
- (assign continue (label L48832))
+ (branch (label L51601))
+ L51603
+ (assign continue (label L51600))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48834
+ L51602
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48833
+ L51601
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L48832))
- L48836
+ (goto (label L51600))
+ L51604
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L48832
+ L51600
  (assign argl (op list) (reg val))
  (restore proc)
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48841))
+ (branch (label L51609))
  (test (op continuation?) (reg proc))
- (branch (label L48839))
+ (branch (label L51607))
  (test (op parameter?) (reg proc))
- (branch (label L48838))
- L48840
- (assign continue (label L48837))
+ (branch (label L51606))
+ L51608
+ (assign continue (label L51605))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48839
+ L51607
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48838
+ L51606
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L48837))
- L48841
+ (goto (label L51605))
+ L51609
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L48837
+ L51605
  (assign argl (op list) (reg val))
  (restore env)
  (assign val (const "fillStyle"))
@@ -1716,61 +1716,61 @@
  (assign proc (op lookup-variable-value) (const canvas-ctx) (reg env))
  (assign argl (const NIL))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48816))
+ (branch (label L51584))
  (test (op continuation?) (reg proc))
- (branch (label L48814))
+ (branch (label L51582))
  (test (op parameter?) (reg proc))
- (branch (label L48813))
- L48815
- (assign continue (label L48812))
+ (branch (label L51581))
+ L51583
+ (assign continue (label L51580))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48814
+ L51582
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48813
+ L51581
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L48812))
- L48816
+ (goto (label L51580))
+ L51584
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L48812
+ L51580
  (restore argl)
  (assign argl (op cons) (reg val) (reg argl))
  (restore proc)
  (restore continue)
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48846))
+ (branch (label L51614))
  (test (op continuation?) (reg proc))
- (branch (label L48844))
+ (branch (label L51612))
  (test (op parameter?) (reg proc))
- (branch (label L48843))
- L48845
+ (branch (label L51611))
+ L51613
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48844
+ L51612
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48843
+ L51611
  (assign val (op apply-parameter) (reg proc) (reg argl))
  (goto (reg continue))
- L48846
+ L51614
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
  (goto (reg continue))
- L48842
- L48810
+ L51610
+ L51578
  (perform (op define-variable!) (const canvas-set-fill-color) (reg val) (reg env))
  (assign val (reg val))
- (procedure-name L48811 canvas-set-fill-color)
+ (procedure-name L51579 canvas-set-fill-color)
  (assign env (op lookup-variable-value) (const *global-env*) (reg env))
- (assign val (op make-compiled-procedure) (label L48848) (reg env))
- (goto (label L48847))
- L48848
+ (assign val (op make-compiled-procedure) (label L51616) (reg env))
+ (goto (label L51615))
+ L51616
  (assign env (op compiled-procedure-env) (reg proc))
  (assign env (op extend-environment) (const (x y w h)) (reg argl) (reg env) (const 0))
  (assign proc (op lookup-variable-value) (const js-call) (reg env))
@@ -1781,27 +1781,27 @@
  (assign val (op lexical-ref) (const 0) (const 3) (reg env))
  (assign argl (op list) (reg val))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48873))
+ (branch (label L51641))
  (test (op continuation?) (reg proc))
- (branch (label L48871))
+ (branch (label L51639))
  (test (op parameter?) (reg proc))
- (branch (label L48870))
- L48872
- (assign continue (label L48869))
+ (branch (label L51638))
+ L51640
+ (assign continue (label L51637))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48871
+ L51639
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48870
+ L51638
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L48869))
- L48873
+ (goto (label L51637))
+ L51641
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L48869
+ L51637
  (assign argl (op list) (reg val))
  (restore env)
  (save env)
@@ -1810,27 +1810,27 @@
  (assign val (op lexical-ref) (const 0) (const 2) (reg env))
  (assign argl (op list) (reg val))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48868))
+ (branch (label L51636))
  (test (op continuation?) (reg proc))
- (branch (label L48866))
+ (branch (label L51634))
  (test (op parameter?) (reg proc))
- (branch (label L48865))
- L48867
- (assign continue (label L48864))
+ (branch (label L51633))
+ L51635
+ (assign continue (label L51632))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48866
+ L51634
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48865
+ L51633
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L48864))
- L48868
+ (goto (label L51632))
+ L51636
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L48864
+ L51632
  (restore argl)
  (assign argl (op cons) (reg val) (reg argl))
  (restore env)
@@ -1840,27 +1840,27 @@
  (assign val (op lexical-ref) (const 0) (const 1) (reg env))
  (assign argl (op list) (reg val))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48863))
+ (branch (label L51631))
  (test (op continuation?) (reg proc))
- (branch (label L48861))
+ (branch (label L51629))
  (test (op parameter?) (reg proc))
- (branch (label L48860))
- L48862
- (assign continue (label L48859))
+ (branch (label L51628))
+ L51630
+ (assign continue (label L51627))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48861
+ L51629
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48860
+ L51628
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L48859))
- L48863
+ (goto (label L51627))
+ L51631
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L48859
+ L51627
  (restore argl)
  (assign argl (op cons) (reg val) (reg argl))
  (restore env)
@@ -1870,27 +1870,27 @@
  (assign val (op lexical-ref) (const 0) (const 0) (reg env))
  (assign argl (op list) (reg val))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48858))
+ (branch (label L51626))
  (test (op continuation?) (reg proc))
- (branch (label L48856))
+ (branch (label L51624))
  (test (op parameter?) (reg proc))
- (branch (label L48855))
- L48857
- (assign continue (label L48854))
+ (branch (label L51623))
+ L51625
+ (assign continue (label L51622))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48856
+ L51624
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48855
+ L51623
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L48854))
- L48858
+ (goto (label L51622))
+ L51626
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L48854
+ L51622
  (restore argl)
  (assign argl (op cons) (reg val) (reg argl))
  (restore env)
@@ -1900,66 +1900,66 @@
  (assign proc (op lookup-variable-value) (const canvas-ctx) (reg env))
  (assign argl (const NIL))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48853))
+ (branch (label L51621))
  (test (op continuation?) (reg proc))
- (branch (label L48851))
+ (branch (label L51619))
  (test (op parameter?) (reg proc))
- (branch (label L48850))
- L48852
- (assign continue (label L48849))
+ (branch (label L51618))
+ L51620
+ (assign continue (label L51617))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48851
+ L51619
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48850
+ L51618
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L48849))
- L48853
+ (goto (label L51617))
+ L51621
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L48849
+ L51617
  (restore argl)
  (assign argl (op cons) (reg val) (reg argl))
  (restore proc)
  (restore continue)
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48878))
+ (branch (label L51646))
  (test (op continuation?) (reg proc))
- (branch (label L48876))
+ (branch (label L51644))
  (test (op parameter?) (reg proc))
- (branch (label L48875))
- L48877
+ (branch (label L51643))
+ L51645
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48876
+ L51644
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48875
+ L51643
  (assign val (op apply-parameter) (reg proc) (reg argl))
  (goto (reg continue))
- L48878
+ L51646
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
  (goto (reg continue))
- L48874
- L48847
+ L51642
+ L51615
  (perform (op define-variable!) (const canvas-fill-rect) (reg val) (reg env))
  (assign val (reg val))
- (procedure-name L48848 canvas-fill-rect)
+ (procedure-name L51616 canvas-fill-rect)
  (assign env (op lookup-variable-value) (const *global-env*) (reg env))
- (assign val (op make-compiled-procedure) (label L48880) (reg env))
- (goto (label L48879))
- L48880
+ (assign val (op make-compiled-procedure) (label L51648) (reg env))
+ (goto (label L51647))
+ L51648
  (assign env (op compiled-procedure-env) (reg proc))
  (assign env (op extend-environment) (const (x y r)) (reg argl) (reg env) (const 0))
- (assign proc (op make-compiled-procedure) (label L48887) (reg env))
- (goto (label L48886))
- L48887
+ (assign proc (op make-compiled-procedure) (label L51655) (reg env))
+ (goto (label L51654))
+ L51655
  (assign env (op compiled-procedure-env) (reg proc))
  (assign env (op extend-environment) (const (ctx)) (reg argl) (reg env) (const 0))
  (save continue)
@@ -1970,27 +1970,27 @@
  (assign val (op lexical-ref) (const 0) (const 0) (reg env))
  (assign argl (op cons) (reg val) (reg argl))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48892))
+ (branch (label L51660))
  (test (op continuation?) (reg proc))
- (branch (label L48890))
+ (branch (label L51658))
  (test (op parameter?) (reg proc))
- (branch (label L48889))
- L48891
- (assign continue (label L48888))
+ (branch (label L51657))
+ L51659
+ (assign continue (label L51656))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48890
+ L51658
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48889
+ L51657
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L48888))
- L48892
+ (goto (label L51656))
+ L51660
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L48888
+ L51656
  (restore env)
  (restore continue)
  (save continue)
@@ -2002,27 +2002,27 @@
  (assign val (const 6.2831855))
  (assign argl (op list) (reg val))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48917))
+ (branch (label L51685))
  (test (op continuation?) (reg proc))
- (branch (label L48915))
+ (branch (label L51683))
  (test (op parameter?) (reg proc))
- (branch (label L48914))
- L48916
- (assign continue (label L48913))
+ (branch (label L51682))
+ L51684
+ (assign continue (label L51681))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48915
+ L51683
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48914
+ L51682
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L48913))
- L48917
+ (goto (label L51681))
+ L51685
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L48913
+ L51681
  (assign argl (op list) (reg val))
  (restore env)
  (save env)
@@ -2031,27 +2031,27 @@
  (assign val (const 0))
  (assign argl (op list) (reg val))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48912))
+ (branch (label L51680))
  (test (op continuation?) (reg proc))
- (branch (label L48910))
+ (branch (label L51678))
  (test (op parameter?) (reg proc))
- (branch (label L48909))
- L48911
- (assign continue (label L48908))
+ (branch (label L51677))
+ L51679
+ (assign continue (label L51676))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48910
+ L51678
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48909
+ L51677
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L48908))
- L48912
+ (goto (label L51676))
+ L51680
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L48908
+ L51676
  (restore argl)
  (assign argl (op cons) (reg val) (reg argl))
  (restore env)
@@ -2061,27 +2061,27 @@
  (assign val (op lexical-ref) (const 1) (const 2) (reg env))
  (assign argl (op list) (reg val))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48907))
+ (branch (label L51675))
  (test (op continuation?) (reg proc))
- (branch (label L48905))
+ (branch (label L51673))
  (test (op parameter?) (reg proc))
- (branch (label L48904))
- L48906
- (assign continue (label L48903))
+ (branch (label L51672))
+ L51674
+ (assign continue (label L51671))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48905
+ L51673
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48904
+ L51672
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L48903))
- L48907
+ (goto (label L51671))
+ L51675
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L48903
+ L51671
  (restore argl)
  (assign argl (op cons) (reg val) (reg argl))
  (restore env)
@@ -2091,27 +2091,27 @@
  (assign val (op lexical-ref) (const 1) (const 1) (reg env))
  (assign argl (op list) (reg val))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48902))
+ (branch (label L51670))
  (test (op continuation?) (reg proc))
- (branch (label L48900))
+ (branch (label L51668))
  (test (op parameter?) (reg proc))
- (branch (label L48899))
- L48901
- (assign continue (label L48898))
+ (branch (label L51667))
+ L51669
+ (assign continue (label L51666))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48900
+ L51668
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48899
+ L51667
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L48898))
- L48902
+ (goto (label L51666))
+ L51670
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L48898
+ L51666
  (restore argl)
  (assign argl (op cons) (reg val) (reg argl))
  (restore env)
@@ -2121,27 +2121,27 @@
  (assign val (op lexical-ref) (const 1) (const 0) (reg env))
  (assign argl (op list) (reg val))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48897))
+ (branch (label L51665))
  (test (op continuation?) (reg proc))
- (branch (label L48895))
+ (branch (label L51663))
  (test (op parameter?) (reg proc))
- (branch (label L48894))
- L48896
- (assign continue (label L48893))
+ (branch (label L51662))
+ L51664
+ (assign continue (label L51661))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48895
+ L51663
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48894
+ L51662
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L48893))
- L48897
+ (goto (label L51661))
+ L51665
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L48893
+ L51661
  (restore argl)
  (assign argl (op cons) (reg val) (reg argl))
  (restore env)
@@ -2151,27 +2151,27 @@
  (assign argl (op cons) (reg val) (reg argl))
  (restore proc)
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48922))
+ (branch (label L51690))
  (test (op continuation?) (reg proc))
- (branch (label L48920))
+ (branch (label L51688))
  (test (op parameter?) (reg proc))
- (branch (label L48919))
- L48921
- (assign continue (label L48918))
+ (branch (label L51687))
+ L51689
+ (assign continue (label L51686))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48920
+ L51688
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48919
+ L51687
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L48918))
- L48922
+ (goto (label L51686))
+ L51690
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L48918
+ L51686
  (restore env)
  (restore continue)
  (assign proc (op lookup-variable-value) (const js-call) (reg env))
@@ -2180,92 +2180,92 @@
  (assign val (op lexical-ref) (const 0) (const 0) (reg env))
  (assign argl (op cons) (reg val) (reg argl))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48927))
+ (branch (label L51695))
  (test (op continuation?) (reg proc))
- (branch (label L48925))
+ (branch (label L51693))
  (test (op parameter?) (reg proc))
- (branch (label L48924))
- L48926
+ (branch (label L51692))
+ L51694
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48925
+ L51693
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48924
+ L51692
  (assign val (op apply-parameter) (reg proc) (reg argl))
  (goto (reg continue))
- L48927
+ L51695
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
  (goto (reg continue))
- L48923
- L48886
+ L51691
+ L51654
  (save continue)
  (save proc)
  (assign proc (op lookup-variable-value) (const canvas-ctx) (reg env))
  (assign argl (const NIL))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48885))
+ (branch (label L51653))
  (test (op continuation?) (reg proc))
- (branch (label L48883))
+ (branch (label L51651))
  (test (op parameter?) (reg proc))
- (branch (label L48882))
- L48884
- (assign continue (label L48881))
+ (branch (label L51650))
+ L51652
+ (assign continue (label L51649))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48883
+ L51651
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48882
+ L51650
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L48881))
- L48885
+ (goto (label L51649))
+ L51653
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L48881
+ L51649
  (assign argl (op list) (reg val))
  (restore proc)
  (restore continue)
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48932))
+ (branch (label L51700))
  (test (op continuation?) (reg proc))
- (branch (label L48930))
+ (branch (label L51698))
  (test (op parameter?) (reg proc))
- (branch (label L48929))
- L48931
+ (branch (label L51697))
+ L51699
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48930
+ L51698
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48929
+ L51697
  (assign val (op apply-parameter) (reg proc) (reg argl))
  (goto (reg continue))
- L48932
+ L51700
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
  (goto (reg continue))
- L48928
- L48879
+ L51696
+ L51647
  (perform (op define-variable!) (const canvas-fill-circle) (reg val) (reg env))
  (assign val (reg val))
- (procedure-name L48880 canvas-fill-circle)
+ (procedure-name L51648 canvas-fill-circle)
  (assign env (op lookup-variable-value) (const *global-env*) (reg env))
- (assign val (op make-compiled-procedure) (label L48934) (reg env))
- (goto (label L48933))
- L48934
+ (assign val (op make-compiled-procedure) (label L51702) (reg env))
+ (goto (label L51701))
+ L51702
  (assign env (op compiled-procedure-env) (reg proc))
  (assign env (op extend-environment) (const (x y str)) (reg argl) (reg env) (const 0))
- (assign proc (op make-compiled-procedure) (label L48941) (reg env))
- (goto (label L48940))
- L48941
+ (assign proc (op make-compiled-procedure) (label L51709) (reg env))
+ (goto (label L51708))
+ L51709
  (assign env (op compiled-procedure-env) (reg proc))
  (assign env (op extend-environment) (const (ctx)) (reg argl) (reg env) (const 0))
  (save continue)
@@ -2277,27 +2277,27 @@
  (assign val (const "20px monospace"))
  (assign argl (op list) (reg val))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48946))
+ (branch (label L51714))
  (test (op continuation?) (reg proc))
- (branch (label L48944))
+ (branch (label L51712))
  (test (op parameter?) (reg proc))
- (branch (label L48943))
- L48945
- (assign continue (label L48942))
+ (branch (label L51711))
+ L51713
+ (assign continue (label L51710))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48944
+ L51712
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48943
+ L51711
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L48942))
- L48946
+ (goto (label L51710))
+ L51714
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L48942
+ L51710
  (assign argl (op list) (reg val))
  (restore env)
  (assign val (const "font"))
@@ -2306,27 +2306,27 @@
  (assign argl (op cons) (reg val) (reg argl))
  (restore proc)
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48951))
+ (branch (label L51719))
  (test (op continuation?) (reg proc))
- (branch (label L48949))
+ (branch (label L51717))
  (test (op parameter?) (reg proc))
- (branch (label L48948))
- L48950
- (assign continue (label L48947))
+ (branch (label L51716))
+ L51718
+ (assign continue (label L51715))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48949
+ L51717
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48948
+ L51716
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L48947))
- L48951
+ (goto (label L51715))
+ L51719
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L48947
+ L51715
  (restore env)
  (restore continue)
  (assign proc (op lookup-variable-value) (const js-call) (reg env))
@@ -2337,27 +2337,27 @@
  (assign val (op lexical-ref) (const 1) (const 1) (reg env))
  (assign argl (op list) (reg val))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48966))
+ (branch (label L51734))
  (test (op continuation?) (reg proc))
- (branch (label L48964))
+ (branch (label L51732))
  (test (op parameter?) (reg proc))
- (branch (label L48963))
- L48965
- (assign continue (label L48962))
+ (branch (label L51731))
+ L51733
+ (assign continue (label L51730))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48964
+ L51732
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48963
+ L51731
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L48962))
- L48966
+ (goto (label L51730))
+ L51734
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L48962
+ L51730
  (assign argl (op list) (reg val))
  (restore env)
  (save env)
@@ -2366,27 +2366,27 @@
  (assign val (op lexical-ref) (const 1) (const 0) (reg env))
  (assign argl (op list) (reg val))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48961))
+ (branch (label L51729))
  (test (op continuation?) (reg proc))
- (branch (label L48959))
+ (branch (label L51727))
  (test (op parameter?) (reg proc))
- (branch (label L48958))
- L48960
- (assign continue (label L48957))
+ (branch (label L51726))
+ L51728
+ (assign continue (label L51725))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48959
+ L51727
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48958
+ L51726
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L48957))
- L48961
+ (goto (label L51725))
+ L51729
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L48957
+ L51725
  (restore argl)
  (assign argl (op cons) (reg val) (reg argl))
  (restore env)
@@ -2396,27 +2396,27 @@
  (assign val (op lexical-ref) (const 1) (const 2) (reg env))
  (assign argl (op list) (reg val))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48956))
+ (branch (label L51724))
  (test (op continuation?) (reg proc))
- (branch (label L48954))
+ (branch (label L51722))
  (test (op parameter?) (reg proc))
- (branch (label L48953))
- L48955
- (assign continue (label L48952))
+ (branch (label L51721))
+ L51723
+ (assign continue (label L51720))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48954
+ L51722
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48953
+ L51721
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L48952))
- L48956
+ (goto (label L51720))
+ L51724
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L48952
+ L51720
  (restore argl)
  (assign argl (op cons) (reg val) (reg argl))
  (restore env)
@@ -2427,87 +2427,87 @@
  (restore proc)
  (restore continue)
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48971))
+ (branch (label L51739))
  (test (op continuation?) (reg proc))
- (branch (label L48969))
+ (branch (label L51737))
  (test (op parameter?) (reg proc))
- (branch (label L48968))
- L48970
+ (branch (label L51736))
+ L51738
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48969
+ L51737
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48968
+ L51736
  (assign val (op apply-parameter) (reg proc) (reg argl))
  (goto (reg continue))
- L48971
+ L51739
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
  (goto (reg continue))
- L48967
- L48940
+ L51735
+ L51708
  (save continue)
  (save proc)
  (assign proc (op lookup-variable-value) (const canvas-ctx) (reg env))
  (assign argl (const NIL))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48939))
+ (branch (label L51707))
  (test (op continuation?) (reg proc))
- (branch (label L48937))
+ (branch (label L51705))
  (test (op parameter?) (reg proc))
- (branch (label L48936))
- L48938
- (assign continue (label L48935))
+ (branch (label L51704))
+ L51706
+ (assign continue (label L51703))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48937
+ L51705
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48936
+ L51704
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L48935))
- L48939
+ (goto (label L51703))
+ L51707
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L48935
+ L51703
  (assign argl (op list) (reg val))
  (restore proc)
  (restore continue)
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48976))
+ (branch (label L51744))
  (test (op continuation?) (reg proc))
- (branch (label L48974))
+ (branch (label L51742))
  (test (op parameter?) (reg proc))
- (branch (label L48973))
- L48975
+ (branch (label L51741))
+ L51743
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48974
+ L51742
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48973
+ L51741
  (assign val (op apply-parameter) (reg proc) (reg argl))
  (goto (reg continue))
- L48976
+ L51744
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
  (goto (reg continue))
- L48972
- L48933
+ L51740
+ L51701
  (perform (op define-variable!) (const canvas-draw-text) (reg val) (reg env))
  (assign val (reg val))
- (procedure-name L48934 canvas-draw-text)
+ (procedure-name L51702 canvas-draw-text)
  (assign env (op lookup-variable-value) (const *global-env*) (reg env))
- (assign val (op make-compiled-procedure) (label L48978) (reg env))
- (goto (label L48977))
- L48978
+ (assign val (op make-compiled-procedure) (label L51746) (reg env))
+ (goto (label L51745))
+ L51746
  (assign env (op compiled-procedure-env) (reg proc))
  (assign env (op extend-environment) (const NIL) (reg argl) (reg env) (const 0))
  (assign proc (op lookup-variable-value) (const js-ref->number) (reg env))
@@ -2526,110 +2526,110 @@
  (assign proc (op lookup-variable-value) (const canvas-ctx) (reg env))
  (assign argl (const NIL))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48983))
+ (branch (label L51751))
  (test (op continuation?) (reg proc))
- (branch (label L48981))
+ (branch (label L51749))
  (test (op parameter?) (reg proc))
- (branch (label L48980))
- L48982
- (assign continue (label L48979))
+ (branch (label L51748))
+ L51750
+ (assign continue (label L51747))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48981
+ L51749
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48980
+ L51748
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L48979))
- L48983
+ (goto (label L51747))
+ L51751
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L48979
+ L51747
  (restore argl)
  (assign argl (op cons) (reg val) (reg argl))
  (restore proc)
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48988))
+ (branch (label L51756))
  (test (op continuation?) (reg proc))
- (branch (label L48986))
+ (branch (label L51754))
  (test (op parameter?) (reg proc))
- (branch (label L48985))
- L48987
- (assign continue (label L48984))
+ (branch (label L51753))
+ L51755
+ (assign continue (label L51752))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48986
+ L51754
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48985
+ L51753
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L48984))
- L48988
+ (goto (label L51752))
+ L51756
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L48984
+ L51752
  (restore argl)
  (assign argl (op cons) (reg val) (reg argl))
  (restore proc)
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48993))
+ (branch (label L51761))
  (test (op continuation?) (reg proc))
- (branch (label L48991))
+ (branch (label L51759))
  (test (op parameter?) (reg proc))
- (branch (label L48990))
- L48992
- (assign continue (label L48989))
+ (branch (label L51758))
+ L51760
+ (assign continue (label L51757))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48991
+ L51759
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48990
+ L51758
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L48989))
- L48993
+ (goto (label L51757))
+ L51761
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L48989
+ L51757
  (assign argl (op list) (reg val))
  (restore proc)
  (restore continue)
  (test (op primitive-procedure?) (reg proc))
- (branch (label L48998))
+ (branch (label L51766))
  (test (op continuation?) (reg proc))
- (branch (label L48996))
+ (branch (label L51764))
  (test (op parameter?) (reg proc))
- (branch (label L48995))
- L48997
+ (branch (label L51763))
+ L51765
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L48996
+ L51764
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L48995
+ L51763
  (assign val (op apply-parameter) (reg proc) (reg argl))
  (goto (reg continue))
- L48998
+ L51766
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
  (goto (reg continue))
- L48994
- L48977
+ L51762
+ L51745
  (perform (op define-variable!) (const canvas-width) (reg val) (reg env))
  (assign val (reg val))
- (procedure-name L48978 canvas-width)
+ (procedure-name L51746 canvas-width)
  (assign env (op lookup-variable-value) (const *global-env*) (reg env))
- (assign val (op make-compiled-procedure) (label L49000) (reg env))
- (goto (label L48999))
- L49000
+ (assign val (op make-compiled-procedure) (label L51768) (reg env))
+ (goto (label L51767))
+ L51768
  (assign env (op compiled-procedure-env) (reg proc))
  (assign env (op extend-environment) (const NIL) (reg argl) (reg env) (const 0))
  (assign proc (op lookup-variable-value) (const js-ref->number) (reg env))
@@ -2648,110 +2648,110 @@
  (assign proc (op lookup-variable-value) (const canvas-ctx) (reg env))
  (assign argl (const NIL))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L49005))
+ (branch (label L51773))
  (test (op continuation?) (reg proc))
- (branch (label L49003))
+ (branch (label L51771))
  (test (op parameter?) (reg proc))
- (branch (label L49002))
- L49004
- (assign continue (label L49001))
+ (branch (label L51770))
+ L51772
+ (assign continue (label L51769))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L49003
+ L51771
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L49002
+ L51770
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L49001))
- L49005
+ (goto (label L51769))
+ L51773
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L49001
+ L51769
  (restore argl)
  (assign argl (op cons) (reg val) (reg argl))
  (restore proc)
  (test (op primitive-procedure?) (reg proc))
- (branch (label L49010))
+ (branch (label L51778))
  (test (op continuation?) (reg proc))
- (branch (label L49008))
+ (branch (label L51776))
  (test (op parameter?) (reg proc))
- (branch (label L49007))
- L49009
- (assign continue (label L49006))
+ (branch (label L51775))
+ L51777
+ (assign continue (label L51774))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L49008
+ L51776
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L49007
+ L51775
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L49006))
- L49010
+ (goto (label L51774))
+ L51778
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L49006
+ L51774
  (restore argl)
  (assign argl (op cons) (reg val) (reg argl))
  (restore proc)
  (test (op primitive-procedure?) (reg proc))
- (branch (label L49015))
+ (branch (label L51783))
  (test (op continuation?) (reg proc))
- (branch (label L49013))
+ (branch (label L51781))
  (test (op parameter?) (reg proc))
- (branch (label L49012))
- L49014
- (assign continue (label L49011))
+ (branch (label L51780))
+ L51782
+ (assign continue (label L51779))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L49013
+ L51781
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L49012
+ L51780
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L49011))
- L49015
+ (goto (label L51779))
+ L51783
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L49011
+ L51779
  (assign argl (op list) (reg val))
  (restore proc)
  (restore continue)
  (test (op primitive-procedure?) (reg proc))
- (branch (label L49020))
+ (branch (label L51788))
  (test (op continuation?) (reg proc))
- (branch (label L49018))
+ (branch (label L51786))
  (test (op parameter?) (reg proc))
- (branch (label L49017))
- L49019
+ (branch (label L51785))
+ L51787
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L49018
+ L51786
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L49017
+ L51785
  (assign val (op apply-parameter) (reg proc) (reg argl))
  (goto (reg continue))
- L49020
+ L51788
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
  (goto (reg continue))
- L49016
- L48999
+ L51784
+ L51767
  (perform (op define-variable!) (const canvas-height) (reg val) (reg env))
  (assign val (reg val))
- (procedure-name L49000 canvas-height)
+ (procedure-name L51768 canvas-height)
  (assign env (op lookup-variable-value) (const *global-env*) (reg env))
- (assign val (op make-compiled-procedure) (label L49022) (reg env))
- (goto (label L49021))
- L49022
+ (assign val (op make-compiled-procedure) (label L51790) (reg env))
+ (goto (label L51789))
+ L51790
  (assign env (op compiled-procedure-env) (reg proc))
  (assign env (op extend-environment) (const NIL) (reg argl) (reg env) (const 0))
  (save continue)
@@ -2760,75 +2760,75 @@
  (assign val (op lookup-variable-value) (const *js-math*) (reg env))
  (assign argl (op list) (reg val))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L49035))
+ (branch (label L51803))
  (test (op continuation?) (reg proc))
- (branch (label L49033))
+ (branch (label L51801))
  (test (op parameter?) (reg proc))
- (branch (label L49032))
- L49034
- (assign continue (label L49031))
+ (branch (label L51800))
+ L51802
+ (assign continue (label L51799))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L49033
+ L51801
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L49032
+ L51800
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L49031))
- L49035
+ (goto (label L51799))
+ L51803
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L49031
+ L51799
  (restore env)
  (test (op false?) (reg val))
- (branch (label L49024))
- L49025
+ (branch (label L51792))
+ L51793
  (save env)
  (assign proc (op lookup-variable-value) (const js-eval) (reg env))
  (assign val (const "Math"))
  (assign argl (op list) (reg val))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L49030))
+ (branch (label L51798))
  (test (op continuation?) (reg proc))
- (branch (label L49028))
+ (branch (label L51796))
  (test (op parameter?) (reg proc))
- (branch (label L49027))
- L49029
- (assign continue (label L49026))
+ (branch (label L51795))
+ L51797
+ (assign continue (label L51794))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L49028
+ L51796
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L49027
+ L51795
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L49026))
- L49030
+ (goto (label L51794))
+ L51798
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L49026
+ L51794
  (restore env)
  (perform (op set-variable-value!) (const *js-math*) (reg val) (reg env))
  (assign val (reg val))
- (goto (label L49023))
- L49024
+ (goto (label L51791))
+ L51792
  (assign val (const #S(SCHEME-FALSE)))
- L49023
+ L51791
  (restore continue)
  (assign val (op lookup-variable-value) (const *js-math*) (reg env))
  (goto (reg continue))
- L49021
+ L51789
  (perform (op define-variable!) (const js-math) (reg val) (reg env))
  (assign val (reg val))
- (procedure-name L49022 js-math)
+ (procedure-name L51790 js-math)
  (assign env (op lookup-variable-value) (const *global-env*) (reg env))
- (assign val (op make-compiled-procedure) (label L49037) (reg env))
- (goto (label L49036))
- L49037
+ (assign val (op make-compiled-procedure) (label L51805) (reg env))
+ (goto (label L51804))
+ L51805
  (assign env (op compiled-procedure-env) (reg proc))
  (assign env (op extend-environment) (const (x)) (reg argl) (reg env) (const 0))
  (assign proc (op lookup-variable-value) (const js-ref->number) (reg env))
@@ -2841,27 +2841,27 @@
  (assign val (op lexical-ref) (const 0) (const 0) (reg env))
  (assign argl (op list) (reg val))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L49047))
+ (branch (label L51815))
  (test (op continuation?) (reg proc))
- (branch (label L49045))
+ (branch (label L51813))
  (test (op parameter?) (reg proc))
- (branch (label L49044))
- L49046
- (assign continue (label L49043))
+ (branch (label L51812))
+ L51814
+ (assign continue (label L51811))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L49045
+ L51813
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L49044
+ L51812
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L49043))
- L49047
+ (goto (label L51811))
+ L51815
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L49043
+ L51811
  (assign argl (op list) (reg val))
  (restore env)
  (assign val (const "sin"))
@@ -2870,85 +2870,85 @@
  (assign proc (op lookup-variable-value) (const js-math) (reg env))
  (assign argl (const NIL))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L49042))
+ (branch (label L51810))
  (test (op continuation?) (reg proc))
- (branch (label L49040))
+ (branch (label L51808))
  (test (op parameter?) (reg proc))
- (branch (label L49039))
- L49041
- (assign continue (label L49038))
+ (branch (label L51807))
+ L51809
+ (assign continue (label L51806))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L49040
+ L51808
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L49039
+ L51807
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L49038))
- L49042
+ (goto (label L51806))
+ L51810
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L49038
+ L51806
  (restore argl)
  (assign argl (op cons) (reg val) (reg argl))
  (restore proc)
  (test (op primitive-procedure?) (reg proc))
- (branch (label L49052))
+ (branch (label L51820))
  (test (op continuation?) (reg proc))
- (branch (label L49050))
+ (branch (label L51818))
  (test (op parameter?) (reg proc))
- (branch (label L49049))
- L49051
- (assign continue (label L49048))
+ (branch (label L51817))
+ L51819
+ (assign continue (label L51816))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L49050
+ L51818
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L49049
+ L51817
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L49048))
- L49052
+ (goto (label L51816))
+ L51820
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L49048
+ L51816
  (assign argl (op list) (reg val))
  (restore proc)
  (restore continue)
  (test (op primitive-procedure?) (reg proc))
- (branch (label L49057))
+ (branch (label L51825))
  (test (op continuation?) (reg proc))
- (branch (label L49055))
+ (branch (label L51823))
  (test (op parameter?) (reg proc))
- (branch (label L49054))
- L49056
+ (branch (label L51822))
+ L51824
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L49055
+ L51823
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L49054
+ L51822
  (assign val (op apply-parameter) (reg proc) (reg argl))
  (goto (reg continue))
- L49057
+ L51825
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
  (goto (reg continue))
- L49053
- L49036
+ L51821
+ L51804
  (perform (op define-variable!) (const sin) (reg val) (reg env))
  (assign val (reg val))
- (procedure-name L49037 sin)
+ (procedure-name L51805 sin)
  (assign env (op lookup-variable-value) (const *global-env*) (reg env))
- (assign val (op make-compiled-procedure) (label L49059) (reg env))
- (goto (label L49058))
- L49059
+ (assign val (op make-compiled-procedure) (label L51827) (reg env))
+ (goto (label L51826))
+ L51827
  (assign env (op compiled-procedure-env) (reg proc))
  (assign env (op extend-environment) (const (x)) (reg argl) (reg env) (const 0))
  (assign proc (op lookup-variable-value) (const js-ref->number) (reg env))
@@ -2961,27 +2961,27 @@
  (assign val (op lexical-ref) (const 0) (const 0) (reg env))
  (assign argl (op list) (reg val))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L49069))
+ (branch (label L51837))
  (test (op continuation?) (reg proc))
- (branch (label L49067))
+ (branch (label L51835))
  (test (op parameter?) (reg proc))
- (branch (label L49066))
- L49068
- (assign continue (label L49065))
+ (branch (label L51834))
+ L51836
+ (assign continue (label L51833))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L49067
+ L51835
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L49066
+ L51834
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L49065))
- L49069
+ (goto (label L51833))
+ L51837
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L49065
+ L51833
  (assign argl (op list) (reg val))
  (restore env)
  (assign val (const "cos"))
@@ -2990,110 +2990,110 @@
  (assign proc (op lookup-variable-value) (const js-math) (reg env))
  (assign argl (const NIL))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L49064))
+ (branch (label L51832))
  (test (op continuation?) (reg proc))
- (branch (label L49062))
+ (branch (label L51830))
  (test (op parameter?) (reg proc))
- (branch (label L49061))
- L49063
- (assign continue (label L49060))
+ (branch (label L51829))
+ L51831
+ (assign continue (label L51828))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L49062
+ L51830
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L49061
+ L51829
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L49060))
- L49064
+ (goto (label L51828))
+ L51832
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L49060
+ L51828
  (restore argl)
  (assign argl (op cons) (reg val) (reg argl))
  (restore proc)
  (test (op primitive-procedure?) (reg proc))
- (branch (label L49074))
+ (branch (label L51842))
  (test (op continuation?) (reg proc))
- (branch (label L49072))
+ (branch (label L51840))
  (test (op parameter?) (reg proc))
- (branch (label L49071))
- L49073
- (assign continue (label L49070))
+ (branch (label L51839))
+ L51841
+ (assign continue (label L51838))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L49072
+ L51840
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L49071
+ L51839
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L49070))
- L49074
+ (goto (label L51838))
+ L51842
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L49070
+ L51838
  (assign argl (op list) (reg val))
  (restore proc)
  (restore continue)
  (test (op primitive-procedure?) (reg proc))
- (branch (label L49079))
+ (branch (label L51847))
  (test (op continuation?) (reg proc))
- (branch (label L49077))
+ (branch (label L51845))
  (test (op parameter?) (reg proc))
- (branch (label L49076))
- L49078
+ (branch (label L51844))
+ L51846
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L49077
+ L51845
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L49076
+ L51844
  (assign val (op apply-parameter) (reg proc) (reg argl))
  (goto (reg continue))
- L49079
+ L51847
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
  (goto (reg continue))
- L49075
- L49058
+ L51843
+ L51826
  (perform (op define-variable!) (const cos) (reg val) (reg env))
  (assign val (reg val))
- (procedure-name L49059 cos)
+ (procedure-name L51827 cos)
  (assign env (op lookup-variable-value) (const *global-env*) (reg env))
- (assign val (op make-compiled-procedure) (label L49081) (reg env))
- (goto (label L49080))
- L49081
+ (assign val (op make-compiled-procedure) (label L51849) (reg env))
+ (goto (label L51848))
+ L51849
  (assign env (op compiled-procedure-env) (reg proc))
  (assign env (op extend-environment) (const NIL) (reg argl) (reg env) (const 0))
- (assign proc (op make-compiled-procedure) (label L49088) (reg env))
- (goto (label L49087))
- L49088
+ (assign proc (op make-compiled-procedure) (label L51856) (reg env))
+ (goto (label L51855))
+ L51856
  (assign env (op compiled-procedure-env) (reg proc))
  (assign env (op extend-environment) (const (d)) (reg argl) (reg env) (const 0))
- (assign proc (op make-compiled-procedure) (label L49100) (reg env))
- (goto (label L49099))
- L49100
+ (assign proc (op make-compiled-procedure) (label L51868) (reg env))
+ (goto (label L51867))
+ L51868
  (assign env (op compiled-procedure-env) (reg proc))
  (assign env (op extend-environment) (const (h)) (reg argl) (reg env) (const 0))
- (assign proc (op make-compiled-procedure) (label L49112) (reg env))
- (goto (label L49111))
- L49112
+ (assign proc (op make-compiled-procedure) (label L51880) (reg env))
+ (goto (label L51879))
+ L51880
  (assign env (op compiled-procedure-env) (reg proc))
  (assign env (op extend-environment) (const (m)) (reg argl) (reg env) (const 0))
- (assign proc (op make-compiled-procedure) (label L49124) (reg env))
- (goto (label L49123))
- L49124
+ (assign proc (op make-compiled-procedure) (label L51892) (reg env))
+ (goto (label L51891))
+ L51892
  (assign env (op compiled-procedure-env) (reg proc))
  (assign env (op extend-environment) (const (s)) (reg argl) (reg env) (const 0))
- (assign proc (op make-compiled-procedure) (label L49136) (reg env))
- (goto (label L49135))
- L49136
+ (assign proc (op make-compiled-procedure) (label L51904) (reg env))
+ (goto (label L51903))
+ L51904
  (assign env (op compiled-procedure-env) (reg proc))
  (assign env (op extend-environment) (const (ms)) (reg argl) (reg env) (const 0))
  (save continue)
@@ -3102,27 +3102,27 @@
  (assign val (op lexical-ref) (const 4) (const 0) (reg env))
  (assign argl (op list) (reg val))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L49141))
+ (branch (label L51909))
  (test (op continuation?) (reg proc))
- (branch (label L49139))
+ (branch (label L51907))
  (test (op parameter?) (reg proc))
- (branch (label L49138))
- L49140
- (assign continue (label L49137))
+ (branch (label L51906))
+ L51908
+ (assign continue (label L51905))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L49139
+ L51907
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L49138
+ L51906
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L49137))
- L49141
+ (goto (label L51905))
+ L51909
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L49137
+ L51905
  (restore env)
  (restore continue)
  (assign proc (op lookup-variable-value) (const +) (reg env))
@@ -3157,154 +3157,154 @@
  (assign val (op lexical-ref) (const 3) (const 0) (reg env))
  (assign argl (op cons) (reg val) (reg argl))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L49146))
+ (branch (label L51914))
  (test (op continuation?) (reg proc))
- (branch (label L49144))
+ (branch (label L51912))
  (test (op parameter?) (reg proc))
- (branch (label L49143))
- L49145
- (assign continue (label L49142))
+ (branch (label L51911))
+ L51913
+ (assign continue (label L51910))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L49144
+ L51912
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L49143
+ L51911
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L49142))
- L49146
+ (goto (label L51910))
+ L51914
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L49142
+ L51910
  (restore argl)
  (assign argl (op cons) (reg val) (reg argl))
  (restore proc)
  (test (op primitive-procedure?) (reg proc))
- (branch (label L49151))
+ (branch (label L51919))
  (test (op continuation?) (reg proc))
- (branch (label L49149))
+ (branch (label L51917))
  (test (op parameter?) (reg proc))
- (branch (label L49148))
- L49150
- (assign continue (label L49147))
+ (branch (label L51916))
+ L51918
+ (assign continue (label L51915))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L49149
+ L51917
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L49148
+ L51916
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L49147))
- L49151
+ (goto (label L51915))
+ L51919
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L49147
+ L51915
  (restore argl)
  (assign argl (op cons) (reg val) (reg argl))
  (restore proc)
  (test (op primitive-procedure?) (reg proc))
- (branch (label L49156))
+ (branch (label L51924))
  (test (op continuation?) (reg proc))
- (branch (label L49154))
+ (branch (label L51922))
  (test (op parameter?) (reg proc))
- (branch (label L49153))
- L49155
- (assign continue (label L49152))
+ (branch (label L51921))
+ L51923
+ (assign continue (label L51920))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L49154
+ L51922
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L49153
+ L51921
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L49152))
- L49156
+ (goto (label L51920))
+ L51924
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L49152
+ L51920
  (restore argl)
  (assign argl (op cons) (reg val) (reg argl))
  (restore proc)
  (test (op primitive-procedure?) (reg proc))
- (branch (label L49161))
+ (branch (label L51929))
  (test (op continuation?) (reg proc))
- (branch (label L49159))
+ (branch (label L51927))
  (test (op parameter?) (reg proc))
- (branch (label L49158))
- L49160
- (assign continue (label L49157))
+ (branch (label L51926))
+ L51928
+ (assign continue (label L51925))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L49159
+ L51927
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L49158
+ L51926
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L49157))
- L49161
+ (goto (label L51925))
+ L51929
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L49157
+ L51925
  (restore argl)
  (assign argl (op cons) (reg val) (reg argl))
  (restore proc)
  (test (op primitive-procedure?) (reg proc))
- (branch (label L49166))
+ (branch (label L51934))
  (test (op continuation?) (reg proc))
- (branch (label L49164))
+ (branch (label L51932))
  (test (op parameter?) (reg proc))
- (branch (label L49163))
- L49165
- (assign continue (label L49162))
+ (branch (label L51931))
+ L51933
+ (assign continue (label L51930))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L49164
+ L51932
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L49163
+ L51931
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L49162))
- L49166
+ (goto (label L51930))
+ L51934
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L49162
+ L51930
  (restore argl)
  (assign argl (op cons) (reg val) (reg argl))
  (restore proc)
  (restore continue)
  (test (op primitive-procedure?) (reg proc))
- (branch (label L49171))
+ (branch (label L51939))
  (test (op continuation?) (reg proc))
- (branch (label L49169))
+ (branch (label L51937))
  (test (op parameter?) (reg proc))
- (branch (label L49168))
- L49170
+ (branch (label L51936))
+ L51938
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L49169
+ L51937
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L49168
+ L51936
  (assign val (op apply-parameter) (reg proc) (reg argl))
  (goto (reg continue))
- L49171
+ L51939
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
  (goto (reg continue))
- L49167
- L49135
+ L51935
+ L51903
  (save continue)
  (save proc)
  (assign proc (op lookup-variable-value) (const js-ref->number) (reg env))
@@ -3315,77 +3315,77 @@
  (assign val (op lexical-ref) (const 3) (const 0) (reg env))
  (assign argl (op cons) (reg val) (reg argl))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L49129))
+ (branch (label L51897))
  (test (op continuation?) (reg proc))
- (branch (label L49127))
+ (branch (label L51895))
  (test (op parameter?) (reg proc))
- (branch (label L49126))
- L49128
- (assign continue (label L49125))
+ (branch (label L51894))
+ L51896
+ (assign continue (label L51893))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L49127
+ L51895
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L49126
+ L51894
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L49125))
- L49129
+ (goto (label L51893))
+ L51897
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L49125
+ L51893
  (assign argl (op list) (reg val))
  (restore proc)
  (test (op primitive-procedure?) (reg proc))
- (branch (label L49134))
+ (branch (label L51902))
  (test (op continuation?) (reg proc))
- (branch (label L49132))
+ (branch (label L51900))
  (test (op parameter?) (reg proc))
- (branch (label L49131))
- L49133
- (assign continue (label L49130))
+ (branch (label L51899))
+ L51901
+ (assign continue (label L51898))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L49132
+ L51900
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L49131
+ L51899
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L49130))
- L49134
+ (goto (label L51898))
+ L51902
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L49130
+ L51898
  (assign argl (op list) (reg val))
  (restore proc)
  (restore continue)
  (test (op primitive-procedure?) (reg proc))
- (branch (label L49176))
+ (branch (label L51944))
  (test (op continuation?) (reg proc))
- (branch (label L49174))
+ (branch (label L51942))
  (test (op parameter?) (reg proc))
- (branch (label L49173))
- L49175
+ (branch (label L51941))
+ L51943
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L49174
+ L51942
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L49173
+ L51941
  (assign val (op apply-parameter) (reg proc) (reg argl))
  (goto (reg continue))
- L49176
+ L51944
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
  (goto (reg continue))
- L49172
- L49123
+ L51940
+ L51891
  (save continue)
  (save proc)
  (assign proc (op lookup-variable-value) (const js-ref->number) (reg env))
@@ -3396,77 +3396,77 @@
  (assign val (op lexical-ref) (const 2) (const 0) (reg env))
  (assign argl (op cons) (reg val) (reg argl))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L49117))
+ (branch (label L51885))
  (test (op continuation?) (reg proc))
- (branch (label L49115))
+ (branch (label L51883))
  (test (op parameter?) (reg proc))
- (branch (label L49114))
- L49116
- (assign continue (label L49113))
+ (branch (label L51882))
+ L51884
+ (assign continue (label L51881))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L49115
+ L51883
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L49114
+ L51882
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L49113))
- L49117
+ (goto (label L51881))
+ L51885
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L49113
+ L51881
  (assign argl (op list) (reg val))
  (restore proc)
  (test (op primitive-procedure?) (reg proc))
- (branch (label L49122))
+ (branch (label L51890))
  (test (op continuation?) (reg proc))
- (branch (label L49120))
+ (branch (label L51888))
  (test (op parameter?) (reg proc))
- (branch (label L49119))
- L49121
- (assign continue (label L49118))
+ (branch (label L51887))
+ L51889
+ (assign continue (label L51886))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L49120
+ L51888
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L49119
+ L51887
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L49118))
- L49122
+ (goto (label L51886))
+ L51890
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L49118
+ L51886
  (assign argl (op list) (reg val))
  (restore proc)
  (restore continue)
  (test (op primitive-procedure?) (reg proc))
- (branch (label L49181))
+ (branch (label L51949))
  (test (op continuation?) (reg proc))
- (branch (label L49179))
+ (branch (label L51947))
  (test (op parameter?) (reg proc))
- (branch (label L49178))
- L49180
+ (branch (label L51946))
+ L51948
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L49179
+ L51947
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L49178
+ L51946
  (assign val (op apply-parameter) (reg proc) (reg argl))
  (goto (reg continue))
- L49181
+ L51949
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
  (goto (reg continue))
- L49177
- L49111
+ L51945
+ L51879
  (save continue)
  (save proc)
  (assign proc (op lookup-variable-value) (const js-ref->number) (reg env))
@@ -3477,77 +3477,77 @@
  (assign val (op lexical-ref) (const 1) (const 0) (reg env))
  (assign argl (op cons) (reg val) (reg argl))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L49105))
+ (branch (label L51873))
  (test (op continuation?) (reg proc))
- (branch (label L49103))
+ (branch (label L51871))
  (test (op parameter?) (reg proc))
- (branch (label L49102))
- L49104
- (assign continue (label L49101))
+ (branch (label L51870))
+ L51872
+ (assign continue (label L51869))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L49103
+ L51871
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L49102
+ L51870
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L49101))
- L49105
+ (goto (label L51869))
+ L51873
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L49101
+ L51869
  (assign argl (op list) (reg val))
  (restore proc)
  (test (op primitive-procedure?) (reg proc))
- (branch (label L49110))
+ (branch (label L51878))
  (test (op continuation?) (reg proc))
- (branch (label L49108))
+ (branch (label L51876))
  (test (op parameter?) (reg proc))
- (branch (label L49107))
- L49109
- (assign continue (label L49106))
+ (branch (label L51875))
+ L51877
+ (assign continue (label L51874))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L49108
+ L51876
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L49107
+ L51875
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L49106))
- L49110
+ (goto (label L51874))
+ L51878
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L49106
+ L51874
  (assign argl (op list) (reg val))
  (restore proc)
  (restore continue)
  (test (op primitive-procedure?) (reg proc))
- (branch (label L49186))
+ (branch (label L51954))
  (test (op continuation?) (reg proc))
- (branch (label L49184))
+ (branch (label L51952))
  (test (op parameter?) (reg proc))
- (branch (label L49183))
- L49185
+ (branch (label L51951))
+ L51953
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L49184
+ L51952
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L49183
+ L51951
  (assign val (op apply-parameter) (reg proc) (reg argl))
  (goto (reg continue))
- L49186
+ L51954
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
  (goto (reg continue))
- L49182
- L49099
+ L51950
+ L51867
  (save continue)
  (save proc)
  (assign proc (op lookup-variable-value) (const js-ref->number) (reg env))
@@ -3558,130 +3558,130 @@
  (assign val (op lexical-ref) (const 0) (const 0) (reg env))
  (assign argl (op cons) (reg val) (reg argl))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L49093))
+ (branch (label L51861))
  (test (op continuation?) (reg proc))
- (branch (label L49091))
+ (branch (label L51859))
  (test (op parameter?) (reg proc))
- (branch (label L49090))
- L49092
- (assign continue (label L49089))
+ (branch (label L51858))
+ L51860
+ (assign continue (label L51857))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L49091
+ L51859
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L49090
+ L51858
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L49089))
- L49093
+ (goto (label L51857))
+ L51861
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L49089
+ L51857
  (assign argl (op list) (reg val))
  (restore proc)
  (test (op primitive-procedure?) (reg proc))
- (branch (label L49098))
+ (branch (label L51866))
  (test (op continuation?) (reg proc))
- (branch (label L49096))
+ (branch (label L51864))
  (test (op parameter?) (reg proc))
- (branch (label L49095))
- L49097
- (assign continue (label L49094))
+ (branch (label L51863))
+ L51865
+ (assign continue (label L51862))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L49096
+ L51864
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L49095
+ L51863
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L49094))
- L49098
+ (goto (label L51862))
+ L51866
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L49094
+ L51862
  (assign argl (op list) (reg val))
  (restore proc)
  (restore continue)
  (test (op primitive-procedure?) (reg proc))
- (branch (label L49191))
+ (branch (label L51959))
  (test (op continuation?) (reg proc))
- (branch (label L49189))
+ (branch (label L51957))
  (test (op parameter?) (reg proc))
- (branch (label L49188))
- L49190
+ (branch (label L51956))
+ L51958
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L49189
+ L51957
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L49188
+ L51956
  (assign val (op apply-parameter) (reg proc) (reg argl))
  (goto (reg continue))
- L49191
+ L51959
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
  (goto (reg continue))
- L49187
- L49087
+ L51955
+ L51855
  (save continue)
  (save proc)
  (assign proc (op lookup-variable-value) (const js-eval) (reg env))
  (assign val (const "new Date()"))
  (assign argl (op list) (reg val))
  (test (op primitive-procedure?) (reg proc))
- (branch (label L49086))
+ (branch (label L51854))
  (test (op continuation?) (reg proc))
- (branch (label L49084))
+ (branch (label L51852))
  (test (op parameter?) (reg proc))
- (branch (label L49083))
- L49085
- (assign continue (label L49082))
+ (branch (label L51851))
+ L51853
+ (assign continue (label L51850))
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L49084
+ L51852
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L49083
+ L51851
  (assign val (op apply-parameter) (reg proc) (reg argl))
- (goto (label L49082))
- L49086
+ (goto (label L51850))
+ L51854
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
- L49082
+ L51850
  (assign argl (op list) (reg val))
  (restore proc)
  (restore continue)
  (test (op primitive-procedure?) (reg proc))
- (branch (label L49196))
+ (branch (label L51964))
  (test (op continuation?) (reg proc))
- (branch (label L49194))
+ (branch (label L51962))
  (test (op parameter?) (reg proc))
- (branch (label L49193))
- L49195
+ (branch (label L51961))
+ L51963
  (assign val (op compiled-procedure-entry) (reg proc))
  (goto (reg val))
- L49194
+ L51962
  (assign val (op car) (reg argl))
  (perform (op do-continuation-winds) (reg proc))
  (assign stack (op continuation-stack) (reg proc))
  (assign continue (op continuation-conts) (reg proc))
  (goto (reg continue))
- L49193
+ L51961
  (assign val (op apply-parameter) (reg proc) (reg argl))
  (goto (reg continue))
- L49196
+ L51964
  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
  (goto (reg continue))
- L49192
- L49080
+ L51960
+ L51848
  (perform (op define-variable!) (const wall-clock-ms) (reg val) (reg env))
  (assign val (reg val))
- (procedure-name L49081 wall-clock-ms))
+ (procedure-name L51849 wall-clock-ms))

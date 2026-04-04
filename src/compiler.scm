@@ -646,6 +646,10 @@
   (let ((expanded (mc-qq-expand (cadr expr) 0)))
     (mc-compile expanded target linkage)))
 
+;;; Source location tracking for source-map emission
+
+(define *current-source-location* #f)
+
 ;;; Lexical addressing (SICP 5.41-5.43)
 
 (define *mc-compile-lexical-env* (make-parameter '()))
@@ -670,36 +674,64 @@
 ;;; Main compile dispatch
 
 (define (mc-compile expr target linkage)
-  (cond
-   ((mc-self-evaluating? expr) (mc-compile-self-evaluating expr target linkage))
-   ((mc-variable? expr) (mc-compile-variable expr target linkage))
-   ;; Lexical bindings shadow special forms (R5RS §4.1.1)
-   ((and (pair? expr) (symbol? (car expr))
-         (mc-find-variable (car expr) (*mc-compile-lexical-env*)))
-    (mc-compile-application expr target linkage))
-   ((mc-quoted? expr) (mc-compile-quoted expr target linkage))
-   ((mc-quasiquote? expr) (mc-compile-quasiquote expr target linkage))
-   ((mc-lambda? expr) (mc-compile-lambda expr target linkage))
-   ((mc-if? expr) (mc-compile-if expr target linkage))
-   ((mc-callcc? expr) (mc-compile-callcc expr target linkage))
-   ((mc-assignment? expr) (mc-compile-assignment expr target linkage))
-   ((mc-apply-form? expr) (mc-compile-apply-form expr target linkage))
-   ((mc-define-macro? expr) (mc-compile-define-macro expr target linkage))
-   ((mc-let-syntax? expr) (mc-compile-let-syntax expr target linkage))
-   ((mc-define? expr) (mc-compile-define expr target linkage))
-   ((mc-begin? expr) (mc-compile-begin expr target linkage))
-   ((mc-global-ref? expr) (mc-compile-global-ref expr target linkage))
-   ((mc-application? expr)
-    ;; Check for compile-time macro (skip if operator is lexically shadowed)
-    (let ((macro-def (if (mc-lexically-shadows-macro? (car expr))
-                         #f
-                         (get-macro (car expr)))))
-      (if macro-def
-          (mc-compile (mc-expand-macro-at-compile-time macro-def (cdr expr))
-                      target linkage)
-          (mc-compile-application expr target linkage))))
-   (else (error (string-append "Unknown expression type -- MC-COMPILE: "
-                               (write-to-string expr))))))
+  ;; Source location tracking: check side table, update current location
+  (when (pair? expr)
+    (let ((loc (hash-ref *source-locations* expr #f)))
+      (when loc
+        (set! *current-source-location* loc))))
+  ;; Compile the expression
+  (let ((compiled
+         (cond
+          ((mc-self-evaluating? expr) (mc-compile-self-evaluating expr target linkage))
+          ((mc-variable? expr) (mc-compile-variable expr target linkage))
+          ;; Lexical bindings shadow special forms (R5RS §4.1.1)
+          ((and (pair? expr) (symbol? (car expr))
+                (mc-find-variable (car expr) (*mc-compile-lexical-env*)))
+           (mc-compile-application expr target linkage))
+          ((mc-quoted? expr) (mc-compile-quoted expr target linkage))
+          ((mc-quasiquote? expr) (mc-compile-quasiquote expr target linkage))
+          ((mc-lambda? expr) (mc-compile-lambda expr target linkage))
+          ((mc-if? expr) (mc-compile-if expr target linkage))
+          ((mc-callcc? expr) (mc-compile-callcc expr target linkage))
+          ((mc-assignment? expr) (mc-compile-assignment expr target linkage))
+          ((mc-apply-form? expr) (mc-compile-apply-form expr target linkage))
+          ((mc-define-macro? expr) (mc-compile-define-macro expr target linkage))
+          ((mc-let-syntax? expr) (mc-compile-let-syntax expr target linkage))
+          ((mc-define? expr) (mc-compile-define expr target linkage))
+          ((mc-begin? expr) (mc-compile-begin expr target linkage))
+          ((mc-global-ref? expr) (mc-compile-global-ref expr target linkage))
+          ((mc-application? expr)
+           ;; Check for compile-time macro (skip if operator is lexically shadowed)
+           (let ((macro-def (if (mc-lexically-shadows-macro? (car expr))
+                                #f
+                                (get-macro (car expr)))))
+             (if macro-def
+                 (mc-compile (mc-expand-macro-at-compile-time macro-def (cdr expr))
+                             target linkage)
+                 (mc-compile-application expr target linkage))))
+          (else (error (string-append "Unknown expression type -- MC-COMPILE: "
+                                      (write-to-string expr)))))))
+    ;; Prepend source-location marker for compound expressions
+    (if (and (pair? expr) *current-source-location*)
+        (append-instruction-sequences
+         (make-instruction-sequence '() '()
+                                    (list (list 'source-location
+                                                (car *current-source-location*)
+                                                (cadr *current-source-location*)
+                                                (caddr *current-source-location*))))
+         compiled)
+        compiled)))
+
+;;; Strip source-location markers from an instruction list.
+;;; These markers are only used by compile-file for .ecec source-map emission.
+;;; For mc-compile-and-go (REPL, load), they must be removed before assembly.
+(define (strip-source-locations instrs)
+  (let loop ((items instrs) (acc '()))
+    (if (null? items)
+        (reverse acc)
+        (if (and (pair? (car items)) (eq? (car (car items)) 'source-location))
+            (loop (cdr items) acc)
+            (loop (cdr items) (cons (car items) acc))))))
 
 ;;; Integration: compile-and-go via metacircular compiler
 
@@ -711,7 +743,8 @@
   ;; persists while execute-from-pc runs, and call/cc inside it would
   ;; capture the entire env chain including the instruction list).
   (let ((start-pc (assemble-into-global
-                   (mc-instructions (mc-compile expr 'val 'next)))))
+                   (strip-source-locations
+                    (mc-instructions (mc-compile expr 'val 'next))))))
     (if (null? env-args)
         (execute-from-pc start-pc)
         (execute-from-pc start-pc (car env-args)))))

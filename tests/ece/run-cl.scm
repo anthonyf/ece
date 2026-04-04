@@ -6,3 +6,6 @@
 
 ;; Value serialization (uses save-continuation!/load-continuation)
 (load "tests/ece/test-serialization.scm")
+
+;; Source location tracking (uses compile-file, load-compiled)
+(load "tests/ece/test-source-locations.scm")
