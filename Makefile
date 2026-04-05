@@ -201,7 +201,6 @@ check-fmt: fmt
 		echo "Formatting check passed."; \
 	else \
 		echo "Formatting check failed. Run 'make fmt' to fix."; \
-		git checkout -- $(LISP_FILES) $(SCM_FILES); \
 		exit 1; \
 	fi
 

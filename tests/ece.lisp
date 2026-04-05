@@ -421,10 +421,13 @@ VARS are CL symbols (auto-downcased to ECE package)."
            (ok (eq (car (evaluate 'read)) 'ece::|compiled-procedure|)))
 
   (testing "display is bound"
-           (ok (eq (car (evaluate 'display)) 'ece::|primitive|)))
+           ;; display is now an ECE wrapper (compiled-procedure) around
+           ;; the %display-to-port primitive.
+           (ok (eq (car (evaluate 'display)) 'ece::|compiled-procedure|)))
 
   (testing "newline is bound"
-           (ok (eq (car (evaluate 'newline)) 'ece::|primitive|)))
+           ;; newline is now an ECE wrapper (compiled-procedure).
+           (ok (eq (car (evaluate 'newline)) 'ece::|compiled-procedure|)))
 
   (testing "eof? is bound"
            (ok (eq (car (evaluate 'eof?)) 'ece::|primitive|)))
@@ -2271,11 +2274,10 @@ VARS are CL symbols (auto-downcased to ECE package)."
              (ok (ece::ece-eof? (ece::ece-read-char p)))))
 
   (testing "write-char"
-           (let* ((result nil)
-                  (output (with-output-to-string (*standard-output*)
+           (let* ((output (with-output-to-string (*standard-output*)
                             (let ((op (ece::ece-make-output-port *standard-output*)))
-                              (ece::ece-write-char #\x op)
-                              (ece::ece-write-char #\y op)))))
+                              (ece::ece-%write-char-to-port #\x op)
+                              (ece::ece-%write-char-to-port #\y op)))))
              (ok (string= "xy" output))))
 
   (testing "character predicates"
@@ -2297,8 +2299,14 @@ VARS are CL symbols (auto-downcased to ECE package)."
              (ok (ece::ece-eof? (ece::ece-read-line p)))))
 
   (testing "current-input-port and current-output-port"
-           (ok (ece::ece-input-port? (ece::ece-current-input-port)))
-           (ok (ece::ece-output-port? (ece::ece-current-output-port))))
+           ;; current-*-port are now ECE parameter objects defined in prelude.
+           ;; Call via evaluate to read their current values.
+           (ok (ece::ece-input-port?
+                (ece:evaluate
+                 (list (intern "current-input-port" :ece)))))
+           (ok (ece::ece-output-port?
+                (ece:evaluate
+                 (list (intern "current-output-port" :ece))))))
 
   (testing "with-input-from-file reads from file"
            (ensure-directories-exist ".tmp/x")
@@ -2307,10 +2315,11 @@ VARS are CL symbols (auto-downcased to ECE package)."
              (with-open-file (s test-file :direction :output
                                 :if-exists :supersede)
                (write-string "abc" s))
-             ;; Read via with-input-from-file
-             (let ((ch (ece::ece-with-input-from-file
-                        test-file
-                        (list 'ece::|primitive| 'ece::ece-read-char))))
+             ;; Read via the ECE-level with-input-from-file wrapper (evaluated in ECE)
+             (let ((ch (ece:evaluate
+                        `(,(intern "with-input-from-file" :ece)
+                           ,test-file
+                           (lambda () (,(intern "read-char" :ece)))))))
                (ok (char= ch #\a)))
              (delete-file test-file)))
 
@@ -2460,8 +2469,11 @@ VARS are CL symbols (auto-downcased to ECE package)."
              (ok result))))
 
 (defun run-repl (input-string)
-  "Run the ECE REPL with INPUT-STRING as input, return captured output."
-  (let ((ece::*current-input-port* (ece::ece-open-input-string input-string)))
+  "Run the ECE REPL with INPUT-STRING as input, return captured output.
+The ECE current-input-port / current-output-port parameters wrap synonym
+streams pointing at *standard-input* / *standard-output*, so CL-level
+rebindings redirect ECE's I/O."
+  (with-input-from-string (*standard-input* input-string)
     (with-output-to-string (*standard-output*)
       (ece:repl))))
 

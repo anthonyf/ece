@@ -161,6 +161,13 @@
            #:with-output-to-file
            #:call-with-input-file
            #:call-with-output-file
+           #:%display-to-port
+           #:%write-to-port
+           #:%newline-to-port
+           #:%write-char-to-port
+           #:%write-string-to-port
+           #:%initial-output-port
+           #:%initial-input-port
            #:%intern-ece
            #:%instruction-vector-length
            #:%instruction-vector-push!
@@ -628,23 +635,6 @@ Tries: override table → ece-<name> in ECE package → <name> in CL package →
              obj))
   (write-char #\} stream))
 
-(defun ece-display (obj &optional port)
-  "Write obj without leading newline (princ). Optional PORT argument."
-  (let ((stream (if port (ece-port-stream port) *standard-output*)))
-    (cond
-      ((scheme-false-p obj) (write-string "#f" stream))
-      ((eq obj t) (write-string "#t" stream))
-      ((null obj) (write-string "()" stream))
-      ((and (listp obj) (member (car obj) '(compiled-procedure primitive)))
-       (princ (format-ece-proc obj) stream))
-      ((hash-table-p obj)
-       (format-ece-hash-table obj stream
-                              (lambda (v s) (ece-display-to-stream v s))))
-      (t (let ((*print-circle* t))
-           (princ obj stream))))
-    (finish-output stream))
-  obj)
-
 (defun ece-display-to-stream (obj stream)
   "Display obj to a specific stream."
   (cond
@@ -653,23 +643,6 @@ Tries: override table → ece-<name> in ECE package → <name> in CL package →
     ((null obj) (write-string "()" stream))
     (t (let ((*print-circle* t)) (princ obj stream)))))
 
-(defun ece-write (obj &optional port)
-  "Write obj in readable form (prin1). Optional PORT argument."
-  (let ((stream (if port (ece-port-stream port) *standard-output*)))
-    (cond
-      ((scheme-false-p obj) (write-string "#f" stream))
-      ((eq obj t) (write-string "#t" stream))
-      ((null obj) (write-string "()" stream))
-      ((and (listp obj) (member (car obj) '(compiled-procedure primitive)))
-       (princ (format-ece-proc obj) stream))
-      ((hash-table-p obj)
-       (format-ece-hash-table obj stream
-                              (lambda (v s) (ece-write-to-stream v s))))
-      (t (let ((*print-circle* t))
-           (prin1 obj stream))))
-    (finish-output stream))
-  obj)
-
 (defun ece-write-to-stream (obj stream)
   "Write obj in readable form to a specific stream."
   (cond
@@ -677,13 +650,6 @@ Tries: override table → ece-<name> in ECE package → <name> in CL package →
     ((eq obj t) (write-string "#t" stream))
     ((null obj) (write-string "()" stream))
     (t (let ((*print-circle* t)) (prin1 obj stream)))))
-
-(defun ece-newline (&optional port)
-  "Write a newline. Optional PORT argument."
-  (let ((stream (if port (ece-port-stream port) *standard-output*)))
-    (terpri stream)
-    (finish-output stream)
-    nil))
 
 (defun ece-eof? (obj)
   "Test if obj is the EOF sentinel."
@@ -731,12 +697,13 @@ Tries: override table → ece-<name> in ECE package → <name> in CL package →
   (setf (aref vec idx) val)
   val)
 
-(defun ece-read-line (&optional port)
-  "Read a line of text from PORT (default current-input-port).
-Returns EOF sentinel at end of input."
-  (let ((stream (if port (ece-port-stream port) (ece-port-stream *current-input-port*))))
+(defun ece-read-line (port)
+  "Read a line of text from PORT. Returns EOF sentinel at end of input.
+Called only via the ECE wrapper in prelude.scm, which supplies the port."
+  (let ((stream (ece-port-stream port)))
     (multiple-value-bind (line missing-newline-p)
         (read-line stream nil nil)
+      (declare (ignore missing-newline-p))
       (or line *eof-sentinel*))))
 
 (defun ece-write-to-string (x)
@@ -868,17 +835,9 @@ print without CL pipe escaping."
 (defun ece-port-col (port)
   (car (cddddr port)))
 
-(defvar *current-input-port*
-  (ece-make-input-port *standard-input*))
-
-(defvar *current-output-port*
-  (ece-make-output-port *standard-output*))
-
-(defun ece-current-input-port ()
-  *current-input-port*)
-
-(defun ece-current-output-port ()
-  *current-output-port*)
+;;; current-input-port / current-output-port are now ECE parameters
+;;; (created in prelude.scm via %initial-input-port / %initial-output-port).
+;;; Host defvars were removed — the parameter is the sole source of truth.
 
 ;;; File and string port constructors
 
@@ -911,10 +870,83 @@ print without CL pipe escaping."
 (defun ece-get-output-string (port)
   (get-output-stream-string (ece-port-stream port)))
 
+;;; Port-required write primitives (R7RS ports via ECE wrappers)
+;;; These require an explicit port argument — no ambient fallback.
+;;; The ECE wrappers in prelude.scm supply (current-output-port) when omitted.
+
+(defun ece-%initial-output-port ()
+  "Return a fresh output port wrapping CL's *standard-output*.
+Called once during prelude load to seed the current-output-port parameter.
+Uses a synonym stream so that later dynamic rebindings of *standard-output*
+(e.g. via CL's with-output-to-string at the test boundary) are honored."
+  (ece-make-output-port (make-synonym-stream '*standard-output*)))
+
+(defun ece-%initial-input-port ()
+  "Return a fresh input port wrapping CL's *standard-input*.
+Called once during prelude load to seed the current-input-port parameter.
+Uses a synonym stream so that dynamic rebindings of *standard-input* are honored."
+  (ece-make-input-port (make-synonym-stream '*standard-input*)))
+
+(defun ece-%display-to-port (obj port)
+  "Write OBJ to PORT in human-readable form (princ)."
+  (let ((stream (ece-port-stream port)))
+    (cond
+      ((scheme-false-p obj) (write-string "#f" stream))
+      ((eq obj t) (write-string "#t" stream))
+      ((null obj) (write-string "()" stream))
+      ((and (listp obj) (member (car obj) '(compiled-procedure primitive)))
+       (princ (format-ece-proc obj) stream))
+      ((hash-table-p obj)
+       (format-ece-hash-table obj stream
+                              (lambda (v s) (ece-display-to-stream v s))))
+      (t (let ((*print-circle* t))
+           (princ obj stream))))
+    (finish-output stream))
+  obj)
+
+(defun ece-%write-to-port (obj port)
+  "Write OBJ to PORT in machine-readable form (prin1)."
+  (let ((stream (ece-port-stream port)))
+    (cond
+      ((scheme-false-p obj) (write-string "#f" stream))
+      ((eq obj t) (write-string "#t" stream))
+      ((null obj) (write-string "()" stream))
+      ((and (listp obj) (member (car obj) '(compiled-procedure primitive)))
+       (princ (format-ece-proc obj) stream))
+      ((hash-table-p obj)
+       (format-ece-hash-table obj stream
+                              (lambda (v s) (ece-write-to-stream v s))))
+      (t (let ((*print-circle* t))
+           (prin1 obj stream))))
+    (finish-output stream))
+  obj)
+
+(defun ece-%newline-to-port (port)
+  "Write a newline character to PORT."
+  (let ((stream (ece-port-stream port)))
+    (terpri stream)
+    (finish-output stream)
+    nil))
+
+(defun ece-%write-char-to-port (ch port)
+  "Write character CH to PORT."
+  (let ((stream (ece-port-stream port)))
+    (write-char ch stream)
+    (finish-output stream)
+    ch))
+
+(defun ece-%write-string-to-port (str port)
+  "Write string STR to PORT."
+  (let ((stream (ece-port-stream port)))
+    (write-string str stream)
+    (finish-output stream)
+    str))
+
 ;;; Character I/O primitives
 
-(defun ece-read-char (&optional port)
-  (let* ((p (or port *current-input-port*))
+(defun ece-read-char (port)
+  "Read one character from PORT. ECE wrapper supplies the port."
+  (let* ((p port)
          (ch (read-char (ece-port-stream p) nil nil)))
     (when ch
       (if (char= ch #\Newline)
@@ -924,16 +956,10 @@ print without CL pipe escaping."
           (setf (car (cddddr p)) (1+ (car (cddddr p)))))) ; increment col
     (or ch *eof-sentinel*)))
 
-(defun ece-peek-char (&optional port)
-  (let* ((p (or port *current-input-port*))
-         (ch (peek-char nil (ece-port-stream p) nil nil)))
+(defun ece-peek-char (port)
+  "Peek at next character of PORT. ECE wrapper supplies the port."
+  (let ((ch (peek-char nil (ece-port-stream port) nil nil)))
     (or ch *eof-sentinel*)))
-
-(defun ece-write-char (ch &optional port)
-  (let ((p (or port *current-output-port*)))
-    (write-char ch (ece-port-stream p))
-    (finish-output (ece-port-stream p))
-    ch))
 
 (defun ece-open-binary-output-file (filename)
   "Open FILENAME for binary writing. Returns an output port."
@@ -949,9 +975,9 @@ print without CL pipe escaping."
   (write-byte byte (ece-port-stream port))
   byte)
 
-(defun ece-char-ready? (&optional port)
-  (let ((p (or port *current-input-port*)))
-    (scheme-bool (listen (ece-port-stream p)))))
+(defun ece-char-ready? (port)
+  "Test whether PORT has a character available. ECE wrapper supplies port."
+  (scheme-bool (listen (ece-port-stream port))))
 
 ;;; Character predicates
 
@@ -966,19 +992,22 @@ print without CL pipe escaping."
 
 ;;; Scoped port redirection
 
+;; with-input-from-file / with-output-to-file are now ECE procedures
+;; (defined in prelude.scm using parameterize + current-*-port). The ECE
+;; wrappers shadow these CL primitives. These CL versions remain as a
+;; fallback for callers that invoke primitive 102/103 directly; they bind
+;; the host's *standard-input* / *standard-output* streams only.
 (defun ece-with-input-from-file (filename thunk)
   (let ((port (ece-open-input-file filename)))
     (unwind-protect
-         (let ((*current-input-port* port)
-               (*standard-input* (ece-port-stream port)))
+         (let ((*standard-input* (ece-port-stream port)))
            (apply-ece-procedure thunk nil))
       (ece-close-input-port port))))
 
 (defun ece-with-output-to-file (filename thunk)
   (let ((port (ece-open-output-file filename)))
     (unwind-protect
-         (let ((*current-output-port* port)
-               (*standard-output* (ece-port-stream port)))
+         (let ((*standard-output* (ece-port-stream port)))
            (apply-ece-procedure thunk nil))
       (ece-close-output-port port))))
 
@@ -2038,30 +2067,53 @@ When ENV is supplied, it is passed to mc-compile-and-go."
 (defun canonicalize-ecec-constants (form)
   "Walk FORM and replace deserialized #S(SCHEME-FALSE) structs with the
 canonical *scheme-false* singleton. Needed because CL's reader creates fresh
-struct instances that are not EQ to *scheme-false*."
-  (cond ((scheme-false-p form) *scheme-false*)
-        ((consp form) (cons (canonicalize-ecec-constants (car form))
-                            (canonicalize-ecec-constants (cdr form))))
-        (t form)))
+struct instances that are not EQ to *scheme-false*.
+Iterative on the cdr spine so very long lists don't overflow the stack."
+  (cond
+    ((scheme-false-p form) *scheme-false*)
+    ((consp form)
+     ;; Walk the cdr spine iteratively; recurse only on cars.
+     (let* ((head (cons nil nil))
+            (tail head)
+            (cur form))
+       (loop while (consp cur) do
+             (let ((new-cell (cons (canonicalize-ecec-constants (car cur)) nil)))
+               (setf (cdr tail) new-cell
+                     tail new-cell
+                     cur (cdr cur))))
+       (setf (cdr tail) (canonicalize-ecec-constants cur))
+       (cdr head)))
+    (t form)))
 
 (defun downcase-ece-symbols (form)
   "Walk FORM and downcase symbols for case-sensitive transition.
 Handles old .ecec files that have uppercase symbols from the legacy reader.
 Downcases both ECE-package and CL-package symbols into the ECE package
 (since old reader resolved names like LIST, CAR as CL symbols via inheritance).
-Preserves T, NIL, and symbols from other packages."
-  (cond ((null form) form)
-        ((eq form t) form)
-        ((symbolp form)
-         (let ((pkg (symbol-package form)))
-           (if (or (null pkg)  ; uninterned
-                   (and (not (eq pkg (find-package :ece)))
-                        (not (eq pkg (find-package :cl)))))
-               form
-               (intern (string-downcase (symbol-name form)) :ece))))
-        ((consp form) (cons (downcase-ece-symbols (car form))
-                            (downcase-ece-symbols (cdr form))))
-        (t form)))
+Preserves T, NIL, and symbols from other packages.
+Iterative on the cdr spine so very long lists don't overflow the stack."
+  (cond
+    ((null form) form)
+    ((eq form t) form)
+    ((symbolp form)
+     (let ((pkg (symbol-package form)))
+       (if (or (null pkg)
+               (and (not (eq pkg (find-package :ece)))
+                    (not (eq pkg (find-package :cl)))))
+           form
+           (intern (string-downcase (symbol-name form)) :ece))))
+    ((consp form)
+     (let* ((head (cons nil nil))
+            (tail head)
+            (cur form))
+       (loop while (consp cur) do
+             (let ((new-cell (cons (downcase-ece-symbols (car cur)) nil)))
+               (setf (cdr tail) new-cell
+                     tail new-cell
+                     cur (cdr cur))))
+       (setf (cdr tail) (downcase-ece-symbols cur))
+       (cdr head)))
+    (t form)))
 
 ;;; Source-map table: space-name → hash-table of pc → (file line col)
 (defvar *ece-source-maps* (make-hash-table :test 'eq))

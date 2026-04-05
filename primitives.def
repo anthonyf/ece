@@ -94,14 +94,13 @@
 (56  list->vector        1   ece   "Convert list to vector")
 
 ;;; --- I/O operations ---
-(57  display            -1  core   "Display object to port")
-(58  write              -1  core   "Write object in readable form")
-(59  newline            -1  core   "Write newline to port")
-(60  read-char          -1  core   "Read character from port")
-(61  peek-char          -1  core   "Peek at next character from port")
-(62  write-char         -1  core   "Write character to port")
-(63  read-line          -1  core   "Read line from port")
-(64  char-ready?        -1  core   "Test if character available on port")
+;;; IDs 57, 58, 59, 62 (display, write, newline, write-char) retired —
+;;; these are now ECE procedures in prelude.scm built on %<op>-to-port.
+;;; Low-level write primitives with required explicit ports live at IDs 179-183.
+(60  read-char           1  core   "Read character from explicit port")
+(61  peek-char           1  core   "Peek at next character from explicit port")
+(63  read-line           1  core   "Read line from explicit port")
+(64  char-ready?         1  core   "Test if character available on explicit port")
 (65  eof?                1  core   "Test for end-of-file sentinel")
 (66  print               1  ece    "Print object with newline")
 (67  write-to-string     1  core   "Convert object to string representation")
@@ -110,8 +109,8 @@
 (68  input-port?         1  core   "Test for input port")
 (69  output-port?        1  core   "Test for output port")
 (70  port?               1  core   "Test for any port")
-(71  current-input-port  0  core   "Get current default input port")
-(72  current-output-port 0  core   "Get current default output port")
+;;; IDs 71, 72 (current-input-port, current-output-port) retired —
+;;; these are now ECE parameter objects defined in prelude.scm.
 (73  open-input-string   1  core   "Create input port from string")
 (74  close-input-port    1  core   "Close input port")
 (75  close-output-port   1  core   "Close output port")
@@ -256,6 +255,15 @@
 (176 get-output-string          1  core   "Extract accumulated string from output string port")
 (177 port-line                  1  core   "Get current line number of port")
 (178 port-col                   1  core   "Get current column number of port")
+
+;;; --- Port-required write primitives (R7RS port ops, no ambient-port fallback) ---
+(179 %display-to-port           2  core   "Write value to explicit port (human-readable form)")
+(180 %write-to-port             2  core   "Write value to explicit port (machine-readable form)")
+(181 %newline-to-port           1  core   "Write newline to explicit port")
+(182 %write-char-to-port        2  core   "Write char to explicit port")
+(183 %write-string-to-port      2  core   "Write string to explicit port")
+(184 %initial-output-port       0  core   "Fresh output port wrapping host stdout (boot-time)")
+(185 %initial-input-port        0  core   "Fresh input port wrapping host stdin (boot-time)")
 
 ;;; ═══════════════════════════════════════════════════════════════════════
 ;;; BROWSER PLATFORM PRIMITIVES (200-299) — Canvas and DOM
