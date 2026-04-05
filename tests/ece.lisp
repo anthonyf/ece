@@ -2733,3 +2733,134 @@ rebindings redirect ECE's I/O."
                               ece::*global-env*)))
                (ok (= failures 0)
                    (format nil "ECE native suite: ~A failures" failures)))))
+
+;; ============================================================
+;; ece-sdk-toolchain integration tests
+;; ============================================================
+
+(defun ece-binary-path ()
+  "Path to the in-tree bin/ece binary (built by `make ece')."
+  (namestring (asdf:system-relative-pathname :ece "bin/ece")))
+
+(defun run-ece-binary (args &key (input ""))
+  "Run bin/ece with ARGS (a list of strings). Returns (exit-code stdout stderr).
+Skips test gracefully via ok t if the binary hasn't been built yet."
+  (declare (ignore input))
+  (let* ((bin (ece-binary-path))
+         (out (with-output-to-string (s)
+                (let* ((err (make-string-output-stream))
+                       (process
+                        (sb-ext:run-program bin args
+                                            :output s
+                                            :error err
+                                            :search nil
+                                            :wait t)))
+                  (list (sb-ext:process-exit-code process)
+                        (get-output-stream-string err))))))
+    (declare (ignore out))
+    nil))
+
+(defun run-ece-binary-capture (args)
+  "Run bin/ece with ARGS. Returns (values exit-code stdout stderr)."
+  (let* ((bin (ece-binary-path))
+         (out-str (make-string-output-stream))
+         (err-str (make-string-output-stream))
+         (process (sb-ext:run-program bin args
+                                      :output out-str
+                                      :error err-str
+                                      :search nil
+                                      :wait t)))
+    (values (sb-ext:process-exit-code process)
+            (get-output-stream-string out-str)
+            (get-output-stream-string err-str))))
+
+(deftest test-ece-binary-version
+    (testing "bin/ece -V prints version"
+             (if (not (probe-file (ece-binary-path)))
+                 (skip "bin/ece not built — run `make ece' first")
+                 (multiple-value-bind (code stdout stderr)
+                     (run-ece-binary-capture '("-V"))
+                   (declare (ignore stderr))
+                   (ok (zerop code) "exit code 0")
+                   (ok (search "ece " stdout) "output contains version string")))))
+
+(deftest test-ece-binary-eval
+    (testing "bin/ece -e evaluates expression"
+             (if (not (probe-file (ece-binary-path)))
+                 (skip "bin/ece not built — run `make ece' first")
+                 (multiple-value-bind (code stdout stderr)
+                     (run-ece-binary-capture '("-e" "(display (+ 1 2))"))
+                   (ok (zerop code)
+                       (format nil "exit 0 (got ~A, stderr=~S)" code stderr))
+                   (ok (search "3" stdout)
+                       (format nil "output contains 3 (got ~S)" stdout))))))
+
+(deftest test-ece-binary-exit-codes
+    (testing "bin/ece propagates (exit N) codes"
+             (if (not (probe-file (ece-binary-path)))
+                 (skip "bin/ece not built — run `make ece' first")
+                 (progn
+                   (multiple-value-bind (code stdout stderr)
+                       (run-ece-binary-capture '("-e" "(exit 0)"))
+                     (declare (ignore stdout stderr))
+                     (ok (zerop code) "(exit 0) returns 0"))
+                   (multiple-value-bind (code stdout stderr)
+                       (run-ece-binary-capture '("-e" "(exit 3)"))
+                     (declare (ignore stdout stderr))
+                     (ok (= code 3) "(exit 3) returns 3"))))))
+
+(deftest test-ece-binary-argv-dispatch
+    (testing "ece-build symlink dispatches to ece-build-main"
+             (let ((build-link (namestring (asdf:system-relative-pathname :ece "bin/ece-build"))))
+               (if (not (probe-file build-link))
+                   (skip "bin/ece-build symlink not present — run `make ece' first")
+                   (let* ((out-str (make-string-output-stream))
+                          (process (sb-ext:run-program build-link '("--help")
+                                                       :output out-str
+                                                       :search nil
+                                                       :wait t)))
+                     (ok (zerop (sb-ext:process-exit-code process)) "exit 0")
+                     (ok (search "Usage: ece-build" (get-output-stream-string out-str))
+                         "help text mentions ece-build"))))))
+
+(deftest test-ece-install-layout
+    (testing "make install lays out PREFIX/bin + PREFIX/share/ece"
+             (let* ((prefix (namestring
+                             (ensure-directories-exist
+                              (merge-pathnames
+                               ".tmp/ece-install-test/"
+                               (asdf:system-relative-pathname :ece "")))))
+                    (bin (namestring (asdf:system-relative-pathname :ece "bin/ece"))))
+               (if (not (probe-file bin))
+                   (skip "bin/ece not built — run `make ece' first")
+                   (progn
+                     ;; Clean previous test state
+                     (uiop:delete-directory-tree (pathname prefix) :validate t :if-does-not-exist :ignore)
+                     (ensure-directories-exist prefix)
+                     ;; Run `make install PREFIX=$TMP`
+                     (let* ((err-str (make-string-output-stream))
+                            (process (sb-ext:run-program
+                                      "/usr/bin/make"
+                                      (list "install" (format nil "PREFIX=~A" prefix))
+                                      :directory (asdf:system-relative-pathname :ece "")
+                                      :error err-str
+                                      :wait t)))
+                       (ok (zerop (sb-ext:process-exit-code process)) "make install exit 0"))
+                     ;; Verify layout
+                     (ok (probe-file (format nil "~A/bin/ece" prefix)) "ece binary installed")
+                     (ok (probe-file (format nil "~A/bin/ece-repl" prefix)) "ece-repl symlink installed")
+                     (ok (probe-file (format nil "~A/bin/ece-build" prefix)) "ece-build symlink installed")
+                     (ok (probe-file (format nil "~A/bin/ece-test" prefix)) "ece-test symlink installed")
+                     (ok (probe-file (format nil "~A/share/ece/bootstrap.ecec" prefix)) "bootstrap.ecec staged")
+                     (ok (probe-file (format nil "~A/share/ece/ece-main.ecec" prefix)) "ece-main.ecec staged")
+                     (ok (probe-file (format nil "~A/share/ece/runtime.wasm" prefix)) "runtime.wasm staged")
+                     ;; Verify installed binary runs (relocatable)
+                     (let* ((out-str (make-string-output-stream))
+                            (p2 (sb-ext:run-program
+                                 (format nil "~A/bin/ece" prefix)
+                                 '("-V")
+                                 :output out-str
+                                 :search nil
+                                 :wait t)))
+                       (ok (zerop (sb-ext:process-exit-code p2)) "installed ece -V exit 0")
+                       (ok (search "ece " (get-output-stream-string out-str)) "version string")))))))

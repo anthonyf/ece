@@ -9,3 +9,7 @@
 
 ;; Source location tracking (uses compile-file, load-compiled)
 (load "tests/ece/test-source-locations.scm")
+
+;; ECE SDK: argv parser and path-helper coverage
+(load "tests/ece/test-ece-main-args.scm")
+(load "tests/ece/test-ece-test-runner.scm")

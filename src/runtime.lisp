@@ -184,6 +184,16 @@
            #:ece-error-backtrace
            #:repl
            #:mc-eval
+           #:command-line
+           #:exit
+           #:get-environment-variable
+           #:%exe-path
+           #:%list-directory
+           #:%file-exists?
+           #:open-binary-input-file
+           #:read-byte
+           #:%make-directory
+           #:%chmod
            #:*scheme-false*
            #:scheme-false-p
            #:scheme-bool))
@@ -728,16 +738,36 @@ Called only via the ECE wrapper in prelude.scm, which supplies the port."
   "Cached readtable with :preserve case for write-to-string-flat.")
 
 (defun ece-write-to-string-flat (x)
-  "Serialize X to a string without *print-circle* shared-structure markers.
-Used for .ecec file serialization where the ECE reader needs to parse the output.
-Binds *package* to :ece and uses :preserve readtable-case so lowercase symbols
-print without CL pipe escaping."
+  "Serialize X to a string parseable by both the CL and ECE readers.
+Emits #f for SCHEME-FALSE, (%ser/opaque) for CL hash tables, and uses
+:preserve readtable-case so lowercase ECE symbols print without pipe escaping."
   (let ((*print-circle* nil) (*print-pretty* nil) (*package* (find-package :ece))
         (*readtable* *preserve-readtable*))
-    (if (hash-table-p x)
-        ;; CL hash tables are not ECE-readable; emit sentinel
-        "(%ser/opaque)"
-        (prin1-to-string x))))
+    (with-output-to-string (s)
+      (ece-print-flat x s))))
+
+(defun ece-print-flat (x s)
+  "Recursively print X to S using ECE-readable syntax."
+  (cond
+    ((scheme-false-p x) (write-string "#f" s))
+    ((eq x t) (write-string "#t" s))
+    ((null x) (write-string "()" s))
+    ((hash-table-p x) (write-string "(%ser/opaque)" s))
+    ((consp x)
+     (write-char #\( s)
+     (ece-print-flat (car x) s)
+     (loop with cur = (cdr x) while cur do
+           (cond
+             ((consp cur)
+              (write-char #\space s)
+              (ece-print-flat (car cur) s)
+              (setf cur (cdr cur)))
+             (t
+              (write-string " . " s)
+              (ece-print-flat cur s)
+              (setf cur nil))))
+     (write-char #\) s))
+    (t (prin1 x s))))
 
 (defun ece-truncate (x)
   "Truncate number toward zero to integer."
@@ -886,6 +916,77 @@ Uses a synonym stream so that later dynamic rebindings of *standard-output*
 Called once during prelude load to seed the current-input-port parameter.
 Uses a synonym stream so that dynamic rebindings of *standard-input* are honored."
   (ece-make-input-port (make-synonym-stream '*standard-input*)))
+
+;;; Process environment and filesystem — host-only capabilities.
+;;; Each is a one-line wrapper; all logic lives in ECE.
+
+(defun ece-command-line ()
+  "Return argv as an ECE list of strings."
+  (coerce sb-ext:*posix-argv* 'list))
+
+(defun ece-exit (&rest args)
+  "Terminate process. R7RS: 0-arg → 0, integer → code, #t → 0, #f → 1."
+  (let ((code (cond
+                ((null args) 0)
+                ((integerp (car args)) (car args))
+                ((scheme-false-p (car args)) 1)
+                ((eq (car args) t) 0)
+                (t 0))))
+    (sb-ext:exit :code code)))
+
+(defun ece-get-environment-variable (name)
+  "Return env var value as string or #f if unset."
+  (or (sb-ext:posix-getenv name) *scheme-false*))
+
+(defun ece-%exe-path ()
+  "Return the resolved path of the running executable."
+  (namestring sb-ext:*runtime-pathname*))
+
+(defun ece-%list-directory (path)
+  "List filenames in PATH as an ECE list of strings (no . or ..)."
+  (let ((dir (if (and (stringp path)
+                      (> (length path) 0)
+                      (not (char= (char path (1- (length path))) #\/)))
+                 (concatenate 'string path "/")
+                 path)))
+    (mapcar (lambda (p)
+              (let ((name (file-namestring p)))
+                (if (or (null name) (string= name ""))
+                    ;; directory entry — use last directory component
+                    (car (last (pathname-directory p)))
+                    name)))
+            (directory (concatenate 'string dir "*.*")))))
+
+(defun ece-%file-exists? (path)
+  "Return #t if PATH exists, #f otherwise."
+  (scheme-bool (probe-file path)))
+
+(defun ece-open-binary-input-file (filename)
+  "Open FILENAME for binary reading. Returns an input port."
+  (ece-make-input-port (open filename :direction :input
+                             :element-type '(unsigned-byte 8))
+                       (if (stringp filename) filename (namestring filename))))
+
+(defun ece-read-byte (port)
+  "Read one byte (0-255) from PORT, or return EOF sentinel at end of stream."
+  (let ((b (read-byte (ece-port-stream port) nil *eof-sentinel*)))
+    b))
+
+(defun ece-%make-directory (path)
+  "Create directory PATH (and parents) if missing. Returns nil."
+  (ensure-directories-exist
+   (if (and (stringp path)
+            (> (length path) 0)
+            (not (char= (char path (1- (length path))) #\/)))
+       (concatenate 'string path "/")
+       path))
+  nil)
+
+(defun ece-%chmod (path mode)
+  "Set POSIX file mode on PATH (integer, e.g. 493 = 0o755). Returns nil."
+  #+unix (sb-posix:chmod path mode)
+  #-unix (declare (ignore path mode))
+  nil)
 
 (defun ece-%display-to-port (obj port)
   "Write OBJ to PORT in human-readable form (princ)."
@@ -2136,6 +2237,22 @@ the downcased (source-map filename (pc line col) ...) cdr."
     (when space-map
       (gethash pc space-map))))
 
+(defvar *ecec-readtable*
+  (let ((rt (copy-readtable nil)))
+    (set-dispatch-macro-character #\# #\f
+                                  (lambda (stream subchar arg)
+                                    (declare (ignore stream subchar arg))
+                                    *scheme-false*)
+                                  rt)
+    (set-dispatch-macro-character #\# #\t
+                                  (lambda (stream subchar arg)
+                                    (declare (ignore stream subchar arg))
+                                    t)
+                                  rt)
+    rt)
+  "Custom CL readtable that understands #f, #t (plus default #S, etc.)
+so load-ecec-file can read both old and new serialization formats.")
+
 (defun load-ecec-section (stream &key skip)
   "Load one ecec section (header + instructions) from STREAM.
 Creates a named space, registers source-map, assembles, and executes.
@@ -2144,6 +2261,7 @@ Returns T if a section was loaded, NIL on EOF."
   ;; Bind *package* to :ece so cl:read interns symbols in the ECE package,
   ;; regardless of caller context (e.g., CL-USER from run.lisp).
   (let* ((*package* (find-package :ece))
+         (*readtable* *ecec-readtable*)
          (raw-header (cl:read stream nil :eof)))
     (when (eq raw-header :eof) (return-from load-ecec-section nil))
     (let* ((header (downcase-ece-symbols raw-header))

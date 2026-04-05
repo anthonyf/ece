@@ -2,7 +2,7 @@
  (goto (label L6))
  L7
  (assign env (op compiled-procedure-env) (reg proc))
- (assign env (op extend-environment) (const NIL) (reg argl) (reg env) (const 0))
+ (assign env (op extend-environment) (const ()) (reg argl) (reg env) (const 0))
  (assign proc (op lookup-variable-value) (const call-with-current-continuation) (reg env))
  (assign val (op make-compiled-procedure) (label L9) (reg env))
  (goto (label L8))
