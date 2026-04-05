@@ -49,15 +49,61 @@ Ports SHALL be represented as tagged lists: `(input-port <stream>)` for input po
 - **THEN** `p` SHALL be an input port and reading characters from it SHALL yield the characters of "hello"
 
 ### Requirement: current port accessors
-`current-input-port` SHALL return the current default input port (stdin). `current-output-port` SHALL return the current default output port (stdout).
+`current-input-port` SHALL be a parameter object (as produced by `make-parameter`) whose value is the current default input port. `current-output-port` SHALL be a parameter object whose value is the current default output port. Called with no arguments, each SHALL return the current value. Called with one argument, each SHALL set the value. Called with two arguments (a value and a flag), each SHALL set the value without invoking any converter (supporting the R7RS `parameterize` restore semantics). Initial values SHALL wrap the host's standard input and standard output streams respectively, established once at boot via the `%initial-input-port` / `%initial-output-port` primitives.
 
 #### Scenario: current-input-port returns stdin port
-- **WHEN** `(current-input-port)` is called
+- **WHEN** `(current-input-port)` is called at startup
 - **THEN** the result SHALL be an input port connected to standard input
 
 #### Scenario: current-output-port returns stdout port
-- **WHEN** `(current-output-port)` is called
+- **WHEN** `(current-output-port)` is called at startup
 - **THEN** the result SHALL be an output port connected to standard output
+
+#### Scenario: current-output-port is rebindable via parameterize
+- **GIVEN** `(define p (open-output-string))`
+- **WHEN** `(parameterize ((current-output-port p)) (display "hi")) (get-output-string p)` is evaluated
+- **THEN** the final result SHALL be `"hi"`
+- **AND** `(current-output-port)` AFTER the parameterize SHALL equal its value BEFORE the parameterize
+
+#### Scenario: current-output-port is a procedure (parameter object)
+- **WHEN** `(procedure? current-output-port)` is evaluated
+- **THEN** the result SHALL be true
+
+### Requirement: port-parameterized write primitives
+The kernel SHALL expose low-level primitives that write to an explicitly-supplied port: `%display-to-port`, `%write-to-port`, `%newline-to-port`, `%write-char-to-port`, `%write-string-to-port`. These primitives SHALL require a port argument and SHALL NOT fall back to any host stream or ambient port.
+
+#### Scenario: %display-to-port writes to the supplied port
+- **GIVEN** `(define p (open-output-string))`
+- **WHEN** `(%display-to-port "hello" p)` then `(get-output-string p)` is evaluated
+- **THEN** the final result SHALL be `"hello"`
+
+#### Scenario: %newline-to-port writes a newline to the supplied port
+- **GIVEN** `(define p (open-output-string))`
+- **WHEN** `(%display-to-port "x" p) (%newline-to-port p) (%display-to-port "y" p)` is evaluated, then `(get-output-string p)`
+- **THEN** the final result SHALL be `"x\ny"`
+
+### Requirement: display/write/newline default to current-output-port
+`display`, `write`, `newline`, `write-char`, `write-string` SHALL be ECE procedures that accept an optional port argument. When called with no port argument, each SHALL write to `(current-output-port)`. When called with an explicit port, each SHALL write to that port.
+
+#### Scenario: display with no port writes to current-output-port
+- **GIVEN** `(define p (open-output-string))`
+- **WHEN** `(parameterize ((current-output-port p)) (display "hi")) (get-output-string p)` is evaluated
+- **THEN** the final result SHALL be `"hi"`
+
+#### Scenario: display with explicit port writes to that port
+- **GIVEN** `(define p (open-output-string))`
+- **WHEN** `(display "hi" p) (get-output-string p)` is evaluated
+- **THEN** the final result SHALL be `"hi"`
+
+#### Scenario: write respects explicit port
+- **GIVEN** `(define p (open-output-string))`
+- **WHEN** `(write "hi" p) (get-output-string p)` is evaluated
+- **THEN** the final result SHALL be `"\"hi\""` (with the string's escape-visible quotes)
+
+#### Scenario: newline with no port writes to current-output-port
+- **GIVEN** `(define p (open-output-string))`
+- **WHEN** `(parameterize ((current-output-port p)) (display "x") (newline) (display "y")) (get-output-string p)` is evaluated
+- **THEN** the final result SHALL be `"x\ny"`
 
 ### Requirement: scoped port redirection
 `with-input-from-file` SHALL open a file, set it as the current input port for the duration of a thunk, then close it. `with-output-to-file` SHALL do the same for output.
