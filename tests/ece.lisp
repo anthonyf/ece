@@ -2811,9 +2811,11 @@ Skips test gracefully via ok t if the binary hasn't been built yet."
 
 (deftest test-ece-binary-argv-dispatch
     (testing "ece-build symlink dispatches to ece-build-main"
-             (let ((build-link (namestring (asdf:system-relative-pathname :ece "bin/ece-build"))))
-               (if (not (probe-file build-link))
-                   (skip "bin/ece-build symlink not present — run `make ece' first")
+             ;; The symlink alone isn't enough — it may point at a missing
+             ;; target. Only run if bin/ece is a real executable.
+             (if (not (probe-file (ece-binary-path)))
+                 (skip "bin/ece not built — run `make ece' first")
+                 (let ((build-link (namestring (asdf:system-relative-pathname :ece "bin/ece-build"))))
                    (let* ((out-str (make-string-output-stream))
                           (process (sb-ext:run-program build-link '("--help")
                                                        :output out-str
