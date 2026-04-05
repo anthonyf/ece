@@ -381,6 +381,55 @@
       (%raw-make-parameter init)
       (%raw-make-parameter ((car rest) init) (car rest))))
 
+;; R7RS current ports as parameter objects. Initial values wrap the
+;; host's standard output/input streams (captured once at boot).
+;; parameterize rebinds these for dynamic-extent output capture.
+(define current-output-port (make-parameter (%initial-output-port)))
+(define current-input-port  (make-parameter (%initial-input-port)))
+
+;; R7RS write procedures: optional port defaults to current-output-port.
+;; The low-level primitives require an explicit port with no fallback.
+(define (display obj . port)
+  (%display-to-port obj (if (null? port) (current-output-port) (car port))))
+
+(define (write obj . port)
+  (%write-to-port obj (if (null? port) (current-output-port) (car port))))
+
+(define (newline . port)
+  (%newline-to-port (if (null? port) (current-output-port) (car port))))
+
+(define (write-char ch . port)
+  (%write-char-to-port ch (if (null? port) (current-output-port) (car port))))
+
+(define (write-string str . port)
+  (%write-string-to-port str (if (null? port) (current-output-port) (car port))))
+
+;; R7RS read procedures: optional port defaults to current-input-port.
+;; We capture the original primitive, then shadow the name with a wrapper.
+(define %raw-read-char read-char)
+(define (read-char . port)
+  (if (null? port)
+      (%raw-read-char (current-input-port))
+      (%raw-read-char (car port))))
+
+(define %raw-peek-char peek-char)
+(define (peek-char . port)
+  (if (null? port)
+      (%raw-peek-char (current-input-port))
+      (%raw-peek-char (car port))))
+
+(define %raw-read-line read-line)
+(define (read-line . port)
+  (if (null? port)
+      (%raw-read-line (current-input-port))
+      (%raw-read-line (car port))))
+
+(define %raw-char-ready? char-ready?)
+(define (char-ready? . port)
+  (if (null? port)
+      (%raw-char-ready? (current-input-port))
+      (%raw-char-ready? (car port))))
+
 ;; yield: cooperative multitasking via continuations.
 ;; Captures the current continuation, stores it for JS, and causes the
 ;; executor to return. JS can resume by invoking the stored continuation.
@@ -644,6 +693,21 @@
       (close-output-port port)
       result)))
 
+;; R7RS with-*-file: open file, rebind current-*-port via parameterize,
+;; run thunk, close port. Built on the ECE parameter so that calls to
+;; (read-char), (display ...), etc. inside the thunk honor the rebinding.
+(define (with-input-from-file filename thunk)
+  (let ((port (open-input-file filename)))
+    (let ((result (parameterize ((current-input-port port)) (thunk))))
+      (close-input-port port)
+      result)))
+
+(define (with-output-to-file filename thunk)
+  (let ((port (open-output-file filename)))
+    (let ((result (parameterize ((current-output-port port)) (thunk))))
+      (close-output-port port)
+      result)))
+
 ;; ---- dynamic-wind (R7RS) ----
 ;; Winding stack: list of (before . after) pairs, innermost first.
 
@@ -718,19 +782,50 @@
         ((member (car s1) s2) (set-difference (cdr s1) s2))
         (else (cons (car s1) (set-difference (cdr s1) s2)))))
 
-;; parameterize: dynamic rebinding of parameter objects (R7RS / SRFI-39)
+;; parameterize: dynamic rebinding of parameter objects (R7RS / SRFI-39).
+;; Uses dynamic-wind so that non-local exits (raise, continuation escape,
+;; unhandled errors) restore the parameter to its prior value.
 (define-macro (parameterize bindings . body)
   (if (null? bindings)
       `(begin ,@body)
       (let ((param (car (car bindings)))
             (val (cadr (car bindings)))
             (rest (cdr bindings)))
-        (let ((old (gensym)) (result (gensym)))
+        (let ((old (gensym)) (new (gensym)))
           `(let ((,old (,param)))
+             ;; Apply converter once by round-tripping through the parameter.
              (,param ,val)
-             (let ((,result (parameterize ,rest ,@body)))
+             (let ((,new (,param)))
                (,param ,old #t)
-               ,result))))))
+               (dynamic-wind
+                   (lambda () (,param ,new #t))
+                   (lambda () (parameterize ,rest ,@body))
+                   (lambda () (,param ,old #t)))))))))
+
+;; ---- Output/input capture macros (R7RS) ----
+
+;; Rebinds current-output-port to a fresh string port for the body,
+;; then returns the accumulated string.
+(define-macro (with-output-to-string . body)
+  (let ((p (gensym)))
+    `(let ((,p (open-output-string)))
+       (parameterize ((current-output-port ,p)) ,@body)
+       (get-output-string ,p))))
+
+;; Rebinds current-input-port to a fresh input port over STR
+;; for the dynamic extent of the body.
+(define-macro (with-input-from-string str . body)
+  (let ((p (gensym)))
+    `(let ((,p (open-input-string ,str)))
+       (parameterize ((current-input-port ,p)) ,@body))))
+
+;; Rebinds current-output-port to a caller-supplied port for the body.
+(define-macro (with-output-to-port port . body)
+  `(parameterize ((current-output-port ,port)) ,@body))
+
+;; Rebinds current-input-port to a caller-supplied port for the body.
+(define-macro (with-input-from-port port . body)
+  `(parameterize ((current-input-port ,port)) ,@body))
 
 ;; ---- Error objects (R7RS) ----
 

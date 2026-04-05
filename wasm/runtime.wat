@@ -804,6 +804,31 @@
     (call $make-output-port (ref.null $string))
   )
 
+  ;; Console ports: lazy-initialized singletons for the host's stdout/stdin.
+  ;; Write primitives check ref.eq against these to route to JS console funcs.
+  (global $console-out-port (mut (ref null $port)) (ref.null $port))
+  (global $console-in-port  (mut (ref null $port)) (ref.null $port))
+
+  (func $get-console-out-port (result (ref $port))
+    (if (ref.is_null (global.get $console-out-port))
+      (then (global.set $console-out-port (call $make-output-port (ref.null $string)))))
+    (ref.as_non_null (global.get $console-out-port))
+  )
+
+  (func $get-console-in-port (result (ref $port))
+    (if (ref.is_null (global.get $console-in-port))
+      (then (global.set $console-in-port
+        (call $make-input-port
+          (array.new_default $port-buf (i32.const 0))
+          (i32.const 0) (ref.null $string)))))
+    (ref.as_non_null (global.get $console-in-port))
+  )
+
+  (func $is-console-out-port (param $p (ref $port)) (result i32)
+    (if (result i32) (ref.is_null (global.get $console-out-port))
+      (then (i32.const 0))
+      (else (ref.eq (local.get $p) (global.get $console-out-port)))))
+
   ;; Get output string: extract accumulated buffer as an ECE $string.
   (func $get-output-string-port (param $p (ref $port)) (result (ref $string))
     (local $len i32) (local $buf (ref $port-buf)) (local $str (ref $string)) (local $i i32)
@@ -3979,54 +4004,8 @@
         (local.set $id (call $char-codepoint (ref.cast (ref i31) (call $arg1 (local.get $args)))))
         (return (call $prim-char-to-string (local.get $id)))))
     ;; 57 = display (value [port])
-    (if (i32.eq (local.get $id) (i32.const 57))
-      (then
-        ;; Check for port as 2nd arg
-        (if (i32.and
-              (i32.eqz (ref.is_null (call $xcdr (local.get $args))))
-              (i32.eqz (call $is-null (call $xcdr (local.get $args)))))
-          (then
-            (if (ref.test (ref $port) (call $arg2 (local.get $args)))
-              (then
-                (call $display-to-port
-                  (call $arg1 (local.get $args))
-                  (ref.cast (ref $port) (call $arg2 (local.get $args)))))))
-          (else
-            (call $display-value (call $arg1 (local.get $args)))))
-        (return (global.get $void))))
-    ;; 58 = write (value [port]) — enable write-mode for string quoting
-    (if (i32.eq (local.get $id) (i32.const 58))
-      (then
-        (global.set $write-mode (i32.const 1))
-        (if (i32.and
-              (i32.eqz (ref.is_null (call $xcdr (local.get $args))))
-              (i32.eqz (call $is-null (call $xcdr (local.get $args)))))
-          (then
-            (if (ref.test (ref $port) (call $arg2 (local.get $args)))
-              (then
-                (call $display-to-port
-                  (call $write-to-string-impl (call $arg1 (local.get $args)))
-                  (ref.cast (ref $port) (call $arg2 (local.get $args)))))))
-          (else
-            (call $display-value
-              (call $write-to-string-impl (call $arg1 (local.get $args))))))
-        (global.set $write-mode (i32.const 0))
-        (return (global.get $void))))
-    ;; 59 = newline ([port])
-    (if (i32.eq (local.get $id) (i32.const 59))
-      (then
-        (if (i32.and
-              (i32.eqz (ref.is_null (local.get $args)))
-              (i32.eqz (call $is-null (local.get $args))))
-          (then
-            (if (ref.test (ref $port) (call $arg1 (local.get $args)))
-              (then
-                (call $port-write-char
-                  (ref.cast (ref $port) (call $arg1 (local.get $args)))
-                  (i32.const 10)))  ;; newline char
-              (else (call $js-newline))))
-          (else (call $js-newline)))
-        (return (global.get $void))))
+    ;; IDs 57 (display), 58 (write), 59 (newline) retired —
+    ;; replaced by %<op>-to-port primitives at IDs 179-181.
     ;; 65 = eof?
     (if (i32.eq (local.get $id) (i32.const 65))
       (then (return (if (result (ref null eq)) (call $is-eof (call $arg1 (local.get $args)))
@@ -4057,12 +4036,8 @@
     (if (i32.eq (local.get $id) (i32.const 70))
       (then (return (if (result (ref null eq)) (call $is-port (call $arg1 (local.get $args)))
         (then (global.get $true)) (else (global.get $false))))))
-    ;; 71 = current-input-port (stub — no console input yet)
-    (if (i32.eq (local.get $id) (i32.const 71))
-      (then (return (global.get $void))))
-    ;; 72 = current-output-port (stub — console output handled by display)
-    (if (i32.eq (local.get $id) (i32.const 72))
-      (then (return (global.get $void))))
+    ;; IDs 71 (current-input-port) and 72 (current-output-port) retired —
+    ;; these are now ECE parameters defined in prelude.scm.
     ;; 73 = open-input-string → create proper $port from string
     (if (i32.eq (local.get $id) (i32.const 73))
       (then (return (call $open-input-string-port
@@ -4115,26 +4090,7 @@
                 (ref.cast (ref $port) (call $arg1 (local.get $args))))))
               (else (return (global.get $eof)))))
           (else (return (global.get $eof))))))
-    ;; 62 = write-char (char [port])
-    (if (i32.eq (local.get $id) (i32.const 62))
-      (then
-        ;; Check for port as 2nd arg
-        (if (i32.and
-              (i32.eqz (ref.is_null (call $xcdr (local.get $args))))
-              (i32.eqz (call $is-null (call $xcdr (local.get $args)))))
-          (then
-            ;; Write to port
-            (if (ref.test (ref $port) (call $arg2 (local.get $args)))
-              (then
-                (call $port-write-char
-                  (ref.cast (ref $port) (call $arg2 (local.get $args)))
-                  (call $char-codepoint (ref.cast (ref i31) (call $arg1 (local.get $args))))))))
-          (else
-            ;; Write to console (no port arg)
-            (i32.store16 (i32.const 0)
-              (call $char-codepoint (ref.cast (ref i31) (call $arg1 (local.get $args)))))
-            (call $js-display-string (i32.const 1))))
-        (return (global.get $void))))
+    ;; ID 62 (write-char) retired — replaced by %write-char-to-port at ID 182.
     ;; 63 = read-line ([port])
     (if (i32.eq (local.get $id) (i32.const 63))
       (then
@@ -4988,6 +4944,78 @@
       (then (return (call $make-fixnum
         (struct.get $port $col
           (ref.cast (ref $port) (call $arg1 (local.get $args))))))))
+
+    ;; 179 = %display-to-port(value port) — write value to explicit port
+    (if (i32.eq (local.get $id) (i32.const 179))
+      (then
+        (if (call $is-console-out-port
+              (ref.cast (ref $port) (call $arg2 (local.get $args))))
+          (then (call $display-value (call $arg1 (local.get $args))))
+          (else (call $display-to-port
+                  (call $arg1 (local.get $args))
+                  (ref.cast (ref $port) (call $arg2 (local.get $args))))))
+        (return (global.get $void))))
+
+    ;; 180 = %write-to-port(value port) — write value in readable form
+    (if (i32.eq (local.get $id) (i32.const 180))
+      (then
+        (global.set $write-mode (i32.const 1))
+        (if (call $is-console-out-port
+              (ref.cast (ref $port) (call $arg2 (local.get $args))))
+          (then (call $display-value
+                  (call $write-to-string-impl (call $arg1 (local.get $args)))))
+          (else (call $display-to-port
+                  (call $write-to-string-impl (call $arg1 (local.get $args)))
+                  (ref.cast (ref $port) (call $arg2 (local.get $args))))))
+        (global.set $write-mode (i32.const 0))
+        (return (global.get $void))))
+
+    ;; 181 = %newline-to-port(port) — write newline to explicit port
+    (if (i32.eq (local.get $id) (i32.const 181))
+      (then
+        (if (call $is-console-out-port
+              (ref.cast (ref $port) (call $arg1 (local.get $args))))
+          (then (call $js-newline))
+          (else (call $port-write-char
+                  (ref.cast (ref $port) (call $arg1 (local.get $args)))
+                  (i32.const 10))))  ;; newline char
+        (return (global.get $void))))
+
+    ;; 182 = %write-char-to-port(char port) — write char to explicit port
+    (if (i32.eq (local.get $id) (i32.const 182))
+      (then
+        (if (call $is-console-out-port
+              (ref.cast (ref $port) (call $arg2 (local.get $args))))
+          (then
+            (i32.store16 (i32.const 0)
+              (call $char-codepoint (ref.cast (ref i31) (call $arg1 (local.get $args)))))
+            (call $js-display-string (i32.const 1)))
+          (else
+            (call $port-write-char
+              (ref.cast (ref $port) (call $arg2 (local.get $args)))
+              (call $char-codepoint (ref.cast (ref i31) (call $arg1 (local.get $args)))))))
+        (return (global.get $void))))
+
+    ;; 183 = %write-string-to-port(string port) — write string to explicit port
+    (if (i32.eq (local.get $id) (i32.const 183))
+      (then
+        (if (call $is-console-out-port
+              (ref.cast (ref $port) (call $arg2 (local.get $args))))
+          (then
+            (call $display-value (call $arg1 (local.get $args))))
+          (else
+            (call $display-to-port
+              (call $arg1 (local.get $args))
+              (ref.cast (ref $port) (call $arg2 (local.get $args))))))
+        (return (global.get $void))))
+
+    ;; 184 = %initial-output-port() — fresh port wrapping host stdout
+    (if (i32.eq (local.get $id) (i32.const 184))
+      (then (return (call $get-console-out-port))))
+
+    ;; 185 = %initial-input-port() — fresh port wrapping host stdin
+    (if (i32.eq (local.get $id) (i32.const 185))
+      (then (return (call $get-console-in-port))))
 
     ;; Unknown primitive — return void
     (global.get $void)

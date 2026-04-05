@@ -25,6 +25,7 @@
 (load "tests/ece/test-records.scm")
 (load "tests/ece/test-errors.scm")
 (load "tests/ece/test-parameters.scm")
+(load "tests/ece/test-output-capture.scm")
 (load "tests/ece/test-dynamic-wind.scm")
 (load "tests/ece/test-guard.scm")
 (load "tests/ece/test-error-messages.scm")
