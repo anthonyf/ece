@@ -7,7 +7,7 @@
     :author "Anthony Fairchild"
     :license "MIT"
     :description "A Scheme-like language with serializable continuations and full TCO"
-    :depends-on ()
+    :depends-on (#+sbcl "sb-posix")
     :serial t
     :components ((:module "src"
                           :components

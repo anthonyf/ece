@@ -153,21 +153,103 @@ ECE's first-class continuations make it well-suited for applications that need c
 
 ## Getting Started
 
-### Prerequisites
+### Install ECE
 
+**Prerequisites (build-time only):**
 - [SBCL](http://www.sbcl.org/)
 - [qlot](https://github.com/fukamachi/qlot)
+- [binaryen](https://github.com/WebAssembly/binaryen) (`wasm-as`) — for WASM builds
 
-### Setup
+Once installed, `ece` runs without SBCL, qlot, or any other runtime dependency.
 
 ```sh
-qlot install
+git clone https://github.com/anthonyf/ece.git
+cd ece
+qlot install     # fetches CL dependencies
+make             # builds bin/ece + staged share/ece/ tree
+make install     # installs to /usr/local
+```
+
+Install to a user-local prefix:
+
+```sh
+make install PREFIX=$HOME/.local
+export PATH=$HOME/.local/bin:$PATH
+```
+
+Uninstall with `make uninstall` (same `PREFIX`).
+
+The install lays out a relocatable SDK tree:
+
+```
+$PREFIX/bin/
+  ece               # ~64MB native SBCL image
+  ece-repl          # symlink → ece  (argv[0] = REPL entry point)
+  ece-build         # symlink → ece  (argv[0] = build tool)
+  ece-test          # symlink → ece  (argv[0] = test runner)
+$PREFIX/share/ece/
+  bootstrap.ecec    # core language + compiler
+  ece-main.ecec     # tool dispatcher + ece-build/test logic
+  runtime.wasm      # WASM runtime (for --target web)
+  glue.js
+  primitives.json
+  templates/
+    web/            # standalone.html + index.html
+    cl/             # run.sh template
+```
+
+### Using the `ece` binary
+
+```sh
+ece                                  # drop into REPL
+ece -V                               # print version
+ece -e "(display (+ 1 2))"           # evaluate expression → 3
+ece main.scm                         # load and run a script
+ece --load lib.scm -e "(lib-fn 42)"  # chain loads and evals
+ece app.ecec                         # run a compiled bundle
+ece -i main.scm                      # run script, then drop into REPL
+ece main.scm -- arg1 arg2            # pass args via (command-line)
+```
+
+**CLI reference:**
+
+```
+ece [OPTIONS] [FILE...]
+
+Options:
+  --load FILE           Load and execute FILE (.scm or .ecec)
+  -e EXPR, --eval EXPR  Read and evaluate EXPR
+  -i, --interactive     Enter REPL after processing files
+  --                    Stop option parsing; pass rest via (command-line)
+  -h, --help            Show help and exit
+  -V, --version         Show version and exit
+```
+
+Positional FILE args, `--load`, and `--eval` steps execute in the order they appear. With no work (no files, no `-e`), `ece` drops into the REPL.
+
+**argv[0] dispatch.** All four tools are the same binary; the tool is selected by `basename(argv[0])`:
+
+| Name | Behavior |
+|------|----------|
+| `ece` | Run files/exprs, drop into REPL if no work (shown above) |
+| `ece-repl` | Always enter REPL, even after loading files |
+| `ece-build` | Compile and package a project (see [Build your own apps](#build-your-own-apps)) |
+| `ece-test` | Discover and run `test-*.scm` files (see [Testing your code](#testing-your-code)) |
+
+Unrecognized names (e.g. adding your own symlink) fall through to `ece` behavior.
+
+**Accessing process state from ECE code:**
+
+```scheme
+(command-line)                  ;; => ("ece" "main.scm" "--" "arg1")
+(get-environment-variable "HOME") ;; => "/Users/you"  (or #f)
+(exit 3)                        ;; terminate with code 3
 ```
 
 ### REPL
 
 ```sh
-make repl
+ece
 ```
 
 ```
@@ -183,101 +265,148 @@ ece> (map (lambda (x) (* x x)) (list 1 2 3 4 5))
 
 Or try the [browser REPL](https://anthonyf.github.io/ece/sandbox/) — no install needed.
 
-### Embedding
+## Build your own apps
+
+The `ece-build` tool compiles one or more `.scm` source files into a deployable bundle for a chosen target.
+
+```
+ece-build --target web|cl -o <dir> [--standalone] <source.scm> ...
+```
+
+Source files are compiled in dependency order, so earlier files can define macros and functions used by later ones.
+
+### Web target
+
+The default **server mode** produces raw files for HTTP serving:
+
+```sh
+ece-build --target web -o dist/ main.scm
+```
+
+```
+dist/
+  index.html          # uses fetch() + WebAssembly.instantiateStreaming()
+  ece-runtime.js      # JS glue (no embedded WASM)
+  runtime.wasm        # WASM binary
+  bootstrap.ecec      # standard library
+  app.ecec            # your compiled application
+```
+
+Serve it over HTTP:
+
+```sh
+python3 -m http.server -d dist/ 8000
+# Open http://localhost:8000
+```
+
+**Standalone mode** (`--standalone`) base64-encodes every asset into JS files so the app opens from `file://` with no server:
+
+```sh
+ece-build --target web --standalone -o dist/ main.scm
+# Open dist/index.html directly in a browser
+```
+
+```
+dist/
+  index.html          # self-contained
+  ece-runtime.js      # WASM runtime + JS glue (base64-encoded WASM)
+  ece-bootstrap.js    # standard library (base64-encoded)
+  app.js              # your app (base64-encoded)
+```
+
+Customize I/O by overriding `ECE.io.display_string`, `ECE.io.display_number`, and `ECE.io.newline` before booting. See `$PREFIX/share/ece/templates/web/` for reference.
+
+### CL target
+
+Produces a tiny bundle that runs via the installed `ece` binary:
+
+```sh
+ece-build --target cl -o dist/ main.scm
+```
+
+```
+dist/
+  app.ecec            # compiled bundle
+  run                 # shell wrapper: exec ece app.ecec
+```
+
+```sh
+./dist/run             # requires `ece` in $PATH
+./dist/run foo bar     # args are visible to main.scm via (command-line)
+```
+
+### Multi-file builds
+
+List sources in dependency order:
+
+```sh
+ece-build --target web -o dist/ lib/utils.scm lib/drawing.scm main.scm
+```
+
+## Testing your code
+
+The `ece-test` tool discovers `test-*.scm` files, loads each one in a fresh environment, and reports pass/fail.
+
+Write a test file:
+
+```scheme
+;; tests/test-math.scm
+(test "addition" (lambda () (assert-equal (+ 1 2) 3)))
+(test "multiplication" (lambda () (assert-equal (* 4 5) 20)))
+(test "error handling" (lambda () (assert-error (/ 1 0))))
+```
+
+Run your test suite:
+
+```sh
+ece-test tests/
+# tests/test-math.scm: 3 passed, 0 failed
+# Total: 3 passed, 0 failed
+```
+
+Options:
+- `ece-test file.scm` — run exactly this file (no discovery)
+- `ece-test tests/ integration/` — discover across multiple directories
+- `ece-test -v tests/` — verbose: print per-test output even on success
+
+**Exit codes:** `0` if all pass, `1` if any fail, `2` on runner error (bad path, etc.).
+
+**Assertion API** (in `test-lib.scm`, auto-loaded):
+
+| Form | Checks |
+|------|--------|
+| `(assert-equal actual expected)` | `equal?` equality |
+| `(assert-true x)` | x is truthy |
+| `(assert-false x)` | x is `#f` |
+| `(assert-error expr)` | expr raises |
+| `(assert-error-message expr msg)` | expr raises with specific message |
+
+Per-test output is captured; captured output is printed only for failing tests (or always under `-v`).
+
+## For contributors
+
+### Embedding ECE in a Common Lisp program
 
 ```sh
 qlot exec sbcl --load ece.asd --eval '(asdf:load-system :ece)'
 ```
 
 ```lisp
-;; Evaluate expressions
 (ece:evaluate '(+ 1 2))               ;; => 3
 (ece:evaluate '(map (lambda (x) (* x x)) (list 1 2 3)))  ;; => (1 4 9)
-
-;; Load ECE source files
 (ece:evaluate '(load "my-program.scm"))
 ```
 
-### Testing
+### Running ECE's own tests
 
 ```sh
-make test       # full suite: CL (rove), ECE self-hosted, WASM, conformance, golden
+make test              # full suite: rove, ECE self-hosted, WASM, conformance, golden
+make test-rove         # CL-side rove tests (inc. integration tests for bin/ece)
+make test-ece          # ECE self-hosted tests
+make test-wasm         # WASM runtime tests (requires node)
+make test-conformance  # R5RS/R7RS conformance suite
+make test-golden       # compiler output regression tests
 ```
-
-Individual targets (`make test-cl`, `make test-ece`, `make test-wasm`, `make test-conformance`, `make test-golden`) can be run separately.
-
-### Building a Web App
-
-Use `ece-build` to compile ECE source files into a web app. The default **server mode** produces raw files for HTTP serving:
-
-```sh
-bin/ece-build --target web -o dist/ my-app.scm
-```
-
-```
-dist/
-  index.html          # page using fetch() + WebAssembly.instantiateStreaming()
-  ece-runtime.js      # JS glue (no embedded WASM)
-  runtime.wasm        # WASM binary
-  bootstrap.ecec      # standard library bundle
-  app.ecec            # your compiled application
-```
-
-Serve `dist/` over HTTP (e.g., `python3 -m http.server -d dist/`) and open `index.html`.
-
-#### Standalone mode (file://)
-
-Add `--standalone` to base64-encode all assets into JS files for `file://` use:
-
-```sh
-bin/ece-build --target web --standalone -o dist/ my-app.scm
-```
-
-```
-dist/
-  index.html          # self-contained page (works from file://)
-  ece-runtime.js      # WASM runtime + JS glue (base64-encoded WASM)
-  ece-bootstrap.js    # standard library (base64-encoded)
-  app.js              # your compiled application (base64-encoded)
-```
-
-Open `dist/index.html` directly — no server required.
-
-#### Multiple source files
-
-Source files are compiled in order, so earlier files can define macros and functions used by later ones:
-
-```sh
-bin/ece-build --target web -o dist/ lib/utils.scm lib/drawing.scm main.scm
-```
-
-You can customize I/O by overriding `ECE.io.display_string`, `ECE.io.display_number`, and `ECE.io.newline` before booting. See `templates/web/index.html` (server mode) or `templates/web/standalone.html` for the full templates.
-
-**Prerequisites:** SBCL, qlot, binaryen (`wasm-as`), and a built WASM runtime (`make wasm`).
-
-### Building a CL App
-
-Use `ece-build` with `--target cl` to package an ECE program for standalone CL execution:
-
-```sh
-bin/ece-build --target cl -o dist/ my-app.scm
-```
-
-```
-dist/
-  runtime.lisp        # ECE runtime
-  ece.asd             # ASDF system definition
-  primitives.def      # primitive dispatch table
-  operations.def      # operations manifest
-  bootstrap/
-    bootstrap.ecec    # standard library bundle
-  run.lisp            # entry point (loads runtime + bootstrap + app)
-  app.ecec            # your compiled application
-```
-
-Run with: `sbcl --load dist/run.lisp`
-
-**Prerequisites:** SBCL, qlot.
 
 ### Building the WASM Sandbox
 

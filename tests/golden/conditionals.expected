@@ -177,7 +177,7 @@
  (goto (reg continue))
  L29
  L27
- (assign val (const #S(SCHEME-FALSE)))
+ (assign val (const #f))
  (goto (reg continue))
  L26
  L24

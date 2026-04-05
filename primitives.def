@@ -265,6 +265,18 @@
 (184 %initial-output-port       0  core   "Fresh output port wrapping host stdout (boot-time)")
 (185 %initial-input-port        0  core   "Fresh input port wrapping host stdin (boot-time)")
 
+;;; --- Process environment and filesystem (R7RS + ECE-specific) ---
+(186 command-line               0  core   "Return argv as list of strings (R7RS)")
+(187 exit                      -1  core   "Exit process with code (R7RS; 0-arg/int/#t/#f)")
+(188 get-environment-variable   1  core   "Return env var value or #f (R7RS)")
+(189 %exe-path                  0  core   "Resolved path of running executable")
+(190 %list-directory            1  core   "List filenames in a directory")
+(191 %file-exists?              1  core   "Test whether a file/directory exists")
+(192 open-binary-input-file     1  core   "Open file for binary reading (R7RS)")
+(193 read-byte                  1  core   "Read one byte (0-255) from port, or EOF")
+(194 %make-directory            1  core   "Create directory and parents if missing")
+(195 %chmod                     2  core   "Set POSIX file mode (path, mode-int)")
+
 ;;; ═══════════════════════════════════════════════════════════════════════
 ;;; BROWSER PLATFORM PRIMITIVES (200-299) — Canvas and DOM
 ;;; ═══════════════════════════════════════════════════════════════════════

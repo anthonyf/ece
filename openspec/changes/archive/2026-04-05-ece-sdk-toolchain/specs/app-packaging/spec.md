@@ -1,4 +1,4 @@
-## ADDED Requirements
+## MODIFIED Requirements
 
 ### Requirement: ece-build script packages CL target
 `ece-build` with `--target cl` SHALL compile .scm files and produce a self-contained directory runnable via a generated wrapper script that invokes the installed `ece` binary. The generated wrapper SHALL NOT require `sbcl` to be invoked directly by the user.
@@ -39,3 +39,10 @@
 #### Scenario: Unknown target
 - **WHEN** `--target foo` is passed
 - **THEN** the tool SHALL exit with a non-zero code AND an error naming the unknown target
+
+## REMOVED Requirements
+
+### Requirement: ece-build script packages web target
+**Reason**: This requirement is superseded by the equivalent behavior now provided by the `ece-build.scm` program dispatched via the `ece` binary. The CLI surface (`--target web`, `-o`, positional `.scm` files, `--standalone`) is unchanged — only the implementation moved from a `sh` script at `bin/ece-build` to an ECE program. The web-target output (directory contents, `file://` compatibility) is identical.
+
+**Migration**: Users invoke `ece-build` exactly as before. The binary at `bin/ece-build` is now a symlink to `bin/ece`. The behavior is replaced by equivalent scenarios in `ece-cli` (argv dispatch) and the retained CL-target requirement above.

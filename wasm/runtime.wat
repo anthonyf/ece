@@ -5017,6 +5017,84 @@
     (if (i32.eq (local.get $id) (i32.const 185))
       (then (return (call $get-console-in-port))))
 
+    ;; 186 = command-line() — browser stub returns ("browser")
+    (if (i32.eq (local.get $id) (i32.const 186))
+      (then
+        (return
+          (call $cons
+            (array.new_fixed $string 7
+              (i32.const 98) (i32.const 114) (i32.const 111)
+              (i32.const 119) (i32.const 115) (i32.const 101)
+              (i32.const 114))   ;; "browser"
+            (global.get $nil)))))
+
+    ;; 187 = exit(code) — browser: signal as unrecoverable error
+    (if (i32.eq (local.get $id) (i32.const 187))
+      (then
+        (call $signal-error-str
+          (array.new_fixed $string 4
+            (i32.const 101) (i32.const 120) (i32.const 105) (i32.const 116))) ;; "exit"
+        (return (global.get $void))))
+
+    ;; 188 = get-environment-variable(name) — browser: no env vars, always #f
+    (if (i32.eq (local.get $id) (i32.const 188))
+      (then (return (global.get $false))))
+
+    ;; 189 = %exe-path() — browser has no executable path, empty string
+    (if (i32.eq (local.get $id) (i32.const 189))
+      (then (return (array.new_default $string (i32.const 0)))))
+
+    ;; 190 = %list-directory(path) — no filesystem in browser
+    (if (i32.eq (local.get $id) (i32.const 190))
+      (then
+        (call $signal-error-str
+          (array.new_fixed $string 13
+            (i32.const 110) (i32.const 111)                       ;; "no"
+            (i32.const 32)                                        ;; " "
+            (i32.const 102) (i32.const 105) (i32.const 108)       ;; "fil"
+            (i32.const 101) (i32.const 115) (i32.const 121)       ;; "esy"
+            (i32.const 115) (i32.const 116) (i32.const 101)       ;; "ste"
+            (i32.const 109)))                                     ;; "m"
+        (return (global.get $void))))
+
+    ;; 191 = %file-exists?(path) — browser: no filesystem, always #f
+    (if (i32.eq (local.get $id) (i32.const 191))
+      (then (return (global.get $false))))
+
+    ;; 192 = open-binary-input-file(path) — no filesystem in browser
+    (if (i32.eq (local.get $id) (i32.const 192))
+      (then
+        (call $signal-error-str
+          (array.new_fixed $string 13
+            (i32.const 110) (i32.const 111)                       ;; "no"
+            (i32.const 32)                                        ;; " "
+            (i32.const 102) (i32.const 105) (i32.const 108)       ;; "fil"
+            (i32.const 101) (i32.const 115) (i32.const 121)       ;; "esy"
+            (i32.const 115) (i32.const 116) (i32.const 101)       ;; "ste"
+            (i32.const 109)))                                     ;; "m"
+        (return (global.get $void))))
+
+    ;; 193 = read-byte(port) — browser: not implemented
+    (if (i32.eq (local.get $id) (i32.const 193))
+      (then
+        (call $signal-error-str
+          (array.new_fixed $string 13
+            (i32.const 110) (i32.const 111)                       ;; "no"
+            (i32.const 32)                                        ;; " "
+            (i32.const 102) (i32.const 105) (i32.const 108)       ;; "fil"
+            (i32.const 101) (i32.const 115) (i32.const 121)       ;; "esy"
+            (i32.const 115) (i32.const 116) (i32.const 101)       ;; "ste"
+            (i32.const 109)))                                     ;; "m"
+        (return (global.get $void))))
+
+    ;; 194 = %make-directory(path) — browser has no filesystem, no-op
+    (if (i32.eq (local.get $id) (i32.const 194))
+      (then (return (global.get $void))))
+
+    ;; 195 = %chmod(path, mode) — browser has no filesystem, no-op
+    (if (i32.eq (local.get $id) (i32.const 195))
+      (then (return (global.get $void))))
+
     ;; Unknown primitive — return void
     (global.get $void)
   )

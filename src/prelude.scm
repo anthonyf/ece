@@ -693,6 +693,28 @@
       (close-output-port port)
       result)))
 
+;; ECE SDK location resolver. Checks $ECE_HOME env var first; otherwise
+;; derives from the running executable's path:
+;;   $(dirname $(dirname %exe-path))/share/ece.
+;; Built into the prelude so the save-lisp-and-die :toplevel shim can
+;; locate ece-main.ecec before any tool code has been loaded.
+(define (ece-home)
+  (let ((env (get-environment-variable "ECE_HOME")))
+    (if (and env (> (string-length env) 0))
+        env
+        (let* ((exe (%exe-path))
+               (dir1 (%ece-home-dirname exe))
+               (dir2 (%ece-home-dirname dir1)))
+          (string-append dir2 "/share/ece")))))
+
+(define (%ece-home-dirname path)
+  (let loop ((i (- (string-length path) 1)))
+    (cond
+     ((< i 0) ".")
+     ((char=? (string-ref path i) #\/)
+      (if (= i 0) "/" (substring path 0 i)))
+     (else (loop (- i 1))))))
+
 ;; R7RS with-*-file: open file, rebind current-*-port via parameterize,
 ;; run thunk, close port. Built on the ECE parameter so that calls to
 ;; (read-char), (display ...), etc. inside the thunk honor the rebinding.

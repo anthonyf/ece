@@ -7,3 +7,8 @@ sandbox/ece-runtime.js
 sandbox/ece-bootstrap.js
 sandbox/ece-compiled.js
 _site/
+/bin/ece
+/bin/ece-repl
+/bin/ece-build
+/bin/ece-test
+/share/

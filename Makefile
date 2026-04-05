@@ -1,4 +1,75 @@
-.PHONY: test test-rove test-ece test-wasm test-conformance test-golden check-test-counts test-web-server repl run run-lisp bootstrap wasm sandbox site fmt check-fmt setup clean clean-fasl update-test-counts update-golden
+.PHONY: all ece install uninstall test test-rove test-ece test-wasm test-conformance test-golden check-test-counts test-web-server repl run run-lisp bootstrap wasm sandbox site fmt check-fmt setup clean clean-fasl update-test-counts update-golden
+
+PREFIX ?= /usr/local
+DESTDIR ?=
+
+# Files to lay out at $PREFIX/share/ece/
+SHARE_FILES := \
+	bootstrap/bootstrap.ecec \
+	wasm/runtime.wasm \
+	wasm/glue.js \
+	wasm/primitives.json \
+	src/sdk-lib.scm src/ece-main.scm src/test-lib.scm src/ece-build.scm src/ece-test.scm
+
+# Default target: build the ece binary and ECE bundles so in-tree dev works.
+all: ece
+
+# Build bin/ece via save-lisp-and-die, compile ece-main.ecec, create in-tree
+# symlinks, and stage share/ece/ so ece-home resolution works in-tree.
+ece: bootstrap wasm bin/ece
+
+bin/ece: scripts/build-ece-binary.lisp bootstrap/bootstrap.ecec share/ece/ece-main.ecec
+	@mkdir -p bin
+	qlot exec sbcl --non-interactive --load scripts/build-ece-binary.lisp
+	@ln -sf ece bin/ece-repl
+	@ln -sf ece bin/ece-build
+	@ln -sf ece bin/ece-test
+	@echo "Built bin/ece + symlinks (ece-repl, ece-build, ece-test)"
+
+share/ece/ece-main.ecec: src/sdk-lib.scm src/ece-main.scm src/test-lib.scm src/ece-build.scm src/ece-test.scm bootstrap/bootstrap.ecec
+	@mkdir -p share/ece/templates
+	qlot exec sbcl --non-interactive --disable-debugger \
+	  --eval '(asdf:load-system :ece)' \
+	  --eval '(ece:evaluate (list (intern "compile-system" :ece) (quote (quote ("src/sdk-lib.scm" "src/test-lib.scm" "src/ece-main.scm" "src/ece-build.scm" "src/ece-test.scm"))) "share/ece/ece-main.ecec"))' \
+	  --quit
+	@# Stage the other share/ece/ files so in-tree `bin/ece` works
+	@cp bootstrap/bootstrap.ecec share/ece/bootstrap.ecec
+	@cp wasm/runtime.wasm share/ece/runtime.wasm
+	@cp wasm/glue.js share/ece/glue.js
+	@cp wasm/primitives.json share/ece/primitives.json
+	@cp -R templates/web share/ece/templates/web
+	@cp -R templates/cl share/ece/templates/cl
+	@echo "Staged share/ece/ tree"
+
+install: ece
+	install -d $(DESTDIR)$(PREFIX)/bin
+	install -m 755 bin/ece $(DESTDIR)$(PREFIX)/bin/ece
+	ln -sf ece $(DESTDIR)$(PREFIX)/bin/ece-repl
+	ln -sf ece $(DESTDIR)$(PREFIX)/bin/ece-build
+	ln -sf ece $(DESTDIR)$(PREFIX)/bin/ece-test
+	install -d $(DESTDIR)$(PREFIX)/share/ece
+	install -d $(DESTDIR)$(PREFIX)/share/ece/templates
+	install -m 644 share/ece/bootstrap.ecec $(DESTDIR)$(PREFIX)/share/ece/bootstrap.ecec
+	install -m 644 share/ece/ece-main.ecec $(DESTDIR)$(PREFIX)/share/ece/ece-main.ecec
+	install -m 644 share/ece/runtime.wasm $(DESTDIR)$(PREFIX)/share/ece/runtime.wasm
+	install -m 644 share/ece/glue.js $(DESTDIR)$(PREFIX)/share/ece/glue.js
+	install -m 644 share/ece/primitives.json $(DESTDIR)$(PREFIX)/share/ece/primitives.json
+	install -m 644 src/sdk-lib.scm $(DESTDIR)$(PREFIX)/share/ece/sdk-lib.scm
+	install -m 644 src/ece-main.scm $(DESTDIR)$(PREFIX)/share/ece/ece-main.scm
+	install -m 644 src/test-lib.scm $(DESTDIR)$(PREFIX)/share/ece/test-lib.scm
+	install -m 644 src/ece-build.scm $(DESTDIR)$(PREFIX)/share/ece/ece-build.scm
+	install -m 644 src/ece-test.scm $(DESTDIR)$(PREFIX)/share/ece/ece-test.scm
+	cp -R share/ece/templates/web $(DESTDIR)$(PREFIX)/share/ece/templates/web
+	cp -R share/ece/templates/cl $(DESTDIR)$(PREFIX)/share/ece/templates/cl
+	@echo "Installed to $(DESTDIR)$(PREFIX)"
+
+uninstall:
+	rm -f $(DESTDIR)$(PREFIX)/bin/ece
+	rm -f $(DESTDIR)$(PREFIX)/bin/ece-repl
+	rm -f $(DESTDIR)$(PREFIX)/bin/ece-build
+	rm -f $(DESTDIR)$(PREFIX)/bin/ece-test
+	rm -rf $(DESTDIR)$(PREFIX)/share/ece
+	@echo "Uninstalled from $(DESTDIR)$(PREFIX)"
 
 # FASL output goes to project-local .fasl-cache/ (sandbox-friendly, portable)
 export ASDF_OUTPUT_TRANSLATIONS = (:output-translations ("$(CURDIR)/" "$(CURDIR)/.fasl-cache/") :inherit-configuration)
@@ -104,7 +175,7 @@ update-golden:
 	  echo "  Updated: $$base.expected ($$(wc -l < "$$expected") lines)"; \
 	done
 
-test-web-server: wasm
+test-web-server: ece
 	@echo "Building hello-world in server mode..."
 	@mkdir -p .tmp/server-mode-test
 	@printf '(display "Hello, World!")\n(newline)\n' > .tmp/server-mode-hello.scm
@@ -145,7 +216,7 @@ bootstrap:
 	  --quit
 	@echo "Bootstrap bundle regenerated: $(BOOTSTRAP_DIR)/bootstrap.ecec"
 
-sandbox: wasm
+sandbox: ece
 	@mkdir -p .tmp/sandbox-build sandbox
 	@echo '(void)' > .tmp/sandbox-stub.scm
 	@bin/ece-build --target web --standalone -o .tmp/sandbox-build .tmp/sandbox-stub.scm
