@@ -93,9 +93,15 @@ test-rove:
 	  --quit 2>&1 | tee $(TEST_OUTPUT_DIR)/test-rove.txt
 	@grep -q "tests passed" $(TEST_OUTPUT_DIR)/test-rove.txt
 
-test-ece: bin/ece
+test-ece:
 	@mkdir -p .tmp
-	@bin/ece-test tests/ece/common tests/ece/cl-only 2>&1 | tee $(TEST_OUTPUT_DIR)/test-ece.txt
+	@qlot exec sbcl --dynamic-space-size 4096 --disable-debugger \
+	  --eval '(asdf:load-system :ece)' \
+	  --eval '(ece:evaluate (list (quote load) "src/sdk-lib.scm"))' \
+	  --eval '(ece:evaluate (list (quote load) "src/ece-unit.scm"))' \
+	  --eval '(ece:evaluate (list (quote load) "src/ece-test.scm"))' \
+	  --eval '(ece:evaluate (list (intern "ece-test-main" :ece) (list (quote list) "tests/ece/common" "tests/ece/cl-only")))' \
+	  --quit 2>&1 | tee $(TEST_OUTPUT_DIR)/test-ece.txt
 	@grep -q "0 failed" $(TEST_OUTPUT_DIR)/test-ece.txt
 
 test-conformance:
