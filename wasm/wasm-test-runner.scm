@@ -1,53 +1,57 @@
-;;; Continuation serialize!/deserialize round-trip — deferred to runtime.
-;;; Cannot run at compile-file time: continuation resume corrupts reader state.
-(define (run-continuation-roundtrip-test)
-  (define result
-    (%raw-call/cc (lambda (k)
-      (let ((port (open-output-file ".tmp/ece-rt-ser.dat")))
-        (serialize! k port)
-        (close-output-port port))
-      "first")))
-  (if (equal? result "first")
-      (begin
-        (define loaded-k
-          (let ((port (open-input-file ".tmp/ece-rt-ser.dat")))
-            (let ((v (deserialize port)))
-              (close-input-port port)
-              v)))
-        (loaded-k "second"))
-      (begin
-        (assert-equal result "second")
-        (set! *test-passes* (+ *test-passes* 1))
-        (display "  serialize! / deserialize continuation round-trip")
-        (newline))))
+;;; WASM Test Runner — lean runner without per-test output capture.
+;;;
+;;; This file is cat'd at the end of the WASM test bundle, after ece-unit.scm
+;;; and all tests/ece/common/test-*.scm files. It provides a lean run-tests
+;;; that skips per-test output capture (too memory-intensive for WASM), prints
+;;; results, and exposes *test-passes* / *test-failures* globals for
+;;; wasm/test.js env_lookup.
 
-;;; WASM Test Runner — with guard wrapping for error isolation
-(define (run-tests)
-  (define total (length *tests*))
-  (display "Running ")
-  (display total)
-  (display " tests...")
-  (newline)
-  (newline)
-  (for-each
-   (lambda (entry)
-     (define name (car entry))
-     (define thunk (cadr entry))
-     (display "  ")
-     (display name)
-     (newline)
-     (guard (e (#t
-                (display "    ERROR: ")
-                (display (if (error-object? e) (error-object-message e) e))
-                (newline)))
-       (thunk)))
-   *tests*)
-  ;; Continuation roundtrip test is CL-only — serialize! walks CL-specific
-  ;; continuation internals. Skipped on WASM (run in CL tests instead).
-  (newline)
-  (display *test-passes*)
-  (display " passed, ")
-  (display *test-failures*)
-  (display " failed")
-  (newline)
-  (= *test-failures* 0))
+;; Globals consumed by wasm/test.js via env_lookup.
+(define *test-passes* 0)
+(define *test-failures* 0)
+
+(define (wasm-run-all-tests)
+  "Run all registered tests without per-test output capture."
+  (let ((tests-list (get-tests))
+        (passes 0)
+        (failures 0)
+        (failure-msgs '()))
+    (for-each
+     (lambda (entry)
+       (let ((name (car entry))
+             (thunk (cadr entry)))
+         (set-current-test-name! name)
+         (display "  ")
+         (display name)
+         (newline)
+         (guard (e (#t
+                    (record-failure!
+                     (string-append "ERROR: "
+                                    (if (error-object? e)
+                                        (error-object-message e)
+                                        (write-to-string-safe e))))))
+                (thunk))))
+     tests-list)
+    (set! *test-passes* (get-passes))
+    (set! *test-failures* (get-failures))
+    ;; Print failures
+    (for-each
+     (lambda (entry)
+       (display "  FAIL: ")
+       (display (car entry))
+       (display " — ")
+       (display (cadr entry))
+       (newline))
+     (reverse (get-failure-messages)))
+    ;; Print summary
+    (display (length tests-list))
+    (display " collected, ")
+    (display (length tests-list))
+    (display " ran, ")
+    (display *test-passes*)
+    (display " passed, ")
+    (display *test-failures*)
+    (display " failed")
+    (newline)))
+
+(wasm-run-all-tests)
