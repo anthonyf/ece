@@ -70,6 +70,10 @@
   (test-save! ".tmp/ece-rt-ret.dat" 42)
   (assert-equal (test-load ".tmp/ece-rt-ret.dat") 42)))
 
+;; Note: invoking the deserialized continuation is not tested here because the
+;; test runner's parameterize wind frames are stripped during serialization,
+;; making invocation unsafe. Continuation invocation is tested via the lexical
+;; state pattern tests below which use their own scoped continuations.
 (test "round-trip continuation" (lambda ()
   (define k #f)
   (%raw-call/cc (lambda (cont) (set! k cont) 0))
