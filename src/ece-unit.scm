@@ -1,4 +1,4 @@
-;;; test-lib.scm — Assertion API + test registry for ECE programs.
+;;; ece-unit.scm — Assertion API + test registry for ECE programs.
 ;;;
 ;;; State is held in a mutable-box (a single cons) that is itself wrapped
 ;;; in a parameter, so each `parameterize`-wrapped run-tests invocation
@@ -6,13 +6,15 @@
 ;;; on the box rather than re-binding the parameter.
 ;;;
 ;;; Exports: `test`, `assert-equal`, `assert-true`, `assert-false`,
-;;; `assert-error`, `assert-error-message`, `run-tests`, `reset-test-state!`.
+;;; `assert-error`, `assert-error-message`, `run-tests`, `reset-test-state!`,
+;;; `make-substring-matcher`.
 
 ;; ---- State (stored in a single list used as mutable vector) ----
-;; Positions: 0=tests 1=passes 2=failures 3=messages 4=current-name 5=per-test-output
+;; Positions: 0=tests 1=passes 2=failures 3=messages 4=current-name
+;;            5=per-test-output 6=collected 7=ran
 
 (define (make-test-state)
-  (list '() 0 0 '() "" '()))
+  (list '() 0 0 '() "" '() 0 0))
 
 (define *test-state* (make-parameter (make-test-state)))
 
@@ -28,7 +30,7 @@
 (define (get-current-test-name) (list-ref (tests-box) 4))
 (define (set-current-test-name! v) (list-set! (tests-box) 4 v))
 
-;; list-set! for mutable position access on a list of length 5.
+;; list-set! for mutable position access on a list.
 (define (list-set! lst i v)
   (cond
    ((= i 0) (set-car! lst v))
@@ -109,39 +111,78 @@
                          " got "
                          (write-to-string-safe ,result))))))))
 
+;; ---- Filtering ----
+
+(define (string-contains? haystack needle)
+  "Return #t if HAYSTACK contains NEEDLE as a substring."
+  (let ((hlen (string-length haystack))
+        (nlen (string-length needle)))
+    (if (= nlen 0)
+        #t
+        (let loop ((start 0))
+          (cond
+           ((> (+ start nlen) hlen) #f)
+           ((string=? (substring haystack start (+ start nlen)) needle) #t)
+           (else (loop (+ start 1))))))))
+
+(define (make-substring-matcher patterns)
+  "Given a list of substring PATTERNS, return a predicate (name -> boolean)
+that returns #t if NAME contains any of PATTERNS. Empty PATTERNS list = match-all."
+  (if (null? patterns)
+      (lambda (name) #t)
+      (lambda (name)
+        (let loop ((rest patterns))
+          (cond
+           ((null? rest) #f)
+           ((string-contains? name (car rest)) #t)
+           (else (loop (cdr rest))))))))
+
 ;; ---- Runner ----
 ;;
-;; Returns a list: (passes failures failure-msgs).
+;; Returns a list: (collected ran passes failures failure-msgs per-test-output).
 ;; Callers (the ece-test runner) format output.
 
 ;; Per-test output captures: (list (test-name captured-output) ...)
 (define (get-per-test-output) (list-ref (tests-box) 5))
 (define (set-per-test-output! v) (list-set! (tests-box) 5 v))
 
-(define (run-tests)
-  "Run all registered tests, capturing each test's output. Returns
- (list passes failures failure-msgs per-test-output)."
-  (let ((tests-list (get-tests)))
+(define (get-collected) (list-ref (tests-box) 6))
+(define (set-collected! v) (list-set! (tests-box) 6 v))
+(define (get-ran) (list-ref (tests-box) 7))
+(define (set-ran! v) (list-set! (tests-box) 7 v))
+
+(define (run-tests . matcher-arg)
+  "Run all registered tests matching MATCHER (default: match all). Returns
+ (list collected ran passes failures failure-msgs per-test-output)."
+  (let ((matcher (if (null? matcher-arg)
+                     (lambda (name) #t)
+                     (car matcher-arg)))
+        (tests-list (get-tests)))
     (set-per-test-output! '())
+    (set-collected! (length tests-list))
+    (set-ran! 0)
     (for-each
      (lambda (entry)
        (let ((name (car entry))
-             (thunk (cadr entry))
-             (capture (open-output-string)))
-         (set-current-test-name! name)
-         (parameterize ((current-output-port capture))
-           (guard (e (#t
-                      (record-failure!
-                       (string-append "ERROR: "
-                                      (if (error-object? e)
-                                          (error-object-message e)
-                                          (write-to-string-safe e))))))
-                  (thunk)))
-         (set-per-test-output!
-          (cons (list name (get-output-string capture))
-                (get-per-test-output)))))
+             (thunk (cadr entry)))
+         (when (matcher name)
+           (let ((capture (open-output-string)))
+             (set-ran! (+ (get-ran) 1))
+             (set-current-test-name! name)
+             (parameterize ((current-output-port capture))
+               (guard (e (#t
+                          (record-failure!
+                           (string-append "ERROR: "
+                                          (if (error-object? e)
+                                              (error-object-message e)
+                                              (write-to-string-safe e))))))
+                      (thunk)))
+             (set-per-test-output!
+              (cons (list name (get-output-string capture))
+                    (get-per-test-output)))))))
      tests-list)
-    (list (get-passes) (get-failures) (reverse (get-failure-messages))
+    (list (get-collected) (get-ran)
+          (get-passes) (get-failures) (reverse (get-failure-messages))
           (reverse (get-per-test-output)))))
 
 (define (reset-test-state!)
@@ -150,4 +191,7 @@
   (set-passes! 0)
   (set-failures! 0)
   (set-failure-messages! '())
-  (set-current-test-name! ""))
+  (set-current-test-name! "")
+  (set-per-test-output! '())
+  (set-collected! 0)
+  (set-ran! 0))

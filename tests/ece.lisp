@@ -2710,29 +2710,10 @@ rebindings redirect ECE's I/O."
                         (ok (= (evaluate '(compact-adder 5)) 105)))
                    (when (probe-file tmpfile) (delete-file tmpfile)))))))
 
-;;; ECE Native Test Suite — run all .scm-based tests via run-all.scm
-
-(deftest test-ece-native-suite
-    (testing "ECE native test suite passes"
-             ;; Reload from image if available for clean state.
-             ;; With ecec boot, skip the reload — prior CL tests don't modify
-             ;; global env deeply enough to affect the ECE native suite.
-             (let ((image-path (asdf:system-relative-pathname :ece "bootstrap/ece.image")))
-               (when (probe-file image-path)
-                 (ece::ece-load-image (namestring image-path))))
-             ;; Load and run common ECE native tests (platform-independent).
-             ;; CL-only tests (serialization, compilation-units) run separately
-             ;; via make test-ece to avoid heap exhaustion in the Rove process.
-             (handler-case (progn
-                             (evaluate '(load "tests/ece/run-common.scm"))
-                             (evaluate (list (intern "run-tests" :ece))))
-               (error ()))
-             ;; Read failure count directly from the global environment
-             (let ((failures (ece::lookup-variable-value
-                              (intern "*test-failures*" :ece)
-                              ece::*global-env*)))
-               (ok (= failures 0)
-                   (format nil "ECE native suite: ~A failures" failures)))))
+;;; ECE Native Test Suite
+;;; Removed — ECE native tests are now run via `make test-ece` which invokes
+;;; `bin/ece-test tests/ece/common tests/ece/cl-only`. Running them in-process
+;;; via rove was redundant and caused heap pressure issues.
 
 ;; ============================================================
 ;; ece-sdk-toolchain integration tests

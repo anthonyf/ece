@@ -1,4 +1,4 @@
-.PHONY: all ece install uninstall test test-rove test-ece test-wasm test-conformance test-golden check-test-counts test-web-server repl run run-lisp bootstrap wasm sandbox site fmt check-fmt setup clean clean-fasl update-test-counts update-golden
+.PHONY: all ece install uninstall test test-rove test-ece test-wasm test-conformance test-golden test-web-server repl run run-lisp bootstrap wasm sandbox site fmt check-fmt setup clean clean-fasl update-golden
 
 PREFIX ?= /usr/local
 DESTDIR ?=
@@ -9,7 +9,7 @@ SHARE_FILES := \
 	wasm/runtime.wasm \
 	wasm/glue.js \
 	wasm/primitives.json \
-	src/sdk-lib.scm src/ece-main.scm src/test-lib.scm src/ece-build.scm src/ece-test.scm
+	src/sdk-lib.scm src/ece-main.scm src/ece-unit.scm src/ece-build.scm src/ece-test.scm
 
 # Default target: build the ece binary and ECE bundles so in-tree dev works.
 all: ece
@@ -26,11 +26,11 @@ bin/ece: scripts/build-ece-binary.lisp bootstrap/bootstrap.ecec share/ece/ece-ma
 	@ln -sf ece bin/ece-test
 	@echo "Built bin/ece + symlinks (ece-repl, ece-build, ece-test)"
 
-share/ece/ece-main.ecec: src/sdk-lib.scm src/ece-main.scm src/test-lib.scm src/ece-build.scm src/ece-test.scm bootstrap/bootstrap.ecec
+share/ece/ece-main.ecec: src/sdk-lib.scm src/ece-main.scm src/ece-unit.scm src/ece-build.scm src/ece-test.scm bootstrap/bootstrap.ecec
 	@mkdir -p share/ece/templates
 	qlot exec sbcl --non-interactive --disable-debugger \
 	  --eval '(asdf:load-system :ece)' \
-	  --eval '(ece:evaluate (list (intern "compile-system" :ece) (quote (quote ("src/sdk-lib.scm" "src/test-lib.scm" "src/ece-main.scm" "src/ece-build.scm" "src/ece-test.scm"))) "share/ece/ece-main.ecec"))' \
+	  --eval '(ece:evaluate (list (intern "compile-system" :ece) (quote (quote ("src/sdk-lib.scm" "src/ece-unit.scm" "src/ece-main.scm" "src/ece-build.scm" "src/ece-test.scm"))) "share/ece/ece-main.ecec"))' \
 	  --quit
 	@# Stage the other share/ece/ files so in-tree `bin/ece` works
 	@cp bootstrap/bootstrap.ecec share/ece/bootstrap.ecec
@@ -56,7 +56,7 @@ install: ece
 	install -m 644 share/ece/primitives.json $(DESTDIR)$(PREFIX)/share/ece/primitives.json
 	install -m 644 src/sdk-lib.scm $(DESTDIR)$(PREFIX)/share/ece/sdk-lib.scm
 	install -m 644 src/ece-main.scm $(DESTDIR)$(PREFIX)/share/ece/ece-main.scm
-	install -m 644 src/test-lib.scm $(DESTDIR)$(PREFIX)/share/ece/test-lib.scm
+	install -m 644 src/ece-unit.scm $(DESTDIR)$(PREFIX)/share/ece/ece-unit.scm
 	install -m 644 src/ece-build.scm $(DESTDIR)$(PREFIX)/share/ece/ece-build.scm
 	install -m 644 src/ece-test.scm $(DESTDIR)$(PREFIX)/share/ece/ece-test.scm
 	cp -R share/ece/templates/web $(DESTDIR)$(PREFIX)/share/ece/templates/web
@@ -74,10 +74,10 @@ uninstall:
 # FASL output goes to project-local .fasl-cache/ (sandbox-friendly, portable)
 export ASDF_OUTPUT_TRANSLATIONS = (:output-translations ("$(CURDIR)/" "$(CURDIR)/.fasl-cache/") :inherit-configuration)
 
-# Derive WASM test sources from run-common.scm (single manifest for both platforms)
-WASM_TEST_SRCS := $(shell grep -o '"[^"]*"' tests/ece/run-common.scm | tr -d '"') wasm/wasm-test-runner.scm
+# WASM test bundle: framework + common/ (platform-independent) tests + runner.
+WASM_TEST_SRCS := src/ece-unit.scm $(wildcard tests/ece/common/test-*.scm) wasm/wasm-test-runner.scm
 
-# Temp dir for test output capture (used by check-test-counts)
+# Temp dir for test output capture
 TEST_OUTPUT_DIR := $(shell mktemp -d)
 
 BOOTSTRAP_DIR := bootstrap
@@ -85,7 +85,7 @@ BOOTSTRAP_SRCS := src/prelude.scm src/compiler.scm src/reader.scm src/assembler.
 
 GOLDEN_SRCS := $(wildcard tests/golden/*.scm)
 
-test: test-rove test-ece test-wasm test-conformance test-golden check-test-counts test-web-server test-web-apps
+test: test-rove test-ece test-wasm test-conformance test-golden test-web-server test-web-apps
 
 test-rove:
 	@qlot exec sbcl --disable-debugger --eval '(asdf:load-system :ece)' --eval '(asdf:load-system :ece/tests)' \
@@ -95,9 +95,12 @@ test-rove:
 
 test-ece:
 	@mkdir -p .tmp
-	@qlot exec sbcl --dynamic-space-size 4096 --disable-debugger --eval '(asdf:load-system :ece)' \
-	  --eval '(handler-case (progn (ece:evaluate (list (quote load) "tests/ece/run-all.scm"))) (error ()))' \
-	  --eval '(let ((p (ece::lookup-variable-value (intern "*test-passes*" :ece) ece::*global-env*)) (f (ece::lookup-variable-value (intern "*test-failures*" :ece) ece::*global-env*))) (format t "~%~D passed, ~D failed~%" p f) (when (> f 0) (sb-ext:exit :code 1)))' \
+	@qlot exec sbcl --dynamic-space-size 4096 --disable-debugger \
+	  --eval '(asdf:load-system :ece)' \
+	  --eval '(ece:evaluate (list (quote load) "src/sdk-lib.scm"))' \
+	  --eval '(ece:evaluate (list (quote load) "src/ece-unit.scm"))' \
+	  --eval '(ece:evaluate (list (quote load) "src/ece-test.scm"))' \
+	  --eval '(ece:evaluate (list (intern "ece-test-main" :ece) (list (quote list) "tests/ece/common" "tests/ece/cl-only")))' \
 	  --quit 2>&1 | tee $(TEST_OUTPUT_DIR)/test-ece.txt
 	@grep -q "0 failed" $(TEST_OUTPUT_DIR)/test-ece.txt
 
@@ -113,23 +116,12 @@ test-wasm: wasm
 	@mkdir -p .tmp
 	@echo "Compiling WASM test suite..."
 	@cat $(WASM_TEST_SRCS) > .tmp/ece-wasm-tests.scm
-	@echo '(run-tests)' >> .tmp/ece-wasm-tests.scm
 	@qlot exec sbcl --disable-debugger --eval '(asdf:load-system :ece)' \
 	  --eval '(ece:evaluate (list (intern "compile-file" :ece) ".tmp/ece-wasm-tests.scm"))' \
 	  --quit
 	@echo "Running WASM tests..."
 	@node --max-old-space-size=4096 wasm/test.js .tmp/ece-wasm-tests.ecec 2>&1 | tee $(TEST_OUTPUT_DIR)/test-wasm.txt
 	@grep -q "0 failed" $(TEST_OUTPUT_DIR)/test-wasm.txt
-
-check-test-counts:
-	@echo ""
-	@echo "=== Test Count Baseline Check ==="
-	@ECE_COUNT=$$(grep -o '[0-9]* passed' $(TEST_OUTPUT_DIR)/test-ece.txt 2>/dev/null | tail -1 | grep -o '^[0-9]*'); \
-	  if [ -n "$$ECE_COUNT" ]; then bash scripts/check-test-counts.sh cl-ece "$$ECE_COUNT"; fi
-	@CONF_COUNT=$$(grep 'Conformance results:' $(TEST_OUTPUT_DIR)/test-conformance.txt 2>/dev/null | grep -o '[0-9]* passed' | grep -o '[0-9]*'); \
-	  if [ -n "$$CONF_COUNT" ]; then bash scripts/check-test-counts.sh conformance "$$CONF_COUNT"; fi
-	@WASM_COUNT=$$(grep -o '[0-9]* passed' $(TEST_OUTPUT_DIR)/test-wasm.txt 2>/dev/null | tail -1 | grep -o '^[0-9]*'); \
-	  if [ -n "$$WASM_COUNT" ]; then bash scripts/check-test-counts.sh wasm-ece "$$WASM_COUNT"; fi
 
 test-golden:
 	@echo "Running golden compiler output tests..."
@@ -278,18 +270,6 @@ check-fmt: fmt
 setup:
 	ln -sf ../../scripts/pre-commit .git/hooks/pre-commit
 	@echo "Pre-commit hook installed."
-
-update-test-counts:
-	@mkdir -p .tmp
-	@echo "Running test suites to capture counts..."
-	@CL_COUNT=$$(qlot exec sbcl --dynamic-space-size 4096 --disable-debugger \
-	  --eval '(asdf:load-system :ece)' \
-	  --eval '(handler-case (progn (ece:evaluate (list (quote load) "tests/ece/run-all.scm"))) (error ()))' \
-	  --eval '(format t "~%ECE_PASS_COUNT=~D~%" (ece::lookup-variable-value (intern "*test-passes*" :ece) ece::*global-env*))' \
-	  --quit 2>&1 | grep ECE_PASS_COUNT= | sed 's/ECE_PASS_COUNT=//') && \
-	CONF_COUNT=$$(make test-conformance 2>&1 | grep 'Conformance results:' | grep -o '[0-9]* passed' | grep -o '[0-9]*') && \
-	WASM_COUNT=$$(make test-wasm 2>&1 | grep 'passed,' | grep -o '^[0-9]*') && \
-	python3 -c "import json; json.dump({'cl-ece': int('$$CL_COUNT'), 'cl-rove': 42, 'wasm-ece': int('$$WASM_COUNT'), 'conformance': int('$$CONF_COUNT')}, open('tests/test-counts.json','w'), indent=2); print(open('tests/test-counts.json').read())"
 
 clean:
 	rm -rf .fasl-cache/

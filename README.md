@@ -360,18 +360,19 @@ Run your test suite:
 
 ```sh
 ece-test tests/
-# tests/test-math.scm: 3 passed, 0 failed
-# Total: 3 passed, 0 failed
+# tests/test-math.scm: 3 collected, 3 ran, 3 passed, 0 failed
+# Total: 3 collected, 3 ran, 3 passed, 0 failed
 ```
 
 Options:
 - `ece-test file.scm` — run exactly this file (no discovery)
 - `ece-test tests/ integration/` — discover across multiple directories
 - `ece-test -v tests/` — verbose: print per-test output even on success
+- `ece-test --filter PATTERN tests/` — run only tests whose name contains PATTERN (substring, case-sensitive; repeatable with OR semantics)
 
-**Exit codes:** `0` if all pass, `1` if any fail, `2` on runner error (bad path, etc.).
+**Exit codes:** `0` if all pass, `1` if any fail, `2` on runner error (bad path, zero tests collected, etc.).
 
-**Assertion API** (in `test-lib.scm`, auto-loaded):
+**Assertion API** (in `ece-unit.scm`, auto-loaded):
 
 | Form | Checks |
 |------|--------|
@@ -402,11 +403,17 @@ qlot exec sbcl --load ece.asd --eval '(asdf:load-system :ece)'
 ```sh
 make test              # full suite: rove, ECE self-hosted, WASM, conformance, golden
 make test-rove         # CL-side rove tests (inc. integration tests for bin/ece)
-make test-ece          # ECE self-hosted tests
+make test-ece          # ECE self-hosted tests (via bin/ece-test)
 make test-wasm         # WASM runtime tests (requires node)
 make test-conformance  # R5RS/R7RS conformance suite
 make test-golden       # compiler output regression tests
 ```
+
+ECE's own tests live in `tests/ece/`, split by runtime eligibility:
+- `tests/ece/common/` — pure-ECE tests (run on CL and WASM)
+- `tests/ece/cl-only/` — tests requiring CL-specific primitives (compilation units, serialization, source locations, SDK integration)
+
+`make test-ece` runs `bin/ece-test tests/ece/common tests/ece/cl-only`. For a single file: `bin/ece-test tests/ece/common/test-strings.scm`. For a subset: `bin/ece-test --filter string tests/ece/common`.
 
 ### Building the WASM Sandbox
 
