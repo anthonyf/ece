@@ -8,7 +8,6 @@ SHARE_FILES := \
 	bootstrap/bootstrap.ecec \
 	wasm/runtime.wasm \
 	wasm/glue.js \
-	wasm/primitives.json \
 	src/sdk-lib.scm src/ece-main.scm src/ece-unit.scm src/ece-build.scm src/ece-test.scm
 
 # Default target: build the ece binary and ECE bundles so in-tree dev works.
@@ -36,7 +35,6 @@ share/ece/ece-main.ecec: src/sdk-lib.scm src/ece-main.scm src/ece-unit.scm src/e
 	@cp bootstrap/bootstrap.ecec share/ece/bootstrap.ecec
 	@cp wasm/runtime.wasm share/ece/runtime.wasm
 	@cp wasm/glue.js share/ece/glue.js
-	@cp wasm/primitives.json share/ece/primitives.json
 	@cp -R templates/web share/ece/templates/web
 	@cp -R templates/cl share/ece/templates/cl
 	@echo "Staged share/ece/ tree"
@@ -53,7 +51,6 @@ install: ece
 	install -m 644 share/ece/ece-main.ecec $(DESTDIR)$(PREFIX)/share/ece/ece-main.ecec
 	install -m 644 share/ece/runtime.wasm $(DESTDIR)$(PREFIX)/share/ece/runtime.wasm
 	install -m 644 share/ece/glue.js $(DESTDIR)$(PREFIX)/share/ece/glue.js
-	install -m 644 share/ece/primitives.json $(DESTDIR)$(PREFIX)/share/ece/primitives.json
 	install -m 644 src/sdk-lib.scm $(DESTDIR)$(PREFIX)/share/ece/sdk-lib.scm
 	install -m 644 src/ece-main.scm $(DESTDIR)$(PREFIX)/share/ece/ece-main.scm
 	install -m 644 src/ece-unit.scm $(DESTDIR)$(PREFIX)/share/ece/ece-unit.scm
@@ -81,7 +78,7 @@ WASM_TEST_SRCS := src/ece-unit.scm $(wildcard tests/ece/common/test-*.scm) wasm/
 TEST_OUTPUT_DIR := $(shell mktemp -d)
 
 BOOTSTRAP_DIR := bootstrap
-BOOTSTRAP_SRCS := src/prelude.scm src/compiler.scm src/reader.scm src/assembler.scm src/compilation-unit.scm src/syntax-rules.scm src/browser-lib.scm
+BOOTSTRAP_SRCS := src/boot-env.scm src/prelude.scm src/compiler.scm src/reader.scm src/assembler.scm src/compilation-unit.scm src/syntax-rules.scm src/browser-lib.scm
 
 GOLDEN_SRCS := $(wildcard tests/golden/*.scm)
 
@@ -205,7 +202,7 @@ bootstrap:
 	qlot exec sbcl --eval '(asdf:load-system :ece)' \
 	  --eval '(in-package :ece)' \
 	  --eval '(evaluate (list (quote eval) (list (quote read) (list (quote open-input-string) "(load \"src/compilation-unit.scm\")"))))' \
-	  --eval '(evaluate (list (quote eval) (list (quote read) (list (quote open-input-string) "(compile-system (quote (\"src/prelude.scm\" \"src/compiler.scm\" \"src/reader.scm\" \"src/assembler.scm\" \"src/compilation-unit.scm\" \"src/syntax-rules.scm\" \"src/browser-lib.scm\")) \"bootstrap/bootstrap.ecec\")"))))' \
+	  --eval '(evaluate (list (quote eval) (list (quote read) (list (quote open-input-string) "(compile-system (quote (\"src/boot-env.scm\" \"src/prelude.scm\" \"src/compiler.scm\" \"src/reader.scm\" \"src/assembler.scm\" \"src/compilation-unit.scm\" \"src/syntax-rules.scm\" \"src/browser-lib.scm\")) \"bootstrap/bootstrap.ecec\")"))))' \
 	  --quit
 	@echo "Bootstrap bundle regenerated: $(BOOTSTRAP_DIR)/bootstrap.ecec"
 
@@ -215,16 +212,24 @@ sandbox: ece
 	@bin/ece-build --target web --standalone -o .tmp/sandbox-build .tmp/sandbox-stub.scm
 	@cp .tmp/sandbox-build/ece-runtime.js sandbox/ece-runtime.js
 	@cp .tmp/sandbox-build/ece-bootstrap.js sandbox/ece-bootstrap.js
+	@# Generate ece-programs.js from sandbox/programs/ manifest and .scm files
+	@echo "Generating program list from sandbox/programs/..."
+	@echo '// ECE Canned Programs — auto-generated from sandbox/programs/' > sandbox/ece-programs.js
+	@echo 'const ECE_PROGRAMS = [' >> sandbox/ece-programs.js
+	@for scm in sandbox/programs/*.scm; do \
+	  name=$$(basename "$$scm" .scm | sed 's/-/ /g' | awk '{for(i=1;i<=NF;i++) $$i=toupper(substr($$i,1,1)) substr($$i,2)}1'); \
+	  echo "  { name: \"$$name\", source: \`$$(cat "$$scm")\` }," >> sandbox/ece-programs.js; \
+	done
+	@echo '];' >> sandbox/ece-programs.js
 	@# Pre-compile canned programs (Hello World .scm → .ecec → base64 in JS)
 	@echo "Compiling canned programs..."
-	@printf '(display "Hello, World!")\n(newline)\n' > .tmp/ece-hello.scm
 	@qlot exec sbcl --disable-debugger --eval '(asdf:load-system :ece)' \
-	  --eval '(ece:evaluate (list (intern "compile-file" :ece) ".tmp/ece-hello.scm"))' \
+	  --eval '(ece:evaluate (list (intern "compile-file" :ece) "sandbox/programs/hello-world.scm"))' \
 	  --quit 2>/dev/null
 	@echo '// Pre-compiled ECE programs — auto-generated' > sandbox/ece-compiled.js
 	@echo 'const ECE_COMPILED = {};' >> sandbox/ece-compiled.js
 	@printf '%s' 'ECE_COMPILED["Hello World"] = "' >> sandbox/ece-compiled.js
-	@base64 -i .tmp/ece-hello.ecec | tr -d '\n' >> sandbox/ece-compiled.js
+	@base64 -i sandbox/programs/hello-world.ecec | tr -d '\n' >> sandbox/ece-compiled.js
 	@echo '";' >> sandbox/ece-compiled.js
 	@echo "Sandbox assets built in sandbox/"
 
@@ -235,7 +240,11 @@ site: sandbox
 	@cp site/index.html _site/
 	@cp sandbox/index.html sandbox/sandbox.js sandbox/ece-programs.js _site/sandbox/
 	@cp sandbox/ece-runtime.js sandbox/ece-bootstrap.js sandbox/ece-compiled.js _site/sandbox/
-	@bash scripts/build-test-page.sh _site/tests
+	@# Build browser test page via ece-build (reuses WASM_TEST_SRCS)
+	@mkdir -p .tmp
+	@cat $(WASM_TEST_SRCS) > .tmp/ece-site-tests.scm
+	@echo '(run-tests)' >> .tmp/ece-site-tests.scm
+	@bin/ece-build --target test-page -o _site/tests .tmp/ece-site-tests.scm
 	@echo "Site built at _site/"
 
 wasm: wasm/runtime.wasm

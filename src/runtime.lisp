@@ -1202,6 +1202,36 @@ Uses a synonym stream so that dynamic rebindings of *standard-input* are honored
 (defun ece-%get-winding-stack ()
   (or *cl-winding-stack* nil))
 
+;;; --- Boot registration primitives (no-ops on CL) ---
+;;; CL runtime already handles primitive registration, assembler symbol setup,
+;;; continuation/error symbol caching, and REPL space creation via
+;;; init-primitive-dispatch-tables and build-global-env-from-manifest.
+;;; These exist so boot-env.ecec can execute without error on CL.
+
+(defun ece-%register-primitive! (name id)
+  (declare (ignore name id))
+  nil)
+
+(defun ece-%init-asm-syms (count)
+  (declare (ignore count))
+  nil)
+
+(defun ece-%store-asm-sym (slot name)
+  (declare (ignore slot name))
+  nil)
+
+(defun ece-%set-continuation-syms! (do-winds-sym winding-stack-sym)
+  (declare (ignore do-winds-sym winding-stack-sym))
+  nil)
+
+(defun ece-%set-error-sym! (error-sym)
+  (declare (ignore error-sym))
+  nil)
+
+(defun ece-%create-repl-space! (name size)
+  (declare (ignore name size))
+  nil)
+
 ;;; --- Platform discovery primitives ---
 
 (defun ece-platform-has? (name)

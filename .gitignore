@@ -6,6 +6,8 @@ wasm/runtime.wasm
 sandbox/ece-runtime.js
 sandbox/ece-bootstrap.js
 sandbox/ece-compiled.js
+sandbox/ece-programs.js
+sandbox/programs/*.ecec
 _site/
 /bin/ece
 /bin/ece-repl

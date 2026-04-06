@@ -48,3 +48,17 @@ The CL runtime SHALL validate at boot that every `core` and `cl` platform primit
 #### Scenario: CL-only primitives tagged
 - **WHEN** the manifest is loaded
 - **THEN** `open-input-file`, `open-output-file`, `with-input-from-file`, `with-output-to-file`, `save-image!`, `trace`, `untrace` SHALL have platform tag `cl`
+
+## MODIFIED Requirements (shrink-js-glue)
+
+### Requirement: IDs are unique
+- **WHEN** the manifest is loaded
+- **THEN** no two entries SHALL share the same numeric ID
+
+#### Scenario: IDs are unique
+- **WHEN** `primitives.def` is read by the ECE reader or CL reader
+- **THEN** no two entries SHALL share the same numeric ID
+
+#### Scenario: Duplicate ID 165 is resolved
+- **WHEN** `primitives.def` is checked for `%make-primitive`
+- **THEN** there SHALL be exactly one entry with ID 165
