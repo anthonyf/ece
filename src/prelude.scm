@@ -969,7 +969,12 @@ Returns #f if it contains non-serializable objects (ports, CL streams, etc.)."
         (cond
          ((eq? obj global-frame) #t)
          ((%hash-frame? obj) #t)
-         ((hash-table? obj) #t)
+         ((hash-table? obj)
+          (let loop ((keys (hash-keys obj)))
+            (if (null? keys) #t
+                (and (check (car keys))
+                     (check (hash-ref obj (car keys)))
+                     (loop (cdr keys))))))
          ((vector? obj)
           (let loop ((i 0))
             (if (>= i (vector-length obj)) #t

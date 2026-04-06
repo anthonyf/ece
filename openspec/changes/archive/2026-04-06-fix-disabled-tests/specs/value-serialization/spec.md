@@ -4,7 +4,7 @@
 
 `serialize-value` SHALL recognize CL native hash table objects (not just tagged-pair representations) and emit `(%ser/hash-table (key value) ...)` format. `deserialize-value` SHALL reconstruct a working hash table from this format.
 
-#### Scenario: Round-trip a hash table with string keys
+#### Scenario: Round-trip a hash table with symbol keys
 - **WHEN** a hash table containing `{a: 1, b: 2}` is serialized and deserialized
 - **THEN** the result is a hash table where `(hash-ref result 'a)` returns `1` and `(hash-ref result 'b)` returns `2`
 
