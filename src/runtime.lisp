@@ -472,7 +472,11 @@ Used by %global-ref for syntax-rules hygiene."
 (defun ece-null? (x) (scheme-bool (null x)))
 (defun ece-pair? (x) (scheme-bool (consp x)))
 (defun ece-number? (x) (scheme-bool (numberp x)))
-(defun ece-keyword? (x) (scheme-bool (keywordp x)))
+(defun ece-keyword? (x)
+  (scheme-bool (and (symbolp x)
+                    (let ((name (symbol-name x)))
+                      (and (> (length name) 1)
+                           (char= (char name 0) #\:))))))
 (defun ece-string? (x) (scheme-bool (stringp x)))
 (defun ece-symbol? (x) (scheme-bool (and (symbolp x) x)))  ;; exclude nil ('())
 (defun ece-integer? (x) (scheme-bool (integerp x)))
@@ -1204,9 +1208,7 @@ Uses a synonym stream so that dynamic rebindings of *standard-input* are honored
   "Check if the named primitive is available on this platform.
 Returns ECE #t if the primitive exists and has a non-stub implementation, #f otherwise."
   (let ((id (gethash name *primitive-name-to-id*)))
-    (if (and id (gethash id *primitive-available-ids*))
-        't
-        'nil)))
+    (scheme-bool (and id (gethash id *primitive-available-ids*)))))
 
 (defun ece-%platform-primitives ()
   "Return a list of all primitive names available on this platform."

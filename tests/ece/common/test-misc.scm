@@ -63,11 +63,9 @@
 
 ;; --- keyword? ---
 
-;; KNOWN ISSUE: keyword? checks CL keywords, but ECE reader interns
-;; :foo as regular symbols named ":foo" in the ECE package (not CL keywords).
-;; keyword? always returns #f for ECE keywords. Needs an ECE-native keyword?
-;; implementation. Skipped for now.
-;; (test "keyword? on keyword" ...)
+(test "keyword? on keyword" (lambda ()
+  (assert (keyword? :foo))
+  (assert (keyword? :bar))))
 
 (test "keyword? on non-keyword" (lambda ()
   (assert (not (keyword? 'hello)))
@@ -76,12 +74,13 @@
 
 ;; --- platform-has? ---
 
-;; KNOWN ISSUE: platform-has? has inconsistent behavior across platforms:
-;; CL returns () for unknown (Scheme-truthy), WASM returns #f. The function
-;; is also not available on all platforms. Skipped until platform-has? is
-;; standardized.
-;; (test "platform-has? for known primitive" ...)
-;; (test "platform-has? for unknown returns false" ...)
+(test "platform-has? for known primitive" (lambda ()
+  (assert (platform-has? 'car))
+  (assert (platform-has? '+))))
+
+(test "platform-has? for unknown returns false" (lambda ()
+  (assert (not (platform-has? 'nonexistent-primitive-xyz)))
+  (assert (eq? (platform-has? 'nonexistent-primitive-xyz) #f))))
 
 ;; --- Named let ---
 

@@ -952,6 +952,47 @@ shared structure, and global env sentinel."
   (define seen (%eq-hash-table))
   (define global-frame (%global-env-frame))
 
+  (define (wind-frame-serializable? frame)
+    "Check if a wind frame (before . after) can be fully serialized.
+Returns #f if it contains non-serializable objects (ports, CL streams, etc.)."
+    (define checked (%eq-hash-table))
+    (define (check obj)
+      (cond
+       ;; Atoms are always serializable
+       ((or (number? obj) (string? obj) (char? obj)
+            (eq? obj #t) (eq? obj #f) (null? obj) (symbol? obj))
+        #t)
+       ;; Already checked — avoid cycles
+       ((%eq-hash-ref checked obj) #t)
+       (else
+        (%eq-hash-set! checked obj #t)
+        (cond
+         ((eq? obj global-frame) #t)
+         ((%hash-frame? obj) #t)
+         ((hash-table? obj)
+          (let loop ((keys (hash-keys obj)))
+            (if (null? keys) #t
+                (and (check (car keys))
+                     (check (hash-ref obj (car keys)))
+                     (loop (cdr keys))))))
+         ((vector? obj)
+          (let loop ((i 0))
+            (if (>= i (vector-length obj)) #t
+                (and (check (vector-ref obj i)) (loop (+ i 1))))))
+         ((compiled-procedure? obj) (check (compiled-procedure-env obj)))
+         ((continuation? obj)
+          (and (check (continuation-stack obj))
+               (check (continuation-conts obj))))
+         ((primitive? obj) #t)
+         ((%env-frame? obj)
+          (let loop ((vals (%env-frame-vals obj)))
+            (if (null? vals) #t
+                (and (check (car vals)) (loop (cdr vals))))))
+         ((pair? obj) (and (check (car obj)) (check (cdr obj))))
+         ;; Unknown compound type (port, CL stream, etc.) — not serializable
+         (else #f)))))
+    (check frame))
+
   (define (scan obj)
     (cond
      ;; Skip atoms (numbers, strings, chars, booleans, symbols, nil)
@@ -978,13 +1019,20 @@ shared structure, and global env sentinel."
               (scan-vec 0))
              ;; Compiled procedure — scan env
              ((compiled-procedure? obj) (scan (compiled-procedure-env obj)))
-             ;; Continuation — scan stack, conts, and winds
+             ;; Continuation — scan stack, conts, and winds (filter non-serializable wind frames)
              ((continuation? obj)
               (scan (continuation-stack obj))
               (scan (continuation-conts obj))
-              (scan (continuation-winds obj)))
+              (for-each (lambda (frame)
+                          (when (wind-frame-serializable? frame)
+                            (scan frame)))
+                        (continuation-winds obj)))
              ;; Primitive — no sub-structure to scan
              ((primitive? obj) '())
+             ;; Native hash table — scan keys and values
+             ((hash-table? obj)
+              (for-each (lambda (k) (scan k) (scan (hash-ref obj k)))
+                        (hash-keys obj)))
              ;; Env frame (WASM GC struct — not a vector, so needs its own branch)
              ((%env-frame? obj)
               (for-each scan (%env-frame-vals obj)))
@@ -1049,13 +1097,19 @@ shared structure, and global env sentinel."
      ((eq? obj global-frame) (emit "(%ser/global-env)"))
      ;; Hash frame sentinel — shouldn't normally be serialized directly
      ((%hash-frame? obj) (emit "(%ser/hash-frame)"))
-     ;; Hash table (:hash-table count . root)
-     ((and (pair? obj) (eq? (car obj) :hash-table))
-      (define entries (map (lambda (k) (cons k (hash-ref obj k))) (hash-keys obj)))
+     ;; Native CL hash table (hash-table? predicate)
+     ((hash-table? obj)
       (emit "(%ser/hash-table")
-      (for-each (lambda (kv)
-                  (emit " (") (ser (car kv)) (emit " ") (ser (cdr kv)) (emit ")"))
-                entries)
+      (for-each (lambda (k)
+                  (emit " (") (ser k) (emit " ") (ser (hash-ref obj k)) (emit ")"))
+                (hash-keys obj))
+      (emit ")"))
+     ;; Hash table tagged pair (:hash-table count . root) — legacy format
+     ((and (pair? obj) (eq? (car obj) :hash-table))
+      (emit "(%ser/hash-table")
+      (for-each (lambda (k)
+                  (emit " (") (ser k) (emit " ") (ser (hash-ref obj k)) (emit ")"))
+                (hash-keys obj))
       (emit ")"))
      ;; Parameter
      ((and (pair? obj) (eq? (car obj) 'parameter))
@@ -1071,7 +1125,18 @@ shared structure, and global env sentinel."
       (define stack (continuation-stack obj))
       (define cont (continuation-conts obj))
       (define winds (continuation-winds obj))
-      (emit "(%ser/continuation") (ser stack) (emit " ") (ser-entry cont) (emit " ") (ser winds) (emit ")"))
+      (emit "(%ser/continuation") (ser stack) (emit " ") (ser-entry cont) (emit " ")
+      ;; Filter wind frames: strip non-serializable ones (e.g. parameterize with ports)
+      (emit "(")
+      (let loop ((frames winds) (first #t))
+        (when (pair? frames)
+          (when (not first) (emit " "))
+          (if (wind-frame-serializable? (car frames))
+              (ser (car frames))
+              (emit "(%ser/wind-stripped)"))
+          (loop (cdr frames) #f)))
+      (emit ")")
+      (emit ")"))
      ;; Primitive (WasmGC struct or CL tagged pair)
      ((primitive? obj)
       (define id (%primitive-id-of obj))
@@ -1094,8 +1159,8 @@ shared structure, and global env sentinel."
       (ser vals) (emit " #f)"))
      ;; Regular pair/list
      ((pair? obj) (ser-pair obj))
-     ;; Fallback
-     (else (emit (write-to-string-flat obj)))))
+     ;; Fallback: non-serializable object — emit reader-safe sentinel
+     (else (emit "(%ser/opaque)"))))
 
   (define (ser-entry entry)
     "Serialize a space-qualified entry address or bare integer."
@@ -1181,6 +1246,12 @@ Reconstructs tagged types and resolves #:def/#:ref references."
        ;; Hash frame sentinel
        ((string=? tag "%ser/hash-frame")
         (%global-env-frame))  ;; best approximation
+       ;; Wind frame stripped sentinel — skipped during continuation restoration
+       ((string=? tag "%ser/wind-stripped")
+        '%wind-stripped)
+       ;; Opaque non-serializable object — replaced with #f
+       ((string=? tag "%ser/opaque")
+        #f)
        ;; Env frame
        ((string=? tag "%ser/env-frame")
         (define names (deser (cadr form)))
@@ -1208,7 +1279,16 @@ Reconstructs tagged types and resolves #:def/#:ref references."
        ((string=? tag "%ser/continuation")
         (define stack (deser (cadr form)))
         (define cont (caddr form))
-        (define winds (if (null? (cdddr form)) '() (deser (car (cdddr form)))))
+        (define raw-winds (if (null? (cdddr form)) '() (deser (car (cdddr form)))))
+        ;; Filter out stripped wind frame sentinels
+        (define winds
+          (let loop ((ws raw-winds) (acc '()))
+            (if (null? ws)
+                (reverse acc)
+                (loop (cdr ws)
+                      (if (eq? (car ws) '%wind-stripped)
+                          acc
+                          (cons (car ws) acc))))))
         (%make-continuation stack cont winds))
        ;; Primitive by name or numeric ID
        ((string=? tag "%ser/primitive")
