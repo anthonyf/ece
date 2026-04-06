@@ -20,20 +20,20 @@ Key code locations:
 **Non-Goals:**
 - Full hash-table serialization overhaul (just enough for round-trip)
 - Rewriting the test runner's isolation model
-- Fixing WASM `keyword?` (already stubs to `#f`, acceptable for now)
+- ~~Fixing WASM `keyword?`~~ (implemented: checks `|:` prefix from CL pipe-escaping)
 - Making `parameterize` frames fully serializable in the general case
 
 ## Decisions
 
-### 1. Rove runner: use `rove:run` API
+### 1. Rove runner: enumerate suites explicitly
 
-The Makefile calls `rove/core/suite::suite-stats` which doesn't exist. Replace with `rove:run` which returns `(values passedp results)`.
+The Makefile calls `rove/core/suite::suite-stats` which doesn't exist. Use `CALL-WITH-SUITE` with `ALL-SUITES`/`RUN-SUITE` to enumerate and execute each discovered suite explicitly.
 
-**Alternative considered:** Parse test output with grep. Rejected — fragile, and the proper API exists.
+**Alternative considered:** Use `rove:run`. Rejected — it doesn't discover suites from FASL-cached files. Parsing test output with grep was also rejected as fragile.
 
 ### 2. `keyword?`: ECE-native check on CL side
 
-Change `ece-keyword?` in `runtime.lisp` to check if the symbol's name starts with `":"` and is interned in the ECE package, rather than using CL's `keywordp`.
+Change `ece-keyword?` in `runtime.lisp` to check whether `x` is a symbol whose name starts with `":"`, rather than using CL's `keywordp`.
 
 ```
 (defun ece-keyword? (x)

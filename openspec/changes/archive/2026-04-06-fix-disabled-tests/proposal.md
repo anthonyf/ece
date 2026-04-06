@@ -4,7 +4,7 @@
 
 ## What Changes
 
-- **Fix rove test runner crash**: Replace broken `rove/core/suite::suite-stats` call in Makefile with the correct `rove:run` API so `make test-rove` exits cleanly.
+- **Fix rove test runner crash**: Replace broken `rove/core/suite::suite-stats` call in Makefile with `CALL-WITH-SUITE` / `ALL-SUITES` / `RUN-SUITE` runner so `make test-rove` exits cleanly (`rove:run` doesn't discover suites from FASL-cached files).
 - **Fix `keyword?` for ECE keywords**: Implement ECE-native `keyword?` that checks for symbols named `":..."` rather than delegating to CL's `keywordp` (which never matches ECE keywords). Uncomment 1 test.
 - **Fix `platform-has?` inconsistency**: Normalize CL return value — currently returns `()` for unknown (Scheme-truthy) while WASM returns `#f`. Uncomment 2 tests.
 - **Fix hash table serialization**: Add `hash-table?` branch to `serialize-value` so CL native hash tables round-trip correctly. Uncomment 1 test.

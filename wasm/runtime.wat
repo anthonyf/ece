@@ -4269,16 +4269,20 @@
                 (if (call $is-primitive (local.get $result))
                   (then
                     ;; Exclude known WASM stubs/no-ops:
-                    ;; sleep (83) and clear-screen (84) return void,
-                    ;; try-eval (90) returns void,
-                    ;; open-input/output-file (100/101) use localStorage (not real FS)
+                    ;; sleep (83), clear-screen (84), try-eval (90),
+                    ;; %procedure-name-set! (97), open-input/output-file (100/101),
+                    ;; %space-label-entries (135), %make-directory (194), %chmod (195)
                     (local.set $id (struct.get $primitive $id
                           (ref.cast (ref $primitive) (local.get $result))))
                     (if (i32.or (i32.eq (local.get $id) (i32.const 83))
                           (i32.or (i32.eq (local.get $id) (i32.const 84))
                             (i32.or (i32.eq (local.get $id) (i32.const 90))
-                              (i32.or (i32.eq (local.get $id) (i32.const 100))
-                                      (i32.eq (local.get $id) (i32.const 101))))))
+                              (i32.or (i32.eq (local.get $id) (i32.const 97))
+                                (i32.or (i32.eq (local.get $id) (i32.const 100))
+                                  (i32.or (i32.eq (local.get $id) (i32.const 101))
+                                    (i32.or (i32.eq (local.get $id) (i32.const 135))
+                                      (i32.or (i32.eq (local.get $id) (i32.const 194))
+                                              (i32.eq (local.get $id) (i32.const 195))))))))))
                       (then (return (global.get $false)))
                       (else (return (global.get $true))))))
                 (return (global.get $false))))))

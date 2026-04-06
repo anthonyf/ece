@@ -25,8 +25,8 @@
 - [x] 4.4 Uncomment `parameter in lexical scope captured by continuation` test
 - [x] 4.5 Uncomment `round-trip recursive define in let body via call/cc` test
 - [x] 4.6 Uncomment `lexical state pattern: save and load preserves all state` test
-- [x] 4.7 Uncomment `loaded continuation reverts state to save time` test
-- [x] 4.8 Uncomment `loaded continuation reverts multiple parameters` test
+- [x] 4.7 Uncomment `round-trip continuation with parameter state` test
+- [x] 4.8 Uncomment `round-trip continuation with multiple parameters` test
 - [x] 4.9 Run full serialization test suite to verify all continuation tests pass
 
 ## 5. Compilation Unit Label Scoping
