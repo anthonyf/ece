@@ -261,7 +261,7 @@
     (assert-equal (loaded) 70))
   (run-game)))
 
-(test "loaded continuation reverts state to save time" (lambda ()
+(test "round-trip continuation with parameter state" (lambda ()
   (define room (make-parameter "start"))
   (define k #f)
   (room "cave")
@@ -271,7 +271,7 @@
   (assert-equal (car loaded) "cave")
   (assert (continuation? (cadr loaded)))))
 
-(test "loaded continuation reverts multiple parameters" (lambda ()
+(test "round-trip continuation with multiple parameters" (lambda ()
   (define room (make-parameter "start"))
   (define hp (make-parameter 100))
   (define k #f)

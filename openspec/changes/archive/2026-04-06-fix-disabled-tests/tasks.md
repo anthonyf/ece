@@ -1,6 +1,6 @@
 ## 1. Rove Test Runner Fix
 
-- [x] 1.1 Replace `rove/core/suite::suite-stats` call in Makefile with `rove:run` API that returns `(values passedp results)`
+- [x] 1.1 Replace `rove/core/suite::suite-stats` call in Makefile with `call-with-suite`/`all-suites`/`run-suite` pattern
 - [x] 1.2 Verify `make test-rove` exits 0 when all tests pass
 
 ## 2. Predicate Fixes (keyword?, platform-has?)

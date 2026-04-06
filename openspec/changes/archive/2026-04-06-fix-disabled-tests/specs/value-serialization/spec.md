@@ -18,7 +18,7 @@ When serializing a continuation whose `winds` field contains `dynamic-wind` fram
 
 #### Scenario: Continuation captured inside parameterize round-trips
 - **WHEN** a continuation is captured inside a `(parameterize ((current-output-port ...)) ...)` form and serialized/deserialized
-- **THEN** serialization completes without error and the deserialized continuation is callable
+- **THEN** serialization/deserialization completes without error and any non-serializable wind frames are stripped and skipped gracefully during deserialization
 
 #### Scenario: Continuation with no non-serializable winds is unchanged
 - **WHEN** a continuation with only serializable wind frames is serialized

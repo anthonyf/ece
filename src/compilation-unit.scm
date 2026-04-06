@@ -78,7 +78,7 @@
 
 (define (write-compiled-unit unit port)
   "Write a compiled unit to PORT with one instruction per line.
-Gensym labels are renamed to deterministic names."
+Labels are currently written as-is; deterministic gensym renaming is deferred."
   (let ((renamed (rename-labels (compiled-unit-instructions unit))))
     (write-flat-instructions renamed port)))
 

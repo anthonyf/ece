@@ -90,9 +90,9 @@ test: test-rove test-ece test-wasm test-conformance test-golden test-web-server 
 # Note: rove:run doesn't discover suites from FASL-cached files, so we use
 # call-with-suite/all-suites/run-suite which work after asdf:load-system.
 test-rove:
-	@qlot exec sbcl --disable-debugger --eval '(asdf:load-system :ece)' --eval '(asdf:load-system :ece/tests)' \
-	  --eval '(let ((passedp (funcall (find-symbol "CALL-WITH-SUITE" :rove/core/suite) (lambda () (dolist (s (funcall (find-symbol "ALL-SUITES" :rove/core/suite/package))) (funcall (find-symbol "RUN-SUITE" :rove/core/suite/package) s)))))) (unless passedp (uiop:quit 1)))' \
-	  --quit 2>&1 | tee $(TEST_OUTPUT_DIR)/test-rove.txt
+	@bash -o pipefail -c 'qlot exec sbcl --disable-debugger --eval "(asdf:load-system :ece)" --eval "(asdf:load-system :ece/tests)" \
+	  --eval "(let ((passedp (funcall (find-symbol \"CALL-WITH-SUITE\" :rove/core/suite) (lambda () (dolist (s (funcall (find-symbol \"ALL-SUITES\" :rove/core/suite/package))) (funcall (find-symbol \"RUN-SUITE\" :rove/core/suite/package) s)))))) (unless passedp (uiop:quit 1)))" \
+	  --quit 2>&1 | tee $(TEST_OUTPUT_DIR)/test-rove.txt'
 
 test-ece:
 	@mkdir -p .tmp

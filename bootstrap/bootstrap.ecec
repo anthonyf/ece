@@ -94892,7 +94892,7 @@ Usage: (if (save-continuation! \"save.dat\") 'saved 'restored)"))
  (assign env (op compiled-procedure-env) (reg proc))
  (assign env (op extend-environment) (const (unit port)) (reg argl) (reg env) (const 0))
  (assign val (const "Write a compiled unit to PORT with one instruction per line.
-Gensym labels are renamed to deterministic names."))
+Labels are currently written as-is; deterministic gensym renaming is deferred."))
  (assign proc (op make-compiled-procedure) (label L51168) (reg env))
  (goto (label L51167))
  L51168
