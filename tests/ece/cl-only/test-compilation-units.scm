@@ -53,14 +53,28 @@
 
 ;; --- 5.3 write/read round-trip ---
 
-;; KNOWN ISSUE: write-compiled-unit fails with "Unbound variable: l1" —
-;; a pre-existing bootstrap compilation bug where the compiled bytecode of
-;; write-compiled-unit references a label that isn't registered in the
-;; current space. Calling the same logic from a freshly-defined function
-;; works (see workaround: define inline, call rename-labels then
-;; write-flat-instructions). Tracked separately.
-;; (test "write-compiled-unit / read-compiled-unit round-trip" ...)
-;; (test "round-trip with definition" ...)
+(test "write-compiled-unit / read-compiled-unit round-trip" (lambda ()
+  (let ((unit (compile-form '(+ 1 2))))
+    (let ((port (open-output-file ".tmp/ece-cu-roundtrip.ecec")))
+      (write-compiled-unit unit port)
+      (close-output-port port))
+    (let ((port (open-input-file ".tmp/ece-cu-roundtrip.ecec")))
+      (let ((loaded (read-compiled-unit port)))
+        (close-input-port port)
+        (assert-true (compiled-unit? loaded))
+        (assert-equal (execute loaded) 3))))))
+
+(test "round-trip with definition" (lambda ()
+  (let ((unit (compile-form '(define cu-rt-test-var 42))))
+    (let ((port (open-output-file ".tmp/ece-cu-rt-def.ecec")))
+      (write-compiled-unit unit port)
+      (close-output-port port))
+    (let ((port (open-input-file ".tmp/ece-cu-rt-def.ecec")))
+      (let ((loaded (read-compiled-unit port)))
+        (close-input-port port)
+        (assert-true (compiled-unit? loaded))
+        (execute loaded)
+        (assert-equal cu-rt-test-var 42))))))
 
 (test "read-compiled-unit returns eof on empty" (lambda ()
   (let ((port (open-output-file ".tmp/ece-cu-empty.ecec")))

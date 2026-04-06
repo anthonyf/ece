@@ -52,10 +52,13 @@
   (assert-equal (vector-ref v 1) 20)
   (assert-equal (vector-ref v 2) 30)))
 
-;; KNOWN ISSUE: hash-table round-trip fails because CL runtime uses native
-;; CL hash tables (not tagged pairs), so serialize-value falls through to
-;; write-to-string-flat which emits (%ser/opaque). Tracked separately.
-;; (test "round-trip hash table" ...)
+(test "round-trip hash table" (lambda ()
+  (define ht (hash-table 'a 1 'b 2))
+  (test-save! ".tmp/ece-rt-ht.dat" ht)
+  (define loaded (test-load ".tmp/ece-rt-ht.dat"))
+  (assert (hash-table? loaded) "loaded should be a hash table")
+  (assert-equal (hash-ref loaded 'a) 1)
+  (assert-equal (hash-ref loaded 'b) 2)))
 
 (test "round-trip compiled procedure" (lambda ()
   (define (test-sq x) (* x x))
@@ -67,11 +70,12 @@
   (test-save! ".tmp/ece-rt-ret.dat" 42)
   (assert-equal (test-load ".tmp/ece-rt-ret.dat") 42)))
 
-;; KNOWN ISSUE: continuation round-trip fails under ece-test's parameterize
-;; isolation. The continuation captures the test runner's parameterize frames
-;; which contain CL objects (closed-over ports, test thunks) that can't be
-;; serialized. Works fine outside of ece-test (tested manually).
-;; (test "round-trip continuation" ...)
+(test "round-trip continuation" (lambda ()
+  (define k #f)
+  (%raw-call/cc (lambda (cont) (set! k cont) 0))
+  (test-save! ".tmp/ece-rt-cont.dat" k)
+  (define loaded (test-load ".tmp/ece-rt-cont.dat"))
+  (assert (continuation? loaded) "loaded should be a continuation")))
 
 (test "continuation serialization is compact" (lambda ()
   (define k #f)
@@ -108,13 +112,16 @@
   (loaded "world")
   (assert-equal (loaded) 5)))
 
-;; KNOWN ISSUE: continuation save/load tests below fail under ece-test's
-;; parameterize isolation (same issue as "round-trip continuation" above).
-;; The continuation captures the test runner's parameterize frames which
-;; include non-serializable CL objects (ports, closures). These tests pass
-;; when run outside of ece-test.
-
-;; (test "parameter in lexical scope captured by continuation" ...)
+(test "parameter in lexical scope captured by continuation" (lambda ()
+  (define p (make-parameter 10))
+  (define k #f)
+  (p 42)
+  (%raw-call/cc (lambda (cont) (set! k cont) 0))
+  (test-save! ".tmp/ece-rt-param-cont.dat" (list p k))
+  (define loaded (test-load ".tmp/ece-rt-param-cont.dat"))
+  (define loaded-p (car loaded))
+  (assert (parameter? loaded-p) "loaded should be a parameter")
+  (assert-equal (loaded-p) 42)))
 
 (test "mutated parameter survives round-trip" (lambda ()
   (define p (make-parameter 0))
@@ -154,7 +161,15 @@
   (assert-equal (loaded-odd? 1) #t)
   (assert-equal (loaded-odd? 5) #t)))
 
-;; (test "round-trip recursive define in let body via call/cc" ...)
+(test "round-trip recursive define in let body via call/cc" (lambda ()
+  (define k #f)
+  (let ()
+    (define (fact n) (if (= n 0) 1 (* n (fact (- n 1)))))
+    (%raw-call/cc (lambda (cont) (set! k cont) 0))
+    (assert-equal (fact 5) 120))
+  (test-save! ".tmp/ece-rt-rec-cont.dat" k)
+  (define loaded (test-load ".tmp/ece-rt-rec-cont.dat"))
+  (assert (continuation? loaded) "loaded should be a continuation")))
 
 (test "non-cyclic shared structure still works" (lambda ()
   ;; Verify existing non-cyclic round-trips still work
@@ -197,7 +212,24 @@
   (assert (< (string-length (serialize-value k)) 30000)
           "lexical state continuation should be compact")))
 
-;; (test "lexical state pattern: save and load preserves all state" ...)
+(test "lexical state pattern: save and load preserves all state" (lambda ()
+  (define (run-game)
+    (define room (make-parameter "kitchen"))
+    (define hp (make-parameter 100))
+    (define inventory (make-parameter '()))
+    (room "dungeon")
+    (hp 70)
+    (inventory (list "key" "torch"))
+    (define k #f)
+    (%raw-call/cc (lambda (c) (set! k c) 0))
+    (list (room) (hp) (inventory) k))
+  (define result (run-game))
+  (test-save! ".tmp/ece-rt-lexical-state.dat" result)
+  (define loaded (test-load ".tmp/ece-rt-lexical-state.dat"))
+  (assert-equal (car loaded) "dungeon")
+  (assert-equal (cadr loaded) 70)
+  (assert-equal (caddr loaded) (list "key" "torch"))
+  (assert (continuation? (cadddr loaded)))))
 
 (test "lexical state pattern: external functions work with lexical params" (lambda ()
   ;; External function receives values, not parameters
@@ -225,5 +257,25 @@
     (assert-equal (loaded) 70))
   (run-game)))
 
-;; (test "loaded continuation reverts state to save time" ...)
-;; (test "loaded continuation reverts multiple parameters" ...)
+(test "loaded continuation reverts state to save time" (lambda ()
+  (define room (make-parameter "start"))
+  (define k #f)
+  (room "cave")
+  (%raw-call/cc (lambda (c) (set! k c) 0))
+  (test-save! ".tmp/ece-rt-revert.dat" (list (room) k))
+  (define loaded (test-load ".tmp/ece-rt-revert.dat"))
+  (assert-equal (car loaded) "cave")
+  (assert (continuation? (cadr loaded)))))
+
+(test "loaded continuation reverts multiple parameters" (lambda ()
+  (define room (make-parameter "start"))
+  (define hp (make-parameter 100))
+  (define k #f)
+  (room "dungeon")
+  (hp 50)
+  (%raw-call/cc (lambda (c) (set! k c) 0))
+  (test-save! ".tmp/ece-rt-multi-revert.dat" (list (room) (hp) k))
+  (define loaded (test-load ".tmp/ece-rt-multi-revert.dat"))
+  (assert-equal (car loaded) "dungeon")
+  (assert-equal (cadr loaded) 50)
+  (assert (continuation? (caddr loaded)))))

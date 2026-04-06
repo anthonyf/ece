@@ -89,9 +89,8 @@ test: test-rove test-ece test-wasm test-conformance test-golden test-web-server 
 
 test-rove:
 	@qlot exec sbcl --disable-debugger --eval '(asdf:load-system :ece)' --eval '(asdf:load-system :ece/tests)' \
-	  --eval '(let ((suite (car (rove/core/suite/package:all-suites)))) (rove/core/suite/package:run-suite suite) (unless (zerop (slot-value (rove/core/suite::suite-stats suite) (quote rove/core/result::failed))) (uiop:quit 1)))' \
+	  --eval '(let ((passedp (funcall (find-symbol "CALL-WITH-SUITE" :rove/core/suite) (lambda () (dolist (s (funcall (find-symbol "ALL-SUITES" :rove/core/suite/package))) (funcall (find-symbol "RUN-SUITE" :rove/core/suite/package) s)))))) (unless passedp (uiop:quit 1)))' \
 	  --quit 2>&1 | tee $(TEST_OUTPUT_DIR)/test-rove.txt
-	@grep -q "tests passed" $(TEST_OUTPUT_DIR)/test-rove.txt
 
 test-ece:
 	@mkdir -p .tmp

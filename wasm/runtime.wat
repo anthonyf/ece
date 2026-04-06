@@ -4254,15 +4254,61 @@
     (if (i32.eq (local.get $id) (i32.const 84))
       (then (return (global.get $void))))
     ;; 98 = platform-has?
+    ;; Look up symbol in global env; return #t if bound to a non-stub primitive.
     (if (i32.eq (local.get $id) (i32.const 98))
-      (then (return (global.get $false))))  ;; conservative: nothing extra available
+      (then
+        (local.set $result (call $arg1 (local.get $args)))
+        (if (call $is-symbol (local.get $result))
+          (then
+            (local.set $result (call $lookup-variable-value
+              (ref.cast (ref $symbol) (local.get $result))
+              (global.get $global-env)))
+            (if (ref.is_null (local.get $result))
+              (then (return (global.get $false)))
+              (else
+                (if (call $is-primitive (local.get $result))
+                  (then
+                    ;; Exclude known stubs: try-eval (90) returns void on WASM,
+                    ;; open-input/output-file (100/101) use localStorage (not real FS)
+                    (local.set $id (struct.get $primitive $id
+                          (ref.cast (ref $primitive) (local.get $result))))
+                    (if (i32.or (i32.eq (local.get $id) (i32.const 90))
+                          (i32.or (i32.eq (local.get $id) (i32.const 100))
+                                  (i32.eq (local.get $id) (i32.const 101))))
+                      (then (return (global.get $false)))
+                      (else (return (global.get $true))))))
+                (return (global.get $false))))))
+        (return (global.get $false))))
     ;; 114 = parameter?
     (if (i32.eq (local.get $id) (i32.const 114))
       (then (return (if (result (ref null eq)) (call $is-parameter (call $arg1 (local.get $args)))
         (then (global.get $true)) (else (global.get $false))))))
     ;; 137 = keyword?
+    ;; Check if value is a symbol whose name starts with ":" or "|:" (CL pipe-escaping).
+    ;; ECE keywords like :foo are interned as ":foo" on CL but "|:foo|" on WASM
+    ;; because CL's write-to-string-flat adds pipe escaping for colon-prefixed names.
     (if (i32.eq (local.get $id) (i32.const 137))
-      (then (return (global.get $false))))  ;; stub
+      (then
+        (local.set $result (call $arg1 (local.get $args)))
+        (if (call $is-symbol (local.get $result))
+          (then
+            (if (i32.gt_u (array.len (struct.get $symbol $name
+                  (ref.cast (ref $symbol) (local.get $result)))) (i32.const 1))
+              (then
+                ;; Check for ":" prefix (native ECE) or "|:" prefix (CL pipe-escaped)
+                (if (i32.eq (array.get_u $string (struct.get $symbol $name
+                      (ref.cast (ref $symbol) (local.get $result))) (i32.const 0)) (i32.const 58))  ;; ':'
+                  (then (return (global.get $true))))
+                (if (i32.and
+                      (i32.gt_u (array.len (struct.get $symbol $name
+                            (ref.cast (ref $symbol) (local.get $result)))) (i32.const 2))
+                      (i32.eq (array.get_u $string (struct.get $symbol $name
+                            (ref.cast (ref $symbol) (local.get $result))) (i32.const 0)) (i32.const 124)))  ;; '|'
+                  (then
+                    (if (i32.eq (array.get_u $string (struct.get $symbol $name
+                          (ref.cast (ref $symbol) (local.get $result))) (i32.const 1)) (i32.const 58))  ;; ':'
+                      (then (return (global.get $true))))))))))
+        (return (global.get $false))))
 
     ;; --- Integer rounding primitives ---
 
