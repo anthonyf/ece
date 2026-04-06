@@ -93,7 +93,7 @@ test-rove:
 	  --quit 2>&1 | tee $(TEST_OUTPUT_DIR)/test-rove.txt
 	@grep -q "tests passed" $(TEST_OUTPUT_DIR)/test-rove.txt
 
-test-ece: ece
+test-ece: bin/ece
 	@mkdir -p .tmp
 	@bin/ece-test tests/ece/common tests/ece/cl-only 2>&1 | tee $(TEST_OUTPUT_DIR)/test-ece.txt
 	@grep -q "0 failed" $(TEST_OUTPUT_DIR)/test-ece.txt
