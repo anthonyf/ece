@@ -93,7 +93,7 @@ test-rove:
 	  --quit 2>&1 | tee $(TEST_OUTPUT_DIR)/test-rove.txt'
 
 test-ece:
-	@mkdir -p .tmp
+	@mkdir -p .tmp $(TEST_OUTPUT_DIR)
 	@qlot exec sbcl --dynamic-space-size 4096 --disable-debugger \
 	  --eval '(asdf:load-system :ece)' \
 	  --eval '(ece:evaluate (list (quote load) "src/sdk-lib.scm"))' \
@@ -104,6 +104,7 @@ test-ece:
 	@grep -q "0 failed" $(TEST_OUTPUT_DIR)/test-ece.txt
 
 test-conformance:
+	@mkdir -p $(TEST_OUTPUT_DIR)
 	@qlot exec sbcl --dynamic-space-size 4096 --disable-debugger --eval '(asdf:load-system :ece)' \
 	  --eval '(handler-case (ece:evaluate (list (quote load) "tests/conformance/run-conformance.scm")) (error (c) (format t "Error: ~A~%" c) (sb-ext:exit :code 1)))' \
 	  --eval '(let ((f (ece::lookup-variable-value (intern "*conformance-failures*" :ece) ece::*global-env*))) (format t "~%~D conformance failures~%" f) (when (> f 0) (sb-ext:exit :code 1)))' \
@@ -112,7 +113,7 @@ test-conformance:
 	@! grep -q "[1-9][0-9]* failed" $(TEST_OUTPUT_DIR)/test-conformance.txt
 
 test-wasm: wasm
-	@mkdir -p .tmp
+	@mkdir -p .tmp $(TEST_OUTPUT_DIR)
 	@echo "Compiling WASM test suite..."
 	@cat $(WASM_TEST_SRCS) > .tmp/ece-wasm-tests.scm
 	@qlot exec sbcl --disable-debugger --eval '(asdf:load-system :ece)' \
