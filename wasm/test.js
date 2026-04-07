@@ -217,10 +217,10 @@ async function run() {
   }
   const mem = new Uint16Array(w.memory.buffer);
   for (let i = 0; i < bundleText.length; i++) mem[i] = bundleText.charCodeAt(i);
-  // Load first 5 sections: prelude, compiler, reader, assembler, compilation-unit
+  // Load first 6 sections: boot-env, prelude, compiler, reader, assembler, compilation-unit
   let spaceId = w.load_ecec(0, bundleText.length);
   w.run(spaceId, 0, envH);
-  for (let s = 1; s < 5 && w.ecec_has_more(); s++) {
+  for (let s = 1; s < 6 && w.ecec_has_more(); s++) {
     spaceId = w.load_ecec_continue();
     w.run(spaceId, 0, envH);
   }

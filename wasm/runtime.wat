@@ -5149,6 +5149,65 @@
     (if (i32.eq (local.get $id) (i32.const 195))
       (then (return (global.get $void))))
 
+    ;; 222 = %register-primitive!(name-sym, id-fixnum) — create primitive, define in global env
+    (if (i32.eq (local.get $id) (i32.const 222))
+      (then
+        (call $define-variable!
+          (ref.cast (ref $symbol) (call $arg1 (local.get $args)))
+          (call $make-primitive
+            (call $fixnum-value (ref.cast (ref i31) (call $arg2 (local.get $args)))))
+          (global.get $global-env))
+        (return (global.get $void))))
+
+    ;; 223 = %init-asm-syms(count-fixnum) — allocate assembler symbol ID array
+    (if (i32.eq (local.get $id) (i32.const 223))
+      (then
+        (global.set $asm-sym-ids
+          (array.new_default $i32-array
+            (call $fixnum-value (ref.cast (ref i31) (call $arg1 (local.get $args))))))
+        (return (global.get $void))))
+
+    ;; 224 = %store-asm-sym(slot-fixnum, name-sym) — store symbol ID at slot
+    (if (i32.eq (local.get $id) (i32.const 224))
+      (then
+        (array.set $i32-array
+          (ref.as_non_null (global.get $asm-sym-ids))
+          (call $fixnum-value (ref.cast (ref i31) (call $arg1 (local.get $args))))
+          (struct.get $symbol $id
+            (ref.cast (ref $symbol) (call $arg2 (local.get $args)))))
+        (return (global.get $void))))
+
+    ;; 225 = %set-continuation-syms!(do-winds-sym, winding-stack-sym)
+    (if (i32.eq (local.get $id) (i32.const 225))
+      (then
+        (global.set $do-winds-sym
+          (ref.cast (ref $symbol) (call $arg1 (local.get $args))))
+        (global.set $winding-stack-sym
+          (ref.cast (ref $symbol) (call $arg2 (local.get $args))))
+        (return (global.get $void))))
+
+    ;; 226 = %set-error-sym!(error-sym)
+    (if (i32.eq (local.get $id) (i32.const 226))
+      (then
+        (global.set $error-sym
+          (ref.cast (ref $symbol) (call $arg1 (local.get $args))))
+        (return (global.get $void))))
+
+    ;; 227 = %create-repl-space!(name-sym, size-fixnum) — create and set current space
+    (if (i32.eq (local.get $id) (i32.const 227))
+      (then
+        (call $register-space
+          (struct.new $comp-space
+            (ref.cast (ref $symbol) (call $arg1 (local.get $args)))
+            (array.new_default $instr-vec
+              (call $fixnum-value (ref.cast (ref i31) (call $arg2 (local.get $args)))))
+            (i32.const 0)
+            (ref.null eq)))
+        (global.set $current-space-id
+          (struct.get $symbol $id
+            (ref.cast (ref $symbol) (call $arg1 (local.get $args)))))
+        (return (global.get $void))))
+
     ;; Unknown primitive — return void
     (global.get $void)
   )

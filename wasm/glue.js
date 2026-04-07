@@ -361,39 +361,41 @@ const ECE = {
     return instance;
   },
 
-  // Build global environment with all primitives
+  // Build global environment — boot-env.ecec handles primitive registration,
+  // continuation/error caching, and REPL space creation.
+  // Assembler symbol table must be initialized here (before any .ecec loading)
+  // because the WAT ecec text loader uses it to resolve instruction symbols.
   buildGlobalEnv() {
     const w = ECE.wasm;
     const envHandle = w.build_global_env(0);
 
-    // Register ALL primitives from primitives.def
-    // Core (0-99) + CL-compat stubs
-    // Generated from primitives.def — do not edit by hand.
-    // Regenerate with: bash scripts/gen-primitives-json.sh
-    const prims = require("./primitives.json");
-
-    for (const [id, name] of prims) {
-      const nameSym = ECE.internSym(name);
-      const primHandle = w.h_primitive(id);
-      w.env_define(envHandle, nameSym, primHandle);
-    }
-
-    // Allocate singleton handles that we'll cache for instruction building
+    // Cache singleton handles for JS-side use
     ECE._hNil   = w.h_nil();
     ECE._hTrue  = w.h_true();
     ECE._hFalse = w.h_false();
     ECE._hEof   = w.h_eof();
     ECE._hVoid  = w.h_void();
 
-    // Also define #t, #f, nil as variables
+    // Pre-register boot-registration primitives so boot-env.ecec can call them
+    w.env_define(envHandle, ECE.internSym("%register-primitive!"), w.h_primitive(222));
+    w.env_define(envHandle, ECE.internSym("%init-asm-syms"), w.h_primitive(223));
+    w.env_define(envHandle, ECE.internSym("%store-asm-sym"), w.h_primitive(224));
+    w.env_define(envHandle, ECE.internSym("%set-continuation-syms!"), w.h_primitive(225));
+    w.env_define(envHandle, ECE.internSym("%set-error-sym!"), w.h_primitive(226));
+    w.env_define(envHandle, ECE.internSym("%create-repl-space!"), w.h_primitive(227));
+
+    // Initialize assembler symbol table — required by the WAT ecec text loader
+    // before any .ecec files can be parsed. boot-env.ecec will re-initialize
+    // this (idempotently) so the .def files remain the single source of truth.
+    ECE.initAssemblerSymbols();
+
+    // Define #t and #f — can't be done in boot-env.ecec because the ecec
+    // text format can't distinguish (const #t) as value vs symbol name
     w.env_define(envHandle, ECE.internSym("#t"), ECE._hTrue);
     w.env_define(envHandle, ECE.internSym("#f"), ECE._hFalse);
 
-    // Mark permanent handles (env, symbols, primitives, singletons)
+    // Mark permanent handles (env, symbols, singletons)
     w.mark_handles();
-
-    // Initialize assembler symbol table for runtime compilation
-    ECE.initAssemblerSymbols();
 
     // Store global env for execute-from-pc
     w.set_global_env(envHandle);
@@ -402,59 +404,26 @@ const ECE = {
     // in flat .ecec files can look it up during execution
     w.env_define(envHandle, ECE.internSym("*global-env*"), envHandle);
 
-    // Cache symbols for continuation winding support
-    w.set_do_winds_sym(ECE.internSym("do-winds!"));
-    w.set_winding_stack_sym(ECE.internSym("*winding-stack*"));
-
-    // Cache error symbol for primitive type-error bridging
-    w.set_error_sym(ECE.internSym("error"));
-
-    // Create default compilation space for REPL/eval
-    const replSym = ECE.internSym("repl");
-    w.create_space(replSym, 524288);
-    w.set_current_space(w.sym_id(replSym));
-
     return envHandle;
   },
 
-  // Initialize assembler symbol ID table for runtime instruction conversion
+  // Initialize assembler symbol ID table — required by WAT ecec text loader.
   initAssemblerSymbols() {
     const w = ECE.wasm;
     const names = [
-      // 0-6: instruction types
       'assign', 'test', 'branch', 'goto', 'save', 'restore', 'perform',
-      // 7-12: register names
       'val', 'env', 'proc', 'argl', 'continue', 'stack',
-      // 13-16: source/dest types
       'const', 'reg', 'label', 'op',
-      // 17-43: operation names from operations.def (op-id = slot - 17)
-      'lookup-variable-value',       // 17 → op 0
-      'lookup-global-variable',      // 18 → op 1
-      'set-variable-value!',         // 19 → op 2
-      'define-variable!',            // 20 → op 3
-      'extend-environment',          // 21 → op 4
-      'lexical-ref',                 // 22 → op 5
-      'lexical-set!',                // 23 → op 6
-      'make-compiled-procedure',     // 24 → op 7
-      'compiled-procedure-entry',    // 25 → op 8
-      'compiled-procedure-env',      // 26 → op 9
-      'primitive-procedure?',        // 27 → op 10
-      'continuation?',               // 28 → op 11
-      'parameter?',                  // 29 → op 12
-      'apply-primitive-procedure',   // 30 → op 13
-      'apply-parameter',             // 31 → op 14
-      'parameter-ref',               // 32 → op 15
-      'parameter-set!',              // 33 → op 16
-      'parameter-raw-set!',          // 34 → op 17
-      'capture-continuation',        // 35 → op 18
-      'do-continuation-winds',       // 36 → op 19
-      'continuation-stack',          // 37 → op 20
-      'continuation-conts',          // 38 → op 21
-      'false?',                      // 39 → op 22
-      'list',                        // 40 → op 23
-      'cons',                        // 41 → op 24
-      'car',                         // 42 → op 25
-      'cdr',                         // 43 → op 26
+      'lookup-variable-value', 'lookup-global-variable',
+      'set-variable-value!', 'define-variable!', 'extend-environment',
+      'lexical-ref', 'lexical-set!',
+      'make-compiled-procedure', 'compiled-procedure-entry', 'compiled-procedure-env',
+      'primitive-procedure?', 'continuation?', 'parameter?',
+      'apply-primitive-procedure', 'apply-parameter',
+      'parameter-ref', 'parameter-set!', 'parameter-raw-set!',
+      'capture-continuation', 'do-continuation-winds',
+      'continuation-stack', 'continuation-conts',
+      'false?', 'list', 'cons', 'car', 'cdr',
     ];
     w.init_asm_syms(names.length);
     for (let i = 0; i < names.length; i++) {

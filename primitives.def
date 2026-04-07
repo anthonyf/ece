@@ -303,4 +303,15 @@
 (219 %js-null?             1  browser "Check for null/undefined js-ref")
 (220 %js-release!          1  browser "Free a JS handle")
 (221 %js-ref?              1  browser "Type predicate for js-ref values")
-(165 %make-primitive           1  core   "Construct primitive from numeric ID")
+
+;;; ═══════════════════════════════════════════════════════════════════════
+;;; BOOT REGISTRATION PRIMITIVES — Called from boot-env.ecec to initialize
+;;; environment. No-ops on CL (already handled by init-primitive-dispatch-tables).
+;;; ═══════════════════════════════════════════════════════════════════════
+
+(222 %register-primitive!    2  core   "Register primitive by symbol name and numeric ID in global env")
+(223 %init-asm-syms          1  core   "Allocate assembler symbol ID array of given size")
+(224 %store-asm-sym          2  core   "Store symbol at slot in assembler symbol ID array")
+(225 %set-continuation-syms! 2  core   "Cache do-winds! and *winding-stack* symbols for continuations")
+(226 %set-error-sym!         1  core   "Cache error symbol for primitive type-error bridging")
+(227 %create-repl-space!     2  core   "Create and activate default REPL compilation space")
