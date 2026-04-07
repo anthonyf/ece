@@ -57,12 +57,27 @@
           lst
           (member x (cdr lst)))))
 
+(define (memq x lst)
+  (if (null? lst) #f
+      (if (eq? x (car lst)) lst
+          (memq x (cdr lst)))))
+
 (define (assoc key alist)
   (if (null? alist)
       #f
       (if (equal? key (car (car alist)))
           (car alist)
           (assoc key (cdr alist)))))
+
+(define (assq key alist)
+  (if (null? alist) #f
+      (if (eq? key (car (car alist))) (car alist)
+          (assq key (cdr alist)))))
+
+(define (list? x)
+  (if (null? x) #t
+      (if (pair? x) (list? (cdr x))
+          #f)))
 
 ;; ---- Integer arithmetic ----
 ;; quotient/remainder use truncation (toward zero).

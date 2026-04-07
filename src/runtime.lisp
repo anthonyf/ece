@@ -1180,6 +1180,11 @@ Uses a synonym stream so that dynamic rebindings of *standard-input* are honored
 (defun ece-primitive? (x)
   (scheme-bool (primitive-procedure-p x)))
 
+(defun ece-procedure? (x)
+  (scheme-bool (or (compiled-procedure-p x)
+                   (primitive-procedure-p x)
+                   (continuation-p x))))
+
 (defun ece-parameter? (x)
   "ECE-accessible: test if X is a parameter."
   (scheme-bool (parameter-p x)))

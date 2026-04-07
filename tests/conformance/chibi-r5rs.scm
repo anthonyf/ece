@@ -6,30 +6,6 @@
 ;;; - Skipped tests using unsupported features
 ;;; - Skipped tests that trigger compile-time crashes (to be investigated)
 
-;;; --- R5RS shims ---
-
-(define (memq x lst)
-  (cond ((null? lst) #f)
-        ((eq? x (car lst)) lst)
-        (else (memq x (cdr lst)))))
-
-(define (list? x)
-  (cond ((null? x) #t)
-        ((not (pair? x)) #f)
-        (else (list? (cdr x)))))
-
-(define (assq key alist)
-  (cond ((null? alist) #f)
-        ((eq? key (car (car alist))) (car alist))
-        (else (assq key (cdr alist)))))
-
-(define %primitive-tag (car +))
-(define %continuation-tag (car (call/cc (lambda (k) k))))
-(define (procedure? x)
-  (or (compiled-procedure? x)
-      (and (pair? x) (eq? (car x) %primitive-tag))
-      (and (pair? x) (eq? (car x) %continuation-tag))))
-
 ;;; --- Test Framework (adapted) ---
 
 (define *tests-run* 0)

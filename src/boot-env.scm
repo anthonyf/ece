@@ -182,6 +182,7 @@
 (%register-primitive! 'compiled-procedure? 155)
 (%register-primitive! 'continuation? 156)
 (%register-primitive! 'primitive? 157)
+(%register-primitive! 'procedure? 228)
 (%register-primitive! 'compiled-procedure-entry 158)
 (%register-primitive! 'compiled-procedure-env 159)
 (%register-primitive! 'continuation-stack 160)
