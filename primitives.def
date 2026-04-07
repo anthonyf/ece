@@ -226,6 +226,7 @@
 (155 compiled-procedure?       1  core   "Test if value is a compiled procedure")
 (156 continuation?             1  core   "Test if value is a continuation")
 (157 primitive?                1  core   "Test if value is a primitive procedure")
+(228 procedure?                1  core   "Test if value is any callable procedure")
 (158 compiled-procedure-entry  1  core   "Get entry address of compiled procedure")
 (159 compiled-procedure-env    1  core   "Get captured environment of compiled procedure")
 (160 continuation-stack        1  core   "Get saved stack from continuation")

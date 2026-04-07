@@ -11,14 +11,6 @@
 ;;; - string->symbol case sensitivity
 ;;; - First-class continuations
 
-;; R5RS shim: procedure? (needed by tests 1.2)
-(define %primitive-tag (car +))
-(define %continuation-tag (car (call/cc (lambda (k) k))))
-(define (procedure? x)
-  (or (compiled-procedure? x)
-      (and (pair? x) (eq? (car x) %primitive-tag))
-      (and (pair? x) (eq? (car x) %continuation-tag))))
-
 ;; 3.1 now passes — %global-ref wraps free template vars for referential hygiene
 
 ;; eqv? now available (PR #59)
