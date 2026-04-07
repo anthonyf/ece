@@ -4837,6 +4837,16 @@
       (then (return (if (result (ref null eq)) (call $is-primitive (call $arg1 (local.get $args)))
         (then (global.get $true)) (else (global.get $false))))))
 
+    ;; 228 = procedure?(val) — any callable (compiled, primitive, or continuation)
+    (if (i32.eq (local.get $id) (i32.const 228))
+      (then
+        (local.set $result (call $arg1 (local.get $args)))
+        (return (if (result (ref null eq))
+          (i32.or (i32.or (call $is-compiled-proc (local.get $result))
+                          (call $is-primitive (local.get $result)))
+                  (call $is-continuation (local.get $result)))
+          (then (global.get $true)) (else (global.get $false))))))
+
     ;; 158 = compiled-procedure-entry(proc) → (space-id . pc) pair
     (if (i32.eq (local.get $id) (i32.const 158))
       (then
