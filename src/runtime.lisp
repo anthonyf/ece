@@ -272,12 +272,9 @@
   "Format a procedure value for display in errors.
 Includes source location if available."
   (cond
-    ((and (listp proc) (eq (car proc) '|compiled-procedure|))
-     (let* ((entry (cadr proc))
-            (name (or (gethash entry *procedure-name-table*)
-                      ;; Backward compat: try bare local-pc if entry is qualified
-                      (when (consp entry)
-                        (gethash (cdr entry) *procedure-name-table*))))
+    ((compiled-procedure-p proc)
+     (let* ((entry (compiled-procedure-entry proc))
+            (name (procedure-name proc))
             (loc (when (consp entry)
                    (resolve-ece-source-location (car entry) (cdr entry)))))
        (cond
@@ -285,8 +282,8 @@ Includes source location if available."
           (format nil "~A (~A:~D:~D)" name (car loc) (cadr loc) (caddr loc)))
          (name (format nil "~A" name))
          (t (format nil "<compiled-procedure entry=~A>" entry)))))
-    ((and (listp proc) (eq (car proc) '|primitive|))
-     (let ((id-or-name (cadr proc)))
+    ((primitive-procedure-p proc)
+     (let ((id-or-name (primitive-procedure-id proc)))
        (if (integerp id-or-name)
            (format nil "<primitive ~A>" (aref *primitive-name-table* id-or-name))
            (format nil "<primitive ~A>" id-or-name))))
@@ -315,10 +312,7 @@ a nearby proc gives a named frame; a lone continue gives an anonymous frame."
         (return))
       (cond
         ;; A compiled-procedure or primitive on the stack is likely a saved proc
-        ((and (listp item)
-              (consp item)
-              (or (eq (car item) '|compiled-procedure|)
-                  (eq (car item) '|primitive|)))
+        ((or (compiled-procedure-p item) (primitive-procedure-p item))
          (setf last-proc item))
         ;; An integer or qualified address on the stack is likely a saved continue
         ((or (integerp item) (qualified-address-p item))
@@ -1129,16 +1123,63 @@ Uses a synonym stream so that dynamic rebindings of *standard-input* are honored
 ;;; Primitive dispatch is now convention-based via resolve-cl-primitive.
 ;;; No manual wrapper list needed — functions named ece-<name> resolve automatically.
 
-;;; --- Type introspection primitives ---
+;;; --- CL-internal type predicates and accessors ---
+;;; Return CL booleans. Used by executor and dispatch code.
+;;; ECE-facing predicates (below) delegate to these.
+
+(defun compiled-procedure-p (proc)
+  (and (listp proc) (eq (car proc) '|compiled-procedure|)))
+
+(defun compiled-procedure-entry (proc)
+  (cadr proc))
+
+(defun compiled-procedure-env (proc)
+  (caddr proc))
+
+(defun primitive-procedure-p (proc)
+  (and (listp proc) (eq (car proc) '|primitive|)))
+
+(defun primitive-procedure-id (proc)
+  (cadr proc))
+
+(defun continuation-p (cont)
+  (and (listp cont) (eq (car cont) '|continuation|)))
+
+(defun continuation-stack (cont)
+  (cadr cont))
+
+(defun continuation-conts (cont)
+  (caddr cont))
+
+(defun parameter-p (proc)
+  "Test if PROC is a parameter object: (parameter (<value> . <converter>))"
+  (and (listp proc) (eq (car proc) 'parameter)))
+
+(defun parameter-cell (param)
+  (cadr param))
+
+(defun procedure-name (proc)
+  "Look up a compiled procedure's name from *procedure-name-table*."
+  (let ((entry (compiled-procedure-entry proc)))
+    (or (gethash entry *procedure-name-table*)
+        (when (consp entry)
+          (gethash (cdr entry) *procedure-name-table*)))))
+
+;;; --- Type introspection primitives (ECE-facing) ---
+;;; Return Scheme booleans. Exposed as ECE primitives.
 
 (defun ece-compiled-procedure? (x)
-  (scheme-bool (and (listp x) (eq (car x) '|compiled-procedure|))))
+  (scheme-bool (compiled-procedure-p x)))
 
 (defun ece-continuation? (x)
-  (scheme-bool (and (listp x) (eq (car x) '|continuation|))))
+  (scheme-bool (continuation-p x)))
 
 (defun ece-primitive? (x)
-  (scheme-bool (and (listp x) (eq (car x) '|primitive|))))
+  (scheme-bool (primitive-procedure-p x)))
+
+(defun ece-parameter? (x)
+  "ECE-accessible: test if X is a parameter."
+  (scheme-bool (parameter-p x)))
 
 (defun ece-compiled-procedure-entry (proc)
   (cadr proc))
@@ -1285,11 +1326,11 @@ so INIT is already converted. We just store it with the converter."
 
 (defun parameter-ref (param)
   "Read the current value of a parameter."
-  (car (cadr param)))
+  (car (parameter-cell param)))
 
 (defun parameter-set! (param new-val)
   "Set a parameter's value, applying converter if present. Returns old value."
-  (let* ((cell (cadr param))
+  (let* ((cell (parameter-cell param))
          (old (car cell))
          (converter (cdr cell)))
     (setf (car cell)
@@ -1301,7 +1342,7 @@ so INIT is already converted. We just store it with the converter."
 
 (defun parameter-raw-set! (param new-val)
   "Set a parameter's value without applying converter. Returns old value."
-  (let* ((cell (cadr param))
+  (let* ((cell (parameter-cell param))
          (old (car cell)))
     (setf (car cell) new-val)
     old))
@@ -1320,15 +1361,6 @@ so INIT is already converted. We just store it with the converter."
         (if (consp entry) entry
             (cons *executing-space-id* entry))
         env))
-
-(defun compiled-procedure-p (proc)
-  (and (listp proc) (eq (car proc) '|compiled-procedure|)))
-
-(defun compiled-procedure-entry (proc)
-  (cadr proc))
-
-(defun compiled-procedure-env (proc)
-  (caddr proc))
 
 ;;; Space-qualified address helpers
 ;;; A qualified address is (space-id . local-pc).
@@ -1355,19 +1387,6 @@ for backward compat with old images."
   "Create a space-qualified address."
   (cons space-id local-pc))
 
-;;; Predicate helpers for executor operations
-
-(defun primitive-procedure-p (proc)
-  (and (listp proc) (eq (car proc) '|primitive|)))
-
-(defun parameter-p (proc)
-  "Test if PROC is a parameter object: (parameter (<value> . <converter>))"
-  (and (listp proc) (eq (car proc) 'parameter)))
-
-(defun ece-parameter? (x)
-  "ECE-accessible: test if X is a parameter."
-  (scheme-bool (parameter-p x)))
-
 ;;; Error sentinel — returned by apply-primitive-procedure when CL signals
 ;;; a type-error or division-by-zero, so the executor can bridge to ECE's raise.
 (defstruct ece-error-sentinel message irritants)
@@ -1377,7 +1396,7 @@ for backward compat with old images."
   ;; parameter? branch), handle it directly.
   (when (parameter-p proc)
     (return-from apply-primitive-procedure (apply-parameter proc argl)))
-  (let ((id-or-name (cadr proc)))
+  (let ((id-or-name (primitive-procedure-id proc)))
     (if (symbolp id-or-name)
         ;; Symbol-based dispatch: legacy parameters via *parameter-table*,
         ;; or trace wrappers via symbol-function.
@@ -1428,15 +1447,6 @@ for backward compat with old images."
 
 ;;; Continuation helpers for compiled code
 
-(defun continuation-p (cont)
-  (and (listp cont) (eq (car cont) '|continuation|)))
-
-(defun continuation-stack (cont)
-  (cadr cont))
-
-(defun continuation-conts (cont)
-  (caddr cont))
-
 (defun cl-winding-stack ()
   "Read the ECE *winding-stack* variable. Returns nil during cold boot."
   (ignore-errors
@@ -1452,7 +1462,7 @@ for backward compat with old images."
 (defun do-continuation-winds (cont)
   "If the continuation's saved winding stack differs from the current one,
 call do-winds! to transition. Uses nested execute-compiled-call."
-  (let* ((target-winds (cadddr cont))
+  (let* ((target-winds (ece-continuation-winds cont))
          (current-winds (or (cl-winding-stack) nil)))
     (when (and (not (eq current-winds target-winds))
                (not (and (null current-winds) (null target-winds))))
