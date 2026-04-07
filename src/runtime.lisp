@@ -660,7 +660,7 @@ Tries: override table → ece-<name> in ECE package → <name> in CL package →
     ((scheme-false-p obj) (write-string "#f" stream))
     ((eq obj t) (write-string "#t" stream))
     ((null obj) (write-string "()" stream))
-    ((and (listp obj) (member (car obj) '(compiled-procedure primitive)))
+    ((or (compiled-procedure-p obj) (primitive-procedure-p obj))
      (princ (format-ece-proc obj) stream))
     ((hash-table-p obj)
      (format-ece-hash-table obj stream
