@@ -75,7 +75,7 @@ export ASDF_OUTPUT_TRANSLATIONS = (:output-translations ("$(CURDIR)/" "$(CURDIR)
 WASM_TEST_SRCS := src/ece-unit.scm $(wildcard tests/ece/common/test-*.scm) wasm/wasm-test-runner.scm
 
 # Temp dir for test output capture
-TEST_OUTPUT_DIR := $(shell mktemp -d)
+TEST_OUTPUT_DIR := .tmp/test-output
 
 BOOTSTRAP_DIR := bootstrap
 BOOTSTRAP_SRCS := src/boot-env.scm src/prelude.scm src/compiler.scm src/reader.scm src/assembler.scm src/compilation-unit.scm src/syntax-rules.scm src/browser-lib.scm
@@ -87,12 +87,13 @@ test: test-rove test-ece test-wasm test-conformance test-golden test-web-server 
 # Note: rove:run doesn't discover suites from FASL-cached files, so we use
 # call-with-suite/all-suites/run-suite which work after asdf:load-system.
 test-rove:
+	@mkdir -p $(TEST_OUTPUT_DIR)
 	@bash -o pipefail -c 'qlot exec sbcl --disable-debugger --eval "(asdf:load-system :ece)" --eval "(asdf:load-system :ece/tests)" \
 	  --eval "(let ((passedp (funcall (find-symbol \"CALL-WITH-SUITE\" :rove/core/suite) (lambda () (dolist (s (funcall (find-symbol \"ALL-SUITES\" :rove/core/suite/package))) (funcall (find-symbol \"RUN-SUITE\" :rove/core/suite/package) s)))))) (unless passedp (uiop:quit 1)))" \
 	  --quit 2>&1 | tee $(TEST_OUTPUT_DIR)/test-rove.txt'
 
 test-ece:
-	@mkdir -p .tmp
+	@mkdir -p .tmp $(TEST_OUTPUT_DIR)
 	@qlot exec sbcl --dynamic-space-size 4096 --disable-debugger \
 	  --eval '(asdf:load-system :ece)' \
 	  --eval '(ece:evaluate (list (quote load) "src/sdk-lib.scm"))' \
@@ -103,6 +104,7 @@ test-ece:
 	@grep -q "0 failed" $(TEST_OUTPUT_DIR)/test-ece.txt
 
 test-conformance:
+	@mkdir -p $(TEST_OUTPUT_DIR)
 	@qlot exec sbcl --dynamic-space-size 4096 --disable-debugger --eval '(asdf:load-system :ece)' \
 	  --eval '(handler-case (ece:evaluate (list (quote load) "tests/conformance/run-conformance.scm")) (error (c) (format t "Error: ~A~%" c) (sb-ext:exit :code 1)))' \
 	  --eval '(let ((f (ece::lookup-variable-value (intern "*conformance-failures*" :ece) ece::*global-env*))) (format t "~%~D conformance failures~%" f) (when (> f 0) (sb-ext:exit :code 1)))' \
@@ -111,7 +113,7 @@ test-conformance:
 	@! grep -q "[1-9][0-9]* failed" $(TEST_OUTPUT_DIR)/test-conformance.txt
 
 test-wasm: wasm
-	@mkdir -p .tmp
+	@mkdir -p .tmp $(TEST_OUTPUT_DIR)
 	@echo "Compiling WASM test suite..."
 	@cat $(WASM_TEST_SRCS) > .tmp/ece-wasm-tests.scm
 	@qlot exec sbcl --disable-debugger --eval '(asdf:load-system :ece)' \
@@ -246,8 +248,7 @@ wasm: wasm/runtime.wasm
 wasm/runtime.wasm: wasm/runtime.wat
 	wasm-as --enable-gc --enable-reference-types wasm/runtime.wat -o wasm/runtime.wasm
 
-run:
-	qlot exec sbcl --load ece.asd --eval '(asdf:load-system :ece)' --eval '(ece:repl)'
+run: repl
 
 ROOT_DIR := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
 LISP_FILES := $(wildcard src/*.lisp) $(wildcard tests/*.lisp) ece.asd
@@ -278,5 +279,4 @@ setup:
 clean:
 	rm -rf .fasl-cache/
 
-clean-fasl:
-	rm -rf .fasl-cache/
+clean-fasl: clean
