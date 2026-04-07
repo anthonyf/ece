@@ -2159,24 +2159,11 @@ for use as an ECE primitive."
   (setf (gethash name *compile-time-macros*) def)
   def)
 
-;;; Parameter objects (R7RS / SRFI-39)
-;;; New-style: (parameter (<value> . <converter>)) in the ECE environment.
-;;; Legacy: (primitive PARAMN) via *parameter-table* — kept for bootstrap
-;;; transition from old .ecec files. The wrapper-primitives maps make-parameter
-;;; to the legacy version during first bootstrap. After rebuild with new
-;;; compiler (which has parameter? dispatch), switch to new version.
+;;; Symbol-keyed dispatch table used by apply-primitive-procedure for
+;;; legacy (primitive SYMNAME) forms. Kept empty — no new entries are
+;;; created, but the lookup path in apply-primitive-procedure still
+;;; references it.
 (defvar *parameter-table* (make-hash-table :test 'eq))
-(defvar *parameter-counter* 0)
-
-(defun ece-make-parameter-legacy (init &optional converter)
-  "Legacy make-parameter: creates (primitive PARAMN) with *parameter-table* dispatch."
-  (let* ((converted-init (if (and converter (not (null converter))
-                                  (not (scheme-false-p converter)))
-                             (apply-ece-procedure converter (list init))
-                             init))
-         (name (intern (format nil "PARAM~D" (incf *parameter-counter*)) :ece)))
-    (setf (gethash name *parameter-table*) (cons converted-init converter))
-    (list '|primitive| name)))
 
 (defun mc-eval (expr &optional (env nil env-supplied-p))
   "Evaluate EXPR using the metacircular compiler from the global env.
