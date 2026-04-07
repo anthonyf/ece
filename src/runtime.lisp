@@ -663,6 +663,7 @@ Tries: override table → ece-<name> in ECE package → <name> in CL package →
     ((or (compiled-procedure-p obj) (primitive-procedure-p obj))
      (princ (format-ece-proc obj) stream))
     ((hash-table-p obj)
+     ;; TODO: self-referential hash tables will cause infinite recursion here
      (format-ece-hash-table obj stream
                             (lambda (v s) (ece-output-to-stream v s print-fn))))
     (t (let ((*print-circle* t)) (funcall print-fn obj stream)))))
