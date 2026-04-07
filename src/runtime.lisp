@@ -1151,6 +1151,9 @@ Uses a synonym stream so that dynamic rebindings of *standard-input* are honored
 (defun continuation-conts (cont)
   (caddr cont))
 
+(defun continuation-winds (cont)
+  (cadddr cont))
+
 (defun parameter-p (proc)
   "Test if PROC is a parameter object: (parameter (<value> . <converter>))"
   (and (listp proc) (eq (car proc) 'parameter)))
@@ -1203,7 +1206,7 @@ Uses a synonym stream so that dynamic rebindings of *standard-input* are honored
   (list '|continuation| stack conts winds))
 
 (defun ece-continuation-winds (k)
-  (cadddr k))
+  (continuation-winds k))
 
 (defun ece-%make-primitive (id)
   (list '|primitive| id))
@@ -1462,7 +1465,7 @@ for backward compat with old images."
 (defun do-continuation-winds (cont)
   "If the continuation's saved winding stack differs from the current one,
 call do-winds! to transition. Uses nested execute-compiled-call."
-  (let* ((target-winds (ece-continuation-winds cont))
+  (let* ((target-winds (continuation-winds cont))
          (current-winds (or (cl-winding-stack) nil)))
     (when (and (not (eq current-winds target-winds))
                (not (and (null current-winds) (null target-winds))))
