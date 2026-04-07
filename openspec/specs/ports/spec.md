@@ -123,3 +123,15 @@ The kernel SHALL expose low-level primitives that write to an explicitly-supplie
 #### Scenario: with-input-from-file with compiled thunk
 - **WHEN** `(with-input-from-file "in.txt" (lambda () (read-char)))` is evaluated where the lambda is a compiled procedure
 - **THEN** the thunk SHALL execute successfully, reading from the file
+
+### Requirement: port mutator functions
+The CL runtime SHALL provide mutator functions `set-ece-port-line!` and `set-ece-port-col!` for updating port tracking state. All internal code that mutates port line/column tracking SHALL use these mutators instead of raw `setf`/`cadddr` access.
+
+#### Scenario: line tracking via mutator
+- **WHEN** `ece-read-char` reads a newline character from a port
+- **THEN** the port's line counter SHALL be incremented via `set-ece-port-line!`
+- **AND** the port's column counter SHALL be reset to 0 via `set-ece-port-col!`
+
+#### Scenario: column tracking via mutator
+- **WHEN** `ece-read-char` reads a non-newline character from a port
+- **THEN** the port's column counter SHALL be incremented via `set-ece-port-col!`
