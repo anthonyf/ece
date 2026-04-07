@@ -4,8 +4,8 @@
 The WASM runtime SHALL expose a primitive `%register-primitive!` that accepts a symbol and a fixnum ID, creates a primitive object for that ID, and defines it in the global environment under the given symbol name.
 
 #### Scenario: Register a core primitive
-- **WHEN** ECE boot code calls `(%register-primitive! 'car 25)`
-- **THEN** the symbol `car` SHALL be bound in the global environment to `(primitive 25)`
+- **WHEN** ECE boot code calls `(%register-primitive! 'car 5)`
+- **THEN** the symbol `car` SHALL be bound in the global environment to `(primitive 5)`
 
 #### Scenario: Register all core primitives
 - **WHEN** boot-env.ecec executes its full primitive registration sequence

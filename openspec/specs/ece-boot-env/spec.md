@@ -8,7 +8,7 @@
 - **THEN** all core and browser primitives (e.g., `+`, `-`, `car`, `cdr`, `cons`, `display`, `newline`) SHALL be bound in the global environment
 
 #### Scenario: Primitive IDs match primitives.def
-- **WHEN** boot-env.ecec registers primitive `car` with ID 25
+- **WHEN** boot-env.ecec registers primitive `car` with ID 5
 - **THEN** that ID SHALL match the entry in `primitives.def`
 
 ### Requirement: boot-env.scm registers all assembler symbols
@@ -49,10 +49,10 @@
 - **AND** prelude.ecec SHALL execute after boot-env.ecec
 - **AND** all prelude definitions SHALL find their required primitives already bound
 
-### Requirement: boot-env defines boolean bindings
-`boot-env.scm` SHALL define `#t` and `#f` as variables in the global environment, bound to the boolean true and false values respectively.
+### Requirement: Host runtime defines boolean bindings
+The host runtime (JS `buildGlobalEnv` or CL `boot-from-compiled`) SHALL define `#t` and `#f` as variables in the global environment, bound to the boolean true and false values respectively. These cannot be defined in boot-env.ecec because the ecec text format cannot distinguish `(const #t)` as a boolean value from `(const #t)` as the symbol name `#t`.
 
 #### Scenario: Boolean variables available
-- **WHEN** boot-env.ecec has finished executing
+- **WHEN** the host runtime has initialized the global environment
 - **THEN** `#t` SHALL evaluate to boolean true
 - **AND** `#f` SHALL evaluate to boolean false

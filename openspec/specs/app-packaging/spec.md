@@ -50,10 +50,11 @@
 - **THEN** the generated `ece-runtime.js` SHALL NOT contain `ECE_PRIMITIVES` or primitive registration JSON
 - **AND** the build SHALL succeed even if `primitives.json` does not exist
 
-#### Scenario: glue.js has no require or module.exports
+#### Scenario: glue.js has no primitives.json require
 - **WHEN** `ece-build` processes `glue.js` for the web target
-- **THEN** it SHALL NOT need to strip `require('./primitives.json')` or `module.exports` lines
-- **AND** the `transform-glue-js` function SHALL be removed from ece-build.scm
+- **THEN** it SHALL NOT need to strip `require('./primitives.json')` lines
+- **AND** `module.exports` SHALL still be stripped for browser use (kept in source for Node.js test harnesses)
+- **AND** the `transform-glue-js` function SHALL be replaced by a simpler `strip-module-exports`
 
 ## ADDED Requirements (shrink-js-glue)
 
@@ -62,8 +63,8 @@
 
 #### Scenario: Build test page
 - **WHEN** `ece-build --target test-page -o dist/ tests/ece/test-*.scm` is run
-- **THEN** `dist/index.html` SHALL be a self-contained HTML file
-- **AND** opening it in a browser SHALL run the test suite and display results
+- **THEN** `dist/` SHALL be a self-contained directory with `index.html` and supporting JS files
+- **AND** opening `index.html` in a browser SHALL run the test suite and display results
 
 #### Scenario: Test page replaces build-test-page.sh
 - **WHEN** the test page is built via `ece-build --target test-page`

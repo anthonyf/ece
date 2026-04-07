@@ -8,7 +8,7 @@
 - **THEN** all core and browser primitives (e.g., `+`, `-`, `car`, `cdr`, `cons`, `display`, `newline`) SHALL be bound in the global environment
 
 #### Scenario: Primitive IDs match primitives.def
-- **WHEN** boot-env.ecec registers primitive `car` with ID 25
+- **WHEN** boot-env.ecec registers primitive `car` with ID 5
 - **THEN** that ID SHALL match the entry in `primitives.def`
 
 ### Requirement: boot-env.scm registers all assembler symbols
