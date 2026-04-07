@@ -489,6 +489,8 @@ Used by %global-ref for syntax-rules hygiene."
 
 (defun parse-primitives-manifest (filename)
   "Parse primitives.def and return a list of (id name arity platform) entries."
+  (unless (probe-file filename)
+    (error "Manifest not found: ~A" filename))
   (let ((entries nil))
     (with-open-file (stream filename :direction :input)
       (loop for form = (cl:read stream nil :eof)
@@ -499,7 +501,10 @@ Used by %global-ref for syntax-rules hygiene."
                            (third form)   ; arity
                            (fourth form)) ; platform
                      entries)))
-    (nreverse entries)))
+    (let ((result (nreverse entries)))
+      (when (null result)
+        (error "No entries parsed from ~A" filename))
+      result)))
 
 (defparameter *manifest-path*
   (asdf:system-relative-pathname :ece "primitives.def"))
@@ -649,21 +654,26 @@ Tries: override table → ece-<name> in ECE package → <name> in CL package →
              obj))
   (write-char #\} stream))
 
-(defun ece-display-to-stream (obj stream)
-  "Display obj to a specific stream."
+(defun ece-output-to-stream (obj stream print-fn)
+  "Shared display/write helper. PRINT-FN is #'princ (display) or #'prin1 (write)."
   (cond
     ((scheme-false-p obj) (write-string "#f" stream))
     ((eq obj t) (write-string "#t" stream))
     ((null obj) (write-string "()" stream))
-    (t (let ((*print-circle* t)) (princ obj stream)))))
+    ((and (listp obj) (member (car obj) '(compiled-procedure primitive)))
+     (princ (format-ece-proc obj) stream))
+    ((hash-table-p obj)
+     (format-ece-hash-table obj stream
+                            (lambda (v s) (ece-output-to-stream v s print-fn))))
+    (t (let ((*print-circle* t)) (funcall print-fn obj stream)))))
+
+(defun ece-display-to-stream (obj stream)
+  "Display obj to a specific stream."
+  (ece-output-to-stream obj stream #'princ))
 
 (defun ece-write-to-stream (obj stream)
   "Write obj in readable form to a specific stream."
-  (cond
-    ((scheme-false-p obj) (write-string "#f" stream))
-    ((eq obj t) (write-string "#t" stream))
-    ((null obj) (write-string "()" stream))
-    (t (let ((*print-circle* t)) (prin1 obj stream)))))
+  (ece-output-to-stream obj stream #'prin1))
 
 (defun ece-eof? (obj)
   "Test if obj is the EOF sentinel."
@@ -869,6 +879,9 @@ Emits #f for SCHEME-FALSE, (%ser/opaque) for CL hash tables, and uses
 (defun ece-port-col (port)
   (car (cddddr port)))
 
+(defun set-ece-port-line! (port val) (setf (cadddr port) val))
+(defun set-ece-port-col!  (port val) (setf (car (cddddr port)) val))
+
 ;;; current-input-port / current-output-port are now ECE parameters
 ;;; (created in prelude.scm via %initial-input-port / %initial-output-port).
 ;;; Host defvars were removed — the parameter is the sole source of truth.
@@ -995,34 +1008,14 @@ Uses a synonym stream so that dynamic rebindings of *standard-input* are honored
 (defun ece-%display-to-port (obj port)
   "Write OBJ to PORT in human-readable form (princ)."
   (let ((stream (ece-port-stream port)))
-    (cond
-      ((scheme-false-p obj) (write-string "#f" stream))
-      ((eq obj t) (write-string "#t" stream))
-      ((null obj) (write-string "()" stream))
-      ((and (listp obj) (member (car obj) '(compiled-procedure primitive)))
-       (princ (format-ece-proc obj) stream))
-      ((hash-table-p obj)
-       (format-ece-hash-table obj stream
-                              (lambda (v s) (ece-display-to-stream v s))))
-      (t (let ((*print-circle* t))
-           (princ obj stream))))
+    (ece-output-to-stream obj stream #'princ)
     (finish-output stream))
   obj)
 
 (defun ece-%write-to-port (obj port)
   "Write OBJ to PORT in machine-readable form (prin1)."
   (let ((stream (ece-port-stream port)))
-    (cond
-      ((scheme-false-p obj) (write-string "#f" stream))
-      ((eq obj t) (write-string "#t" stream))
-      ((null obj) (write-string "()" stream))
-      ((and (listp obj) (member (car obj) '(compiled-procedure primitive)))
-       (princ (format-ece-proc obj) stream))
-      ((hash-table-p obj)
-       (format-ece-hash-table obj stream
-                              (lambda (v s) (ece-write-to-stream v s))))
-      (t (let ((*print-circle* t))
-           (prin1 obj stream))))
+    (ece-output-to-stream obj stream #'prin1)
     (finish-output stream))
   obj)
 
@@ -1056,9 +1049,9 @@ Uses a synonym stream so that dynamic rebindings of *standard-input* are honored
     (when ch
       (if (char= ch #\Newline)
           (progn
-            (setf (cadddr p) (1+ (cadddr p)))        ; increment line
-            (setf (car (cddddr p)) 0))               ; reset col
-          (setf (car (cddddr p)) (1+ (car (cddddr p)))))) ; increment col
+            (set-ece-port-line! p (1+ (ece-port-line p)))
+            (set-ece-port-col! p 0))
+          (set-ece-port-col! p (1+ (ece-port-col p)))))
     (or ch *eof-sentinel*)))
 
 (defun ece-peek-char (port)
@@ -1414,18 +1407,23 @@ for backward compat with old images."
                    :message (format nil "~(~A~): ~A" id-or-name e)
                    :irritants (list (type-error-datum e)))))))
         ;; Numeric ID — dispatch via table
-        (let ((fn (aref *primitive-dispatch-table* id-or-name))
-              (prim-name (aref *primitive-name-table* id-or-name)))
-          (handler-case
-              (apply fn argl)
-            (division-by-zero ()
-              (make-ece-error-sentinel
-               :message (format nil "~(~A~): division by zero" prim-name)
-               :irritants nil))
-            (type-error (e)
-              (make-ece-error-sentinel
-               :message (format nil "~(~A~): ~A" prim-name e)
-               :irritants (list (type-error-datum e)))))))))
+        (progn
+          (unless (and (integerp id-or-name)
+                       (<= 0 id-or-name)
+                       (< id-or-name (length *primitive-dispatch-table*)))
+            (error "Invalid primitive ID: ~A" id-or-name))
+          (let ((fn (aref *primitive-dispatch-table* id-or-name))
+                (prim-name (aref *primitive-name-table* id-or-name)))
+            (handler-case
+                (apply fn argl)
+              (division-by-zero ()
+                (make-ece-error-sentinel
+                 :message (format nil "~(~A~): division by zero" prim-name)
+                 :irritants nil))
+              (type-error (e)
+                (make-ece-error-sentinel
+                 :message (format nil "~(~A~): ~A" prim-name e)
+                 :irritants (list (type-error-datum e))))))))))
 
 ;;; Continuation helpers for compiled code
 
@@ -1486,6 +1484,8 @@ call do-winds! to transition. Uses nested execute-compiled-call."
 
 (defun parse-operations-manifest (filename)
   "Parse operations.def and return a list of (id name arity) entries."
+  (unless (probe-file filename)
+    (error "Manifest not found: ~A" filename))
   (let ((entries nil))
     (with-open-file (stream filename :direction :input)
       (loop for form = (cl:read stream nil :eof)
@@ -1495,7 +1495,10 @@ call do-winds! to transition. Uses nested execute-compiled-call."
                            (second form)   ; name
                            (third form))   ; arity
                      entries)))
-    (nreverse entries)))
+    (let ((result (nreverse entries)))
+      (when (null result)
+        (error "No entries parsed from ~A" filename))
+      result)))
 
 (defparameter *operations-manifest-path*
   (asdf:system-relative-pathname :ece "operations.def"))
