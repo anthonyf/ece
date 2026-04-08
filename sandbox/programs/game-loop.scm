@@ -25,13 +25,13 @@
 
   ;; FPS counter
   (set! frames (+ frames 1))
-  (define elapsed (- (current-milliseconds) start-time))
-  (define fps (if (> elapsed 0)
+  (let* ((elapsed (- (current-milliseconds) start-time))
+         (fps (if (> elapsed 0)
                   (/ (* frames 1000) elapsed)
-                  0))
-  (canvas-set-fill-color 255 255 255)
-  (canvas-draw-text 10 24
-    (string-append "FPS: " (number->string fps)))
+                  0)))
+    (canvas-set-fill-color 255 255 255)
+    (canvas-draw-text 10 24
+      (string-append "FPS: " (number->string fps))))
 
   ;; Yield to browser, resume on next animation frame
   (yield)
