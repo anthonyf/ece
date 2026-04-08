@@ -28,7 +28,7 @@
       (if (null? rest)
           acc
           (iter (cdr rest) (cons (car rest) acc))))
-    (iter lst (quote ()))))
+    (iter lst '())))
 
 (define (length lst)
   (begin
@@ -173,7 +173,7 @@
       (if (null? rest)
           (reverse acc)
           (iter (cdr rest) (cons (f (car rest)) acc))))
-    (iter lst (quote ()))))
+    (iter lst '())))
 
 (define (reduce f init lst)
   (if (null? lst)
@@ -182,7 +182,7 @@
 
 (define (for-each f lst)
   (if (null? lst)
-      (quote ())
+      '()
       (begin (f (car lst))
              (for-each f (cdr lst)))))
 
@@ -194,7 +194,7 @@
           (if (pred (car rest))
               (iter (cdr rest) (cons (car rest) acc))
               (iter (cdr rest) acc))))
-    (iter lst (quote ()))))
+    (iter lst '())))
 
 ;; ---- Vector/list conversions ----
 
@@ -261,13 +261,13 @@
       (if (= i 0)
           acc
           (iter (- i 1) (cons (- i 1) acc))))
-    (iter n (quote ()))))
+    (iter n '())))
 
 ;; Standard derived forms (macros)
 (define-macro (cond . clauses)
   (if (null? clauses)
       #f
-      (if (eq? (caar clauses) (quote else))
+      (if (eq? (caar clauses) 'else)
           `(begin ,@(cdr (car clauses)))
           `(if ,(caar clauses)
                (begin ,@(cdr (car clauses)))
@@ -334,7 +334,7 @@
   (define (expand-clauses k clauses)
     (if (null? clauses)
         #f
-        (if (eq? (caar clauses) (quote else))
+        (if (eq? (caar clauses) 'else)
             `(begin ,@(cdr (car clauses)))
             `(if ,(if (null? (cdr (caar clauses)))
                       `(equal? ,k (quote ,(caar (car clauses))))
@@ -815,7 +815,7 @@
         (else (cons (car s1) (union (cdr s1) s2)))))
 
 (define (set-difference s1 s2)
-  (cond ((null? s1) (quote ()))
+  (cond ((null? s1) '())
         ((member (car s1) s2) (set-difference (cdr s1) s2))
         (else (cons (car s1) (set-difference (cdr s1) s2)))))
 
