@@ -424,6 +424,7 @@ const ECE = {
       'capture-continuation', 'do-continuation-winds',
       'continuation-stack', 'continuation-conts',
       'false?', 'list', 'cons', 'car', 'cdr',
+      'enclosing-environment',
     ];
     w.init_asm_syms(names.length);
     for (let i = 0; i < names.length; i++) {

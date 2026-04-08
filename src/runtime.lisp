@@ -175,6 +175,7 @@
            #:%label-table-ref
            #:%procedure-name-set!
            #:extend-environment
+           #:enclosing-environment
            #:ece-runtime-error
            #:ece-original-error
            #:ece-error-procedure
@@ -387,6 +388,10 @@ Each entry is (proc space-sym . local-pc)."
              (setf (svref vec 0) vals)
              (cons vec base-env))
            (cons (vector vals) base-env))))))
+
+(defun enclosing-environment (env)
+  "Return the parent frame of ENV (cdr of the cons chain)."
+  (cdr env))
 
 (defun lookup-variable-value (var env)
   "Look up VAR by name. Dispatches on frame type: hash-table O(1), skip vectors."
@@ -1544,6 +1549,7 @@ call do-winds! to transition. Uses nested execute-compiled-call."
     (setf (gethash (intern "set-variable-value!" :ece) ht) #'set-variable-value!)
     (setf (gethash (intern "define-variable!" :ece) ht) #'define-variable!)
     (setf (gethash (intern "extend-environment" :ece) ht) #'extend-environment)
+    (setf (gethash (intern "enclosing-environment" :ece) ht) #'enclosing-environment)
     (setf (gethash (intern "lexical-ref" :ece) ht) #'lexical-ref)
     (setf (gethash (intern "lexical-set!" :ece) ht) #'lexical-set!)
     (setf (gethash (intern "make-compiled-procedure" :ece) ht) #'make-compiled-procedure)

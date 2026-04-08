@@ -56,3 +56,6 @@
 (24  cons                      2   "Construct pair")
 (25  car                       1   "First element of pair")
 (26  cdr                       1   "Rest of pair")
+
+;;; --- Environment navigation (27) ---
+(27  enclosing-environment     1   "Return parent frame of environment")

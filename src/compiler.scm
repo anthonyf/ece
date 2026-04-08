@@ -137,6 +137,14 @@
       (mc-tagged-list? expr 'set)))
 (define (mc-apply-form? expr) (mc-tagged-list? expr 'apply))
 (define (mc-define-macro? expr) (mc-tagged-list? expr 'define-macro))
+(define (mc-let*? expr) (mc-tagged-list? expr 'let*))
+
+(define (mc-let? expr)
+  "Detect (let ((var init) ...) body) but NOT named let (let name ...)."
+  (and (mc-tagged-list? expr 'let)
+       (pair? (cdr expr))
+       (not (symbol? (cadr expr)))))
+
 (define (mc-let-syntax? expr)
   (or (mc-tagged-list? expr 'let-syntax)
       (mc-tagged-list? expr 'letrec-syntax)))
@@ -212,7 +220,8 @@
                      after-if))))))
 
 (define (mc-extract-define-names body)
-  "Extract names bound by define forms in a body, expanding macros to find all defines."
+  "Extract names bound by define forms at the beginning of a body.
+Stops at the first non-define/non-begin expression (R7RS compliant)."
   (let extract ((forms body))
     (if (null? forms)
         '()
@@ -224,18 +233,22 @@
                 (let ((name-spec (cadr form)))
                   (cons (if (pair? name-spec) (car name-spec) name-spec)
                         (extract rest))))
+               ((eq? (car form) 'define-macro)
+                ;; define-macro at top of body is allowed, skip it
+                (extract rest))
                ((eq? (car form) 'begin)
+                ;; begin is transparent — splice its contents
                 (append (extract (cdr form)) (extract rest)))
-               ((eq? (car form) 'if)
-                (append (extract (cddr form)) (extract rest)))
                ((and (symbol? (car form))
                      (not (mc-lexically-shadows-macro? (car form)))
                      (get-macro (car form)))
                 (let ((expanded (mc-expand-macro-at-compile-time
                                  (get-macro (car form)) (cdr form))))
                   (append (extract (list expanded)) (extract rest))))
-               (else (extract rest)))
-              (extract rest))))))
+               ;; Non-define expression: stop scanning for defines
+               (else '()))
+              ;; Non-pair: stop scanning
+              '())))))
 
 (define (mc-compile-begin expr target linkage)
   (let ((body (cdr expr)))
@@ -265,7 +278,31 @@
         ((symbol? params) (list params))
         ((pair? params) (cons (car params) (mc-flatten-params (cdr params))))))
 
+(define (mc-validate-body-defines body)
+  "Signal a compile-time error if define appears after a non-define expression in BODY.
+begin at the top is transparent (spliced). define-macro is treated like define."
+  (let walk ((forms body) (seen-expr #f))
+    (when (pair? forms)
+      (let ((form (car forms)))
+        (cond
+         ((not (pair? form))
+          (walk (cdr forms) #t))
+         ((or (eq? (car form) 'define)
+              (eq? (car form) 'define-macro))
+          (when seen-expr
+            (error (string-append
+                    "define not allowed after expression in body: "
+                    (write-to-string form))))
+          (walk (cdr forms) #f))
+         ((eq? (car form) 'begin)
+          ;; begin is transparent — check its contents, then continue
+          (walk (cdr form) seen-expr)
+          (walk (cdr forms) seen-expr))
+         (else
+          (walk (cdr forms) #t)))))))
+
 (define (mc-compile-lambda-body params body proc-entry)
+  (mc-validate-body-defines body)
   (let* ((param-names (mc-flatten-params params))
          (define-names (mc-extract-define-names body))
          (frame (append param-names define-names))
@@ -646,6 +683,127 @@
   (let ((expanded (mc-qq-expand (cadr expr) 0)))
     (mc-compile expanded target linkage)))
 
+;;; Direct let/let* compilation
+
+(define (mc-compile-let* expr target linkage)
+  "Compile (let* ((var init) ...) body...) directly.
+Single frame with N empty slots, progressive lexical-set!."
+  (let ((bindings (cadr expr))
+        (body (cddr expr)))
+    (if (null? bindings)
+        ;; Empty let*: compile body directly
+        (mc-compile (cons 'begin body) target linkage)
+        ;; Non-empty let*: extend env with empty frame, fill slots progressively
+        (let* ((names (map car bindings))
+               (inits (map cadr bindings))
+               (n (length names))
+               (outer-env (*mc-compile-lexical-env*))
+               ;; Create the frame for lexical env — initially empty, names added progressively
+               (new-frame names))
+          ;; Extend env instruction: create frame with N empty slots
+          (let ((extend-code
+                 (make-instruction-sequence
+                  '(env) '(env)
+                  (list (list 'assign 'env '(op extend-environment)
+                              '(const ()) '(const ()) '(reg env)
+                              (list 'const n))))))
+            ;; Compile each init with progressive scoping and emit lexical-set!
+            (let compile-bindings ((idx 0)
+                                   (remaining-inits inits)
+                                   (visible-names '())
+                                   (code extend-code))
+              (if (null? remaining-inits)
+                  ;; All bindings done — compile body with full frame visible
+                  (parameterize ((*mc-compile-lexical-env* (cons new-frame outer-env))
+                                 (*mc-compile-macro-shadows*
+                                  (append names (*mc-compile-macro-shadows*))))
+                    (if (eq? linkage 'return)
+                        ;; Tail position: body gets 'return, no env restore
+                        (append-instruction-sequences code
+                                                      (mc-compile-sequence body target 'return))
+                        ;; Non-tail: body gets 'next, then restore env, then linkage
+                        (let ((body-code
+                               (append-instruction-sequences code
+                                                             (mc-compile-sequence body target 'next)))
+                              (restore-env
+                               (make-instruction-sequence
+                                '(env) '(env)
+                                '((assign env (op enclosing-environment) (reg env))))))
+                          (end-with-linkage linkage
+                                            (append-instruction-sequences body-code restore-env)))))
+                  ;; Compile this init with only prior bindings visible
+                  (let ((init-code
+                         (parameterize ((*mc-compile-lexical-env*
+                                         (cons visible-names outer-env)))
+                           (mc-compile (car remaining-inits) 'val 'next)))
+                        (set-code
+                         (make-instruction-sequence
+                          '(val env) '()
+                          (list (list 'perform '(op lexical-set!)
+                                      (list 'const 0)
+                                      (list 'const idx)
+                                      '(reg val) '(reg env))))))
+                    ;; Use append (not preserving) for code accumulation:
+                    ;; extend-env intentionally modifies env and subsequent
+                    ;; code must see the extended env.
+                    (compile-bindings
+                     (+ idx 1)
+                     (cdr remaining-inits)
+                     (append visible-names (list (list-ref names idx)))
+                     (append-instruction-sequences
+                      code
+                      (preserving '(env) init-code set-code)))))))))))
+
+(define (mc-compile-let expr target linkage)
+  "Compile (let ((var init) ...) body...) directly.
+All inits compiled with outer env, then extend env with all bindings at once."
+  (let ((bindings (cadr expr))
+        (body (cddr expr)))
+    (if (null? bindings)
+        ;; Empty let: compile body directly
+        (mc-compile (cons 'begin body) target linkage)
+        ;; Non-empty let: compile all inits, push on stack, build argl, extend env
+        (let* ((names (map car bindings))
+               (inits (map cadr bindings))
+               (n (length names))
+               (outer-env (*mc-compile-lexical-env*)))
+          ;; Compile all init expressions with outer env (parallel binding)
+          ;; Use mc-construct-arglist (SICP approach) which handles env
+          ;; preservation correctly across multiple operand compilations.
+          (let* ((init-codes (map (lambda (init) (mc-compile init 'val 'next)) inits))
+                 ;; Build argl from init values using the SICP arglist builder
+                 (arglist-code (mc-construct-arglist init-codes))
+                 ;; Extend env with names and argl
+                 (extend-code
+                  (make-instruction-sequence
+                   '(argl env) '(env)
+                   (list (list 'assign 'env '(op extend-environment)
+                               (list 'const names) '(reg argl) '(reg env)
+                               '(const 0)))))
+                 ;; Combined: build argl, extend env
+                 (setup-code
+                  (preserving '(env)
+                              arglist-code
+                              extend-code)))
+            ;; Compile body with new env
+            (parameterize ((*mc-compile-lexical-env* (cons names outer-env))
+                           (*mc-compile-macro-shadows*
+                            (append names (*mc-compile-macro-shadows*))))
+              (if (eq? linkage 'return)
+                  ;; Tail position: body gets 'return, no env restore
+                  (append-instruction-sequences setup-code
+                                                (mc-compile-sequence body target 'return))
+                  ;; Non-tail: body gets 'next, then restore env, then linkage
+                  (let ((body-code
+                         (append-instruction-sequences setup-code
+                                                       (mc-compile-sequence body target 'next)))
+                        (restore-env
+                         (make-instruction-sequence
+                          '(env) '(env)
+                          '((assign env (op enclosing-environment) (reg env))))))
+                    (end-with-linkage linkage
+                                      (append-instruction-sequences body-code restore-env))))))))))
+
 ;;; Source location tracking for source-map emission
 
 (define *current-source-location* #f)
@@ -699,6 +857,8 @@
           ((mc-let-syntax? expr) (mc-compile-let-syntax expr target linkage))
           ((mc-define? expr) (mc-compile-define expr target linkage))
           ((mc-begin? expr) (mc-compile-begin expr target linkage))
+          ((mc-let*? expr) (mc-compile-let* expr target linkage))
+          ((mc-let? expr) (mc-compile-let expr target linkage))
           ((mc-global-ref? expr) (mc-compile-global-ref expr target linkage))
           ((mc-application? expr)
            ;; Check for compile-time macro (skip if operator is lexically shadowed)

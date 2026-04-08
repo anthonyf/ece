@@ -1940,7 +1940,7 @@
   ;; 10 = primitive-procedure?      24 = cons
   ;; 11 = continuation?             25 = car
   ;; 12 = parameter?                26 = cdr
-  ;; 13 = apply-primitive-procedure
+  ;; 13 = apply-primitive-procedure 27 = enclosing-environment
 
   ;; --- Evaluate a single operand ---
   ;; Operand is a pair: (type . value)
@@ -2702,9 +2702,14 @@
     (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 26))
       (then (call $xcdr (local.get $a)))
 
+    ;; 27 = enclosing-environment(env)
+    (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 27))
+      (then (struct.get $env-frame $enclosing
+              (ref.cast (ref $env-frame) (local.get $a))))
+
     ;; Unknown op — return void
     (else (global.get $void)
-    ))))))))))))))))))))))))))))))))))))))))))))))))))))))
+    ))))))))))))))))))))))))))))))))))))))))))))))))))))))))
   )
 
 
