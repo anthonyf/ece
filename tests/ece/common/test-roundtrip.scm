@@ -102,7 +102,7 @@
 ;; --- Continuation save/load ---
 
 (test "env-frame round-trip" (lambda ()
-  (let* ((f (%make-env-frame (quote (x y)) (list 10 20) (quote ())))
+  (let* ((f (%make-env-frame '(x y) (list 10 20) '()))
          (s (serialize-value f))
          (f2 (deserialize-value (read (open-input-string s)))))
     (assert-true (%env-frame? f2))
