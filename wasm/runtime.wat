@@ -2704,8 +2704,10 @@
 
     ;; 27 = enclosing-environment(env)
     (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 27))
-      (then (struct.get $env-frame $enclosing
-              (ref.cast (ref $env-frame) (local.get $a))))
+      (then (if (result (ref null eq)) (ref.test (ref $env-frame) (local.get $a))
+              (then (struct.get $env-frame $enclosing
+                      (ref.cast (ref $env-frame) (local.get $a))))
+              (else (local.get $a))))
 
     ;; Unknown op — return void
     (else (global.get $void)
@@ -5691,10 +5693,10 @@
     (local $id i32)
     (local $i i32)
     (local.set $id (struct.get $symbol $id (local.get $sym)))
-    ;; Op names are in asm-sym-ids slots 17-43 (ops 0-26, from operations.def)
+    ;; Op names are in asm-sym-ids slots 17-44 (ops 0-27, from operations.def)
     (local.set $i (i32.const 17))
     (block $done (loop $scan
-      (br_if $done (i32.gt_u (local.get $i) (i32.const 43)))
+      (br_if $done (i32.gt_u (local.get $i) (i32.const 44)))
       (if (i32.eq (local.get $id) (array.get $i32-array (ref.as_non_null (global.get $asm-sym-ids)) (local.get $i)))
         (then (return (i32.sub (local.get $i) (i32.const 17)))))
       (local.set $i (i32.add (local.get $i) (i32.const 1)))
@@ -6587,13 +6589,13 @@
       ;; Check: opcode must be 0-6
       (if (i32.gt_u (local.get $op) (i32.const 6))
         (then (return (i32.sub (i32.const 0) (i32.add (local.get $i) (i32.const 1))))))
-      ;; Check: for assign-op (op=0,b=3), test (op=1), perform (op=6): c (op-id) must be 0-26
+      ;; Check: for assign-op (op=0,b=3), test (op=1), perform (op=6): c (op-id) must be 0-27
       (if (i32.or (i32.and (i32.eqz (local.get $op)) (i32.eq (local.get $b) (i32.const 3)))
                   (i32.or (i32.eq (local.get $op) (i32.const 1))
                           (i32.eq (local.get $op) (i32.const 6))))
         (then
           (if (i32.or (i32.lt_s (local.get $c) (i32.const 0))
-                      (i32.gt_s (local.get $c) (i32.const 26)))
+                      (i32.gt_s (local.get $c) (i32.const 27)))
             (then (return (i32.sub (i32.const 0) (i32.add (local.get $i) (i32.const 1))))))))
       ;; Check: for branch (op=2), goto-label (op=3,b=0), assign-label (op=0,b=2): c must be 0..len
       (if (i32.or (i32.eq (local.get $op) (i32.const 2))

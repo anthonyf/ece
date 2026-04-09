@@ -7,10 +7,10 @@
 
 (test "make-vector" (lambda ()
   (assert-equal (vector-length (make-vector 5)) 5)
-  (define v (make-vector 3 42))
-  (assert-equal (vector-ref v 0) 42)
-  (assert-equal (vector-ref v 1) 42)
-  (assert-equal (vector-ref v 2) 42)))
+  (let ((v (make-vector 3 42)))
+    (assert-equal (vector-ref v 0) 42)
+    (assert-equal (vector-ref v 1) 42)
+    (assert-equal (vector-ref v 2) 42))))
 
 (test "vector constructor" (lambda ()
   (define v (vector 1 2 3))

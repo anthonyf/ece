@@ -23,8 +23,8 @@
 
 (test "unquote-splicing" (lambda ()
   (define xs '(1 2 3))
-  (assert-equal `(a ,@xs d) '(a 1 2 3 d))
   (define empty '())
+  (assert-equal `(a ,@xs d) '(a 1 2 3 d))
   (assert-equal `(a ,@empty b) '(a b))))
 
 (test "quote preserves structure" (lambda ()

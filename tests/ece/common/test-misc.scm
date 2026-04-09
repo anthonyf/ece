@@ -30,10 +30,10 @@
 
 (test "random-seed! affects sequence" (lambda ()
   (random-seed! 42)
-  (define a (random 1000))
-  (random-seed! 42)
-  (define b (random 1000))
-  (assert-equal a b)))
+  (let ((a (random 1000)))
+    (random-seed! 42)
+    (let ((b (random 1000)))
+      (assert-equal a b)))))
 
 ;; --- write-to-string ---
 

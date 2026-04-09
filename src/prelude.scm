@@ -770,13 +770,13 @@
             (set! *winding-stack* (cdr ws))
             ((cdr (car ws)))  ;; after thunk
             (unwind (cdr ws))))
-        (unwind from)
         ;; Rewind: call before thunks for entered extents (outermost first)
         (define (rewind ws)
           (when (not (eq? ws common))
             (rewind (cdr ws))
             ((car (car ws)))  ;; before thunk
             (set! *winding-stack* (cons (car ws) *winding-stack*))))
+        (unwind from)
         (rewind to))))
 
 (define (dynamic-wind before thunk after)
@@ -960,16 +960,16 @@
 ;; Handles shared structure via %ser/def/%ser/ref tags.
 
 (define (serialize-value value)
-  "Serialize VALUE to an s-expression string. Handles all ECE types,
-shared structure, and global env sentinel."
+  ;; Serialize VALUE to an s-expression string. Handles all ECE types,
+  ;; shared structure, and global env sentinel.
   ;; Pass 1: count object occurrences by identity for shared-structure detection.
   ;; Uses an eq hash table mapping objects to visit counts.
   (define seen (%eq-hash-table))
   (define global-frame (%global-env-frame))
 
   (define (wind-frame-serializable? frame)
-    "Check if a wind frame (before . after) can be fully serialized.
-Returns #f if it contains non-serializable objects (ports, CL streams, etc.)."
+    ;; Check if a wind frame (before . after) can be fully serialized.
+    ;; Returns #f if it contains non-serializable objects (ports, CL streams, etc.).
     (define checked (%eq-hash-table))
     (define (check obj)
       (cond
@@ -1055,8 +1055,6 @@ Returns #f if it contains non-serializable objects (ports, CL streams, etc.)."
              ((pair? obj) (scan (car obj)) (scan (cdr obj)))
              ;; Other compound
              (else '())))))))
-
-  (scan value)
 
   ;; Pass 2: serialize to a string output port (O(n) — each token written once).
   (define next-id 0)
@@ -1162,9 +1160,9 @@ Returns #f if it contains non-serializable objects (ports, CL streams, etc.)."
      ;; Vector
      ((vector? obj)
       (define len (vector-length obj))
-      (emit "(%ser/vector")
       (define (vec-items i)
         (when (< i len) (emit " ") (ser (vector-ref obj i)) (vec-items (+ i 1))))
+      (emit "(%ser/vector")
       (vec-items 0)
       (emit ")"))
      ;; Env frame (WASM GC struct — not a vector, so needs its own branch)
@@ -1185,7 +1183,7 @@ Returns #f if it contains non-serializable objects (ports, CL streams, etc.)."
         (emit (write-to-string-flat entry))))
 
   (define (ser-pair obj)
-    "Serialize a pair, detecting proper lists for compact output."
+    ;; Serialize a pair, detecting proper lists for compact output.
     (define (proper-list? x)
       (cond ((null? x) #t)
             ((not (pair? x)) #f)
@@ -1208,13 +1206,14 @@ Returns #f if it contains non-serializable objects (ports, CL streams, etc.)."
         ;; Dotted pair
         (begin (emit "(") (ser (car obj)) (emit " . ") (ser (cdr obj)) (emit ")"))))
 
-  ;; Run serialization and extract result
+  ;; Run pass 1 (scan for shared structure) then pass 2 (serialize)
+  (scan value)
   (ser value)
   (get-output-string port))
 
 (define (deserialize-value form)
-  "Deserialize a value from a parsed s-expression FORM (already read by ECE reader).
-Reconstructs tagged types and resolves #:def/#:ref references."
+  ;; Deserialize a value from a parsed s-expression FORM (already read by ECE reader).
+  ;; Reconstructs tagged types and resolves #:def/#:ref references.
   (define ref-table (%eq-hash-table))
 
   (define (deser form)

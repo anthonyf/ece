@@ -69,8 +69,8 @@
   ;; log should show: after before after before (reversed)
   ;; First run: before, after
   ;; Re-entry: before, after (from re-entering, then exiting again)
-  (define before-count (length (filter (lambda (x) (eq? x 'before)) log)))
-  (assert-equal before-count 2)))
+  (let ((before-count (length (filter (lambda (x) (eq? x 'before)) log))))
+    (assert-equal before-count 2))))
 
 (test "dynamic-wind no-op when stacks match" (lambda ()
   ;; do-winds! with identical stacks should be no-op

@@ -270,7 +270,7 @@
 ;;; Slots 13-16: source/dest types
 ;;; Slots 17-43: operations from operations.def (op-id = slot - 17)
 
-(%init-asm-syms 44)
+(%init-asm-syms 45)
 
 ;; Instruction types (0-6)
 (%store-asm-sym 0 'assign)
@@ -323,6 +323,7 @@
 (%store-asm-sym 41 'cons)
 (%store-asm-sym 42 'car)
 (%store-asm-sym 43 'cdr)
+(%store-asm-sym 44 'enclosing-environment)
 
 ;;; ═══════════════════════════════════════════════════════════════════
 ;;; 3. Cache continuation and error symbols

@@ -62,14 +62,15 @@
 ;; --- Hygiene ---
 
 (test "syntax-rules hygiene: introduced temp does not capture" (lambda ()
-  (define-syntax my-swap!
-    (syntax-rules ()
-      ((_ a b)
-       (let ((temp a)) (set! a b) (set! b temp)))))
-  (define temp 10)
-  (define y 20)
-  (my-swap! temp y)
-  (assert-equal (list temp y) '(20 10))))
+  ;; define-syntax in its own let body to avoid mixing with define
+  (let ((temp 10)   ;; intentionally named 'temp' to test hygiene
+        (y 20))
+    (define-syntax my-swap!
+      (syntax-rules ()
+        ((_ a b)
+         (let ((temp a)) (set! a b) (set! b temp)))))
+    (my-swap! temp y)
+    (assert-equal (list temp y) '(20 10)))))
 
 ;; --- Sub-list patterns ---
 

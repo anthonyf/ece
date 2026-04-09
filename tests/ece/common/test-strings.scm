@@ -59,6 +59,6 @@
 
 (test "string interpolation" (lambda ()
   (define name "world")
-  (assert-equal "hello $name" "hello world")
   (define n 42)
+  (assert-equal "hello $name" "hello world")
   (assert-equal "value: $n" "value: 42")))

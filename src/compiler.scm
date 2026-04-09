@@ -718,9 +718,13 @@ Single frame with N empty slots, progressive lexical-set!."
                                  (*mc-compile-macro-shadows*
                                   (append names (*mc-compile-macro-shadows*))))
                     (if (eq? linkage 'return)
-                        ;; Tail position: body gets 'return, no env restore
-                        (append-instruction-sequences code
-                                                      (mc-compile-sequence body target 'return))
+                        ;; Tail position: body gets 'return, no env restore.
+                        ;; Must preserve continue across init code because
+                        ;; compiled procedure calls in inits clobber continue,
+                        ;; but the body needs it for (goto (reg continue)).
+                        (preserving '(continue)
+                                    code
+                                    (mc-compile-sequence body target 'return))
                         ;; Non-tail: body gets 'next, then restore env, then linkage
                         (let ((body-code
                                (append-instruction-sequences code
@@ -790,9 +794,13 @@ All inits compiled with outer env, then extend env with all bindings at once."
                            (*mc-compile-macro-shadows*
                             (append names (*mc-compile-macro-shadows*))))
               (if (eq? linkage 'return)
-                  ;; Tail position: body gets 'return, no env restore
-                  (append-instruction-sequences setup-code
-                                                (mc-compile-sequence body target 'return))
+                  ;; Tail position: body gets 'return, no env restore.
+                  ;; Must preserve continue across setup-code because
+                  ;; compiled procedure calls in inits clobber continue,
+                  ;; but the body needs it for (goto (reg continue)).
+                  (preserving '(continue)
+                              setup-code
+                              (mc-compile-sequence body target 'return))
                   ;; Non-tail: body gets 'next, then restore env, then linkage
                   (let ((body-code
                          (append-instruction-sequences setup-code

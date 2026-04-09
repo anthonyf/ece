@@ -21,8 +21,8 @@
 
 (test "define with rest params" (lambda ()
   (define (f x . rest) rest)
-  (assert-equal (f 1 2 3) '(2 3))
   (define (g . args) args)
+  (assert-equal (f 1 2 3) '(2 3))
   (assert-equal (g 1 2 3) '(1 2 3))))
 
 (test "closure capture" (lambda ()
@@ -68,14 +68,14 @@
 
 (test "define function shorthand" (lambda ()
   (define (square x) (* x x))
-  (assert-equal (square 5) 25)
   (define (add a b) (+ a b))
+  (assert-equal (square 5) 25)
   (assert-equal (add 3 4) 7)))
 
 (test "define variable" (lambda ()
   (define x 42)
-  (assert-equal x 42)
   (define y (+ 1 2))
+  (assert-equal x 42)
   (assert-equal y 3)))
 
 (test "set mutation" (lambda ()

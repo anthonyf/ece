@@ -116,7 +116,7 @@
 
 ;;; Read a string with interpolation support
 (define (read-string-with-interpolation port)
-  "Read a double-quoted string with interpolation support."
+  ;; Read a double-quoted string with interpolation support.
   (define segments '())
   (define buf "")
   (define (flush-buf!)

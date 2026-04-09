@@ -20,8 +20,8 @@
   (assert-equal (+ 1 (call/cc (lambda (k) 5))) 6)))
 
 (test "loop with break via call/cc" (lambda ()
-  (assert-equal (loop (break 42)) 42)
   (define x 5)
+  (assert-equal (loop (break 42)) 42)
   (assert-equal
    (loop
     (if (= x 0) (break x))
