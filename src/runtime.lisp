@@ -2471,12 +2471,11 @@ Downcases ECE-package symbols for CL→ECE boundary compatibility."
     '(begin
       (define (repl-loop)
        (display "ece> ")
-       (define input (read))
-       (if (eof? input)
-           (begin (newline) (display "Bye!") (newline))
-           (begin
-            (define result (try-eval input))
-            (if (not (eof? result)) (begin (write result) (newline)) (quote ()))
-            (repl-loop))))
+       (let* ((input (read)))
+         (if (eof? input)
+             (begin (newline) (display "Bye!") (newline))
+             (let* ((result (try-eval input)))
+               (if (not (eof? result)) (begin (write result) (newline)) (quote ()))
+               (repl-loop)))))
       (repl-loop)))))
 
