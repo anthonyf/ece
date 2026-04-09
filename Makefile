@@ -15,7 +15,7 @@ all: ece
 
 # Build bin/ece via save-lisp-and-die, compile ece-main.ecec, create in-tree
 # symlinks, and stage share/ece/ so ece-home resolution works in-tree.
-ece: wasm bin/ece
+ece: bootstrap wasm bin/ece
 
 bin/ece: scripts/build-ece-binary.lisp bootstrap/bootstrap.ecec share/ece/ece-main.ecec
 	@mkdir -p bin

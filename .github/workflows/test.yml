@@ -34,8 +34,8 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Build ece binary
-        run: make ece
+      - name: Build WASM runtime
+        run: make wasm
 
-      - name: Run all tests
-        run: make test
+      - name: Run tests
+        run: make test-rove test-ece test-wasm test-conformance test-golden

@@ -1032,6 +1032,7 @@
   (func $lexical-ref (param $depth i32) (param $offset i32)
                      (param $env (ref null eq)) (result (ref null eq))
     (local $frame (ref $env-frame))
+    (local $cur (ref null eq))
     (local $d i32)
     (local $result (ref null eq))
     (local.set $frame (ref.cast (ref $env-frame) (local.get $env)))
@@ -1039,15 +1040,15 @@
     (block $at-depth
       (loop $walk
         (br_if $at-depth (i32.eqz (local.get $d)))
-        (local.set $frame
-          (ref.cast (ref $env-frame)
-            (struct.get $env-frame $enclosing (local.get $frame))))
+        (local.set $cur (struct.get $env-frame $enclosing (local.get $frame)))
+        (if (ref.test (ref $env-frame) (local.get $cur))
+          (then (local.set $frame (ref.cast (ref $env-frame) (local.get $cur))))
+          (else (br $at-depth)))
         (local.set $d (i32.sub (local.get $d) (i32.const 1)))
         (br $walk)))
     (local.set $result (array.get $val-array
       (struct.get $env-frame $vals (local.get $frame))
       (local.get $offset)))
-    ;; Debug removed
     (local.get $result)
   )
 
@@ -1055,15 +1056,17 @@
   (func $lexical-set! (param $depth i32) (param $offset i32)
                       (param $value (ref null eq)) (param $env (ref null eq))
     (local $frame (ref $env-frame))
+    (local $cur (ref null eq))
     (local $d i32)
     (local.set $frame (ref.cast (ref $env-frame) (local.get $env)))
     (local.set $d (local.get $depth))
     (block $at-depth
       (loop $walk
         (br_if $at-depth (i32.eqz (local.get $d)))
-        (local.set $frame
-          (ref.cast (ref $env-frame)
-            (struct.get $env-frame $enclosing (local.get $frame))))
+        (local.set $cur (struct.get $env-frame $enclosing (local.get $frame)))
+        (if (ref.test (ref $env-frame) (local.get $cur))
+          (then (local.set $frame (ref.cast (ref $env-frame) (local.get $cur))))
+          (else (br $at-depth)))
         (local.set $d (i32.sub (local.get $d) (i32.const 1)))
         (br $walk)))
     (array.set $val-array
@@ -2703,10 +2706,17 @@
       (then (call $xcdr (local.get $a)))
 
     ;; 27 = enclosing-environment(env)
+    ;; Returns the enclosing frame. If the enclosing is null (global frame
+    ;; terminator) or env is not an env-frame, return env unchanged.
     (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 27))
       (then (if (result (ref null eq)) (ref.test (ref $env-frame) (local.get $a))
-              (then (struct.get $env-frame $enclosing
-                      (ref.cast (ref $env-frame) (local.get $a))))
+              (then (if (result (ref null eq))
+                      (ref.test (ref $env-frame)
+                        (struct.get $env-frame $enclosing
+                          (ref.cast (ref $env-frame) (local.get $a))))
+                    (then (struct.get $env-frame $enclosing
+                            (ref.cast (ref $env-frame) (local.get $a))))
+                    (else (local.get $a))))
               (else (local.get $a))))
 
     ;; Unknown op — return void
