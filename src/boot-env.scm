@@ -268,7 +268,7 @@
 ;;; Slots 0-6: instruction types
 ;;; Slots 7-12: register names
 ;;; Slots 13-16: source/dest types
-;;; Slots 17-43: operations from operations.def (op-id = slot - 17)
+;;; Slots 17-44: operations from operations.def (op-ids 0-27; op-id = slot - 17)
 
 (%init-asm-syms 45)
 

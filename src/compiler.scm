@@ -282,24 +282,24 @@ Stops at the first non-define/non-begin expression (R7RS compliant)."
   "Signal a compile-time error if define appears after a non-define expression in BODY.
 begin at the top is transparent (spliced). define-macro is treated like define."
   (let walk ((forms body) (seen-expr #f))
-    (when (pair? forms)
-      (let ((form (car forms)))
-        (cond
-         ((not (pair? form))
-          (walk (cdr forms) #t))
-         ((or (eq? (car form) 'define)
-              (eq? (car form) 'define-macro))
-          (when seen-expr
-            (error (string-append
-                    "define not allowed after expression in body: "
-                    (write-to-string form))))
-          (walk (cdr forms) #f))
-         ((eq? (car form) 'begin)
-          ;; begin is transparent — check its contents, then continue
-          (walk (cdr form) seen-expr)
-          (walk (cdr forms) seen-expr))
-         (else
-          (walk (cdr forms) #t)))))))
+    (if (pair? forms)
+        (let ((form (car forms)))
+          (cond
+           ((not (pair? form))
+            (walk (cdr forms) #t))
+           ((or (eq? (car form) 'define)
+                (eq? (car form) 'define-macro))
+            (when seen-expr
+              (error (string-append
+                      "define not allowed after expression in body: "
+                      (write-to-string form))))
+            (walk (cdr forms) #f))
+           ((eq? (car form) 'begin)
+            ;; begin is transparent — walk its contents, propagate seen-expr
+            (walk (cdr forms) (walk (cdr form) seen-expr)))
+           (else
+            (walk (cdr forms) #t))))
+        seen-expr)))
 
 (define (mc-compile-lambda-body params body proc-entry)
   (mc-validate-body-defines body)
