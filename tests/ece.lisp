@@ -2468,14 +2468,23 @@ VARS are CL symbols (auto-downcased to ECE package)."
                             (eof? (ece::ece-scheme-read p))))))
              (ok result))))
 
+(defvar *ece-main-loaded* nil)
+
+(defun ensure-ece-main-loaded ()
+  "Load ece-main.ecec once so the ECE repl function is available."
+  (unless *ece-main-loaded*
+    (evaluate (list (intern "load-bundle" :ece) "share/ece/ece-main.ecec"))
+    (setf *ece-main-loaded* t)))
+
 (defun run-repl (input-string)
   "Run the ECE REPL with INPUT-STRING as input, return captured output.
 The ECE current-input-port / current-output-port parameters wrap synonym
 streams pointing at *standard-input* / *standard-output*, so CL-level
 rebindings redirect ECE's I/O."
+  (ensure-ece-main-loaded)
   (with-input-from-string (*standard-input* input-string)
     (with-output-to-string (*standard-output*)
-      (ece:repl))))
+      (evaluate (list (intern "repl" :ece))))))
 
 (deftest test-repl
     (testing "simple integer expression"

@@ -159,6 +159,23 @@ Returns the value of the last expression."
 (define (run-steps steps)
   (for-each run-step steps))
 
+;; ---- REPL ----
+
+(define (repl)
+  (display "ece> ")
+  (let ((input (read)))
+    (cond
+     ((eof? input)
+      (newline)
+      (display "Bye!")
+      (newline))
+     (else
+      (let ((result (try-eval input)))
+        (when (not (eof? result))
+          (write result)
+          (newline)))
+      (repl)))))
+
 ;; ---- Default main (ece / unknown argv[0]) ----
 
 (define (ece-default-main argv)
