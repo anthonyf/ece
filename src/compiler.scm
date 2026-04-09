@@ -137,13 +137,24 @@
       (mc-tagged-list? expr 'set)))
 (define (mc-apply-form? expr) (mc-tagged-list? expr 'apply))
 (define (mc-define-macro? expr) (mc-tagged-list? expr 'define-macro))
-(define (mc-let*? expr) (mc-tagged-list? expr 'let*))
+(define (mc-body-has-defines? body)
+  "Return #t if BODY starts with internal define forms."
+  (and (pair? body)
+       (pair? (car body))
+       (or (eq? (car (car body)) 'define)
+           (eq? (car (car body)) 'define-macro))))
+
+(define (mc-let*? expr)
+  (and (mc-tagged-list? expr 'let*)
+       (not (mc-body-has-defines? (cddr expr)))))
 
 (define (mc-let? expr)
-  "Detect (let ((var init) ...) body) but NOT named let (let name ...)."
+  "Detect (let ((var init) ...) body) but NOT named let (let name ...)
+and NOT let with internal defines (fall back to macro for those)."
   (and (mc-tagged-list? expr 'let)
        (pair? (cdr expr))
-       (not (symbol? (cadr expr)))))
+       (not (symbol? (cadr expr)))
+       (not (mc-body-has-defines? (cddr expr)))))
 
 (define (mc-let-syntax? expr)
   (or (mc-tagged-list? expr 'let-syntax)
