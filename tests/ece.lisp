@@ -2473,7 +2473,8 @@ VARS are CL symbols (auto-downcased to ECE package)."
 (defun ensure-ece-main-loaded ()
   "Load ece-main.ecec once so the ECE repl function is available."
   (unless *ece-main-loaded*
-    (evaluate (list (intern "load-bundle" :ece) "share/ece/ece-main.ecec"))
+    (let ((path (namestring (asdf:system-relative-pathname :ece "share/ece/ece-main.ecec"))))
+      (evaluate (list (intern "load-bundle" :ece) path)))
     (setf *ece-main-loaded* t)))
 
 (defun run-repl (input-string)

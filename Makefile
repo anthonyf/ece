@@ -191,7 +191,7 @@ test-web-apps: sandbox
 	@echo "Running web apps smoke test..."
 	@node wasm/test-web-apps.js
 
-repl:
+repl: share/ece/ece-main.ecec
 	qlot exec sbcl --load ece.asd --eval '(asdf:load-system :ece)' \
 	  --eval '(in-package :ece)' \
 	  --eval '(evaluate (quote (begin (load-bundle "share/ece/ece-main.ecec") (repl))))'
