@@ -1,4 +1,4 @@
-.PHONY: all ece install uninstall test test-rove test-ece test-wasm test-conformance test-golden test-web-server repl run run-lisp bootstrap wasm sandbox site fmt check-fmt setup clean clean-fasl update-golden
+.PHONY: all ece install uninstall test test-rove test-ece test-wasm test-conformance test-golden test-web-server repl run run-lisp bootstrap wasm sandbox site slides fmt check-fmt setup clean clean-fasl update-golden
 
 PREFIX ?= /usr/local
 DESTDIR ?=
@@ -228,6 +228,12 @@ sandbox: ece
 	@base64 -i sandbox/programs/hello-world.ecec | tr -d '\n' >> sandbox/ece-compiled.js
 	@echo '";' >> sandbox/ece-compiled.js
 	@echo "Sandbox assets built in sandbox/"
+
+slides: slides/presentation.html
+
+slides/presentation.html: slides/presentation.md
+	marp slides/presentation.md --html -o slides/presentation.html
+	open slides/presentation.html
 
 site: sandbox
 	@echo "Assembling site..."
