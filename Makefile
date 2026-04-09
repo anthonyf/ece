@@ -191,8 +191,10 @@ test-web-apps: sandbox
 	@echo "Running web apps smoke test..."
 	@node wasm/test-web-apps.js
 
-repl:
-	qlot exec sbcl --load ece.asd --eval '(asdf:load-system :ece)' --eval '(ece:repl)'
+repl: share/ece/ece-main.ecec
+	qlot exec sbcl --load ece.asd --eval '(asdf:load-system :ece)' \
+	  --eval '(in-package :ece)' \
+	  --eval '(evaluate (quote (begin (load-bundle "share/ece/ece-main.ecec") (repl))))'
 
 # Run SBCL with ECE loaded — use for ad-hoc evaluation via --eval
 # Example: make run-lisp ARGS="--eval '(ece:evaluate 42)' --quit"

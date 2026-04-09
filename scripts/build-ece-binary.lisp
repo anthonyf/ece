@@ -11,6 +11,11 @@
 
 (in-package :ece)
 
+;; Bake ece-main into the image so startup is instant (same pattern as bootstrap).
+(ece:evaluate
+ (ece::downcase-ece-symbols
+  '(load-bundle "share/ece/ece-main.ecec")))
+
 (sb-ext:save-lisp-and-die
  "bin/ece"
  :executable t
@@ -19,6 +24,4 @@
  :toplevel
  (lambda ()
    (ece:evaluate
-    '(begin
-      (load-bundle (string-append (ece-home) "/ece-main.ecec"))
-      (ece-main (command-line))))))
+    '(ece-main (command-line)))))

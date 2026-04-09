@@ -182,7 +182,6 @@
            #:ece-error-environment
            #:ece-error-instruction
            #:ece-error-backtrace
-           #:repl
            #:mc-eval
            #:command-line
            #:exit
@@ -2457,20 +2456,4 @@ Downcases ECE-package symbols for CL→ECE boundary compatibility."
                       (list 'quote units)
                       output-path)))))
 
-;;; REPL: compile and run the REPL loop via the metacircular compiler.
-(defun repl ()
-  "Start the ECE REPL."
-  (evaluate
-   (downcase-ece-symbols
-    '(begin
-      (define (repl-loop)
-       (display "ece> ")
-       (define input (read))
-       (if (eof? input)
-           (begin (newline) (display "Bye!") (newline))
-           (begin
-            (define result (try-eval input))
-            (if (not (eof? result)) (begin (write result) (newline)) (quote ()))
-            (repl-loop))))
-      (repl-loop)))))
 
