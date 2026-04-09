@@ -70,6 +70,7 @@ function runIntegrationTests(w, envH) {
   // (ref $env-frame) which fails when enclosing-environment returns a non-frame
   // value. Needs WASM enclosing-environment to properly handle all env types.
 
+  // TODO: WASM enclosing-environment ref.cast failure during yield/resume
   // // ── Yield/resume: single frame ──
   // iTest("yield single frame", () => {
   //   const output = [];
@@ -88,6 +89,7 @@ function runIntegrationTests(w, envH) {
   //     w.call_ece_proc(contH, w.h_cons(w.h_void(), w.h_nil()));
   // });
 
+  // TODO: WASM enclosing-environment ref.cast failure during yield/resume
   // // ── Yield/resume: multi-frame ──
   // iTest("yield multi-frame (3 cycles)", () => {
   //   const evalStr = w.env_lookup(envH, ECE.internSym("eval-string"));
@@ -108,6 +110,7 @@ function runIntegrationTests(w, envH) {
   //   assert(ycVal === 4, `expected *yc* = 4, got ${ycVal}`);
   // });
 
+  // TODO: WASM enclosing-environment ref.cast failure during yield/resume
   // // ── Handle stability: reset_handles keeps handles bounded ──
   // iTest("handle table stable over 100 yield cycles", () => {
   //   const evalStr = w.env_lookup(envH, ECE.internSym("eval-string"));
