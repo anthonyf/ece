@@ -1,7 +1,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: compile-and-go compiles and executes an expression
-`compile-and-go` SHALL compile an expression into instructions, assemble them using the ECE assembler (after bootstrap), and execute them, returning the result. The CL function `evaluate` delegates to `mc-compile-and-go` in the image (via `boot.lisp`) rather than to the CL `compile-and-go` function. The CL `compile-and-go` function remains available only through the `"ece/cold"` ASDF system. After assembling the compiled instructions, `mc-compile-and-go` SHALL append a `(halt)` instruction to the instruction list to prevent fall-through into subsequently compiled code.
+`compile-and-go` SHALL compile an expression into instructions, append a `(halt)` instruction to the compiled instruction list to prevent fall-through into subsequently compiled code, assemble the resulting instruction list using the ECE assembler (after bootstrap), and execute it, returning the result. The CL function `evaluate` delegates to `mc-compile-and-go` in the image (via `boot.lisp`) rather than to the CL `compile-and-go` function. The CL `compile-and-go` function remains available only through the `"ece/cold"` ASDF system.
 
 #### Scenario: Simple expression
 - **WHEN** `(evaluate '(+ 1 2))` is called via boot.lisp

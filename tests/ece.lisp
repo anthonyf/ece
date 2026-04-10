@@ -1984,11 +1984,11 @@ VARS are CL symbols (auto-downcased to ECE package)."
              (ece-eval-string "(call/cc (lambda (c) (set! cross-repl-k c) 'captured))")
              ;; Invoking the continuation should return the value, not hang.
              ;; Use a timeout to catch regressions.
-             (ok (= (handler-case
-                        (sb-ext:with-timeout 2
-                          (ece-eval-string "(cross-repl-k 99)"))
-                      (sb-ext:timeout () :timeout))
-                    99))))
+             (let ((result (handler-case
+                               (sb-ext:with-timeout 2
+                                 (ece-eval-string "(cross-repl-k 99)"))
+                             (sb-ext:timeout () :timeout))))
+               (ok (eql result 99)))))
 
 ;;;; ========================================================================
 ;;;; PARAMETER OBJECT TESTS
