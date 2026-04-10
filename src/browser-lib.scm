@@ -117,6 +117,9 @@
 (define (cos x)
   (js-ref->number (js-call (js-math) "cos" (js-number x))))
 
+(define (sqrt x)
+  (js-ref->number (js-call (js-math) "sqrt" (js-number x))))
+
 ;; ── Timing (via FFI) ──
 
 (define (wall-clock-ms)

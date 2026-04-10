@@ -176,6 +176,7 @@
 (%register-primitive! 'current-milliseconds 151)
 (%register-primitive! 'sin 152)
 (%register-primitive! 'cos 153)
+(%register-primitive! 'sqrt 196)
 (%register-primitive! 'wall-clock-ms 154)
 
 ;; --- Type introspection / save-load support ---
