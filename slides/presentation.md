@@ -73,6 +73,32 @@ Scheme is a **minimal Lisp** — a tiny core that's surprisingly powerful.
 
 ---
 
+# An IF Game is Just Function Calls
+
+Each **room** is a function. Going to another room **calls** that function.
+
+```scheme
+(define (town-square)
+  (display "You stand in the town square.\n")
+  (choices ("Visit the blacksmith" (blacksmith))
+           ("Enter the forest"     (forest))))
+
+(define (blacksmith)
+  (display "The blacksmith offers you a sword.\n")
+  (choices ("Take it and enter the forest" (forest))
+           ("Go back to town"              (town-square))))
+
+(define (forest)
+  (display "A dragon blocks the path!\n")
+  (choices ("Fight the dragon" (end-game))
+           ("Flee to town"     (town-square))))
+```
+
+Two problems: rooms call rooms call rooms — **the stack grows forever**.
+And when the dragon kills you — **how do you go back?**
+
+---
+
 # What is Tail Call Optimization?
 
 Most languages **grow the stack** on every function call:
@@ -99,7 +125,7 @@ With TCO, if a call is the **last thing** a function does, **reuse the frame**:
 ```
  (define (countdown n)              Stack (always):
    (if (= n 0) "done"               ┌────────────────┐
-       (countdown (- n 1))))        │ countdown(n)   │ ← reused
+       (countdown (- n 1))))        │ countdown(n)   │ <-- reused
                                     └────────────────┘
    The call IS the last thing.
    Nothing left to do after it.     Works for n = 1,000,000
@@ -150,7 +176,7 @@ Think: **save states in an emulator**, but built into the language.
 (saved #f)                          ; restore!
 ; A dragon appears!
 ; You are eaten.
-; (resumed mid-function — skipped the cave entrance)
+; (resumed mid-function -- skipped the cave entrance)
 ```
 
 ---
@@ -178,7 +204,7 @@ I need a language to **build my language in**.
 ```
  ┌──────────┐      ┌──────────────────────────┐      ┌──────────┐
  │          │      │     Evaluator (CL)       │      │          │
- │  .scm    │─────▶│                          │─────▶│  Output  │
+ │  .scm    │─────>│                          │─────>│  Output  │
  │  source  │      │  eval/apply loop         │      │          │
  │          │      │  CL reader       (free)  │      └──────────┘
  └──────────┘      │  CL GC           (free)  │
@@ -224,7 +250,7 @@ source code to register machine bytecode.
 ```
  ┌──────────┐     ┌────────────────────┐     ┌───────────────────┐
  │          │     │  Compiler (ECE)    │     │ Register Machine  │
- │  .scm    │────▶│                    │────▶│ (in CL)           │
+ │  .scm    │────>│                    │────>│ (in CL)           │
  │  source  │     │  SICP 5.5          │     │                   │
  │          │     │  752 lines of      │     │ val, env, proc,   │
  └──────────┘     │  Scheme            │     │ argl, continue,   │
@@ -246,16 +272,16 @@ The evaluator compiles the compiler **once**. After that, it's self-sustaining.
  ════════════════════════════════════════════════════════
 
  ┌───────────────┐     ┌────────────┐     ┌──────────┐
- │ compiler.scm  │────▶│ Evaluator  │────▶│ .ecec    │
+ │ compiler.scm  │────>│ Evaluator  │────>│ .ecec    │
  │ reader.scm    │     │ (CL)       │     │ files    │
- │ prelude.scm   │     └────────────┘     └────┬─────┘
+ │ prelude.scm   │     └────────────┘     └─────┬────┘
  └───────────────┘                              │
                                                 │
  FROM NOW ON:                                   │
  ═══════════════════════════════════════════════╤═══════
                                                 │
  ┌───────────────┐     ┌────────────┐     ┌─────▼────┐
- │ compiler.scm  │────▶│ Compiled   │────▶│ .ecec    │
+ │ compiler.scm  │────>│ Compiled   │────>│ .ecec    │
  │ reader.scm    │     │ compiler   │     │ (new)    │
  │ prelude.scm   │     │ (.ecec)    │     └────┬─────┘
  └───────────────┘     └────────────┘          │
@@ -279,7 +305,7 @@ Move everything possible from CL into ECE:
  │  ┌──────────────┐  │            │  ┌──────────────┐  │
  │  │ Evaluator    │  │            │  │ Runtime      │  │
  │  │ Compiler     │  │            │  │ ~2,500 lines │  │
- │  │ Reader       │  │   ──────▶  │  └──────────────┘  │
+ │  │ Reader       │  │   ──────>  │  └──────────────┘  │
  │  │ Assembler    │  │            │                    │
  │  │ Primitives   │  │            │  Everything else   │
  │  │ Runtime      │  │            │  is ECE:           │
@@ -344,14 +370,14 @@ ECE needs **4 lines of Scheme**:
 
  (game-loop)
    draw frame...
-   (yield)          ──▶  save continuation k
+   (yield)          ──>  save continuation k
                          set yield flag
-                         exit VM loop       ──▶  requestAnimationFrame
+                         exit VM loop       ──>  requestAnimationFrame
                                                   ─── browser renders ───
                                                   ─── 16ms pass ────────
-                                             ◀──  next frame fires
-                         resume k            ◀──
-   (game-loop)      ◀──  continues exactly
+                                             <──  next frame fires
+                         resume k            <──
+   (game-loop)      <──  continues exactly
    draw next frame       where it left off
 ```
 
@@ -379,6 +405,34 @@ Two thin runtimes. One set of `.ecec` bytecode files.
 
 1. **CL REPL** — basics, TCO, call/cc
 2. **Browser Sandbox** — the same language, running on WASM
+
+---
+
+# Claude Code as a Force Multiplier
+
+ECE would have taken **far longer** without AI. Claude Code keeps me
+**motivated** and **shipping** — pair programming with a tireless partner.
+
+**The workflow:** explore → propose → clear context → implement → test → PR
+
+- **Spec-driven** — explore a topic thoroughly, then generate proposals. Design before code
+- **Clear context between phases** — fresh context for each step prevents stale assumptions
+- **Comprehensive tests** — 630+ tests across 4 suites catch regressions before they land
+- **Multi-reviewer pipeline** — Claude writes, Copilot reviews the PR, I approve
+- **Memory system** — Claude builds up project context across conversations
+
+---
+
+# Staying Effective with AI
+
+**Hard projects stay fun** when you have a capable collaborator.
+But AI-assisted development requires **discipline:**
+
+- **Always review the code** — AI-generated code needs human understanding
+- **Keep changes small** — large diffs are hard to review and hide subtle bugs
+- **Never delete a failing test** — comment it out, fix it later, but preserve it
+- **Run all test suites before every PR** — rove, self-hosted, conformance, WASM
+- **Explore before proposing, propose before implementing** — rushing skips the thinking
 
 ---
 
