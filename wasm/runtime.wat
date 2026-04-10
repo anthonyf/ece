@@ -6,7 +6,7 @@
 ;;; Build:     make wasm
 ;;;
 ;;; Architecture:
-;;;   - 7 opcodes: assign, test, branch, goto, save, restore, perform
+;;;   - 8 opcodes: assign, test, branch, goto, save, restore, perform, halt
 ;;;   - 6 registers: val, env, proc, argl, continue, stack
 ;;;   - WasmGC-managed values (no custom GC)
 ;;;   - Primitives dispatched by stable numeric ID (primitives.def)
@@ -1477,6 +1477,7 @@
   ;;        7-12 = register names (val,env,proc,argl,continue,stack)
   ;;        13-16 = source types (const,reg,label,op)
   ;;        17-43 = operation names from operations.def (op-id = slot - 17)
+  ;;        44 = halt instruction
   (type $i32-array (array (mut i32)))
   (global $asm-sym-ids (mut (ref null $i32-array)) (ref.null none))
 
@@ -1917,6 +1918,12 @@
         (return (struct.new $instr
           (i32.const 6) (i32.const 0) (i32.const 0)
           (local.get $op-id) (local.get $operands)))))
+
+    ;; === HALT (type slot 44) ===
+    (if (i32.eq (local.get $type-id) (array.get $i32-array (local.get $syms) (i32.const 44)))
+      (then
+        (return (struct.new $instr
+          (i32.const 7) (i32.const 0) (i32.const 0) (i32.const 0) (ref.null eq)))))
 
     ;; Unknown — return no-op
     (struct.new $instr (i32.const 6) (i32.const 0) (i32.const 0) (i32.const 0) (ref.null eq))
@@ -2369,6 +2376,10 @@
                     (local.set $space-id (local.get $dest-space))))
                 (local.set $pc (local.get $dest-pc))
                 (br $loop-start)))))
+
+        ;; ── halt (opcode 7) ──
+        (if (i32.eq (local.get $opcode) (i32.const 7))
+          (then (br $loop-end)))
 
         ;; Advance PC and continue
         (local.set $pc (i32.add (local.get $pc) (i32.const 1)))
@@ -5796,6 +5807,7 @@
     (if (i32.eq (local.get $id) (array.get $i32-array (ref.as_non_null (global.get $asm-sym-ids)) (i32.const 4))) (then (return (i32.const 1))))
     (if (i32.eq (local.get $id) (array.get $i32-array (ref.as_non_null (global.get $asm-sym-ids)) (i32.const 5))) (then (return (i32.const 1))))
     (if (i32.eq (local.get $id) (array.get $i32-array (ref.as_non_null (global.get $asm-sym-ids)) (i32.const 6))) (then (return (i32.const 1))))
+    (if (i32.eq (local.get $id) (array.get $i32-array (ref.as_non_null (global.get $asm-sym-ids)) (i32.const 44))) (then (return (i32.const 1))))
     (i32.const 0))
 
   ;; Parse a single instruction s-expression into an $instr struct
@@ -5924,6 +5936,13 @@
         (return (struct.new $instr
           (i32.const 6) (i32.const 0) (i32.const 0) (local.get $src-arg)
           (local.get $src-val)))))
+
+    ;; halt (slot 44): (halt)
+    (if (i32.eq (local.get $tag-id)
+          (array.get $i32-array (ref.as_non_null (global.get $asm-sym-ids)) (i32.const 44)))
+      (then
+        (return (struct.new $instr
+          (i32.const 7) (i32.const 0) (i32.const 0) (i32.const 0) (global.get $nil)))))
 
     ;; Unknown instruction type (e.g. procedure-name metadata) — skip
     (ref.null $instr))
@@ -6579,8 +6598,8 @@
       (local.set $op (struct.get $instr $opcode (local.get $instr)))
       (local.set $b (struct.get $instr $b (local.get $instr)))
       (local.set $c (struct.get $instr $c (local.get $instr)))
-      ;; Check: opcode must be 0-6
-      (if (i32.gt_u (local.get $op) (i32.const 6))
+      ;; Check: opcode must be 0-7
+      (if (i32.gt_u (local.get $op) (i32.const 7))
         (then (return (i32.sub (i32.const 0) (i32.add (local.get $i) (i32.const 1))))))
       ;; Check: for assign-op (op=0,b=3), test (op=1), perform (op=6): c (op-id) must be 0-26
       (if (i32.or (i32.and (i32.eqz (local.get $op)) (i32.eq (local.get $b) (i32.const 3)))

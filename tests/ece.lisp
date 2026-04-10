@@ -1971,6 +1971,26 @@ VARS are CL symbols (auto-downcased to ECE package)."
                       (list (intern "a" :ece) 42 (intern "c" :ece))))))
 
 ;;;; ========================================================================
+;;;; CALL/CC REPL BOUNDARY TESTS
+;;;; ========================================================================
+
+(deftest test-callcc-cross-repl-expression
+    ;; Regression test: invoking a continuation captured in one REPL expression
+    ;; from a subsequent expression must not loop infinitely.
+    ;; Each ece-eval-string call goes through mc-compile-and-go, simulating
+    ;; separate REPL entries. The halt instruction prevents fall-through.
+    (testing "continuation invoked across REPL expressions does not loop"
+             (ece-eval-string "(define cross-repl-k #f)")
+             (ece-eval-string "(call/cc (lambda (c) (set! cross-repl-k c) 'captured))")
+             ;; Invoking the continuation should return the value, not hang.
+             ;; Use a timeout to catch regressions.
+             (ok (= (handler-case
+                        (sb-ext:with-timeout 2
+                          (ece-eval-string "(cross-repl-k 99)"))
+                      (sb-ext:timeout () :timeout))
+                    99))))
+
+;;;; ========================================================================
 ;;;; PARAMETER OBJECT TESTS
 ;;;; ========================================================================
 

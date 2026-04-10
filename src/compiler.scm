@@ -743,8 +743,9 @@
   ;; persists while execute-from-pc runs, and call/cc inside it would
   ;; capture the entire env chain including the instruction list).
   (let ((start-pc (assemble-into-global
-                   (strip-source-locations
-                    (mc-instructions (mc-compile expr 'val 'next))))))
+                   (append (strip-source-locations
+                            (mc-instructions (mc-compile expr 'val 'next)))
+                           '((halt))))))
     (if (null? env-args)
         (execute-from-pc start-pc)
         (execute-from-pc start-pc (car env-args)))))
