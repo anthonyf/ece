@@ -3,4 +3,6 @@
  (name "Game Loop" file "game-loop.scm")
  (name "Sierpinski Triangle" file "sierpinski-triangle.scm")
  (name "Starfield" file "starfield.scm")
- (name "Analog Clock" file "analog-clock.scm"))
+ (name "Analog Clock" file "analog-clock.scm")
+ (name "Mandelbrot" file "mandelbrot.scm")
+ (name "Plasma" file "plasma.scm"))
