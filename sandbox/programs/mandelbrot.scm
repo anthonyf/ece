@@ -7,46 +7,60 @@
 (define real-max 1.0)
 (define imag-min -1.2)
 (define imag-max 1.2)
+(define real-range (- real-max real-min))
+(define imag-range (- imag-max imag-min))
 
 (define max-iter 100)
 
-;; Map pixel to complex plane
-(define (px->real x) (+ real-min (* (/ x w) (- real-max real-min))))
-(define (px->imag y) (+ imag-min (* (/ y h) (- imag-max imag-min))))
+;; Shared iteration variables
+(define zr 0.0)
+(define zi 0.0)
+(define zr2 0.0)
+(define zi2 0.0)
+(define iter-count 0)
+(define cr 0.0)
+(define ci 0.0)
+(define col-x 0)
+(define t 0)
 
-;; Iterate z = z^2 + c, return iteration count
-(define (mandelbrot cr ci)
-  (let loop ((zr 0.0) (zi 0.0) (i 0))
-    (if (= i max-iter)
-        max-iter
-        (let ((zr2 (* zr zr))
-              (zi2 (* zi zi)))
-          (if (> (+ zr2 zi2) 4.0)
-              i
-              (loop (+ (- zr2 zi2) cr)
-                    (+ (* 2.0 zr zi) ci)
-                    (+ i 1)))))))
+(define (mandelbrot)
+  (set! zr 0.0)
+  (set! zi 0.0)
+  (set! iter-count 0)
+  (define (step)
+    (when (< iter-count max-iter)
+      (set! zr2 (* zr zr))
+      (set! zi2 (* zi zi))
+      (when (not (> (+ zr2 zi2) 4.0))
+        (set! zi (+ (* 2.0 zr zi) ci))
+        (set! zr (+ (- zr2 zi2) cr))
+        (set! iter-count (+ iter-count 1))
+        (step))))
+  (step)
+  iter-count)
 
-;; Map iteration count to RGB color
 (define (iter->color n)
   (if (= n max-iter)
-      (begin (canvas-set-fill-color 0 0 0))
-      (let ((t (* n 3)))
+      (canvas-set-fill-color 0 0 0)
+      (begin
+        (set! t (* n 3))
         (canvas-set-fill-color
          (modulo (* t 7) 256)
          (modulo (* t 5) 256)
          (modulo (* t 11) 256)))))
 
-;; Render one row of pixels
 (define (render-row y)
-  (let col ((x 0))
-    (when (< x w)
-      (let ((n (mandelbrot (px->real x) (px->imag y))))
-        (iter->color n)
-        (canvas-fill-rect x y 1 1))
-      (col (+ x 1)))))
+  (set! ci (+ imag-min (* (/ y h) imag-range)))
+  (set! col-x 0)
+  (define (col-step)
+    (when (< col-x w)
+      (set! cr (+ real-min (* (/ col-x w) real-range)))
+      (iter->color (mandelbrot))
+      (canvas-fill-rect col-x y 1 1)
+      (set! col-x (+ col-x 1))
+      (col-step)))
+  (col-step))
 
-;; Progressive rendering: row by row
 (canvas-clear)
 
 (define (render y)
