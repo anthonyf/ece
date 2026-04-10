@@ -1767,6 +1767,7 @@ variables inline — no throw/catch, no dispatcher, no allocation per transition
                   (case (car op-spec)
                     (|op-fn| (call-op (cadr op-spec) (cddr instr)))
                     (t (call-op (get-operation (cadr op-spec)) (cddr instr))))))
+               (|halt| (go loop-end))
                (t (error "Unknown instruction: ~A" instr))))
            (incf pc)
            (go loop-start)
