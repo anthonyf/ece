@@ -1,21 +1,11 @@
 ## ADDED Requirements
 
-### Requirement: ece-build script packages CL target
-`ece-build` with `--target cl` SHALL compile .scm files and produce a self-contained directory runnable via a generated wrapper script that invokes the installed `ece` binary. The generated wrapper SHALL NOT require `sbcl` to be invoked directly by the user.
+### Requirement: ece-build script packages web target
+`ece-build` with `--target web` SHALL compile .scm files and produce a self-contained directory that runs in a web browser.
 
-#### Scenario: Build a CL app
-- **WHEN** `ece-build --target cl -o dist/ src/main.scm` is run
-- **THEN** `dist/` SHALL contain `app.ecec` and an executable `run` wrapper script
-- **AND** executing `dist/run` SHALL invoke `ece` on `app.ecec` and run the app
-
-#### Scenario: CL output uses installed ece binary
-- **WHEN** the user has `ece` in `$PATH` and runs `dist/run`
-- **THEN** the wrapper SHALL `exec ece "$(dirname "$0")/app.ecec"` (or equivalent)
-- **AND** the app SHALL execute without the ECE repo present
-
-#### Scenario: Multi-file CL build
-- **WHEN** `ece-build --target cl -o dist/ src/utils.scm src/main.scm` is run
-- **THEN** both files SHALL be compiled into `app.ecec`
+#### Scenario: Runtime-only build from a stub source
+- **WHEN** `ece-build --target web -o dist/ stub.scm` is run where `stub.scm` contains a no-op expression
+- **THEN** `dist/` SHALL contain `ece-runtime.js` and `ece-bootstrap.js` suitable for use as a base for custom web apps like the sandbox
 
 ### Requirement: ece-build resolves ECE_HOME automatically
 `ece-build` SHALL determine the ECE SDK location using the same ECE_HOME resolution as the `ece` binary itself: `$ECE_HOME` env var first, otherwise the `share/ece/` directory relative to the `ece` executable path.
