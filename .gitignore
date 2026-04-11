@@ -8,6 +8,8 @@ sandbox/ece-bootstrap.js
 sandbox/ece-compiled.js
 sandbox/ece-programs.js
 sandbox/programs/*.ecec
+/src/*.ecec
+/slides/presentation.html
 _site/
 /bin/ece
 /bin/ece-repl
