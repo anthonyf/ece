@@ -357,41 +357,17 @@ the bare NAME symbol. Returns the substituted s-expression."
    ((char=? ch #\return)  (write-string "Return" port))
    (else (write-char ch port))))
 
+;; The QUOTED? parameter is unused but retained because the walker passes it
+;; through every recursive call. The first cut auto-pipe-escaped lowercase
+;; identifiers in quoted positions, but ECE primitives use both lowercase data
+;; tags ('|continuation|) and uppercase ones ('parameter), so the codegen
+;; can't infer the right answer from the symbol alone — the template author
+;; writes |name| explicitly when lowercase preservation is required.
 (define (write-cl-symbol sym port quoted?)
   "Emit SYM verbatim. The template author chooses case-preservation by writing
 literal |name| pipe-escaped symbols where needed; bare lowercase symbols round
 trip through CL's :upcase reader to uppercase package symbols."
   (write-string (symbol->string sym) port))
-
-(define (needs-pipe-escape? name)
-  "True if NAME (a symbol's printed name) needs pipe escaping when written
-in a quoted-data position. We pipe-escape any name that the CL reader would
-otherwise distort (i.e. anything with non-uppercase characters that isn't
-already package-qualified)."
-  (cond
-   ((string-contains? name ":") #f)         ; package-qualified — leave alone
-   ((string=? name "") #t)
-   ;; Already all-uppercase: round-trips fine without pipes.
-   ((string-all-upper? name) #f)
-   (else #t)))
-
-(define (string-all-upper? s)
-  (let ((len (string-length s)))
-    (let loop ((i 0))
-      (cond
-       ((>= i len) #t)
-       ((and (char-alphabetic? (string-ref s i))
-             (not (char=? (string-ref s i)
-                          (char-upcase-safe (string-ref s i)))))
-        #f)
-       (else (loop (+ i 1)))))))
-
-(define (char-upcase-safe ch)
-  ;; ECE prelude lacks char-upcase; do it via integer arithmetic.
-  (let ((code (char->integer ch)))
-    (if (and (>= code 97) (<= code 122))
-        (integer->char (- code 32))
-        ch)))
 
 (define (write-cl-list lst port quoted?)
   (cond

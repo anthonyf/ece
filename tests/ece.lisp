@@ -2915,13 +2915,33 @@ provide an ece-NAME defun for each."
                      "primitives-auto.lisp has >1000 bytes")))))
 
 (deftest test-primitives-auto-validation
-    (testing "codegen refuses to emit when a template is missing"
-             ;; Smoke check: confirm collect-emit-list signals when a manifest
-             ;; primitive lacks a template. We exercise this through the codegen's
-             ;; *partial-codegen?* flag — flipping it to nil with an absent
-             ;; template should cause an error during emission.
-             ;;
-             ;; This is verified manually because invoking ECE-from-CL with the
-             ;; codegen tool requires a fully bootstrapped image; the build-time
-             ;; `make bootstrap` covers this case end to end.
-             (ok t "validation behavior verified by codegen-cl.scm error path")))
+    (testing "codegen refuses to emit when templates are missing"
+             ;; Drive the codegen with the real primitives.def manifest but
+             ;; WITHOUT loading src/primitives.scm — *host-primitives* is then
+             ;; empty and every core/cl entry should be flagged as missing,
+             ;; causing strict-mode emission to abort with a descriptive error.
+             (let ((scratch-out
+                    (uiop:with-temporary-file (:pathname p :type "lisp" :keep nil)
+                      (namestring p))))
+               (ece::evaluate (list (intern "load" :ece) "src/codegen-cl.scm"))
+               (let ((failed nil)
+                     (msg nil))
+                 (handler-case
+                     (ece::evaluate (list (intern "generate-primitives-auto-lisp!" :ece)
+                                          "primitives.def"
+                                          scratch-out))
+                   (ece:ece-runtime-error (c)
+                     (setf failed t)
+                     (setf msg (princ-to-string (ece:ece-original-error c))))
+                   (error (c)
+                     (setf failed t)
+                     (setf msg (princ-to-string c))))
+                 (ok failed "strict codegen aborts on missing templates")
+                 (ok (and msg (search "missing template" msg))
+                     (format nil "error names a missing template (got: ~A)"
+                             (and msg (subseq msg 0 (min 120 (length msg))))))
+                 (ok (not (probe-file scratch-out))
+                     "no output file written when validation fails"))
+               ;; Reload the real templates so subsequent tests in the same
+               ;; image see a populated *host-primitives*.
+               (ece::evaluate (list (intern "load" :ece) "src/primitives.scm")))))

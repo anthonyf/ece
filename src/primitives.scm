@@ -864,8 +864,15 @@
                 ,path))
         cl:nil))
 
+;; Restores the #+unix guard from the pre-migration handwritten version: on
+;; non-Unix SBCL the SB-POSIX package isn't loaded, so we resolve CHMOD at
+;; runtime via FIND-SYMBOL and no-op when it's unavailable.
 (define-host-primitive (%chmod path mode)
-  :cl `(cl:progn (sb-posix:chmod ,path ,mode) cl:nil))
+  :cl `(let* ((pkg (cl:find-package "SB-POSIX"))
+              (chmod-fn (cl:and pkg (cl:find-symbol "CHMOD" pkg))))
+         (cl:when (cl:and chmod-fn (cl:fboundp chmod-fn))
+                  (cl:funcall chmod-fn ,path ,mode))
+         cl:nil))
 
 ;;; ─────────────────────────────────────────────────────────────────────────
 ;;; Boot registration (ids 222-227) — no-ops on CL (already initialized)

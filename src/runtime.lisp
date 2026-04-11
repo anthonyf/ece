@@ -1611,7 +1611,19 @@ When ENV is supplied, it is passed to mc-compile-and-go."
 ;;; Stage 0 of the self-hosting roadmap (see proposal: emit-host-primitives).
 ;;; The handwritten ece-NAME defuns previously in this file have been deleted —
 ;;; templates in src/primitives.scm are the source of truth.
-(load (asdf:system-relative-pathname :ece "bootstrap/primitives-auto.lisp"))
+(let ((primitives-auto-path
+       (asdf:system-relative-pathname :ece "bootstrap/primitives-auto.lisp")))
+  (unless (probe-file primitives-auto-path)
+    (error "Missing generated bootstrap file ~A.~%~
+            Run `make bootstrap` (or `make bootstrap/primitives-auto.lisp`) ~
+            to regenerate it from src/primitives.scm."
+           primitives-auto-path))
+  (handler-case (load primitives-auto-path)
+    (error (e)
+      (error "Failed to load generated bootstrap file ~A: ~A~%~
+              The file may be corrupt — try `make bootstrap` to regenerate, ~
+              or `git checkout bootstrap/primitives-auto.lisp` to restore."
+             primitives-auto-path e))))
 
 ;;; Now that all primitives and wrapper functions are defined, initialize
 ;;; the dispatch tables from the manifest, then build *global-env*.

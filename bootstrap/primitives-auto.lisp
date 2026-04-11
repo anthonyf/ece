@@ -13,7 +13,7 @@
 (in-package :ece)
 
 (defun ece-%chmod (path mode)
-  (cl:progn (sb-posix:chmod path mode) cl:nil))
+  (let* ((pkg (cl:find-package "SB-POSIX")) (chmod-fn (cl:and pkg (cl:find-symbol "CHMOD" pkg)))) (cl:when (cl:and chmod-fn (cl:fboundp chmod-fn)) (cl:funcall chmod-fn path mode)) cl:nil))
 
 (defun ece-%create-repl-space! (name size)
   (cl:locally (cl:declare (cl:ignore name size)) cl:nil))
