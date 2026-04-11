@@ -13,7 +13,7 @@ const wasmFile = path.join(__dirname, "runtime.wasm");
 
 // ── Integration tests (JS↔WASM boundary) ──
 
-function runIntegrationTests(w, envH) {
+function runIntegrationTests(w, envH, output) {
   let iPassed = 0, iFailed = 0;
 
   function iTest(name, fn) {
@@ -162,6 +162,21 @@ function runIntegrationTests(w, envH) {
     assert(id === id2, `expected same id ${id}, got ${id2}`);
   });
 
+  // ── Unbound variable: host-level spot check on the sentinel path.
+  // $lookup-variable-value returns an $error-sentinel on miss; the guard/
+  // catchable-error scenarios are covered in tests/ece/common/test-error-messages.scm
+  // which run inside the ECE test harness.
+  iTest("unbound variable: direct lookup returns error sentinel", () => {
+    const h = ECE.internSym("definitely-not-bound-zzz");
+    const r = w.test_lookup_returns_sentinel(h);
+    assert(r === 1, `expected sentinel (1), got ${r}`);
+  });
+  iTest("unbound variable: bound lookup returns value", () => {
+    const h = ECE.internSym("car");
+    const r = w.test_lookup_returns_sentinel(h);
+    assert(r === 0, `expected value (0), got ${r}`);
+  });
+
   // Serialization round-trip tests are in tests/ece/test-serialization.scm
   // (run as part of the ECE test suite, not as JS integration tests)
 
@@ -230,7 +245,7 @@ async function run() {
   w.mark_handles();
 
   // ── Run integration tests ──
-  const intResults = runIntegrationTests(w, envH);
+  const intResults = runIntegrationTests(w, envH, output);
 
   // ── Load and run ECE test suite ──
   if (!fs.existsSync(testFile)) {

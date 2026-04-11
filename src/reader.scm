@@ -66,15 +66,29 @@
 
 ;;; Read a symbol
 (define (read-symbol port initial-char)
+  (when (char=? initial-char #\\)
+    (bad-symbol-char port "" initial-char))
   (define buf (string-append "" (string initial-char)))
   (let loop ()
     (let ((ch (peek-char port)))
-      (if (and (not (eof? ch)) (reader-identifier-char? ch))
-          (begin
-            (read-char port)
-            (set! buf (string-append buf (string ch)))
-            (loop))
-          (%intern-ece buf)))))
+      (cond
+       ((or (eof? ch) (not (reader-identifier-char? ch)))
+        (%intern-ece buf))
+       ((char=? ch #\\)
+        (bad-symbol-char port buf ch))
+       (else
+        (read-char port)
+        (set! buf (string-append buf (string ch)))
+        (loop))))))
+
+;;; Signal a reader error for a stray backslash inside a bare symbol token.
+;;; Includes source location when *source-file-name* is set.
+(define (bad-symbol-char port partial ch)
+  (if *source-file-name*
+      (error "invalid character in symbol: \\"
+             partial
+             (list *source-file-name* (port-line port) (port-col port)))
+      (error "invalid character in symbol: \\" partial)))
 
 ;;; Read a number (integer or float)
 (define (read-number port initial-char)
