@@ -201,7 +201,7 @@ repl: share/ece/ece-main.ecec
 run-lisp:
 	qlot exec sbcl --dynamic-space-size 4096 --disable-debugger --eval '(asdf:load-system :ece)' $(ARGS)
 
-bootstrap:
+bootstrap: $(BOOTSTRAP_DIR)/primitives-auto.lisp
 	@mkdir -p $(BOOTSTRAP_DIR)
 	qlot exec sbcl --eval '(asdf:load-system :ece)' \
 	  --eval '(in-package :ece)' \
@@ -209,6 +209,20 @@ bootstrap:
 	  --eval '(evaluate (list (quote eval) (list (quote read) (list (quote open-input-string) "(compile-system (quote (\"src/boot-env.scm\" \"src/prelude.scm\" \"src/compiler.scm\" \"src/reader.scm\" \"src/assembler.scm\" \"src/compilation-unit.scm\" \"src/syntax-rules.scm\" \"src/browser-lib.scm\")) \"bootstrap/bootstrap.ecec\")"))))' \
 	  --quit
 	@echo "Bootstrap bundle regenerated: $(BOOTSTRAP_DIR)/bootstrap.ecec"
+
+# Auto-generated CL primitive defuns. Source of truth: src/primitives.scm.
+# The codegen tool (src/codegen-cl.scm) is itself an ECE program that runs
+# through the existing ECE interpreter. The generated file is checked in.
+$(BOOTSTRAP_DIR)/primitives-auto.lisp: primitives.def src/primitives.scm src/codegen-cl.scm
+	@mkdir -p $(BOOTSTRAP_DIR)
+	@echo "Regenerating $(BOOTSTRAP_DIR)/primitives-auto.lisp from src/primitives.scm..."
+	qlot exec sbcl --non-interactive --disable-debugger \
+	  --eval '(asdf:load-system :ece)' \
+	  --eval '(ece:evaluate (list (quote load) "src/codegen-cl.scm"))' \
+	  --eval '(ece:evaluate (list (quote load) "src/primitives.scm"))' \
+	  --eval '(ece:evaluate (list (intern "generate-primitives-auto-lisp!" :ece) "primitives.def" "$(BOOTSTRAP_DIR)/primitives-auto.lisp"))' \
+	  --quit
+	@echo "Generated $(BOOTSTRAP_DIR)/primitives-auto.lisp"
 
 sandbox: ece
 	@mkdir -p .tmp/sandbox-build sandbox
