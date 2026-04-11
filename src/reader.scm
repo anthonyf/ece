@@ -151,6 +151,8 @@
         (flush-buf!)
         (let ((segs (reverse segments)))
           (cond
+           ;; Empty string — return literal ""
+           ((null? segs) "")
            ;; Single literal string — return directly
            ((and (= (length segs) 1) (string? (car segs)))
             (car segs))

@@ -216,6 +216,21 @@
 ;;;; ========================================================================
 ;;;; RUNTIME — Minimal code needed to execute compiled ECE instructions
 ;;;; ========================================================================
+;;;
+;;; Stage 0 of the self-hosting roadmap (emit-host-primitives) moved the
+;;; implementation of every core/cl primitive out of this file. Each primitive
+;;; now lives as a (define-host-primitive ...) template in src/primitives.scm.
+;;; The codegen tool (src/codegen-cl.scm) walks those templates and emits
+;;; bootstrap/primitives-auto.lisp, which is loaded near the bottom of this
+;;; file just before init-primitive-dispatch-tables. To regenerate after
+;;; editing primitives.scm, run `make bootstrap` or
+;;; `make bootstrap/primitives-auto.lisp`.
+;;;
+;;; What stays here: helper functions referenced by templates (scheme-bool,
+;;; hash-frame-p, ece-output-to-stream, ece-port-stream and related,
+;;; format-ece-proc, etc.), CL specials (*executing-space-id*, *global-env*,
+;;; *traced-procedures*, ...), the compilation-space struct, the executor
+;;; (execute-instructions), and the operation dispatch infrastructure.
 
 ;;; ECE runtime error condition
 ;;; Wraps CL errors with register machine context for debugging
@@ -436,47 +451,10 @@ Used by %global-ref for syntax-rules hygiene."
     (setf (gethash var (cdr (find-hash-frame env))) val)))
 
 ;;; Primitives and global environment
-
-;;; --- Override table for non-conventional CL mappings ---
-;;; Most primitives resolve via naming convention (ece-<name> or CL <name>).
-;;; These ~13 entries have CL function names that don't follow convention.
-
-(defparameter *primitive-cl-overrides*
-  '((char->integer . char-code)
-    (integer->char . code-char)
-    (%raw-error . error)
-    (vector-length . length)
-    (vector-ref . aref)
-    (string-length . length)
-    (bitwise-and . logand)
-    (bitwise-or . logior)
-    (bitwise-xor . logxor)
-    (bitwise-not . lognot)
-    (arithmetic-shift . ash)
-    (set-car! . rplaca)
-    (set-cdr! . rplacd)))
-
-;;; Boolean-returning primitive wrappers
-;;; These CL functions return t/nil; we convert nil → *scheme-false*.
-
-(defun ece-= (&rest args) (scheme-bool (apply #'cl:= args)))
-(defun ece-< (&rest args) (scheme-bool (apply #'cl:< args)))
-(defun ece-> (&rest args) (scheme-bool (apply #'cl:> args)))
-(defun ece-null? (x) (scheme-bool (null x)))
-(defun ece-pair? (x) (scheme-bool (consp x)))
-(defun ece-number? (x) (scheme-bool (numberp x)))
-(defun ece-keyword? (x)
-  (scheme-bool (and (symbolp x)
-                    (let ((name (symbol-name x)))
-                      (and (> (length name) 1)
-                           (char= (char name 0) #\:))))))
-(defun ece-string? (x) (scheme-bool (stringp x)))
-(defun ece-symbol? (x) (scheme-bool (and (symbolp x) x)))  ;; exclude nil ('())
-(defun ece-integer? (x) (scheme-bool (integerp x)))
-(defun ece-eq? (x y) (scheme-bool (eq x y)))
-(defun ece-eqv? (x y) (scheme-bool (eql x y)))
-(defun ece-equal? (x y) (scheme-bool (equal x y)))
-(defun ece-char? (x) (scheme-bool (characterp x)))
+;;; Implementations live in src/primitives.scm and are emitted into
+;;; bootstrap/primitives-auto.lisp by codegen-cl.scm. The legacy override
+;;; table and CL-fallthrough conventions have been retired — every core/cl
+;;; primitive resolves via Convention 1 (ece-NAME in :ece package).
 
 ;;; --- Manifest-based dispatch tables ---
 
@@ -529,27 +507,13 @@ Used by %global-ref for syntax-rules hygiene."
   (intern (string-downcase (symbol-name cl-sym)) :ece))
 
 (defun resolve-cl-primitive (ece-name-sym)
-  "Resolve ECE primitive name to CL function via override table or naming convention.
-Tries: override table → ece-<name> in ECE package → <name> in CL package → <name> in ECE package."
-  (let* ((name-str (symbol-name ece-name-sym))       ; lowercase ECE name
-         (name-up (string-upcase name-str))           ; uppercase for CL symbol lookup
-         (override (assoc name-up *primitive-cl-overrides*
-                          :test #'string-equal
-                          :key #'symbol-name)))
-    (cond
-      ;; Explicit override
-      (override
-       (let ((cl-sym (cdr override)))
-         (and (fboundp cl-sym) (symbol-function cl-sym))))
-      ;; Convention 1: ECE-<NAME> in ECE package
-      ((let ((sym (find-symbol (concatenate 'string "ECE-" name-up) :ece)))
-         (and sym (fboundp sym) (symbol-function sym))))
-      ;; Convention 2: <NAME> in CL package
-      ((let ((sym (find-symbol name-up :cl)))
-         (and sym (fboundp sym) (symbol-function sym))))
-      ;; Convention 3: <NAME> in ECE package
-      ((let ((sym (find-symbol name-up :ece)))
-         (and sym (fboundp sym) (symbol-function sym)))))))
+  "Resolve ECE primitive name to its CL implementation function.
+Every core/cl primitive has an ece-NAME defun emitted into
+bootstrap/primitives-auto.lisp from a template in src/primitives.scm."
+  (let* ((name-str (symbol-name ece-name-sym))
+         (name-up (string-upcase name-str))
+         (sym (find-symbol (concatenate 'string "ECE-" name-up) :ece)))
+    (and sym (fboundp sym) (symbol-function sym))))
 
 (defun init-primitive-dispatch-tables ()
   "Initialize dispatch tables from manifest via convention-based resolution."
@@ -630,9 +594,6 @@ Tries: override table → ece-<name> in ECE package → <name> in CL package →
 ;;; Custom readtable for ECE: ` → quasiquote, , → unquote, ,@ → unquote-splicing
 ;;; I/O primitives with custom wrappers
 
-(defun ece-hash-table? (obj)
-  "ECE primitive: returns scheme bool. Use hash-table-p for CL-side checks."
-  (scheme-bool (hash-table-p obj)))
 
 (defun format-ece-hash-table (obj stream writer)
   "Format a platform hash table as {k1 v1 k2 v2 ...}."
@@ -669,75 +630,19 @@ Tries: override table → ece-<name> in ECE package → <name> in CL package →
   "Write obj in readable form to a specific stream."
   (ece-output-to-stream obj stream #'prin1))
 
-(defun ece-eof? (obj)
-  "Test if obj is the EOF sentinel."
-  (scheme-bool (eq obj *eof-sentinel*)))
-
-(defun ece-string-ref (s i)
-  "Return the character at index i in string s."
-  (char s i))
-
-(defun ece-string-append (&rest strings)
-  "Concatenate all string arguments."
-  (apply #'concatenate 'string strings))
-
-(defun ece-substring (s start end)
-  "Extract substring from start to end."
-  (subseq s start end))
 
 
-(defun ece-string->symbol (s)
-  "Intern a symbol from string s in the ECE package."
-  (intern s :ece))
 
-(defun ece-%intern-ece (s)
-  "Intern string S as a symbol in the ECE package."
-  (intern s :ece))
 
-(defun ece-symbol->string (s)
-  "Return the name of symbol s."
-  (symbol-name s))
 
-(defun ece-vector? (x)
-  "Test if x is a vector (but not a string)."
-  (scheme-bool (and (vectorp x) (not (stringp x)))))
 
-(defun ece-make-vector (n &optional (fill 0))
-  "Create a vector of n elements filled with fill (default 0)."
-  (make-array n :initial-element fill))
 
-(defun ece-vector (&rest args)
-  "Create a vector from arguments."
-  (apply #'vector args))
 
-(defun ece-vector-set! (vec idx val)
-  "Set element at idx in vec to val."
-  (setf (aref vec idx) val)
-  val)
 
-(defun ece-read-line (port)
-  "Read a line of text from PORT. Returns EOF sentinel at end of input.
-Called only via the ECE wrapper in prelude.scm, which supplies the port."
-  (let ((stream (ece-port-stream port)))
-    (multiple-value-bind (line missing-newline-p)
-        (read-line stream nil nil)
-      (declare (ignore missing-newline-p))
-      (or line *eof-sentinel*))))
 
-(defun ece-write-to-string (x)
-  "Convert any value to its human-readable string representation."
-  (cond
-    ((scheme-false-p x) "#f")
-    ((eq x t) "#t")
-    ((null x) "()")
-    ((and (listp x) (member (car x) '(compiled-procedure primitive)))
-     (format-ece-proc x))
-    ((hash-table-p x)
-     (with-output-to-string (s)
-       (format-ece-hash-table x s
-                              (lambda (v str) (ece-display-to-stream v str)))))
-    (t (let ((*print-circle* t))
-         (princ-to-string x)))))
+
+
+
 
 (defvar *preserve-readtable*
   (let ((rt (copy-readtable nil)))
@@ -745,14 +650,6 @@ Called only via the ECE wrapper in prelude.scm, which supplies the port."
     rt)
   "Cached readtable with :preserve case for write-to-string-flat.")
 
-(defun ece-write-to-string-flat (x)
-  "Serialize X to a string parseable by both the CL and ECE readers.
-Emits #f for SCHEME-FALSE, (%ser/opaque) for CL hash tables, and uses
-:preserve readtable-case so lowercase ECE symbols print without pipe escaping."
-  (let ((*print-circle* nil) (*print-pretty* nil) (*package* (find-package :ece))
-        (*readtable* *preserve-readtable*))
-    (with-output-to-string (s)
-      (ece-print-flat x s))))
 
 (defun ece-print-flat (x s)
   "Recursively print X to S using ECE-readable syntax."
@@ -777,41 +674,13 @@ Emits #f for SCHEME-FALSE, (%ser/opaque) for CL hash tables, and uses
      (write-char #\) s))
     (t (prin1 x s))))
 
-(defun ece-truncate (x)
-  "Truncate number toward zero to integer."
-  (values (cl:truncate x)))
 
-(defun ece-floor (x)
-  "Floor number toward negative infinity to integer."
-  (values (cl:floor x)))
 
-(defun ece-exact->inexact (x)
-  "Convert exact number to inexact (float)."
-  (float x 1.0))
 
-(defun ece-sleep (seconds)
-  "Pause execution for the given number of seconds. Returns nil."
-  (cl:sleep seconds)
-  nil)
 
-(defun ece-clear-screen ()
-  "Clear the terminal screen using ANSI escape sequences."
-  (format t "~c[2J~c[H" #\Escape #\Escape)
-  (finish-output)
-  nil)
 
-(defun ece-%yield! (k)
-  "No-op yield on CL — cooperative scheduling is browser-only."
-  k)
 
-(defun ece-current-milliseconds ()
-  "Milliseconds since SBCL start (CL approximation of performance.now)."
-  (truncate (* (/ (get-internal-real-time) internal-time-units-per-second) 1000)))
 
-(defun ece-wall-clock-ms ()
-  "Milliseconds since midnight local time."
-  (multiple-value-bind (sec min hour) (get-decoded-time)
-    (+ (* hour 3600000) (* min 60000) (* sec 1000))))
 
 (defun ece-string-trim (str)
   "Trim whitespace from both ends of a string."
@@ -851,15 +720,8 @@ Emits #f for SCHEME-FALSE, (%ser/opaque) for CL hash tables, and uses
 (defun ece-make-output-port (stream &optional name)
   (list 'output-port stream name 1 0))
 
-(defun ece-input-port? (x)
-  (scheme-bool (and (consp x) (eq (car x) 'input-port))))
 
-(defun ece-output-port? (x)
-  (scheme-bool (and (consp x) (eq (car x) 'output-port))))
 
-(defun ece-port? (x)
-  (scheme-bool (or (and (consp x) (eq (car x) 'input-port))
-                   (and (consp x) (eq (car x) 'output-port)))))
 
 (defun ece-port-stream (port)
   (cadr port))
@@ -867,11 +729,7 @@ Emits #f for SCHEME-FALSE, (%ser/opaque) for CL hash tables, and uses
 (defun ece-port-name (port)
   (caddr port))
 
-(defun ece-port-line (port)
-  (cadddr port))
 
-(defun ece-port-col (port)
-  (car (cddddr port)))
 
 (defun set-ece-port-line! (port val) (setf (cadddr port) val))
 (defun set-ece-port-col!  (port val) (setf (car (cddddr port)) val))
@@ -882,194 +740,43 @@ Emits #f for SCHEME-FALSE, (%ser/opaque) for CL hash tables, and uses
 
 ;;; File and string port constructors
 
-(defun ece-open-input-file (filename)
-  (ece-make-input-port (open filename :direction :input)
-                       (if (stringp filename) filename
-                           (namestring filename))))
 
-(defun ece-open-output-file (filename)
-  (ece-make-output-port (open filename :direction :output
-                              :if-exists :supersede
-                              :if-does-not-exist :create)
-                        (if (stringp filename) filename
-                            (namestring filename))))
 
-(defun ece-close-input-port (port)
-  (close (ece-port-stream port))
-  nil)
 
-(defun ece-close-output-port (port)
-  (close (ece-port-stream port))
-  nil)
 
-(defun ece-open-input-string (str)
-  (ece-make-input-port (make-string-input-stream str)))
 
-(defun ece-open-output-string ()
-  (ece-make-output-port (make-string-output-stream)))
 
-(defun ece-get-output-string (port)
-  (get-output-stream-string (ece-port-stream port)))
 
 ;;; Port-required write primitives (R7RS ports via ECE wrappers)
 ;;; These require an explicit port argument — no ambient fallback.
 ;;; The ECE wrappers in prelude.scm supply (current-output-port) when omitted.
 
-(defun ece-%initial-output-port ()
-  "Return a fresh output port wrapping CL's *standard-output*.
-Called once during prelude load to seed the current-output-port parameter.
-Uses a synonym stream so that later dynamic rebindings of *standard-output*
-(e.g. via CL's with-output-to-string at the test boundary) are honored."
-  (ece-make-output-port (make-synonym-stream '*standard-output*)))
 
-(defun ece-%initial-input-port ()
-  "Return a fresh input port wrapping CL's *standard-input*.
-Called once during prelude load to seed the current-input-port parameter.
-Uses a synonym stream so that dynamic rebindings of *standard-input* are honored."
-  (ece-make-input-port (make-synonym-stream '*standard-input*)))
 
 ;;; Process environment and filesystem — host-only capabilities.
 ;;; Each is a one-line wrapper; all logic lives in ECE.
 
-(defun ece-command-line ()
-  "Return argv as an ECE list of strings."
-  (coerce sb-ext:*posix-argv* 'list))
 
-(defun ece-exit (&rest args)
-  "Terminate process. R7RS: 0-arg → 0, integer → code, #t → 0, #f → 1."
-  (let ((code (cond
-                ((null args) 0)
-                ((integerp (car args)) (car args))
-                ((scheme-false-p (car args)) 1)
-                ((eq (car args) t) 0)
-                (t 0))))
-    (sb-ext:exit :code code)))
 
-(defun ece-get-environment-variable (name)
-  "Return env var value as string or #f if unset."
-  (or (sb-ext:posix-getenv name) *scheme-false*))
 
-(defun ece-%exe-path ()
-  "Return the resolved path of the running executable."
-  (namestring sb-ext:*runtime-pathname*))
 
-(defun ece-%list-directory (path)
-  "List filenames in PATH as an ECE list of strings (no . or ..)."
-  (let ((dir (if (and (stringp path)
-                      (> (length path) 0)
-                      (not (char= (char path (1- (length path))) #\/)))
-                 (concatenate 'string path "/")
-                 path)))
-    (mapcar (lambda (p)
-              (let ((name (file-namestring p)))
-                (if (or (null name) (string= name ""))
-                    ;; directory entry — use last directory component
-                    (car (last (pathname-directory p)))
-                    name)))
-            (directory (concatenate 'string dir "*.*")))))
 
-(defun ece-%file-exists? (path)
-  "Return #t if PATH exists, #f otherwise."
-  (scheme-bool (probe-file path)))
 
-(defun ece-open-binary-input-file (filename)
-  "Open FILENAME for binary reading. Returns an input port."
-  (ece-make-input-port (open filename :direction :input
-                             :element-type '(unsigned-byte 8))
-                       (if (stringp filename) filename (namestring filename))))
 
-(defun ece-read-byte (port)
-  "Read one byte (0-255) from PORT, or return EOF sentinel at end of stream."
-  (let ((b (read-byte (ece-port-stream port) nil *eof-sentinel*)))
-    b))
 
-(defun ece-%make-directory (path)
-  "Create directory PATH (and parents) if missing. Returns nil."
-  (ensure-directories-exist
-   (if (and (stringp path)
-            (> (length path) 0)
-            (not (char= (char path (1- (length path))) #\/)))
-       (concatenate 'string path "/")
-       path))
-  nil)
 
-(defun ece-%chmod (path mode)
-  "Set POSIX file mode on PATH (integer, e.g. 493 = 0o755). Returns nil."
-  #+unix (sb-posix:chmod path mode)
-  #-unix (declare (ignore path mode))
-  nil)
 
-(defun ece-%display-to-port (obj port)
-  "Write OBJ to PORT in human-readable form (princ)."
-  (let ((stream (ece-port-stream port)))
-    (ece-output-to-stream obj stream #'princ)
-    (finish-output stream))
-  obj)
 
-(defun ece-%write-to-port (obj port)
-  "Write OBJ to PORT in machine-readable form (prin1)."
-  (let ((stream (ece-port-stream port)))
-    (ece-output-to-stream obj stream #'prin1)
-    (finish-output stream))
-  obj)
 
-(defun ece-%newline-to-port (port)
-  "Write a newline character to PORT."
-  (let ((stream (ece-port-stream port)))
-    (terpri stream)
-    (finish-output stream)
-    nil))
 
-(defun ece-%write-char-to-port (ch port)
-  "Write character CH to PORT."
-  (let ((stream (ece-port-stream port)))
-    (write-char ch stream)
-    (finish-output stream)
-    ch))
 
-(defun ece-%write-string-to-port (str port)
-  "Write string STR to PORT."
-  (let ((stream (ece-port-stream port)))
-    (write-string str stream)
-    (finish-output stream)
-    str))
 
 ;;; Character I/O primitives
 
-(defun ece-read-char (port)
-  "Read one character from PORT. ECE wrapper supplies the port."
-  (let* ((p port)
-         (ch (read-char (ece-port-stream p) nil nil)))
-    (when ch
-      (if (char= ch #\Newline)
-          (progn
-            (set-ece-port-line! p (1+ (ece-port-line p)))
-            (set-ece-port-col! p 0))
-          (set-ece-port-col! p (1+ (ece-port-col p)))))
-    (or ch *eof-sentinel*)))
 
-(defun ece-peek-char (port)
-  "Peek at next character of PORT. ECE wrapper supplies the port."
-  (let ((ch (peek-char nil (ece-port-stream port) nil nil)))
-    (or ch *eof-sentinel*)))
 
-(defun ece-open-binary-output-file (filename)
-  "Open FILENAME for binary writing. Returns an output port."
-  (ece-make-output-port (open filename :direction :output
-                              :element-type '(unsigned-byte 8)
-                              :if-exists :supersede
-                              :if-does-not-exist :create)
-                        (if (stringp filename) filename
-                            (namestring filename))))
 
-(defun ece-write-byte (byte port)
-  "Write BYTE (integer 0-255) to output PORT as a raw byte."
-  (write-byte byte (ece-port-stream port))
-  byte)
 
-(defun ece-char-ready? (port)
-  "Test whether PORT has a character available. ECE wrapper supplies port."
-  (scheme-bool (listen (ece-port-stream port))))
 
 ;;; Character predicates
 
@@ -1089,19 +796,7 @@ Uses a synonym stream so that dynamic rebindings of *standard-input* are honored
 ;; wrappers shadow these CL primitives. These CL versions remain as a
 ;; fallback for callers that invoke primitive 102/103 directly; they bind
 ;; the host's *standard-input* / *standard-output* streams only.
-(defun ece-with-input-from-file (filename thunk)
-  (let ((port (ece-open-input-file filename)))
-    (unwind-protect
-         (let ((*standard-input* (ece-port-stream port)))
-           (apply-ece-procedure thunk nil))
-      (ece-close-input-port port))))
 
-(defun ece-with-output-to-file (filename thunk)
-  (let ((port (ece-open-output-file filename)))
-    (unwind-protect
-         (let ((*standard-output* (ece-port-stream port)))
-           (apply-ece-procedure thunk nil))
-      (ece-close-output-port port))))
 
 (defun ece-call-with-input-file (filename proc)
   (let ((port (ece-open-input-file filename)))
@@ -1170,79 +865,30 @@ Uses a synonym stream so that dynamic rebindings of *standard-input* are honored
 ;;; --- Type introspection primitives (ECE-facing) ---
 ;;; Return Scheme booleans. Exposed as ECE primitives.
 
-(defun ece-compiled-procedure? (x)
-  (scheme-bool (compiled-procedure-p x)))
 
-(defun ece-continuation? (x)
-  (scheme-bool (continuation-p x)))
 
-(defun ece-primitive? (x)
-  (scheme-bool (primitive-procedure-p x)))
 
-(defun ece-procedure? (x)
-  (scheme-bool (or (compiled-procedure-p x)
-                   (primitive-procedure-p x)
-                   (continuation-p x))))
 
-(defun ece-parameter? (x)
-  "ECE-accessible: test if X is a parameter."
-  (scheme-bool (parameter-p x)))
 
-(defun ece-compiled-procedure-entry (proc)
-  (cadr proc))
 
-(defun ece-compiled-procedure-env (proc)
-  (caddr proc))
 
-(defun ece-continuation-stack (k)
-  (cadr k))
 
-(defun ece-continuation-conts (k)
-  (caddr k))
 
-(defun ece-%primitive-id-of (prim)
-  (cadr prim))
 
-(defun ece-%make-compiled-procedure (entry env)
-  (list '|compiled-procedure| entry env))
 
-(defun ece-%make-continuation (stack conts winds)
-  (list '|continuation| stack conts winds))
 
-(defun ece-continuation-winds (k)
-  (continuation-winds k))
 
-(defun ece-%make-primitive (id)
-  (list '|primitive| id))
 
 ;; Env-frame introspection (CL frames are vectors for O(1) lexical access)
-(defun ece-%env-frame? (x)
-  (scheme-bool (vectorp x)))
 
-(defun ece-%env-frame-names (frame)
-  (declare (ignore frame))
-  nil)
 
-(defun ece-%env-frame-vals (frame)
-  (coerce frame 'list))
 
-(defun ece-%env-frame-enclosing (frame)
-  (declare (ignore frame))
-  nil)  ;; CL env frames don't have a single enclosing pointer accessible here
 
-(defun ece-%make-env-frame (names vals enclosing)
-  (declare (ignore names enclosing))
-  (coerce vals 'simple-vector))
 
 ;; Winding stack sync
 (defvar *cl-winding-stack* nil)
 
-(defun ece-%set-winding-stack! (val)
-  (setf *cl-winding-stack* val)
-  nil)
 
-(defun ece-%get-winding-stack ()
-  (or *cl-winding-stack* nil))
 
 ;;; --- Boot registration primitives (no-ops on CL) ---
 ;;; CL runtime already handles primitive registration, assembler symbol setup,
@@ -1250,63 +896,18 @@ Uses a synonym stream so that dynamic rebindings of *standard-input* are honored
 ;;; init-primitive-dispatch-tables and build-global-env-from-manifest.
 ;;; These exist so boot-env.ecec can execute without error on CL.
 
-(defun ece-%register-primitive! (name id)
-  (declare (ignore name id))
-  nil)
 
-(defun ece-%init-asm-syms (count)
-  (declare (ignore count))
-  nil)
 
-(defun ece-%store-asm-sym (slot name)
-  (declare (ignore slot name))
-  nil)
 
-(defun ece-%set-continuation-syms! (do-winds-sym winding-stack-sym)
-  (declare (ignore do-winds-sym winding-stack-sym))
-  nil)
 
-(defun ece-%set-error-sym! (error-sym)
-  (declare (ignore error-sym))
-  nil)
 
-(defun ece-%create-repl-space! (name size)
-  (declare (ignore name size))
-  nil)
 
 ;;; --- Platform discovery primitives ---
 
-(defun ece-platform-has? (name)
-  "Check if the named primitive is available on this platform.
-Returns ECE #t if the primitive exists and has a non-stub implementation, #f otherwise."
-  (let ((id (gethash name *primitive-name-to-id*)))
-    (scheme-bool (and id (gethash id *primitive-available-ids*)))))
 
-(defun ece-%platform-primitives ()
-  "Return a list of all primitive names available on this platform."
-  (let ((result '()))
-    (maphash (lambda (id available)
-               (declare (ignore available))
-               (let ((name (aref *primitive-name-table* id)))
-                 (when name
-                   (push name result))))
-             *primitive-available-ids*)
-    result))
 
-(defun ece-%primitive-name (id)
-  "Return the symbol name of the primitive with numeric ID, or #f."
-  (if (and (integerp id) (< id (length *primitive-name-table*)))
-      (or (aref *primitive-name-table* id) *scheme-false*)
-      *scheme-false*))
 
-(defun ece-%primitive-id (name)
-  "Return the numeric ID for the named primitive, or #f."
-  (or (gethash name *primitive-name-to-id*) *scheme-false*))
 
-(defun ece-%global-env-frame ()
-  "Return the first frame of *global-env* for identity comparison.
-Used by the serializer to detect the global environment sentinel."
-  (car *global-env*))
 
 ;;; Dispatch table initialization and *global-env* are deferred to end of file,
 ;;; after all wrapper functions are defined (see BOOT section).
@@ -1325,11 +926,6 @@ Used by the serializer to detect the global environment sentinel."
     ((compiled-procedure-p proc) (execute-compiled-call proc args))
     (t (error "Not a procedure: ~S" proc))))
 
-(defun ece-make-parameter (init &optional converter)
-  "Create a parameter object: (parameter (<value> . <converter>)).
-The prelude wrapper applies the converter before calling this,
-so INIT is already converted. We just store it with the converter."
-  (list 'parameter (cons init converter)))
 
 (defun parameter-ref (param)
   "Read the current value of a parameter."
@@ -1832,62 +1428,20 @@ Set by (load ...) for per-file spaces, defaults to bootstrap.")
 
 ;;; ECE-accessible space primitives
 
-(defun ece-%create-space (name)
-  "ECE primitive: create a new compilation space."
-  (create-space name))
 
 (defun ece-%get-space (space-id)
   "ECE primitive: get a space by ID."
   (get-space space-id))
 
-(defun ece-%space-instruction-length (space-id)
-  "ECE primitive: get the instruction count for a space."
-  (fill-pointer (compilation-space-instructions (get-space space-id))))
 
-(defun ece-%space-name (space-id)
-  "ECE primitive: get the name of a space."
-  (compilation-space-name (get-space space-id)))
 
-(defun ece-%current-space-id ()
-  "ECE primitive: get the current space ID."
-  *current-space-id*)
 
-(defun ece-%set-current-space-id! (space-id)
-  "ECE primitive: set the current space ID."
-  (setf *current-space-id* space-id))
 
-(defun ece-%space-instruction-push! (space-id source-instr)
-  "ECE primitive: append instruction to a space's arrays."
-  (let* ((cs (get-space space-id))
-         (instrs (compilation-space-instructions cs))
-         (resolved (compilation-space-resolved-instructions cs)))
-    (vector-push-extend source-instr instrs)
-    (vector-push-extend (resolve-operations source-instr) resolved)
-    nil))
 
-(defun ece-%space-label-set! (space-id label local-pc)
-  "ECE primitive: register a label in a space's label table."
-  (setf (gethash label (compilation-space-label-table (get-space space-id))) local-pc)
-  nil)
 
-(defun ece-%space-label-ref (space-id label)
-  "ECE primitive: look up a label in a space's label table. Returns local-pc or ()."
-  (gethash label (compilation-space-label-table (get-space space-id))))
 
-(defun ece-%space-count ()
-  "ECE primitive: return the number of spaces in the registry."
-  (hash-table-count *space-registry*))
 
-(defun ece-%space-source-ref (space-id index)
-  "ECE primitive: get source instruction at INDEX in a space."
-  (aref (compilation-space-instructions (get-space space-id)) index))
 
-(defun ece-%space-label-entries (space-id)
-  "ECE primitive: return label table of a space as an alist of (label . local-pc)."
-  (let ((entries nil))
-    (maphash (lambda (label pc) (push (cons label pc) entries))
-             (compilation-space-label-table (get-space space-id)))
-    entries))
 
 ;;; Create bootstrap space (keyed by symbol '|bootstrap|).
 (unless (gethash '|bootstrap| *space-registry*)
@@ -1983,174 +1537,39 @@ Delegates to assemble-into-space with the bootstrap space."
 ;;; These thin wrappers use the bootstrap space's instruction vector,
 ;;; label table, and the global procedure name table.
 
-(defun ece-%instruction-vector-length ()
-  "Return the instruction count of the bootstrap space."
-  (fill-pointer (compilation-space-resolved-instructions (get-space '|bootstrap|))))
 
-(defun ece-%instruction-vector-push! (source-instr)
-  "Append SOURCE-INSTR to the bootstrap space's arrays."
-  (ece-%space-instruction-push! '|bootstrap| source-instr))
 
-(defun ece-%label-table-set! (label pc)
-  "Register LABEL at PC in the bootstrap space's label table."
-  (ece-%space-label-set! '|bootstrap| label pc))
 
-(defun ece-%procedure-name-set! (pc-or-qualified name)
-  "Register procedure NAME at entry PC in the procedure name table."
-  (setf (gethash pc-or-qualified *procedure-name-table*) name)
-  nil)
 
-(defun ece-%label-table-ref (label)
-  "Look up LABEL in the bootstrap space's label table."
-  (ece-%space-label-ref '|bootstrap| label))
 
-(defun ece-%label-table-entries ()
-  "Return an alist of (label . pc) from the bootstrap space's label table."
-  (ece-%space-label-entries '|bootstrap|))
 
-(defun ece-%macro-table-entries ()
-  "Return an alist of (name . proc) from the compile-time macro table."
-  (let ((entries nil))
-    (maphash (lambda (name proc) (push (cons name proc) entries))
-             *compile-time-macros*)
-    entries))
 
-(defun ece-%eq-hash-table ()
-  "Create an empty hash table with eq test (identity-based keys).
-Returns a raw CL hash table — use %eq-hash-ref/set!/has-key? to access."
-  (make-hash-table :test 'eq))
 
-(defun ece-%eq-hash-ref (ht key &optional (default *scheme-false*))
-  "Look up KEY in an eq-based hash table. Returns *scheme-false* if not found."
-  (multiple-value-bind (val found) (gethash key ht)
-    (if found val default)))
 
-(defun ece-%eq-hash-set! (ht key val)
-  "Set KEY to VAL in an eq-based hash table."
-  (setf (gethash key ht) val)
-  ht)
 
-(defun ece-%eq-hash-has-key? (ht key)
-  "Test if KEY exists in an eq-based hash table."
-  (multiple-value-bind (val found) (gethash key ht)
-    (declare (ignore val))
-    (scheme-bool found)))
 
-(defun ece-%eq-hash-keys (ht)
-  "Return a list of all keys in an eq-based hash table."
-  (let ((keys nil))
-    (maphash (lambda (k v) (declare (ignore v)) (push k keys)) ht)
-    keys))
 
 ;;; User-facing hash table primitives (platform-native, core IDs 141-149)
 ;;; These back the ECE-level hash-table API on all hosts.
 
-(defun ece-%make-hash-table ()
-  "Create a new empty mutable hash table."
-  (make-hash-table :test 'eq))
 
-(defun ece-hash-ref (ht key &rest default)
-  "Look up KEY in hash table. Returns default (or #f) if not found."
-  (multiple-value-bind (val found) (gethash key ht)
-    (if found val
-        (if default (car default) *scheme-false*))))
 
-(defun ece-hash-set! (ht key val)
-  "Set KEY to VAL in hash table (mutating)."
-  (setf (gethash key ht) val)
-  val)
 
-(defun ece-hash-remove! (ht key)
-  "Remove KEY from hash table."
-  (remhash key ht)
-  *scheme-false*)
 
-(defun ece-hash-has-key? (ht key)
-  "Test if KEY exists in hash table."
-  (multiple-value-bind (val found) (gethash key ht)
-    (declare (ignore val))
-    (scheme-bool found)))
 
-(defun ece-hash-keys (ht)
-  "Return list of all keys in hash table."
-  (let ((keys nil))
-    (maphash (lambda (k v) (declare (ignore v)) (push k keys)) ht)
-    keys))
 
-(defun ece-hash-values (ht)
-  "Return list of all values in hash table."
-  (let ((vals nil))
-    (maphash (lambda (k v) (declare (ignore k)) (push v vals)) ht)
-    vals))
 
-(defun ece-hash-count (ht)
-  "Return number of entries in hash table."
-  (hash-table-count ht))
 
 ;;; Hash-table frame primitives (for compaction.scm)
 
-(defun ece-%hash-frame? (frame)
-  "Test if FRAME is a hash-table-backed environment frame."
-  (scheme-bool (hash-frame-p frame)))
 
-(defun ece-%hash-frame-entries (frame)
-  "Return an alist of (symbol . value) pairs from a hash-table frame."
-  (unless (and (consp frame) (hash-table-p (cdr frame)))
-    (error "ece-%hash-frame-entries: expected (:hash-frame . <hash-table>), got ~S (type ~A)"
-           frame (type-of frame)))
-  (let ((entries nil))
-    (maphash (lambda (k v) (push (cons k v) entries)) (cdr frame))
-    entries))
 
-(defun ece-%make-hash-frame ()
-  "Create an empty hash-table frame."
-  (cons :hash-frame (make-hash-table :test 'eq)))
 
-(defun ece-%hash-frame-set! (frame key val)
-  "Set KEY to VAL in a hash-table frame."
-  (setf (gethash key (cdr frame)) val)
-  frame)
 
 ;;; Metacircular compiler support primitives
 
-(defun ece-execute-from-pc (start-pc &optional (env *global-env*))
-  "Execute instructions starting from START-PC in ENV (default: global).
-START-PC may be a bare integer (space 0) or a qualified address."
-  (execute-instructions (qualified-space-id start-pc)
-                        (qualified-local-pc start-pc)
-                        env))
 
-(defun ece-trace (name)
-  "Enable tracing for procedure NAME in the global environment.
-Replaces the binding with a primitive wrapper that logs entry/exit."
-  (let ((original (lookup-variable-value name *global-env*)))
-    (when (gethash name *traced-procedures*)
-      ;; Already traced, just return
-      (return-from ece-trace name))
-    (setf (gethash name *traced-procedures*) original)
-    (let ((wrapper-sym (intern (format nil "TRACE-~A" name) :ece)))
-      (setf (symbol-function wrapper-sym)
-            (lambda (&rest args)
-              (let ((indent (make-string (* 2 *trace-depth*) :initial-element #\Space)))
-                (format t "~A(~A~{ ~S~})~%" indent name args)
-                (incf *trace-depth*)
-                (let ((result
-                       (if (compiled-procedure-p original)
-                           (execute-compiled-call original args)
-                           (apply-primitive-procedure original args))))
-                  (decf *trace-depth*)
-                  (format t "~A=> ~S~%" indent result)
-                  result))))
-      (set-variable-value! name (list '|primitive| wrapper-sym) *global-env*)))
-  name)
 
-(defun ece-untrace (name)
-  "Disable tracing for procedure NAME, restoring the original binding."
-  (let ((original (gethash name *traced-procedures*)))
-    (when original
-      (set-variable-value! name original *global-env*)
-      (remhash name *traced-procedures*)))
-  name)
 
 (defun execute-compiled-call (compiled-proc args)
   "Call a compiled procedure with ARGS.
@@ -2167,19 +1586,8 @@ Sets continue to a past-end address so (goto (reg continue)) exits cleanly."
                           :initial-argl args
                           :initial-continue (cons space-id return-pc))))
 
-(defun ece-apply-compiled-procedure (compiled-proc args)
-  "Call a compiled procedure with ARGS. Thin wrapper around execute-compiled-call
-for use as an ECE primitive."
-  (execute-compiled-call compiled-proc args))
 
-(defun ece-get-macro (name)
-  "Look up a compile-time macro by NAME. Returns the macro def or #f."
-  (or (gethash name *compile-time-macros*) *scheme-false*))
 
-(defun ece-set-macro! (name def)
-  "Set a compile-time macro NAME to DEF."
-  (setf (gethash name *compile-time-macros*) def)
-  def)
 
 ;;; Symbol-keyed dispatch table used by apply-primitive-procedure for
 ;;; legacy (primitive SYMNAME) forms. Kept empty — no new entries are
@@ -2195,6 +1603,27 @@ When ENV is supplied, it is passed to mc-compile-and-go."
     (if env-supplied-p
         (execute-compiled-call mc-cag (list expr env))
         (execute-compiled-call mc-cag (list expr)))))
+
+;;; Load auto-generated primitive defuns. The file contains one (defun ece-NAME ...)
+;;; per core/cl primitive in primitives.def. It is regenerated from
+;;; src/primitives.scm via `make bootstrap` and committed under bootstrap/.
+;;;
+;;; Stage 0 of the self-hosting roadmap (see proposal: emit-host-primitives).
+;;; The handwritten ece-NAME defuns previously in this file have been deleted —
+;;; templates in src/primitives.scm are the source of truth.
+(let ((primitives-auto-path
+       (asdf:system-relative-pathname :ece "bootstrap/primitives-auto.lisp")))
+  (unless (probe-file primitives-auto-path)
+    (error "Missing generated bootstrap file ~A.~%~
+            Run `make bootstrap` (or `make bootstrap/primitives-auto.lisp`) ~
+            to regenerate it from src/primitives.scm."
+           primitives-auto-path))
+  (handler-case (load primitives-auto-path)
+    (error (e)
+      (error "Failed to load generated bootstrap file ~A: ~A~%~
+              The file may be corrupt — try `make bootstrap` to regenerate, ~
+              or `git checkout bootstrap/primitives-auto.lisp` to restore."
+             primitives-auto-path e))))
 
 ;;; Now that all primitives and wrapper functions are defined, initialize
 ;;; the dispatch tables from the manifest, then build *global-env*.
@@ -2353,11 +1782,8 @@ Uses the CL reader (not the ECE reader) so this works at boot before the ECE rea
 ;;; Boot from .ecec files
 (boot-from-compiled)
 
-;;; Ensure all manifest primitives are in *global-env*.
-;;; The image/ecec may predate new manifest entries (e.g., platform-has?, try-eval).
-;;; Pre-register try-eval as available so it gets added to the env.
-(let ((id (gethash (intern "try-eval" :ece) *primitive-name-to-id*)))
-  (when id (setf (gethash id *primitive-available-ids*) t)))
+;;; Ensure all manifest primitives are in *global-env*. The image/ecec may
+;;; predate new manifest entries; this top-up adds any missing bindings.
 (dolist (entry *manifest-entries*)
   (destructuring-bind (id name arity platform) entry
     (declare (ignore arity))
@@ -2378,24 +1804,7 @@ Downcases ECE-package symbols for CL→ECE boundary compatibility."
         (mc-eval normalized env)
         (mc-eval normalized))))
 
-;;; ece-try-eval: error-handling wrapper around evaluate.
-;;; The image's (primitive ece-try-eval) binding resolves to this via symbol-function.
-(defun ece-try-eval (expr)
-  "Evaluate expr, catching errors. Prints the error and returns the EOF sentinel on failure."
-  (handler-case
-      (evaluate expr)
-    (error (c)
-      (format t "Error: ~A~%" c)
-      (finish-output)
-      *eof-sentinel*)))
-
-;;; Register try-eval dispatch now that ece-try-eval is defined
-(let ((id (gethash (intern "try-eval" :ece) *primitive-name-to-id*)))
-  (when id
-    (setf (aref *primitive-dispatch-table* id) #'ece-try-eval)
-    (setf (gethash id *primitive-available-ids*) t)))
-
-;;; All late registrations done — validate that every core/cl primitive resolved.
+;;; All registrations done — validate that every core/cl primitive resolved.
 (validate-primitive-dispatch-tables)
 
 ;;; .ecec → .ececb binary conversion

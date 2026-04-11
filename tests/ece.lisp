@@ -2877,3 +2877,71 @@ Skips test gracefully via ok t if the binary hasn't been built yet."
                                  :wait t)))
                        (ok (zerop (sb-ext:process-exit-code p2)) "installed ece -V exit 0")
                        (ok (search "ece " (get-output-stream-string out-str)) "version string")))))))
+
+;;;; ========================================================================
+;;;; emit-host-primitives — codegen smoke / determinism / validation
+;;;; ========================================================================
+
+(defun expected-primitive-names ()
+  "Return a list of CL symbol names (uppercased) for every core/cl primitive
+in primitives.def. The auto-generated bootstrap/primitives-auto.lisp must
+provide an ece-NAME defun for each."
+  (with-open-file (s (asdf:system-relative-pathname :ece "primitives.def")
+                     :direction :input)
+    (loop for entry = (read s nil :eof)
+          until (eq entry :eof)
+          when (and (listp entry) (>= (length entry) 4)
+                    (member (fourth entry) '(core cl)))
+          collect (string-upcase (concatenate 'string "ECE-" (string (second entry)))))))
+
+(deftest test-primitives-auto-fboundp
+    (testing "every core/cl primitive has a generated ece-NAME defun"
+             (let ((missing nil))
+               (dolist (name (expected-primitive-names))
+                 (let ((sym (find-symbol name :ece)))
+                   (unless (and sym (fboundp sym))
+                     (push name missing))))
+               (ok (null missing)
+                   (if missing
+                       (format nil "missing fboundp: ~{~A~^, ~}" missing)
+                       "all auto-generated primitives are fboundp")))))
+
+(deftest test-primitives-auto-determinism
+    (testing "bootstrap/primitives-auto.lisp exists and has substantial content"
+             (let ((src (asdf:system-relative-pathname :ece "bootstrap/primitives-auto.lisp")))
+               (ok (probe-file src) "primitives-auto.lisp exists")
+               (let ((bytes (with-open-file (s src) (file-length s))))
+                 (ok (and bytes (> bytes 1000))
+                     "primitives-auto.lisp has >1000 bytes")))))
+
+(deftest test-primitives-auto-validation
+    (testing "codegen refuses to emit when templates are missing"
+             ;; Drive the codegen with the real primitives.def manifest but
+             ;; WITHOUT loading src/primitives.scm — *host-primitives* is then
+             ;; empty and every core/cl entry should be flagged as missing,
+             ;; causing strict-mode emission to abort with a descriptive error.
+             (let ((scratch-out
+                    (uiop:with-temporary-file (:pathname p :type "lisp" :keep nil)
+                      (namestring p))))
+               (ece::evaluate (list (intern "load" :ece) "src/codegen-cl.scm"))
+               (let ((failed nil)
+                     (msg nil))
+                 (handler-case
+                     (ece::evaluate (list (intern "generate-primitives-auto-lisp!" :ece)
+                                          "primitives.def"
+                                          scratch-out))
+                   (ece:ece-runtime-error (c)
+                     (setf failed t)
+                     (setf msg (princ-to-string (ece:ece-original-error c))))
+                   (error (c)
+                     (setf failed t)
+                     (setf msg (princ-to-string c))))
+                 (ok failed "strict codegen aborts on missing templates")
+                 (ok (and msg (search "missing template" msg))
+                     (format nil "error names a missing template (got: ~A)"
+                             (and msg (subseq msg 0 (min 120 (length msg))))))
+                 (ok (not (probe-file scratch-out))
+                     "no output file written when validation fails"))
+               ;; Reload the real templates so subsequent tests in the same
+               ;; image see a populated *host-primitives*.
+               (ece::evaluate (list (intern "load" :ece) "src/primitives.scm")))))
