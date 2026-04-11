@@ -13,7 +13,7 @@ const wasmFile = path.join(__dirname, "runtime.wasm");
 
 // ── Integration tests (JS↔WASM boundary) ──
 
-function runIntegrationTests(w, envH, output) {
+function runIntegrationTests(w, envH) {
   let iPassed = 0, iFailed = 0;
 
   function iTest(name, fn) {
@@ -245,7 +245,7 @@ async function run() {
   w.mark_handles();
 
   // ── Run integration tests ──
-  const intResults = runIntegrationTests(w, envH, output);
+  const intResults = runIntegrationTests(w, envH);
 
   // ── Load and run ECE test suite ──
   if (!fs.existsSync(testFile)) {
