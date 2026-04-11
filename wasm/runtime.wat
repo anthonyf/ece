@@ -1072,11 +1072,14 @@
       (local.get $value))
   )
 
-  ;; --- lookup-variable-value ---
-  ;; Walk the frame chain, searching by symbol name. Used for global
-  ;; variable access (the compiler uses lexical-ref for locals).
-  (func $lookup-variable-value (param $name (ref $symbol)) (param $env (ref null eq))
-                               (result (ref null eq))
+  ;; --- try-lookup-variable-value ---
+  ;; Walk the frame chain, searching by symbol name. Returns null on miss.
+  ;; Use this for callers that treat "absent" as a normal case (platform-has?,
+  ;; early-boot winding-stack/error-sym lookups, JS env_lookup export).
+  ;; User-visible lookups should use $lookup-variable-value, which turns a
+  ;; miss into an unbound-variable error sentinel.
+  (func $try-lookup-variable-value (param $name (ref $symbol)) (param $env (ref null eq))
+                                   (result (ref null eq))
     (local $frame (ref $env-frame))
     (local $names (ref null eq))
     (local $i i32)
@@ -1127,6 +1130,25 @@
     ;; Not found — return null
     (ref.null eq)
   )
+
+  ;; --- lookup-variable-value ---
+  ;; Like $try-lookup-variable-value, but on miss returns a fresh
+  ;; $error-sentinel ("Unbound variable: <name>") so the op-dispatch bridge
+  ;; surfaces the error at the lookup site (catchable by guard). Callers
+  ;; that need absent-as-null must use $try-lookup-variable-value instead.
+  (func $lookup-variable-value (param $name (ref $symbol)) (param $env (ref null eq))
+                               (result (ref eq))
+    (local $result (ref null eq))
+    (local.set $result
+      (call $try-lookup-variable-value (local.get $name) (local.get $env)))
+    (if (result (ref eq)) (ref.is_null (local.get $result))
+      (then
+        (struct.new $error-sentinel
+          (call $string-concat
+            (global.get $err-unbound-var)
+            (call $symbol-to-string (local.get $name)))
+          (global.get $nil)))
+      (else (ref.as_non_null (local.get $result)))))
 
   ;; --- define-variable! ---
   ;; Add or update a binding in the first (innermost) frame.
@@ -2153,7 +2175,7 @@
                       (then (call $signal-error-str
                         (struct.get $error-sentinel $message
                           (ref.cast (ref $error-sentinel) (local.get $op-result))))))
-                    (local.set $proc (call $lookup-variable-value
+                    (local.set $proc (call $try-lookup-variable-value
                       (ref.as_non_null (global.get $error-sym))
                       (global.get $global-env)))
                     (if (ref.is_null (local.get $proc))
@@ -2213,7 +2235,7 @@
                 ;; Record execution position for source-location in error messages
                 (global.set $error-space-id (local.get $space-id))
                 (global.set $error-pc (local.get $pc))
-                (local.set $proc (call $lookup-variable-value
+                (local.set $proc (call $try-lookup-variable-value
                   (ref.as_non_null (global.get $error-sym))
                   (global.get $global-env)))
                 (local.set $argl (call $cons
@@ -2351,7 +2373,7 @@
                 ;; Record execution position for source-location in error messages
                 (global.set $error-space-id (local.get $space-id))
                 (global.set $error-pc (local.get $pc))
-                (local.set $proc (call $lookup-variable-value
+                (local.set $proc (call $try-lookup-variable-value
                   (ref.as_non_null (global.get $error-sym))
                   (global.get $global-env)))
                 (local.set $argl (call $cons
@@ -2625,7 +2647,7 @@
           (if (result (ref null eq)) (ref.is_null (global.get $winding-stack-sym))
             (then (global.get $nil))
             (else
-              (call $lookup-variable-value
+              (call $try-lookup-variable-value
                 (ref.as_non_null (global.get $winding-stack-sym))
                 (global.get $global-env)))))
         (struct.new $continuation (local.get $a) (local.get $b)
@@ -2645,7 +2667,7 @@
         (local.set $b
           (if (result (ref null eq)) (ref.is_null (global.get $winding-stack-sym))
             (then (global.get $nil))
-            (else (call $lookup-variable-value
+            (else (call $try-lookup-variable-value
               (ref.as_non_null (global.get $winding-stack-sym))
               (global.get $global-env)))))
         (if (ref.is_null (local.get $b))
@@ -2657,7 +2679,7 @@
         (if (i32.and (call $is-null (local.get $b)) (call $is-null (local.get $a)))
           (then (return (global.get $void))))
         ;; Need to call do-winds!(current-winds, target-winds)
-        (local.set $c (call $lookup-variable-value
+        (local.set $c (call $try-lookup-variable-value
           (ref.as_non_null (global.get $do-winds-sym))
           (global.get $global-env)))
         (global.set $execute-argl
@@ -4271,7 +4293,7 @@
         (local.set $result (call $arg1 (local.get $args)))
         (if (call $is-symbol (local.get $result))
           (then
-            (local.set $result (call $lookup-variable-value
+            (local.set $result (call $try-lookup-variable-value
               (ref.cast (ref $symbol) (local.get $result))
               (global.get $global-env)))
             (if (ref.is_null (local.get $result))
@@ -6437,7 +6459,7 @@
   ;; Look up a variable in an environment (returns handle)
   (func (export "env_lookup") (param $env-handle i32) (param $name-handle i32) (result i32)
     (call $alloc-handle
-      (call $lookup-variable-value
+      (call $try-lookup-variable-value
         (ref.cast (ref $symbol) (call $deref-handle (local.get $name-handle)))
         (call $deref-handle (local.get $env-handle)))))
 
@@ -6472,7 +6494,7 @@
     (local.set $current-winds
       (if (result (ref null eq)) (ref.is_null (global.get $winding-stack-sym))
         (then (global.get $nil))
-        (else (call $lookup-variable-value
+        (else (call $try-lookup-variable-value
           (ref.as_non_null (global.get $winding-stack-sym))
           (global.get $global-env)))))
     (if (ref.is_null (local.get $current-winds))
@@ -6482,7 +6504,7 @@
         (if (i32.eqz (i32.and (call $is-null (local.get $current-winds))
                                (call $is-null (local.get $saved-winds))))
           (then
-            (local.set $do-winds-fn (call $lookup-variable-value
+            (local.set $do-winds-fn (call $try-lookup-variable-value
               (ref.as_non_null (global.get $do-winds-sym))
               (global.get $global-env)))
             (global.set $execute-argl
@@ -6575,6 +6597,17 @@
   (func (export "test_runtime_error") (param $sym-handle i32)
     (call $signal-error-sym (global.get $err-unbound-var)
       (ref.cast (ref $symbol) (call $deref-handle (local.get $sym-handle)))))
+
+  ;; Test export: call $lookup-variable-value on a symbol and report whether
+  ;; the result is an error sentinel. 1 = sentinel, 0 = normal binding.
+  (func (export "test_lookup_returns_sentinel") (param $sym-handle i32) (result i32)
+    (local $result (ref eq))
+    (local.set $result (call $lookup-variable-value
+      (ref.cast (ref $symbol) (call $deref-handle (local.get $sym-handle)))
+      (global.get $global-env)))
+    (if (result i32) (ref.test (ref $error-sentinel) (local.get $result))
+      (then (i32.const 1))
+      (else (i32.const 0))))
 
   ;; Validate all instructions in a space. Returns 0 on success,
   ;; or -(pc+1) of first invalid instruction (negative = error).

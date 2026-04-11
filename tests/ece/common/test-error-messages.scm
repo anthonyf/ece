@@ -99,10 +99,27 @@
 (test "cdr of nil returns nil" (lambda ()
   (assert-equal (cdr '()) '())))
 
-;; Unbound variable errors are CL-level (not caught by guard on WASM)
-(when (platform-has? 'try-eval)
-  (test "unbound variable error" (lambda ()
-    (assert-true
-      (guard (e (#t #t))
-        (eval (string->symbol "this-variable-does-not-exist-12345"))
-        #f)))))
+;; Unbound variables now signal a catchable error at the lookup site
+;; with a fixed "Unbound variable: <name>" message format (WASM & CL).
+;; These tests reference the unbound name directly (no nested eval) so the
+;; guard's continuation is captured in the same execute frame as the lookup.
+(test "unbound variable is catchable by guard" (lambda ()
+  (assert-equal
+    (guard (e ((error-object? e) (error-object-message e)))
+      undefined-abcxyz)
+    "Unbound variable: undefined-abcxyz")))
+
+(test "unbound procedure call is catchable (no illegal-cast trap)" (lambda ()
+  (assert-true
+    (guard (e ((error-object? e) #t))
+      (undefined-procedure-abcxyz 1 2 3)
+      #f))))
+
+;; The ECE reader rejects stray backslash in bare symbol tokens (prevents
+;; corruption like `js-set\!` slipping through to lookup time).
+(test "reader rejects stray backslash in symbol" (lambda ()
+  (assert-true
+    (guard (e ((error-object? e)
+               (string-contains? (error-object-message e) "invalid character in symbol")))
+      (read (open-input-string "foo\\!"))
+      #f))))

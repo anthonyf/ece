@@ -66,15 +66,34 @@
 
 ;;; Read a symbol
 (define (read-symbol port initial-char)
+  ;; Callers (ece-scheme-read) read-char the initial char before calling us,
+  ;; so port-col is one past initial-char. Characters inside the loop are
+  ;; peek-char'd (not yet consumed), so port-col points at them directly.
+  (when (char=? initial-char #\\)
+    (bad-symbol-char port "" (- (port-col port) 1)))
   (define buf (string-append "" (string initial-char)))
   (let loop ()
     (let ((ch (peek-char port)))
-      (if (and (not (eof? ch)) (reader-identifier-char? ch))
-          (begin
-            (read-char port)
-            (set! buf (string-append buf (string ch)))
-            (loop))
-          (%intern-ece buf)))))
+      (cond
+       ((or (eof? ch) (not (reader-identifier-char? ch)))
+        (%intern-ece buf))
+       ((char=? ch #\\)
+        (bad-symbol-char port buf (port-col port)))
+       (else
+        (read-char port)
+        (set! buf (string-append buf (string ch)))
+        (loop))))))
+
+;;; Signal a reader error for a stray backslash inside a bare symbol token.
+;;; Includes source location when *source-file-name* is set. COL is the
+;;; 0-indexed column of the offending backslash (caller supplies it because
+;;; port-col points past or at the char depending on read-char vs peek-char).
+(define (bad-symbol-char port partial col)
+  (if *source-file-name*
+      (error "invalid character in symbol: \\"
+             partial
+             (list *source-file-name* (port-line port) col))
+      (error "invalid character in symbol: \\" partial)))
 
 ;;; Read a number (integer or float)
 (define (read-number port initial-char)
