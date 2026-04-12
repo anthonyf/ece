@@ -1,5 +1,6 @@
 *.fasl
 /.fasl-cache/
+bootstrap/.zones.stamp
 /.tmp/
 /.qlot/
 wasm/runtime.wasm

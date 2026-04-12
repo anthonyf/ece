@@ -201,9 +201,9 @@ repl: share/ece/ece-main.ecec
 run-lisp:
 	qlot exec sbcl --dynamic-space-size 4096 --disable-debugger --eval '(asdf:load-system :ece)' $(ARGS)
 
-ZONE_FILES := $(BOOTSTRAP_DIR)/assembler-zone.lisp $(BOOTSTRAP_DIR)/boot-env-zone.lisp $(BOOTSTRAP_DIR)/compilation-unit-zone.lisp $(BOOTSTRAP_DIR)/reader-zone.lisp $(BOOTSTRAP_DIR)/syntax-rules-zone.lisp $(BOOTSTRAP_DIR)/compiler-zone.lisp $(BOOTSTRAP_DIR)/prelude-zone.lisp
+ZONE_STAMP := $(BOOTSTRAP_DIR)/.zones.stamp
 
-bootstrap: $(BOOTSTRAP_DIR)/primitives-auto.lisp $(BOOTSTRAP_DIR)/bootstrap.ecec $(ZONE_FILES)
+bootstrap: $(BOOTSTRAP_DIR)/primitives-auto.lisp $(BOOTSTRAP_DIR)/bootstrap.ecec $(ZONE_STAMP)
 
 # Bootstrap bundle: compiled-system output for all .scm modules. Must be
 # regenerated whenever any .scm source changes (so the assembler space's
@@ -235,7 +235,7 @@ $(BOOTSTRAP_DIR)/primitives-auto.lisp: primitives.def src/primitives.scm src/cod
 # in a single SBCL session via generate-all-zones!, avoiding N separate boots.
 # Depends on bootstrap.ecec because generate-zone-cl! reads each space's
 # instruction vector from the currently-loaded image.
-$(ZONE_FILES) &: primitives.def src/primitives.scm src/codegen-cl.scm src/codegen-cl-inline.scm $(BOOTSTRAP_SRCS) $(BOOTSTRAP_DIR)/bootstrap.ecec
+$(ZONE_STAMP): primitives.def src/primitives.scm src/codegen-cl.scm src/codegen-cl-inline.scm $(BOOTSTRAP_SRCS) $(BOOTSTRAP_DIR)/bootstrap.ecec
 	@mkdir -p $(BOOTSTRAP_DIR)
 	@echo "Regenerating all compiled zones in $(BOOTSTRAP_DIR)/..."
 	qlot exec sbcl --dynamic-space-size 4096 --non-interactive --disable-debugger \
@@ -245,6 +245,7 @@ $(ZONE_FILES) &: primitives.def src/primitives.scm src/codegen-cl.scm src/codege
 	  --eval '(ece:evaluate (list (quote load) "src/codegen-cl-inline.scm"))' \
 	  --eval '(ece:evaluate (list (intern "generate-all-zones!" :ece) "$(BOOTSTRAP_DIR)"))' \
 	  --quit
+	@touch $@
 	@echo "Generated all compiled zones"
 
 sandbox: ece
@@ -322,6 +323,6 @@ setup:
 	@echo "Pre-commit hook installed."
 
 clean:
-	rm -rf .fasl-cache/
+	rm -rf .fasl-cache/ $(ZONE_STAMP)
 
 clean-fasl: clean

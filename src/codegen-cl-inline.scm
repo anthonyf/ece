@@ -250,9 +250,9 @@ as the single-function zone."
   (write-string "           (stack initial-stack)" out) (newline out)
   (write-string "           (bail cl:nil))" out) (newline out)
   (write-string "    (cl:loop" out) (newline out)
-  (write-string "      (cl:when (cl:>= pc " out)
+  (write-string "      (cl:when (cl:or (cl:>= pc " out)
   (write-string (number->string total-count) out)
-  (write-string ")" out) (newline out)
+  (write-string ") (cl:< pc 0))" out) (newline out)
   (write-string "        (cl:return (cl:values pc val env proc argl continue stack)))" out) (newline out)
   (write-string "      (cl:cond" out) (newline out)
   (let loop ((k 0) (start 0))
@@ -939,16 +939,22 @@ loop exits cleanly regardless of the halt instruction's position."
 
 (define (generate-all-zones! output-dir)
   "Generate compiled-zone files for all bootstrap spaces with non-zero
-instruction counts. Deterministic: spaces are processed in a fixed order."
+instruction counts. Deterministic: spaces are processed in a fixed order.
+Signals an error if a bootstrap space name is unknown."
   (for-each
    (lambda (space-name)
      (let* ((space-id (string->symbol space-name))
             (count (%space-instruction-length space-id)))
-       (when (> count 0)
+       (cond
+        ((< count 0)
+         (%raw-error
+          (string-append "generate-all-zones!: unknown compilation space: "
+                         space-name)))
+        ((> count 0)
          (let ((output-path (string-append output-dir "/" space-name "-zone.lisp")))
            (display (string-append "Generating " output-path " (" (number->string count) " PCs)..."))
            (newline)
            (generate-zone-cl! space-name output-path)
            (display (string-append "  Done: " output-path))
-           (newline)))))
+           (newline))))))
    all-bootstrap-spaces))
