@@ -37,6 +37,15 @@ jobs:
           key: fasl-${{ hashFiles('src/*.lisp', 'ece.asd', 'bootstrap/*-zone.lisp') }}
           restore-keys: fasl-
 
+      - name: Warm FASL cache
+        run: |
+          # Pre-compile zone FASLs in a dedicated session so subsequent
+          # SBCL invocations load from cache (~2s) instead of compiling
+          # 376k lines from source (~3min each).
+          ASDF_OUTPUT_TRANSLATIONS='(:output-translations ("'$PWD'/" "'$PWD'/.fasl-cache/") :inherit-configuration)' \
+          qlot exec sbcl --dynamic-space-size 8192 --non-interactive --disable-debugger \
+            --eval '(asdf:load-system :ece)' --quit
+
       - name: Install binaryen
         run: |
           curl -L https://github.com/WebAssembly/binaryen/releases/download/version_128/binaryen-version_128-x86_64-linux.tar.gz | tar xz
@@ -49,9 +58,6 @@ jobs:
 
       - name: Mark bootstrap outputs as up-to-date
         run: |
-          # Git checkout sets all timestamps to "now", so Make can't tell
-          # that checked-in generated files are newer than their sources.
-          # Touch outputs so Make skips unnecessary regeneration.
           sleep 1
           touch bootstrap/primitives-auto.lisp
           touch bootstrap/bootstrap.ecec
