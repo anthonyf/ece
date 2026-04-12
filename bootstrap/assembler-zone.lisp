@@ -1462,7 +1462,7 @@
      pc-168
        (cl:setf pc 170) (cl:go pc-170)
      pc-169
-       (cl:setf val cl:nil)
+       (cl:setf val ece::*scheme-false*)
        (cl:setf pc 170)
      pc-170
        (cl:setf env (cl:pop stack))
@@ -1686,7 +1686,7 @@
      pc-250
        (cl:go zone-exit)
      pc-251
-       (cl:setf val cl:nil)
+       (cl:setf val ece::*scheme-false*)
        (cl:setf pc 252)
      pc-252
        (cl:go zone-exit)
@@ -2069,7 +2069,7 @@
      pc-391
        (cl:setf pc 393) (cl:go pc-393)
      pc-392
-       (cl:setf val cl:nil)
+       (cl:setf val ece::*scheme-false*)
        (cl:setf pc 393)
      pc-393
        (cl:setf env (cl:pop stack))
@@ -2083,7 +2083,7 @@
      pc-396
        (cl:when flag (cl:setf pc 399) (cl:go pc-399))
      pc-397
-       (cl:setf val cl:nil)
+       (cl:setf val ece::*scheme-false*)
        (cl:setf pc 398)
      pc-398
        (cl:go zone-exit)
