@@ -201,7 +201,12 @@ repl: share/ece/ece-main.ecec
 run-lisp:
 	qlot exec sbcl --dynamic-space-size 4096 --disable-debugger --eval '(asdf:load-system :ece)' $(ARGS)
 
-bootstrap: $(BOOTSTRAP_DIR)/primitives-auto.lisp $(BOOTSTRAP_DIR)/assembler-zone.lisp
+bootstrap: $(BOOTSTRAP_DIR)/primitives-auto.lisp $(BOOTSTRAP_DIR)/bootstrap.ecec $(BOOTSTRAP_DIR)/assembler-zone.lisp
+
+# Bootstrap bundle: compiled-system output for all .scm modules. Must be
+# regenerated whenever any .scm source changes (so the assembler space's
+# instruction vector reflects current src/assembler.scm).
+$(BOOTSTRAP_DIR)/bootstrap.ecec: $(BOOTSTRAP_SRCS) $(BOOTSTRAP_DIR)/primitives-auto.lisp
 	@mkdir -p $(BOOTSTRAP_DIR)
 	qlot exec sbcl --eval '(asdf:load-system :ece)' \
 	  --eval '(in-package :ece)' \
@@ -232,7 +237,11 @@ $(BOOTSTRAP_DIR)/primitives-auto.lisp: primitives.def src/primitives.scm src/cod
 # Codegen lives in src/codegen-cl-inline.scm (an ECE program) and reuses
 # *host-primitives* + the template expander from src/codegen-cl.scm to
 # splice :cl bodies inline at primitive call sites.
-$(BOOTSTRAP_DIR)/assembler-zone.lisp: primitives.def src/primitives.scm src/codegen-cl.scm src/codegen-cl-inline.scm src/assembler.scm
+#
+# IMPORTANT: depends on bootstrap.ecec because generate-zone-cl! reads the
+# assembler space's instruction vector from the currently-loaded image.
+# Without that dependency a stale .ecec would emit a stale zone file.
+$(BOOTSTRAP_DIR)/assembler-zone.lisp: primitives.def src/primitives.scm src/codegen-cl.scm src/codegen-cl-inline.scm src/assembler.scm $(BOOTSTRAP_DIR)/bootstrap.ecec
 	@mkdir -p $(BOOTSTRAP_DIR)
 	@echo "Regenerating $(BOOTSTRAP_DIR)/assembler-zone.lisp from src/assembler.scm..."
 	qlot exec sbcl --non-interactive --disable-debugger \

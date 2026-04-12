@@ -3028,7 +3028,11 @@ the calling convention the inline codegen will emit in Phase 3."
      pc-5
        (setf argl (cl:cons val argl)) (incf pc)
      pc-6
-       (setf proc '(|primitive| 0)) (incf pc)
+       ;; The runtime tags primitive values with ECE::|primitive| (lowercase
+       ;; preserved). Use the explicit ece:: prefix so this hand-written
+       ;; skeleton matches what the codegen and runtime produce, even though
+       ;; apply-primitive-procedure currently only inspects (cadr proc).
+       (setf proc (cl:list 'ece::|primitive| 0)) (incf pc)
      pc-7
        (setf val (ece::apply-primitive-procedure proc argl)) (incf pc)
      pc-8
@@ -3391,17 +3395,14 @@ zone-assembler defun."
                (ok (>= (length files) 1)
                    "at least one bootstrap/*-zone.lisp file ships with the build")
                (dolist (file files)
+                 ;; The codegen prepends "zone-" to the space name passed in,
+                 ;; so when the Makefile invokes generate-zone-cl! with
+                 ;; "assembler" the resulting function is `zone-assembler` —
+                 ;; we strip `-zone` from the file basename to recover the
+                 ;; space name, then look up `zone-NAME` in :ece.
                  (let* ((base (pathname-name file))
                         (space-name (subseq base 0 (- (length base)
-                                                      (length "-zone"))))
-                        (defun-name (concatenate 'string "ZONE-" (string-upcase base))))
-                   ;; Defun naming: file `assembler-zone.lisp` defines
-                   ;; `zone-assembler-zone` (zone- + filename root). The
-                   ;; codegen prepends "zone-" to the space name passed in,
-                   ;; so when the Makefile invokes generate-zone-cl! with
-                   ;; "assembler" the function is `zone-assembler`, NOT
-                   ;; `zone-assembler-zone`. Verify by stripping `-zone`
-                   ;; from the basename and looking for `zone-NAME`.
+                                                      (length "-zone")))))
                    (let ((sym (find-symbol (concatenate 'string
                                                         "ZONE-"
                                                         (string-upcase space-name))

@@ -569,16 +569,15 @@ PC. The runtime then qualifies the PC via *executing-space-id* if needed
 (define (emit-const out value)
   "Emit a (const V) operand's VALUE as a CL form. Numbers and booleans
 emit directly; symbols and lists are emitted as quoted data with all
-ECE symbols pipe-wrapped to preserve case across CL's reader."
+ECE symbols pipe-wrapped to preserve case across CL's reader. String
+escaping is delegated to write-cl-string in codegen-cl.scm so backslashes,
+double quotes, and other special characters round-trip cleanly."
   (cond
    ((number? value) (write-string (number->string value) out))
    ((eq? value #t) (write-string "t" out))
    ((eq? value #f) (write-string "cl:nil" out))
    ((null? value) (write-string "cl:nil" out))
-   ((string? value)
-    (write-char #\" out)
-    (write-string value out)
-    (write-char #\" out))
+   ((string? value) (write-cl-string value out))
    ((symbol? value)
     (write-cl-quoted-ece-symbol out value))
    ((pair? value)
@@ -593,17 +592,15 @@ ECE symbols pipe-wrapped to preserve case across CL's reader."
   "Emit DATUM in a quoted-data context — the leading quote has already
 been written by the caller. Recursively pipe-wraps every symbol so that
 the constructed CL list matches the byte-for-byte ECE-symbol shape that
-the runtime expects."
+the runtime expects. String values delegate to write-cl-string for
+proper backslash/quote escaping."
   (cond
    ((null? datum) (write-string "()" out))
    ((symbol? datum) (write-cl-data-symbol out datum))
    ((number? datum) (write-string (number->string datum) out))
    ((eq? datum #t) (write-string "t" out))
    ((eq? datum #f) (write-string "cl:nil" out))
-   ((string? datum)
-    (write-char #\" out)
-    (write-string datum out)
-    (write-char #\" out))
+   ((string? datum) (write-cl-string datum out))
    ((pair? datum)
     (write-char #\( out)
     (emit-quoted-datum out (car datum))
