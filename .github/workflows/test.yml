@@ -14,7 +14,13 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install SBCL
-        run: sudo apt-get update && sudo apt-get install -y sbcl
+        run: |
+          SBCL_VERSION=2.6.3
+          curl -L -o sbcl.tar.bz2 "https://downloads.sourceforge.net/project/sbcl/sbcl/${SBCL_VERSION}/sbcl-${SBCL_VERSION}-x86-64-linux-binary.tar.bz2"
+          tar xjf sbcl.tar.bz2
+          cd sbcl-${SBCL_VERSION}-x86-64-linux
+          sudo bash install.sh
+          sbcl --version
 
       - name: Install qlot
         run: |
@@ -23,6 +29,22 @@ jobs:
 
       - name: Install dependencies
         run: qlot install
+
+      - name: Cache FASL files
+        uses: actions/cache@v4
+        with:
+          path: .fasl-cache
+          key: fasl-${{ hashFiles('src/*.lisp', 'ece.asd', 'bootstrap/*-zone.lisp') }}
+          restore-keys: fasl-
+
+      - name: Warm FASL cache
+        run: |
+          # Pre-compile zone FASLs in a dedicated session so subsequent
+          # SBCL invocations load from cache (~2s) instead of compiling
+          # 376k lines from source (~3min each).
+          ASDF_OUTPUT_TRANSLATIONS='(:output-translations ("'$PWD'/" "'$PWD'/.fasl-cache/") :inherit-configuration)' \
+          qlot exec sbcl --dynamic-space-size 8192 --non-interactive --disable-debugger \
+            --eval '(asdf:load-system :ece)' --quit
 
       - name: Install binaryen
         run: |
@@ -33,6 +55,13 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+
+      - name: Mark bootstrap outputs as up-to-date
+        run: |
+          sleep 1
+          touch bootstrap/primitives-auto.lisp
+          touch bootstrap/bootstrap.ecec
+          touch bootstrap/*-zone.lisp
 
       - name: Build ece binary
         run: make ece

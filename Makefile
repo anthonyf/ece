@@ -19,7 +19,7 @@ ece: bootstrap wasm bin/ece
 
 bin/ece: scripts/build-ece-binary.lisp bootstrap/bootstrap.ecec share/ece/ece-main.ecec
 	@mkdir -p bin
-	qlot exec sbcl --non-interactive --load scripts/build-ece-binary.lisp
+	qlot exec sbcl --dynamic-space-size 4096 --non-interactive --load scripts/build-ece-binary.lisp
 	@ln -sf ece bin/ece-repl
 	@ln -sf ece bin/ece-build
 	@ln -sf ece bin/ece-test
@@ -27,7 +27,7 @@ bin/ece: scripts/build-ece-binary.lisp bootstrap/bootstrap.ecec share/ece/ece-ma
 
 share/ece/ece-main.ecec: src/sdk-lib.scm src/ece-main.scm src/ece-unit.scm src/ece-build.scm src/ece-test.scm bootstrap/bootstrap.ecec
 	@mkdir -p share/ece/templates
-	qlot exec sbcl --non-interactive --disable-debugger \
+	qlot exec sbcl --dynamic-space-size 4096 --non-interactive --disable-debugger \
 	  --eval '(asdf:load-system :ece)' \
 	  --eval '(ece:evaluate (list (intern "compile-system" :ece) (quote (quote ("src/sdk-lib.scm" "src/ece-unit.scm" "src/ece-main.scm" "src/ece-build.scm" "src/ece-test.scm"))) "share/ece/ece-main.ecec"))' \
 	  --quit
@@ -88,7 +88,7 @@ test: test-rove test-ece test-wasm test-conformance test-golden test-web-server 
 # call-with-suite/all-suites/run-suite which work after asdf:load-system.
 test-rove:
 	@mkdir -p $(TEST_OUTPUT_DIR)
-	@bash -o pipefail -c 'qlot exec sbcl --disable-debugger --eval "(asdf:load-system :ece)" --eval "(asdf:load-system :ece/tests)" \
+	@bash -o pipefail -c 'qlot exec sbcl --dynamic-space-size 4096 --disable-debugger --eval "(asdf:load-system :ece)" --eval "(asdf:load-system :ece/tests)" \
 	  --eval "(let ((passedp (funcall (find-symbol \"CALL-WITH-SUITE\" :rove/core/suite) (lambda () (dolist (s (funcall (find-symbol \"ALL-SUITES\" :rove/core/suite/package))) (funcall (find-symbol \"RUN-SUITE\" :rove/core/suite/package) s)))))) (unless passedp (uiop:quit 1)))" \
 	  --quit 2>&1 | tee $(TEST_OUTPUT_DIR)/test-rove.txt'
 
@@ -116,7 +116,7 @@ test-wasm: wasm
 	@mkdir -p .tmp $(TEST_OUTPUT_DIR)
 	@echo "Compiling WASM test suite..."
 	@cat $(WASM_TEST_SRCS) > .tmp/ece-wasm-tests.scm
-	@qlot exec sbcl --disable-debugger --eval '(asdf:load-system :ece)' \
+	@qlot exec sbcl --dynamic-space-size 4096 --disable-debugger --eval '(asdf:load-system :ece)' \
 	  --eval '(ece:evaluate (list (intern "compile-file" :ece) ".tmp/ece-wasm-tests.scm"))' \
 	  --quit
 	@echo "Running WASM tests..."
@@ -192,7 +192,7 @@ test-web-apps: sandbox
 	@node wasm/test-web-apps.js
 
 repl: share/ece/ece-main.ecec
-	qlot exec sbcl --load ece.asd --eval '(asdf:load-system :ece)' \
+	qlot exec sbcl --dynamic-space-size 4096 --load ece.asd --eval '(asdf:load-system :ece)' \
 	  --eval '(in-package :ece)' \
 	  --eval '(evaluate (quote (begin (load-bundle "share/ece/ece-main.ecec") (repl))))'
 
@@ -201,14 +201,17 @@ repl: share/ece/ece-main.ecec
 run-lisp:
 	qlot exec sbcl --dynamic-space-size 4096 --disable-debugger --eval '(asdf:load-system :ece)' $(ARGS)
 
-bootstrap: $(BOOTSTRAP_DIR)/primitives-auto.lisp $(BOOTSTRAP_DIR)/bootstrap.ecec $(BOOTSTRAP_DIR)/assembler-zone.lisp
+ZONE_SENTINEL := $(BOOTSTRAP_DIR)/assembler-zone.lisp
+ZONE_FILES := $(BOOTSTRAP_DIR)/boot-env-zone.lisp $(BOOTSTRAP_DIR)/compilation-unit-zone.lisp $(BOOTSTRAP_DIR)/reader-zone.lisp $(BOOTSTRAP_DIR)/syntax-rules-zone.lisp $(BOOTSTRAP_DIR)/compiler-zone.lisp $(BOOTSTRAP_DIR)/prelude-zone.lisp
+
+bootstrap: $(BOOTSTRAP_DIR)/primitives-auto.lisp $(BOOTSTRAP_DIR)/bootstrap.ecec $(ZONE_SENTINEL)
 
 # Bootstrap bundle: compiled-system output for all .scm modules. Must be
 # regenerated whenever any .scm source changes (so the assembler space's
 # instruction vector reflects current src/assembler.scm).
 $(BOOTSTRAP_DIR)/bootstrap.ecec: $(BOOTSTRAP_SRCS) $(BOOTSTRAP_DIR)/primitives-auto.lisp
 	@mkdir -p $(BOOTSTRAP_DIR)
-	qlot exec sbcl --eval '(asdf:load-system :ece)' \
+	qlot exec sbcl --dynamic-space-size 4096 --eval '(asdf:load-system :ece)' \
 	  --eval '(in-package :ece)' \
 	  --eval '(evaluate (list (quote eval) (list (quote read) (list (quote open-input-string) "(load \"src/compilation-unit.scm\")"))))' \
 	  --eval '(evaluate (list (quote eval) (list (quote read) (list (quote open-input-string) "(compile-system (quote (\"src/boot-env.scm\" \"src/prelude.scm\" \"src/compiler.scm\" \"src/reader.scm\" \"src/assembler.scm\" \"src/compilation-unit.scm\" \"src/syntax-rules.scm\" \"src/browser-lib.scm\")) \"bootstrap/bootstrap.ecec\")"))))' \
@@ -221,7 +224,7 @@ $(BOOTSTRAP_DIR)/bootstrap.ecec: $(BOOTSTRAP_SRCS) $(BOOTSTRAP_DIR)/primitives-a
 $(BOOTSTRAP_DIR)/primitives-auto.lisp: primitives.def src/primitives.scm src/codegen-cl.scm
 	@mkdir -p $(BOOTSTRAP_DIR)
 	@echo "Regenerating $(BOOTSTRAP_DIR)/primitives-auto.lisp from src/primitives.scm..."
-	qlot exec sbcl --non-interactive --disable-debugger \
+	qlot exec sbcl --dynamic-space-size 4096 --non-interactive --disable-debugger \
 	  --eval '(asdf:load-system :ece)' \
 	  --eval '(ece:evaluate (list (quote load) "src/codegen-cl.scm"))' \
 	  --eval '(ece:evaluate (list (quote load) "src/primitives.scm"))' \
@@ -229,29 +232,27 @@ $(BOOTSTRAP_DIR)/primitives-auto.lisp: primitives.def src/primitives.scm src/cod
 	  --quit
 	@echo "Generated $(BOOTSTRAP_DIR)/primitives-auto.lisp"
 
-# Stage 1: per-space inline-codegen output. The assembler space is the
-# Stage 1 ship target — small (~960 instructions), exercised by every
-# (load ...) call, and a clean-stage proof that the dual-zone runtime
-# works on a real space. Other spaces remain interpreted by default.
-#
-# Codegen lives in src/codegen-cl-inline.scm (an ECE program) and reuses
-# *host-primitives* + the template expander from src/codegen-cl.scm to
-# splice :cl bodies inline at primitive call sites.
-#
-# IMPORTANT: depends on bootstrap.ecec because generate-zone-cl! reads the
-# assembler space's instruction vector from the currently-loaded image.
-# Without that dependency a stale .ecec would emit a stale zone file.
-$(BOOTSTRAP_DIR)/assembler-zone.lisp: primitives.def src/primitives.scm src/codegen-cl.scm src/codegen-cl-inline.scm src/assembler.scm $(BOOTSTRAP_DIR)/bootstrap.ecec
+# Stage 1: batch compiled-zone generation. All bootstrap spaces are generated
+# in a single SBCL session via generate-all-zones!, avoiding N separate boots.
+# Depends on bootstrap.ecec because generate-zone-cl! reads each space's
+# instruction vector from the currently-loaded image.
+# Sentinel target: assembler-zone.lisp stands for all zone files.
+# generate-all-zones! produces all seven in one SBCL session.
+# The other zone files declare the sentinel as a prerequisite so Make
+# knows they exist but doesn't re-run the recipe.
+$(ZONE_SENTINEL): primitives.def src/primitives.scm src/codegen-cl.scm src/codegen-cl-inline.scm $(BOOTSTRAP_SRCS) $(BOOTSTRAP_DIR)/bootstrap.ecec
 	@mkdir -p $(BOOTSTRAP_DIR)
-	@echo "Regenerating $(BOOTSTRAP_DIR)/assembler-zone.lisp from src/assembler.scm..."
-	qlot exec sbcl --non-interactive --disable-debugger \
+	@echo "Regenerating all compiled zones in $(BOOTSTRAP_DIR)/..."
+	qlot exec sbcl --dynamic-space-size 4096 --non-interactive --disable-debugger \
 	  --eval '(asdf:load-system :ece)' \
 	  --eval '(ece:evaluate (list (quote load) "src/codegen-cl.scm"))' \
 	  --eval '(ece:evaluate (list (quote load) "src/primitives.scm"))' \
 	  --eval '(ece:evaluate (list (quote load) "src/codegen-cl-inline.scm"))' \
-	  --eval '(ece:evaluate (list (intern "generate-zone-cl!" :ece) "assembler" "$(BOOTSTRAP_DIR)/assembler-zone.lisp"))' \
+	  --eval '(ece:evaluate (list (intern "generate-all-zones!" :ece) "$(BOOTSTRAP_DIR)"))' \
 	  --quit
-	@echo "Generated $(BOOTSTRAP_DIR)/assembler-zone.lisp"
+	@echo "Generated all compiled zones"
+
+$(ZONE_FILES): $(ZONE_SENTINEL)
 
 sandbox: ece
 	@mkdir -p .tmp/sandbox-build sandbox
@@ -264,7 +265,7 @@ sandbox: ece
 	@node scripts/gen-programs-js.js
 	@# Pre-compile canned programs (Hello World .scm → .ecec → base64 in JS)
 	@echo "Compiling canned programs..."
-	@qlot exec sbcl --disable-debugger --eval '(asdf:load-system :ece)' \
+	@qlot exec sbcl --dynamic-space-size 4096 --disable-debugger --eval '(asdf:load-system :ece)' \
 	  --eval '(ece:evaluate (list (intern "compile-file" :ece) "sandbox/programs/hello-world.scm"))' \
 	  --quit 2>/dev/null
 	@echo '// Pre-compiled ECE programs — auto-generated' > sandbox/ece-compiled.js

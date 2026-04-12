@@ -30,6 +30,23 @@
 ;;;; instruction order.
 
 ;;; ─────────────────────────────────────────────────────────────────────────
+;;; Sub-function splitting constants
+;;; ─────────────────────────────────────────────────────────────────────────
+
+(define chunk-size 4096)
+
+(define (needs-splitting? count)
+  (> count chunk-size))
+
+(define (chunk-ctx-start ctx) (car ctx))
+(define (chunk-ctx-end ctx) (cadr ctx))
+(define (chunk-ctx-total ctx) (caddr ctx))
+
+(define (in-chunk? pc ctx)
+  (and (>= pc (chunk-ctx-start ctx))
+       (< pc (chunk-ctx-end ctx))))
+
+;;; ─────────────────────────────────────────────────────────────────────────
 ;;; Top-level entry point
 ;;; ─────────────────────────────────────────────────────────────────────────
 
@@ -50,7 +67,9 @@ space has no instructions registered."
                             space-name))))
       (let ((out (open-output-file output-path)))
         (emit-zone-header out space-name)
-        (emit-zone-defun out space-name space-id count)
+        (if (needs-splitting? count)
+            (emit-zone-defun-split out space-name space-id count)
+            (emit-zone-defun out space-name space-id count))
         (close-output-port out)
         output-path))))
 
@@ -144,6 +163,118 @@ re-loading the file just overwrites the entry with the same function."
   (write-string "))" out) (newline out))
 
 ;;; ─────────────────────────────────────────────────────────────────────────
+;;; Sub-function splitting (chunk emitters)
+;;; ─────────────────────────────────────────────────────────────────────────
+
+(define (emit-zone-defun-split out space-name space-id count)
+  "Emit a split zone: ceil(count/chunk-size) chunk functions plus a
+dispatcher that routes PCs to the correct chunk. Used when a space's
+instruction count exceeds chunk-size."
+  (let ((name-str (if (symbol? space-name)
+                      (symbol->string space-name)
+                      space-name))
+        (label-map (build-pc-label-map space-id))
+        (static-proc-map (build-static-proc-map space-id count)))
+    (let loop ((k 0) (start 0))
+      (when (< start count)
+        (let ((end (min (+ start chunk-size) count)))
+          (emit-chunk-defun out name-str space-id count k start end label-map static-proc-map)
+          (newline out)
+          (loop (+ k 1) end))))
+    (emit-zone-dispatcher out name-str count)
+    (newline out)
+    (emit-zone-registration out name-str space-id)))
+
+(define (emit-chunk-defun out name-str space-id total-count chunk-k start end label-map static-proc-map)
+  "Emit one chunk function covering PCs [start, end). Each chunk has the
+same lambda list as the top-level zone function, plus an 8th bail return
+value that the dispatcher uses to distinguish register-goto bails from
+cross-chunk jumps."
+  (write-string "(defun zone-" out)
+  (write-string name-str out)
+  (write-string "-chunk-" out)
+  (write-string (number->string chunk-k) out)
+  (write-char #\space out)
+  (write-string
+   "(initial-pc initial-val initial-env initial-proc initial-argl initial-continue initial-stack)"
+   out)
+  (newline out)
+  (write-string "  (cl:let ((pc initial-pc)" out) (newline out)
+  (write-string "           (val initial-val)" out) (newline out)
+  (write-string "           (env initial-env)" out) (newline out)
+  (write-string "           (proc initial-proc)" out) (newline out)
+  (write-string "           (argl initial-argl)" out) (newline out)
+  (write-string "           (continue initial-continue)" out) (newline out)
+  (write-string "           (stack initial-stack)" out) (newline out)
+  (write-string "           (flag cl:nil)" out) (newline out)
+  (write-string "           (bail cl:nil))" out) (newline out)
+  (write-string "    (cl:declare (cl:type cl:fixnum pc) (cl:ignorable flag bail))" out) (newline out)
+  (write-string "    (cl:tagbody" out) (newline out)
+  (emit-entry-dispatch-range out start end "chunk-exit")
+  (emit-chunk-instructions out space-id total-count start end label-map static-proc-map)
+  (write-string "     chunk-exit)" out) (newline out)
+  (write-string "    (cl:values pc val env proc argl continue stack bail)))" out)
+  (newline out))
+
+(define (emit-chunk-instructions out space-id total-count start end label-map static-proc-map)
+  "Walk PCs [start, end) of a chunk, emitting tagbody tags and translated
+instruction bodies with chunk-aware control flow."
+  (let ((chunk-ctx (list start end total-count)))
+    (let loop ((pc start))
+      (when (< pc end)
+        (let ((instr (%space-source-ref space-id pc)))
+          (write-string "     pc-" out)
+          (write-string (number->string pc) out)
+          (newline out)
+          (emit-instruction out instr pc space-id label-map static-proc-map chunk-ctx)
+          (emit-pc-update-for-fall-through out instr pc total-count chunk-ctx)
+          (loop (+ pc 1)))))))
+
+(define (emit-zone-dispatcher out name-str total-count)
+  "Emit the dispatcher function that loops: pick chunk by pc range, call it,
+check halt/bail. The dispatcher has the same 7-in/7-out calling convention
+as the single-function zone."
+  (write-string "(defun zone-" out)
+  (write-string name-str out)
+  (write-char #\space out)
+  (write-string
+   "(initial-pc initial-val initial-env initial-proc initial-argl initial-continue initial-stack)"
+   out)
+  (newline out)
+  (write-string "  (cl:let ((pc initial-pc)" out) (newline out)
+  (write-string "           (val initial-val)" out) (newline out)
+  (write-string "           (env initial-env)" out) (newline out)
+  (write-string "           (proc initial-proc)" out) (newline out)
+  (write-string "           (argl initial-argl)" out) (newline out)
+  (write-string "           (continue initial-continue)" out) (newline out)
+  (write-string "           (stack initial-stack)" out) (newline out)
+  (write-string "           (bail cl:nil))" out) (newline out)
+  (write-string "    (cl:loop" out) (newline out)
+  (write-string "      (cl:when (cl:or (cl:>= pc " out)
+  (write-string (number->string total-count) out)
+  (write-string ") (cl:< pc 0))" out) (newline out)
+  (write-string "        (cl:return (cl:values pc val env proc argl continue stack)))" out) (newline out)
+  (write-string "      (cl:cond" out) (newline out)
+  (let loop ((k 0) (start 0))
+    (cond
+     ((>= start total-count)
+      (write-string "        (cl:t (cl:return (cl:values pc val env proc argl continue stack))))" out) (newline out))
+     (else
+      (let ((end (min (+ start chunk-size) total-count)))
+        (write-string "        ((cl:< pc " out)
+        (write-string (number->string end) out)
+        (write-string ")" out) (newline out)
+        (write-string "         (cl:multiple-value-setq (pc val env proc argl continue stack bail)" out) (newline out)
+        (write-string "           (zone-" out)
+        (write-string name-str out)
+        (write-string "-chunk-" out)
+        (write-string (number->string k) out)
+        (write-string " pc val env proc argl continue stack)))" out) (newline out)
+        (loop (+ k 1) end)))))
+  (write-string "      (cl:when bail" out) (newline out)
+  (write-string "        (cl:return (cl:values pc val env proc argl continue stack))))))" out) (newline out))
+
+;;; ─────────────────────────────────────────────────────────────────────────
 ;;; Entry dispatch
 ;;; ─────────────────────────────────────────────────────────────────────────
 ;;;
@@ -164,16 +295,17 @@ re-loading the file just overwrites the entry with the same function."
 (define entry-dispatch-bucket-size 256)
 
 (define (emit-entry-dispatch out count)
-  (cond
-   ((<= count entry-dispatch-bucket-size)
-    ;; Small enough for a single flat case — keep the simple shape so
-    ;; small spaces (toy zones, tests) emit byte-identical to before.
-    (emit-entry-dispatch-flat out 0 count))
-   (else
-    ;; Large space: outer cond fans out to per-bucket cases.
-    (emit-entry-dispatch-bucketed out count))))
+  (emit-entry-dispatch-range out 0 count "zone-exit"))
 
-(define (emit-entry-dispatch-flat out start end)
+(define (emit-entry-dispatch-range out start end exit-tag)
+  (let ((range (- end start)))
+    (cond
+     ((<= range entry-dispatch-bucket-size)
+      (emit-entry-dispatch-flat out start end exit-tag))
+     (else
+      (emit-entry-dispatch-bucketed out start end exit-tag)))))
+
+(define (emit-entry-dispatch-flat out start end exit-tag)
   (write-string "     (cl:case pc" out) (newline out)
   (let loop ((pc start))
     (when (< pc end)
@@ -183,32 +315,30 @@ re-loading the file just overwrites the entry with the same function."
       (write-string (number->string pc) out)
       (write-string "))" out) (newline out)
       (loop (+ pc 1))))
-  (write-string "       (cl:t (cl:go zone-exit)))" out) (newline out))
+  (write-string "       (cl:t (cl:go " out)
+  (write-string exit-tag out)
+  (write-string ")))" out) (newline out))
 
-(define (emit-entry-dispatch-bucketed out count)
+(define (emit-entry-dispatch-bucketed out range-start range-end exit-tag)
   (write-string "     (cl:cond" out) (newline out)
-  (let loop ((start 0))
+  (let loop ((start range-start))
     (cond
-     ((>= start count)
-      ;; Final cond-clause: catches any out-of-range pc and bails. Three
-      ;; closing parens: close (cl:go zone-exit), close (cl:t ...), close
-      ;; (cl:cond ...).
-      (write-string "       (cl:t (cl:go zone-exit)))" out) (newline out))
+     ((>= start range-end)
+      (write-string "       (cl:t (cl:go " out)
+      (write-string exit-tag out)
+      (write-string ")))" out) (newline out))
      (else
       (let ((end (let ((proposed (+ start entry-dispatch-bucket-size)))
-                   (if (> proposed count) count proposed))))
+                   (if (> proposed range-end) range-end proposed))))
         (write-string "       ((cl:< pc " out)
         (write-string (number->string end) out)
         (write-string ")" out) (newline out)
         (write-string "        " out)
-        (emit-entry-dispatch-case-bucket out start end)
-        ;; The bucket helper leaves the (cl:case pc ...) form open at its
-        ;; tail. Two closes here: one for the case, one for the enclosing
-        ;; cond-clause.
+        (emit-entry-dispatch-case-bucket out start end exit-tag)
         (write-string "))" out) (newline out)
         (loop end))))))
 
-(define (emit-entry-dispatch-case-bucket out start end)
+(define (emit-entry-dispatch-case-bucket out start end exit-tag)
   "Emit a (case pc ...) form covering PCs in [start, end), without its
 trailing close paren — the caller in emit-entry-dispatch-bucketed adds
 that close so it can also close the surrounding cond clause."
@@ -221,7 +351,9 @@ that close so it can also close the surrounding cond clause."
       (write-string (number->string pc) out)
       (write-string "))" out) (newline out)
       (loop (+ pc 1))))
-  (write-string "          (cl:t (cl:go zone-exit))" out))
+  (write-string "          (cl:t (cl:go " out)
+  (write-string exit-tag out)
+  (write-string "))" out))
 
 ;;; ─────────────────────────────────────────────────────────────────────────
 ;;; Instruction walker
@@ -263,8 +395,8 @@ in the map get inlined; the rest fall back to apply-primitive-procedure."
           (write-string "     pc-" out)
           (write-string (number->string pc) out)
           (newline out)
-          (emit-instruction out instr pc space-id label-map static-proc-map)
-          (emit-pc-update-for-fall-through out instr pc count)
+          (emit-instruction out instr pc space-id label-map static-proc-map #f)
+          (emit-pc-update-for-fall-through out instr pc count #f)
           (loop (+ pc 1)))))))
 
 ;;; ─────────────────────────────────────────────────────────────────────────
@@ -360,15 +492,24 @@ millions."
         (hash-set! ht (cdr (car entries)) #t)
         (loop (cdr entries)))))))
 
-(define (emit-pc-update-for-fall-through out instr pc count)
+(define (emit-pc-update-for-fall-through out instr pc count chunk-ctx)
   "Emit `(cl:setf pc (1+ pc-i))` for instructions that fall through to the
 next PC. Branch/goto/halt manage pc themselves (inside the body emitted by
-emit-instruction), so they get nothing here."
+emit-instruction), so they get nothing here.
+
+In chunk mode, a not-taken branch at the chunk boundary (last PC) must
+still set pc so the dispatcher routes to the next chunk correctly."
   (let ((op (car instr)))
     (cond
+     ;; Chunk boundary: a not-taken branch at the last PC in a chunk must
+     ;; update pc so falling through to chunk-exit has the correct target.
+     ((and chunk-ctx
+           (eq? op 'branch)
+           (= pc (- (chunk-ctx-end chunk-ctx) 1)))
+      (write-string "       (cl:setf pc " out)
+      (write-string (number->string (+ pc 1)) out)
+      (write-string ")" out) (newline out))
      ((or (eq? op 'branch) (eq? op 'goto) (eq? op 'halt))
-      ;; pc is already set inside the instruction body, or doesn't matter
-      ;; (halt). Don't double-update.
       #t)
      (else
       (write-string "       (cl:setf pc " out)
@@ -392,17 +533,17 @@ emit-instruction), so they get nothing here."
 ;;; Per-instruction emitter
 ;;; ─────────────────────────────────────────────────────────────────────────
 
-(define (emit-instruction out instr pc space-id label-map static-proc-map)
+(define (emit-instruction out instr pc space-id label-map static-proc-map chunk-ctx)
   (let ((op (car instr)))
     (cond
      ((eq? op 'assign)  (emit-assign out instr pc space-id label-map static-proc-map))
      ((eq? op 'test)    (emit-test out instr label-map))
-     ((eq? op 'branch)  (emit-branch out instr label-map))
-     ((eq? op 'goto)    (emit-goto out instr label-map pc))
+     ((eq? op 'branch)  (emit-branch out instr label-map chunk-ctx))
+     ((eq? op 'goto)    (emit-goto out instr label-map pc chunk-ctx))
      ((eq? op 'save)    (emit-save out instr))
      ((eq? op 'restore) (emit-restore out instr))
      ((eq? op 'perform) (emit-perform out instr label-map))
-     ((eq? op 'halt)    (emit-halt out pc))
+     ((eq? op 'halt)    (emit-halt out pc chunk-ctx))
      (else
       (%raw-error
        (string-append "emit-instruction: unknown opcode "
@@ -630,7 +771,7 @@ double quotes, and other special characters round-trip cleanly."
   (cond
    ((number? value) (write-string (number->string value) out))
    ((eq? value #t) (write-string "t" out))
-   ((eq? value #f) (write-string "cl:nil" out))
+   ((eq? value #f) (write-string "ece::*scheme-false*" out))
    ((null? value) (write-string "cl:nil" out))
    ((string? value) (write-cl-string value out))
    ((symbol? value)
@@ -654,7 +795,7 @@ proper backslash/quote escaping."
    ((symbol? datum) (write-cl-data-symbol out datum))
    ((number? datum) (write-string (number->string datum) out))
    ((eq? datum #t) (write-string "t" out))
-   ((eq? datum #f) (write-string "cl:nil" out))
+   ((eq? datum #f) (write-string "ece::*scheme-false*" out))
    ((string? datum) (write-cl-string datum out))
    ((pair? datum)
     (write-char #\( out)
@@ -686,42 +827,61 @@ proper backslash/quote escaping."
 
 ;;; ---- branch -------------------------------------------------------------
 
-(define (emit-branch out instr label-map)
+(define (emit-branch out instr label-map chunk-ctx)
   "Translate (branch (label L)) to (when flag (setf pc target) (go pc-N)).
 The pc setf inside the (when ...) covers the taken branch; the not-taken
-fall-through case is handled by emit-pc-update-for-fall-through."
+fall-through case is handled by emit-pc-update-for-fall-through.
+
+In chunk mode, cross-chunk targets return to the dispatcher via chunk-exit
+instead of jumping directly."
   (let ((dest (list-ref instr 1)))
     (unless (eq? (car dest) 'label)
       (%raw-error "emit-branch: expected (label L) destination"))
     (let ((target-pc (pc-for-label (cadr dest) label-map)))
-      (write-string "       (cl:when flag (cl:setf pc " out)
-      (write-string (number->string target-pc) out)
-      (write-string ") (cl:go pc-" out)
-      (write-string (number->string target-pc) out)
-      (write-string "))" out) (newline out))))
+      (cond
+       ((or (not chunk-ctx) (in-chunk? target-pc chunk-ctx))
+        (write-string "       (cl:when flag (cl:setf pc " out)
+        (write-string (number->string target-pc) out)
+        (write-string ") (cl:go pc-" out)
+        (write-string (number->string target-pc) out)
+        (write-string "))" out) (newline out))
+       (else
+        (write-string "       (cl:when flag (cl:setf pc " out)
+        (write-string (number->string target-pc) out)
+        (write-string ") (cl:go chunk-exit))" out) (newline out))))))
 
 ;;; ---- goto ---------------------------------------------------------------
 
-(define (emit-goto out instr label-map pc)
+(define (emit-goto out instr label-map pc chunk-ctx)
   "Translate (goto DEST) where DEST is (label L) or (reg R).
 Label gotos resolve to pc-N tags at emit time — same-space is just (go pc-N).
-Register gotos (e.g. (goto (reg continue))) bail through zone-exit so the
-executor can re-dispatch based on the runtime value of the register."
+Register gotos bail through zone-exit (or chunk-exit with bail flag in chunk
+mode) so the executor can re-dispatch based on the runtime register value.
+
+In chunk mode, cross-chunk label targets return to the dispatcher via
+chunk-exit. Register gotos set the bail flag so the dispatcher returns to
+the executor instead of looping."
   (let ((dest (list-ref instr 1)))
     (cond
      ((eq? (car dest) 'label)
       (let ((target-pc (pc-for-label (cadr dest) label-map)))
-        (write-string "       (cl:setf pc " out)
-        (write-string (number->string target-pc) out)
-        (write-string ") (cl:go pc-" out)
-        (write-string (number->string target-pc) out)
-        (write-string ")" out) (newline out)))
+        (cond
+         ((or (not chunk-ctx) (in-chunk? target-pc chunk-ctx))
+          (write-string "       (cl:setf pc " out)
+          (write-string (number->string target-pc) out)
+          (write-string ") (cl:go pc-" out)
+          (write-string (number->string target-pc) out)
+          (write-string ")" out) (newline out))
+         (else
+          (write-string "       (cl:setf pc " out)
+          (write-string (number->string target-pc) out)
+          (write-string ") (cl:go chunk-exit)" out) (newline out)))))
      ((eq? (car dest) 'reg)
-      ;; Register goto — runtime-valued destination. The executor's
-      ;; (goto (reg R)) logic handles space switching and PC resolution
-      ;; based on the runtime value of the register. We bail through
-      ;; zone-exit; the executor reads the register and re-dispatches.
-      (write-string "       (cl:go zone-exit)" out) (newline out))
+      (cond
+       ((not chunk-ctx)
+        (write-string "       (cl:go zone-exit)" out) (newline out))
+       (else
+        (write-string "       (cl:setf bail cl:t) (cl:go chunk-exit)" out) (newline out))))
      (else
       (%raw-error
        (string-append "emit-goto: unknown destination tag "
@@ -753,13 +913,48 @@ Performs only run for side effects; we don't assign the result."
 
 ;;; ---- halt ---------------------------------------------------------------
 
-(define (emit-halt out pc)
-  "Halt instructions exit the zone. We bump pc to (1+ halt-PC) so that when
-the executor resumes from our returned register state, its (>= pc len)
-guard fires immediately and it returns val without re-dispatching the halt
-instruction. The +1 also matches the dispatch loop's natural fall-through
-behaviour after the halt branch."
-  (write-string "       (cl:setf pc " out)
-  (write-string (number->string (+ pc 1)) out)
-  (write-string ")" out) (newline out)
-  (write-string "       (cl:go zone-exit)" out) (newline out))
+(define (emit-halt out pc chunk-ctx)
+  "Halt instructions exit the zone. In non-split mode, we bump pc to
+(1+ halt-PC). In chunk mode, we set pc to total-count so the dispatcher
+loop exits cleanly regardless of the halt instruction's position."
+  (cond
+   ((not chunk-ctx)
+    (write-string "       (cl:setf pc " out)
+    (write-string (number->string (+ pc 1)) out)
+    (write-string ")" out) (newline out)
+    (write-string "       (cl:go zone-exit)" out) (newline out))
+   (else
+    (write-string "       (cl:setf pc " out)
+    (write-string (number->string (chunk-ctx-total chunk-ctx)) out)
+    (write-string ")" out) (newline out)
+    (write-string "       (cl:go chunk-exit)" out) (newline out))))
+
+;;; ─────────────────────────────────────────────────────────────────────────
+;;; Batch generation
+;;; ─────────────────────────────────────────────────────────────────────────
+
+(define all-bootstrap-spaces
+  '("assembler" "boot-env" "compilation-unit" "reader"
+    "syntax-rules" "compiler" "prelude"))
+
+(define (generate-all-zones! output-dir)
+  "Generate compiled-zone files for all bootstrap spaces with non-zero
+instruction counts. Deterministic: spaces are processed in a fixed order.
+Signals an error if a bootstrap space name is unknown."
+  (for-each
+   (lambda (space-name)
+     (let* ((space-id (string->symbol space-name))
+            (count (%space-instruction-length space-id)))
+       (cond
+        ((< count 0)
+         (%raw-error
+          (string-append "generate-all-zones!: unknown compilation space: "
+                         space-name)))
+        ((> count 0)
+         (let ((output-path (string-append output-dir "/" space-name "-zone.lisp")))
+           (display (string-append "Generating " output-path " (" (number->string count) " PCs)..."))
+           (newline)
+           (generate-zone-cl! space-name output-path)
+           (display (string-append "  Done: " output-path))
+           (newline))))))
+   all-bootstrap-spaces))
