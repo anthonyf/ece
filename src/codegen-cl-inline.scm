@@ -114,9 +114,11 @@ space has no instructions registered."
     (write-string "           (continue initial-continue)" out) (newline out)
     (write-string "           (stack initial-stack)" out) (newline out)
     (write-string "           (flag cl:nil))" out) (newline out)
-    ;; FLAG is set by every (test ...) instruction; if a space has none we
-    ;; still bind it to silence SBCL's unused-variable warning.
-    (write-string "    (cl:declare (cl:ignorable flag))" out) (newline out)
+    ;; PC is declared fixnum so SBCL's type-inference pass doesn't try to
+    ;; compute the union of all N integer values pc can take, which causes
+    ;; a recursive simplify-unions stack overflow for large spaces (~20k+ PCs).
+    ;; FLAG is declared ignorable in case the space has no (test ...) instructions.
+    (write-string "    (cl:declare (cl:type cl:fixnum pc) (cl:ignorable flag))" out) (newline out)
     (write-string "    (cl:tagbody" out) (newline out)
     (emit-entry-dispatch out count)
     (emit-instructions out space-id count)
@@ -145,22 +147,36 @@ re-loading the file just overwrites the entry with the same function."
 ;;; Entry dispatch
 ;;; ─────────────────────────────────────────────────────────────────────────
 ;;;
-;;; Generates:
-;;;   (cl:case pc
-;;;     (0 (cl:go pc-0))
-;;;     (1 (cl:go pc-1))
-;;;     ...
-;;;     (cl:t (cl:go zone-exit)))
-;;;
 ;;; The executor can hand off control to us at any PC (e.g. after resuming
 ;;; a continuation), and we pick up from there. If the PC is outside our
 ;;; range (e.g. from a cross-space resume), we bail through zone-exit and
 ;;; let the executor re-dispatch.
+;;;
+;;; CL's `case` macro expands into a deeply nested IF chain — one IF per
+;;; clause, with no lateral fan-out — so a flat (case pc (0 ...) (1 ...)
+;;; ... (N ...)) blows SBCL's IR1 conversion stack around N ≈ 4500 on
+;;; macOS. To stay safe for the prelude space (~44k instructions), we
+;;; bucket the dispatch: an outer cond fans out to per-bucket case forms,
+;;; each with at most BUCKET-SIZE entries. With 256-PC buckets a 44k-PC
+;;; space has 172 cond branches and case-arms of depth ≤ 256 — both well
+;;; within SBCL's limits.
+
+(define entry-dispatch-bucket-size 256)
 
 (define (emit-entry-dispatch out count)
+  (cond
+   ((<= count entry-dispatch-bucket-size)
+    ;; Small enough for a single flat case — keep the simple shape so
+    ;; small spaces (toy zones, tests) emit byte-identical to before.
+    (emit-entry-dispatch-flat out 0 count))
+   (else
+    ;; Large space: outer cond fans out to per-bucket cases.
+    (emit-entry-dispatch-bucketed out count))))
+
+(define (emit-entry-dispatch-flat out start end)
   (write-string "     (cl:case pc" out) (newline out)
-  (let loop ((pc 0))
-    (when (< pc count)
+  (let loop ((pc start))
+    (when (< pc end)
       (write-string "       (" out)
       (write-string (number->string pc) out)
       (write-string " (cl:go pc-" out)
@@ -168,6 +184,44 @@ re-loading the file just overwrites the entry with the same function."
       (write-string "))" out) (newline out)
       (loop (+ pc 1))))
   (write-string "       (cl:t (cl:go zone-exit)))" out) (newline out))
+
+(define (emit-entry-dispatch-bucketed out count)
+  (write-string "     (cl:cond" out) (newline out)
+  (let loop ((start 0))
+    (cond
+     ((>= start count)
+      ;; Final cond-clause: catches any out-of-range pc and bails. Four
+      ;; closing parens: close (cl:go zone-exit), close (cl:t ...), close
+      ;; (cl:cond ...), then leave the rest to the outer tagbody/let.
+      (write-string "       (cl:t (cl:go zone-exit)))" out) (newline out))
+     (else
+      (let ((end (let ((proposed (+ start entry-dispatch-bucket-size)))
+                   (if (> proposed count) count proposed))))
+        (write-string "       ((cl:< pc " out)
+        (write-string (number->string end) out)
+        (write-string ")" out) (newline out)
+        (write-string "        " out)
+        (emit-entry-dispatch-case-bucket out start end)
+        ;; The bucket helper leaves the (cl:case pc ...) form open at its
+        ;; tail. Two closes here: one for the case, one for the enclosing
+        ;; cond-clause.
+        (write-string "))" out) (newline out)
+        (loop end))))))
+
+(define (emit-entry-dispatch-case-bucket out start end)
+  "Emit a (case pc ...) form covering PCs in [start, end), without its
+trailing close paren — the caller in emit-entry-dispatch-bucketed adds
+that close so it can also close the surrounding cond clause."
+  (write-string "(cl:case pc" out) (newline out)
+  (let loop ((pc start))
+    (when (< pc end)
+      (write-string "          (" out)
+      (write-string (number->string pc) out)
+      (write-string " (cl:go pc-" out)
+      (write-string (number->string pc) out)
+      (write-string "))" out) (newline out)
+      (loop (+ pc 1))))
+  (write-string "          (cl:t (cl:go zone-exit))" out))
 
 ;;; ─────────────────────────────────────────────────────────────────────────
 ;;; Instruction walker
@@ -236,15 +290,14 @@ in the map get inlined; the rest fall back to apply-primitive-procedure."
   "Walk the instruction vector once and return an alist of (pc . prim-name)
 entries for every PC where the proc register is statically known. PCs not
 in the alist have an unknown proc."
-  (let ((label-set (label-pc-set space-id)))
+  (let ((label-set (label-pc-hash-set space-id)))
     (let loop ((pc 0) (current-prim #f) (acc '()))
       (cond
        ((>= pc count) acc)
        (else
-        (let* ((at-label? (member pc label-set))
-               ;; Entering a labeled instruction starts a new basic block:
+        (let* (;; Entering a labeled instruction starts a new basic block:
                ;; we can no longer trust the previous proc value.
-               (current-prim (if at-label? #f current-prim))
+               (current-prim (if (hash-has-key? label-set pc) #f current-prim))
                (instr (%space-source-ref space-id pc))
                (op (car instr))
                (next-prim
@@ -293,17 +346,19 @@ proc register: (assign val (op apply-primitive-procedure) (reg proc) ...)."
                 (and (eq? (car first) 'reg)
                      (eq? (cadr first) 'proc)))))))
 
-(define (label-pc-set space-id)
-  "Return a list of PCs that have at least one label entry pointing to them.
-Used to identify basic-block boundaries for the static-proc walker."
-  (let loop ((entries (%space-label-entries space-id)) (acc '()))
-    (cond
-     ((null? entries) acc)
-     (else
-      (let ((pc (cdr (car entries))))
-        (if (member pc acc)
-            (loop (cdr entries) acc)
-            (loop (cdr entries) (cons pc acc))))))))
+(define (label-pc-hash-set space-id)
+  "Return a hash table keyed by PCs that have at least one label pointing to
+them. Used to identify basic-block boundaries for the static-proc walker.
+Hash-table lookup is O(1) per PC vs O(labels) for a list scan — critical
+for large spaces where the label count × instruction count product hits
+millions."
+  (let ((ht (%make-hash-table)))
+    (let loop ((entries (%space-label-entries space-id)))
+      (cond
+       ((null? entries) ht)
+       (else
+        (hash-set! ht (cdr (car entries)) #t)
+        (loop (cdr entries)))))))
 
 (define (emit-pc-update-for-fall-through out instr pc count)
   "Emit `(cl:setf pc (1+ pc-i))` for instructions that fall through to the
