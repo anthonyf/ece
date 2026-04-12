@@ -201,7 +201,7 @@ repl: share/ece/ece-main.ecec
 run-lisp:
 	qlot exec sbcl --dynamic-space-size 4096 --disable-debugger --eval '(asdf:load-system :ece)' $(ARGS)
 
-bootstrap: $(BOOTSTRAP_DIR)/primitives-auto.lisp
+bootstrap: $(BOOTSTRAP_DIR)/primitives-auto.lisp $(BOOTSTRAP_DIR)/assembler-zone.lisp
 	@mkdir -p $(BOOTSTRAP_DIR)
 	qlot exec sbcl --eval '(asdf:load-system :ece)' \
 	  --eval '(in-package :ece)' \
@@ -223,6 +223,26 @@ $(BOOTSTRAP_DIR)/primitives-auto.lisp: primitives.def src/primitives.scm src/cod
 	  --eval '(ece:evaluate (list (intern "generate-primitives-auto-lisp!" :ece) "primitives.def" "$(BOOTSTRAP_DIR)/primitives-auto.lisp"))' \
 	  --quit
 	@echo "Generated $(BOOTSTRAP_DIR)/primitives-auto.lisp"
+
+# Stage 1: per-space inline-codegen output. The assembler space is the
+# Stage 1 ship target — small (~960 instructions), exercised by every
+# (load ...) call, and a clean-stage proof that the dual-zone runtime
+# works on a real space. Other spaces remain interpreted by default.
+#
+# Codegen lives in src/codegen-cl-inline.scm (an ECE program) and reuses
+# *host-primitives* + the template expander from src/codegen-cl.scm to
+# splice :cl bodies inline at primitive call sites.
+$(BOOTSTRAP_DIR)/assembler-zone.lisp: primitives.def src/primitives.scm src/codegen-cl.scm src/codegen-cl-inline.scm src/assembler.scm
+	@mkdir -p $(BOOTSTRAP_DIR)
+	@echo "Regenerating $(BOOTSTRAP_DIR)/assembler-zone.lisp from src/assembler.scm..."
+	qlot exec sbcl --non-interactive --disable-debugger \
+	  --eval '(asdf:load-system :ece)' \
+	  --eval '(ece:evaluate (list (quote load) "src/codegen-cl.scm"))' \
+	  --eval '(ece:evaluate (list (quote load) "src/primitives.scm"))' \
+	  --eval '(ece:evaluate (list (quote load) "src/codegen-cl-inline.scm"))' \
+	  --eval '(ece:evaluate (list (intern "generate-zone-cl!" :ece) "assembler" "$(BOOTSTRAP_DIR)/assembler-zone.lisp"))' \
+	  --quit
+	@echo "Generated $(BOOTSTRAP_DIR)/assembler-zone.lisp"
 
 sandbox: ece
 	@mkdir -p .tmp/sandbox-build sandbox

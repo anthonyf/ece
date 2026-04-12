@@ -48,7 +48,12 @@ Template bodies SHALL be ECE quasiquoted s-expressions. Parameter substitution S
 
 ### Requirement: Template expander semantics
 
-The template expander SHALL walk a quasiquoted template body and produce a substituted s-expression by replacing each `(unquote NAME)` with the corresponding parameter symbol. The expander SHALL leave all other forms untouched, including atoms, pairs, strings, numbers, and quoted data.
+The template expander SHALL walk a quasiquoted template body and produce a substituted s-expression. The substitution behaviour depends on the caller's bindings argument:
+
+- For the Stage 0 defun-emission path (bindings = #f), each `(unquote NAME)` SHALL be replaced with the bare `NAME` symbol so it lines up with the surrounding `defun`'s parameter list.
+- For the Stage 1+ inline-substitution path (bindings = an alist of `(name . cl-form)` pairs), each `(unquote NAME)` SHALL be replaced with the associated CL form so the expanded body can be spliced inline at a primitive call site.
+
+In both modes the expander SHALL leave all other forms untouched, including atoms, pairs, strings, numbers, and quoted data.
 
 #### Scenario: Tree walk preserves structure
 - **WHEN** a template body is `(cl:progn (cl:setf (cl:aref ,vec ,idx) ,val) ,val)`

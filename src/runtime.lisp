@@ -1224,7 +1224,15 @@ variables inline — no throw/catch, no dispatcher, no allocation per transition
          (argl initial-argl)
          (continue initial-continue)
          (stack (or initial-stack '()))
-         (len (length instrs)))
+         (len (length instrs))
+         ;; Dual-zone hook flag (Stage 1). Set on entry and after every
+         ;; switch-space. The loop-start tagbody body checks this flag,
+         ;; clears it, and dispatches to the registered compiled-zone
+         ;; function for the current space (if any). The flag prevents
+         ;; the hook from re-firing every loop iteration, which would
+         ;; cause infinite recursion when the compiled zone bails to the
+         ;; interpreter from a register-valued goto.
+         (just-entered-space t))
     (labels ((get-reg (name)
                (ecase name
                  (|val| val) (|env| env) (|proc| proc) (|argl| argl)
@@ -1250,7 +1258,25 @@ variables inline — no throw/catch, no dispatcher, no allocation per transition
                    (setf instrs (compilation-space-resolved-instructions target-cs))
                    (setf ltab (compilation-space-label-table target-cs))
                    (setf len (length instrs))
-                   (setf *executing-space-id* normalized))))
+                   (setf *executing-space-id* normalized))
+                 ;; Mark "we just entered a (potentially compiled) space".
+                 ;; The actual hash lookup + dispatch happens in loop-start
+                 ;; AFTER pc has been updated by the caller (the goto
+                 ;; instruction's setf pc runs after switch-space returns).
+                 (setf just-entered-space t)))
+             (maybe-dispatch-compiled-zone ()
+               (let ((zone-fn (gethash space-id *compiled-zone-functions*)))
+                 (when zone-fn
+                   (multiple-value-bind (new-pc new-val new-env new-proc
+                                                new-argl new-continue new-stack)
+                       (funcall zone-fn pc val env proc argl continue stack)
+                     (setf pc new-pc
+                           val new-val
+                           env new-env
+                           proc new-proc
+                           argl new-argl
+                           continue new-continue
+                           stack new-stack)))))
              (eval-operand (operand)
                (ecase (car operand)
                  (|const| (cadr operand))
@@ -1289,6 +1315,16 @@ variables inline — no throw/catch, no dispatcher, no allocation per transition
                       (error e)))))))
         (tagbody
          loop-start
+           ;; Dual-zone hook: when just-entered-space is set, the compiled
+           ;; zone for the current space gets one chance to run from the
+           ;; current pc. The flag is cleared first so the hook doesn't
+           ;; re-fire on subsequent loop iterations (which would infinite-
+           ;; loop on register-valued goto bails). This runs AFTER pc has
+           ;; been updated by switch-space callers, so the dispatch lands
+           ;; on the correct PC in the new space's PC space.
+           (when just-entered-space
+             (setf just-entered-space nil)
+             (maybe-dispatch-compiled-zone))
            (when (>= pc len) (go loop-end))
            (let ((instr (aref instrs pc)))
              (case (car instr)
@@ -1448,42 +1484,31 @@ Set by (load ...) for per-file spaces, defaults to bootstrap.")
   (setf (gethash '|bootstrap| *space-registry*)
         (make-compilation-space :name "bootstrap")))
 
-;;; Compiled zone support (compile-to-host)
-;;; When a compiled zone is loaded, execution dispatches between native CL
-;;; code (compiled zone) and the interpreter (dynamic zone).
+;;; Compiled zone support (compile-to-host, Stage 1+)
+;;;
+;;; Dual-zone runtime: ECE programs run in either the dynamic zone (the
+;;; instruction-vector interpreter in execute-instructions) or the compiled
+;;; zone (a per-space CL function emitted by src/codegen-cl-inline.scm whose
+;;; body is the inlined translation of that space's instructions).
+;;;
+;;; Both zones share the same registers, stack, environment, primitive defuns,
+;;; and *global-env* lookup path. A continuation captured in one zone can be
+;;; resumed in the other — call/cc, dynamic-wind, and REPL function
+;;; redefinition all work across the boundary without any special handling.
+;;;
+;;; *compiled-zone-functions* is the registry: when execute-instructions
+;;; enters a space whose symbol ID is a key, it hands control to the
+;;; registered CL function instead of running the dispatch loop for that
+;;; space. See src/codegen-cl-inline.scm for the codegen and calling
+;;; convention.
 
-(defvar *compiled-zone-function* nil
-  "The compiled zone function, or NIL if no compiled zone is loaded.
-When set, holds a function of (pc val env proc argl continue stack)
-that executes pre-compiled code and returns (values pc val env proc argl continue stack)
-on zone exit.")
-
-(defvar *compiled-zone-limit* 0
-  "PC boundary: PCs 0 to (1- limit) are in the compiled zone.
-PCs >= limit are in the dynamic/interpreter zone.")
-
-(defvar *compiled-zone-op-table* (make-array 0)
-  "Vector mapping operation index to CL function.
-Populated when a compiled zone is loaded. The codegen emits
-(aref *compiled-zone-op-table* N) references.")
-
-(defun build-compiled-zone-op-table (op-names)
-  "Build the operation table from a list of operation names.
-Returns the populated *compiled-zone-op-table*.
-OP-NAMES is a list of symbols in index order."
-  (let ((table (make-array (length op-names))))
-    (loop for name in op-names
-          for i from 0
-          do (setf (aref table i) (get-operation name)))
-    (setf *compiled-zone-op-table* table)))
-
-(defun resolve-operation-index (name op-name-to-index)
-  "Get or create an index for operation NAME in the op-name-to-index hash table.
-Returns the index."
-  (or (gethash name op-name-to-index)
-      (let ((idx (hash-table-count op-name-to-index)))
-        (setf (gethash name op-name-to-index) idx)
-        idx)))
+(defvar *compiled-zone-functions* (make-hash-table :test 'eq)
+  "Registry mapping space-id symbols to compiled-zone CL functions.
+Each entry is a function of (initial-pc initial-val initial-env initial-proc
+initial-argl initial-continue initial-stack) returning
+(values pc val env proc argl continue stack) on zone exit. Populated by
+bootstrap/*-zone.lisp files at load time. Spaces without a registered
+entry fall through to the interpreted dispatch loop unchanged.")
 
 
 (defun resolve-operations (instr)
@@ -1781,6 +1806,38 @@ Uses the CL reader (not the ECE reader) so this works at boot before the ECE rea
 
 ;;; Boot from .ecec files
 (boot-from-compiled)
+
+;;; ─────────────────────────────────────────────────────────────────────────
+;;; Compiled-zone loader (Stage 1)
+;;; ─────────────────────────────────────────────────────────────────────────
+;;;
+;;; After the bootstrap .ecec files have populated *space-registry* with
+;;; instruction vectors, scan bootstrap/ for any *-zone.lisp files and load
+;;; them. Each file's load-time effects register a zone-NAME function in
+;;; *compiled-zone-functions* under the corresponding space-id symbol; the
+;;; next call to execute-instructions on that space dispatches to the
+;;; compiled zone instead of the interpreter loop.
+;;;
+;;; Files are sorted alphabetically for deterministic load order. Missing
+;;; bootstrap/ directory is not an error — Stage 1 ships zero or more
+;;; compiled zones depending on the build state.
+
+(defun load-compiled-zones ()
+  "Find and load every bootstrap/*-zone.lisp file. Each file is expected
+to define a zone-NAME function and register it in *compiled-zone-functions*.
+Errors during load are propagated with a hint about regeneration."
+  (let* ((bootstrap-dir (asdf:system-relative-pathname :ece "bootstrap/"))
+         (pattern (merge-pathnames "*-zone.lisp" bootstrap-dir))
+         (files (sort (directory pattern) #'string< :key #'namestring)))
+    (dolist (path files)
+      (handler-case (load path)
+        (error (e)
+          (error "Failed to load compiled-zone file ~A: ~A~%~
+                  The file may be stale — try `make bootstrap` to regenerate, ~
+                  or `git checkout ~A` to restore."
+                 path e (file-namestring path)))))))
+
+(load-compiled-zones)
 
 ;;; Ensure all manifest primitives are in *global-env*. The image/ecec may
 ;;; predate new manifest entries; this top-up adds any missing bindings.

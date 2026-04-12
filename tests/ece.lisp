@@ -2945,3 +2945,549 @@ provide an ece-NAME defun for each."
                ;; Reload the real templates so subsequent tests in the same
                ;; image see a populated *host-primitives*.
                (ece::evaluate (list (intern "load" :ece) "src/primitives.scm")))))
+
+;;; ─────────────────────────────────────────────────────────────────────────
+;;; Compiled-zone walking skeleton (Stage 1 parity seed)
+;;; ─────────────────────────────────────────────────────────────────────────
+;;;
+;;; This test is the "walking skeleton" for Stage 1's inline codegen. It
+;;; establishes the data shape and calling convention that
+;;; src/codegen-cl-inline.scm will later emit automatically:
+;;;
+;;;   * The toy space is eight hand-assembled instructions that compute
+;;;     val = 1 + 2 + 3 and halt.
+;;;   * zone-toy-hand is the equivalent CL tagbody function with the exact
+;;;     shape the codegen will emit: (initial-pc initial-val initial-env
+;;;     initial-proc initial-argl initial-continue initial-stack) in,
+;;;     (values pc val env proc argl continue stack) out, one tagbody tag
+;;;     per instruction PC.
+;;;   * The parity assertion runs the toy space through both the existing
+;;;     execute-instructions dispatch loop AND the hand-written function,
+;;;     and compares the resulting val registers.
+;;;
+;;; When the real codegen lands in Phase 3, its output for the toy space
+;;; should be equivalent to zone-toy-hand below — byte-equivalent modulo
+;;; formatting, or at least semantically equivalent.
+
+(defun build-toy-zone-space ()
+  "Assemble the 8-instruction toy space that computes val = 1 + 2 + 3.
+Creates (or resets) the 'toy-zone' compilation space and returns its
+space-id symbol. Safe to call more than once — the space is rebuilt on
+each call, so tests stay deterministic across runs.
+
+NB: instruction opcode/operand symbols must be interned in the :ece
+package (case-preserved, lowercase) so they match the interpreter's
+case dispatch in execute-instructions."
+  (let ((space-id (ece::create-space "toy-zone"))
+        ;; The primitive + has manifest ID 0. If primitives.def ever
+        ;; renumbers +, this constant must follow. Fail loudly below via
+        ;; the parity check if it drifts.
+        (prim-plus-id 0))
+    (ece::assemble-into-space
+     space-id
+     `((ece::|assign| ece::|val|  (ece::|const| 3))
+       (ece::|assign| ece::|argl| (ece::|op| ece::|list|) (ece::|reg| ece::|val|))
+       (ece::|assign| ece::|val|  (ece::|const| 2))
+       (ece::|assign| ece::|argl| (ece::|op| ece::|cons|) (ece::|reg| ece::|val|) (ece::|reg| ece::|argl|))
+       (ece::|assign| ece::|val|  (ece::|const| 1))
+       (ece::|assign| ece::|argl| (ece::|op| ece::|cons|) (ece::|reg| ece::|val|) (ece::|reg| ece::|argl|))
+       (ece::|assign| ece::|proc| (ece::|const| (ece::|primitive| ,prim-plus-id)))
+       (ece::|assign| ece::|val|  (ece::|op| ece::|apply-primitive-procedure|) (ece::|reg| ece::|proc|) (ece::|reg| ece::|argl|))
+       (ece::|halt|)))
+    space-id))
+
+(defun zone-toy-hand (initial-pc initial-val initial-env initial-proc
+                      initial-argl initial-continue initial-stack)
+  "Hand-written compiled-zone function for the toy space.
+Mirrors the 8-instruction toy-zone that build-toy-zone-space assembles.
+Returns (values pc val env proc argl continue stack) on zone exit, matching
+the calling convention the inline codegen will emit in Phase 3."
+  (let ((pc initial-pc)
+        (val initial-val)
+        (env initial-env)
+        (proc initial-proc)
+        (argl initial-argl)
+        (continue initial-continue)
+        (stack initial-stack))
+    (tagbody
+       (case pc
+         (0 (go pc-0)) (1 (go pc-1)) (2 (go pc-2)) (3 (go pc-3))
+         (4 (go pc-4)) (5 (go pc-5)) (6 (go pc-6)) (7 (go pc-7))
+         (8 (go pc-8))
+         (t (go zone-exit)))
+     pc-0
+       (setf val 3) (incf pc)
+     pc-1
+       (setf argl (cl:list val)) (incf pc)
+     pc-2
+       (setf val 2) (incf pc)
+     pc-3
+       (setf argl (cl:cons val argl)) (incf pc)
+     pc-4
+       (setf val 1) (incf pc)
+     pc-5
+       (setf argl (cl:cons val argl)) (incf pc)
+     pc-6
+       (setf proc '(|primitive| 0)) (incf pc)
+     pc-7
+       (setf val (ece::apply-primitive-procedure proc argl)) (incf pc)
+     pc-8
+       (go zone-exit)
+     zone-exit)
+    (values pc val env proc argl continue stack)))
+
+(deftest test-compiled-zone-walking-skeleton
+    (testing "toy-zone assembles, runs interpreted, and matches hand-written CL"
+             (let* ((space-id (build-toy-zone-space)))
+               ;; Interpreter run: execute-instructions returns val on halt.
+               (let ((interp-val
+                      (ece::execute-instructions space-id 0 ece:*global-env*)))
+                 (ok (= interp-val 6)
+                     "interpreted toy-zone halts with val = 6"))
+               ;; Hand-written compiled-zone run.
+               (multiple-value-bind (pc val env proc argl continue stack)
+                   (zone-toy-hand 0 nil ece:*global-env* nil nil nil nil)
+                 (declare (ignore pc env proc argl continue stack))
+                 (ok (= val 6)
+                     "hand-written zone-toy-hand halts with val = 6")))))
+
+(deftest test-compiled-zone-toy-parity
+    (testing "interpreted and hand-written toy-zone produce identical val"
+             (let* ((space-id (build-toy-zone-space))
+                    (interp-val
+                     (ece::execute-instructions space-id 0 ece:*global-env*)))
+               (multiple-value-bind (pc compiled-val env proc argl continue stack)
+                   (zone-toy-hand 0 nil ece:*global-env* nil nil nil nil)
+                 (declare (ignore pc env proc argl continue stack))
+                 (ok (eql interp-val compiled-val)
+                     (format nil "parity: interpreted=~A compiled=~A"
+                             interp-val compiled-val))))))
+
+(defun load-codegen-cl-inline ()
+  "Idempotently load the inline codegen and its dependencies into the
+running ECE image. The codegen is loaded into *global-env*; subsequent
+runs reuse the cached definitions, but explicit reload after edits keeps
+the test deterministic against in-flight codegen changes."
+  (ece::evaluate (list (intern "load" :ece) "src/codegen-cl.scm"))
+  (ece::evaluate (list (intern "load" :ece) "src/primitives.scm"))
+  (ece::evaluate (list (intern "load" :ece) "src/codegen-cl-inline.scm")))
+
+(defun run-zone-codegen (space-name output-path)
+  "Invoke (generate-zone-cl! SPACE-NAME OUTPUT-PATH) via the ECE evaluator."
+  (ece::evaluate
+   (list (intern "generate-zone-cl!" :ece) space-name output-path)))
+
+(deftest test-inline-codegen-toy-zone
+    (testing "inline codegen produces a runnable zone for the toy space"
+             (build-toy-zone-space)
+             (load-codegen-cl-inline)
+             (let* ((output (uiop:with-temporary-file (:pathname p :type "lisp" :keep nil)
+                              (namestring p))))
+               (run-zone-codegen "toy-zone" output)
+               (ok (probe-file output) "codegen wrote an output file")
+               ;; Load the generated file into the live image and call the
+               ;; resulting zone function. The generated defun is registered
+               ;; in the :ece package.
+               (load output)
+               (let ((zone-fn (find-symbol "ZONE-TOY-ZONE" :ece)))
+                 (ok (and zone-fn (fboundp zone-fn))
+                     "codegen-emitted zone-toy-zone is fboundp")
+                 (when (and zone-fn (fboundp zone-fn))
+                   (multiple-value-bind (pc val env proc argl continue stack)
+                       (funcall zone-fn 0 nil ece:*global-env* nil nil nil nil)
+                     (declare (ignore env proc argl continue stack))
+                     (ok (= val 6)
+                         (format nil "auto-codegen toy-zone halts with val=6 pc=~A" pc))))))))
+
+(deftest test-inline-codegen-determinism
+    (testing "regenerating the toy zone twice produces byte-identical output"
+             (build-toy-zone-space)
+             (load-codegen-cl-inline)
+             (let* ((path-a (uiop:with-temporary-file (:pathname p :type "lisp" :keep t)
+                              (namestring p)))
+                    (path-b (uiop:with-temporary-file (:pathname p :type "lisp" :keep t)
+                              (namestring p))))
+               (unwind-protect
+                    (progn
+                      (run-zone-codegen "toy-zone" path-a)
+                      (run-zone-codegen "toy-zone" path-b)
+                      (let ((bytes-a (alexandria:read-file-into-byte-vector path-a))
+                            (bytes-b (alexandria:read-file-into-byte-vector path-b)))
+                        (ok (equalp bytes-a bytes-b)
+                            "two runs of generate-zone-cl! produce identical bytes")))
+                 (ignore-errors (delete-file path-a))
+                 (ignore-errors (delete-file path-b))))))
+
+(deftest test-inline-codegen-inlines-known-primitive
+    (testing "the +-call site at pc-7 inlines the :cl template body"
+             (build-toy-zone-space)
+             (load-codegen-cl-inline)
+             (let* ((output (uiop:with-temporary-file (:pathname p :type "lisp" :keep nil)
+                              (namestring p)))
+                    (text nil))
+               (run-zone-codegen "toy-zone" output)
+               (with-open-file (s output)
+                 (let ((buf (make-string (file-length s))))
+                   (read-sequence buf s)
+                   (setf text buf)))
+               (ok (search "(cl:apply (cl:function cl:+) argl)" text)
+                   "primitive + is inlined as the template body")
+               (ok (not (search "apply-primitive-procedure proc argl" text))
+                   "no fallback dispatch appears for the statically-known + call"))))
+
+(defun build-empty-zone-space ()
+  "Create an empty compilation space — no instructions at all. Exercises
+the codegen's degenerate-space path."
+  (ece::create-space "empty-zone"))
+
+(defun build-branchy-zone-space ()
+  "Assemble a space that exercises (test ...), (branch ...), label resolution
+and goto. Builds argl=(3 5) and computes (> 3 5) → #f, then `false?` of #f
+is #t, the branch IS taken, val becomes 200. The 100 then-arm is dead but
+must still be compilable. Both interpreted and compiled paths must agree."
+  (let ((space-id (ece::create-space "branchy-zone")))
+    (ece::assemble-into-space
+     space-id
+     `((ece::|assign| ece::|val|  (ece::|const| 5))
+       (ece::|assign| ece::|argl| (ece::|op| ece::|list|) (ece::|reg| ece::|val|))
+       (ece::|assign| ece::|val|  (ece::|const| 3))
+       (ece::|assign| ece::|argl| (ece::|op| ece::|cons|) (ece::|reg| ece::|val|) (ece::|reg| ece::|argl|))
+       ;; (test (op apply-primitive-procedure) (const (primitive >)) (reg argl))
+       ;; instead — but the test instruction doesn't take that shape. We
+       ;; encode > as a primitive call that produces a boolean, then test.
+       (ece::|assign| ece::|proc| (ece::|const| (ece::|primitive| 24))) ; 24 = >
+       (ece::|assign| ece::|val|  (ece::|op| ece::|apply-primitive-procedure|)
+             (ece::|reg| ece::|proc|) (ece::|reg| ece::|argl|))
+       ;; Now use false? as the test predicate; if val is #t, false? returns
+       ;; nil and the branch is NOT taken — we fall through to the then-arm.
+       (ece::|test| (ece::|op| ece::|false?|) (ece::|reg| ece::|val|))
+       (ece::|branch| (ece::|label| ece::|else-arm|))
+       (ece::|assign| ece::|val| (ece::|const| 100))
+       (ece::|goto| (ece::|label| ece::|done|))
+       ece::|else-arm|
+       (ece::|assign| ece::|val| (ece::|const| 200))
+       ece::|done|
+       (ece::|halt|)))
+    space-id))
+
+(deftest test-inline-codegen-empty-space
+    (testing "codegen handles a zero-instruction space"
+             (build-empty-zone-space)
+             (load-codegen-cl-inline)
+             (let ((output (uiop:with-temporary-file (:pathname p :type "lisp" :keep nil)
+                             (namestring p))))
+               (run-zone-codegen "empty-zone" output)
+               (ok (probe-file output) "empty-zone codegen produced an output file")
+               (load output)
+               (let ((zone-fn (find-symbol "ZONE-EMPTY-ZONE" :ece)))
+                 (ok (and zone-fn (fboundp zone-fn))
+                     "zone-empty-zone is fboundp")
+                 (when (and zone-fn (fboundp zone-fn))
+                   (multiple-value-bind (pc val env proc argl continue stack)
+                       (funcall zone-fn 0 :sentinel-val ece:*global-env* nil nil nil nil)
+                     (declare (ignore env proc argl continue stack))
+                     (ok (eql val :sentinel-val)
+                         "empty zone leaves val unchanged")
+                     (ok (= pc 0)
+                         "empty zone leaves pc at the entry value"))))) ))
+
+(deftest test-runtime-hook-dispatches-compiled-zone
+    (testing "execute-instructions hands off to a registered compiled-zone fn"
+             (build-toy-zone-space)
+             (load-codegen-cl-inline)
+             (let ((output (uiop:with-temporary-file (:pathname p :type "lisp" :keep nil)
+                             (namestring p))))
+               (run-zone-codegen "toy-zone" output)
+               (load output)
+               (let ((zone-fn (find-symbol "ZONE-TOY-ZONE" :ece))
+                     (space-id (intern "toy-zone" :ece)))
+                 ;; Register the compiled-zone function and run via the
+                 ;; normal executor entry point. The interpreter MUST hand
+                 ;; control to the compiled zone — verified by the
+                 ;; observable result (which both paths produce identically)
+                 ;; plus the call-counter trick below.
+                 (let ((call-count 0))
+                   (unwind-protect
+                        (progn
+                          (setf (gethash space-id ece::*compiled-zone-functions*)
+                                (lambda (pc val env proc argl continue stack)
+                                  (incf call-count)
+                                  (funcall zone-fn pc val env proc argl
+                                           continue stack)))
+                          (let ((result (ece::execute-instructions
+                                         space-id 0 ece:*global-env*)))
+                            (ok (= result 6)
+                                "executor result via compiled zone equals interpreter result")
+                            (ok (>= call-count 1)
+                                "compiled zone was called at least once")))
+                     ;; Always unregister so other tests aren't affected.
+                     (remhash space-id ece::*compiled-zone-functions*))))) ))
+
+(deftest test-runtime-hook-no-compiled-zone
+    (testing "execute-instructions falls through to the interpreter when no zone is registered"
+             (build-toy-zone-space)
+             (let ((space-id (intern "toy-zone" :ece)))
+               ;; Make absolutely sure no compiled-zone fn is registered.
+               (remhash space-id ece::*compiled-zone-functions*)
+               (let ((result (ece::execute-instructions
+                              space-id 0 ece:*global-env*)))
+                 (ok (= result 6)
+                     "interpreter alone produces 6 for toy-zone")))))
+
+;;; ─────────────────────────────────────────────────────────────────────────
+;;; Parity-test harness (Phase 5 — boundary semantics validation)
+;;; ─────────────────────────────────────────────────────────────────────────
+;;;
+;;; Compares execution under three configurations:
+;;;   * pure-interp:   no compiled zone registered, everything runs in
+;;;                    execute-instructions
+;;;   * pure-compiled: the chosen space's compiled zone is registered, the
+;;;                    interpreter still handles every other space (this is
+;;;                    the "Stage 1 ships one space" model)
+;;;
+;;; A test passes when the observable result is identical across both
+;;; configurations. The harness handles registration cleanup so tests don't
+;;; bleed state into each other.
+
+(defun with-compiled-zone (space-id zone-fn thunk)
+  "Run THUNK with ZONE-FN registered as the compiled zone for SPACE-ID.
+Always unregisters on exit, even if THUNK signals."
+  (unwind-protect
+       (progn
+         (setf (gethash space-id ece::*compiled-zone-functions*) zone-fn)
+         (funcall thunk))
+    (remhash space-id ece::*compiled-zone-functions*)))
+
+(defun parity-run (space-id zone-fn thunk)
+  "Run THUNK twice — once with the compiled zone unregistered (interpreter
+only), once with it registered. Return both results as a (cons interp
+compiled) pair so the caller can assert equality."
+  (remhash space-id ece::*compiled-zone-functions*)
+  (let ((interp-result (funcall thunk)))
+    (let ((compiled-result
+           (with-compiled-zone space-id zone-fn thunk)))
+      (cons interp-result compiled-result))))
+
+(deftest test-parity-toy-zone-end-to-end
+    (testing "toy-zone produces identical results under interpreter and compiled-zone"
+             (build-toy-zone-space)
+             (load-codegen-cl-inline)
+             (let ((output (uiop:with-temporary-file (:pathname p :type "lisp" :keep nil)
+                             (namestring p))))
+               (run-zone-codegen "toy-zone" output)
+               (load output)
+               (let* ((zone-fn (find-symbol "ZONE-TOY-ZONE" :ece))
+                      (space-id (intern "toy-zone" :ece))
+                      (result-pair
+                       (parity-run space-id (symbol-function zone-fn)
+                                   (lambda ()
+                                     (ece::execute-instructions
+                                      space-id 0 ece:*global-env*)))))
+                 (ok (eql (car result-pair) 6)
+                     "interpreted produces 6")
+                 (ok (eql (cdr result-pair) 6)
+                     "compiled produces 6")
+                 (ok (eql (car result-pair) (cdr result-pair))
+                     "parity: interpreted = compiled")))))
+
+(deftest test-compiled-zone-honors-initial-pc-dispatch
+    (testing "executor entering at non-zero initial-pc dispatches into the right tag"
+             (build-toy-zone-space)
+             (load-codegen-cl-inline)
+             (let ((output (uiop:with-temporary-file (:pathname p :type "lisp" :keep nil)
+                             (namestring p))))
+               (run-zone-codegen "toy-zone" output)
+               (load output)
+               (let ((zone-fn (find-symbol "ZONE-TOY-ZONE" :ece)))
+                 ;; Enter at pc=2 — skips the (val=3, argl=(3)) prologue and
+                 ;; starts with (val=2). The interpreter does the same.
+                 (let* ((space-id (intern "toy-zone" :ece))
+                        (interp-val
+                         (ece::execute-instructions
+                          space-id 2 ece:*global-env*))
+                        (compiled-val
+                         (multiple-value-bind (pc val env proc argl cont stack)
+                             (funcall zone-fn 2 nil ece:*global-env*
+                                      nil nil nil nil)
+                           (declare (ignore pc env proc argl cont stack))
+                           val)))
+                   (ok (eql interp-val compiled-val)
+                       (format nil "entry pc=2: interp=~A compiled=~A"
+                               interp-val compiled-val)))))))
+
+;;; ─────────────────────────────────────────────────────────────────────────
+;;; First real space: assembler-zone parity (Phase 6)
+;;; ─────────────────────────────────────────────────────────────────────────
+;;;
+;;; The assembler space (~962 instructions) is the smallest non-empty real
+;;; space in the bootstrap image. It implements `load`, `for-each` over
+;;; instruction lists, label registration, and the assemble-into-global
+;;; rebinding — exercised every time ECE compiles a file. Compiling it to
+;;; a zone and running the test suite with the zone registered is the most
+;;; load-bearing parity test we have for Stage 1.
+
+(defun ensure-assembler-zone-registered ()
+  "Make sure the assembler space has a compiled-zone function registered.
+Returns the space-id symbol. The boot-time loader (load-compiled-zones in
+runtime.lisp) usually does this automatically; if not — for example after
+a test cleared the registry — we re-register from the already-loaded
+zone-assembler defun."
+  (let ((space-id (intern "assembler" :ece))
+        (zone-fn (find-symbol "ZONE-ASSEMBLER" :ece)))
+    (when (and zone-fn (fboundp zone-fn))
+      (setf (gethash space-id ece::*compiled-zone-functions*)
+            (symbol-function zone-fn)))
+    space-id))
+
+(deftest test-real-space-parity-arithmetic
+    (testing "(+ 1 2 3) returns 6 with the assembler compiled zone registered"
+             (let ((space-id (ensure-assembler-zone-registered)))
+               (unwind-protect
+                    (let ((r (ece-eval-string "(+ 1 2 3)")))
+                      (ok (= r 6) "compiled-zone arithmetic returns 6"))
+                 (ensure-assembler-zone-registered)))))
+
+(deftest test-real-space-parity-callcc-trivial
+    (testing "(call/cc (lambda (k) (k 42))) → 42 with assembler zone registered"
+             (let ((space-id (ensure-assembler-zone-registered)))
+               (unwind-protect
+                    (let ((r (ece-eval-string "(call/cc (lambda (k) (k 42)))")))
+                      (ok (= r 42) "trivial call/cc returns 42"))
+                 (ensure-assembler-zone-registered)))))
+
+(deftest test-real-space-parity-callcc-escape
+    (testing "call/cc as escape continuation works with assembler zone"
+             (let ((space-id (ensure-assembler-zone-registered)))
+               (unwind-protect
+                    (let ((r (ece-eval-string
+                              "(+ 1 (call/cc (lambda (k) (+ 10 (k 100)))))")))
+                      (ok (= r 101)
+                          "call/cc escape: 1 + 100 (10 is skipped) = 101"))
+                 (ensure-assembler-zone-registered)))))
+
+(deftest test-real-space-parity-dynamic-wind
+    (testing "dynamic-wind ordering works with assembler zone registered"
+             (let ((space-id (ensure-assembler-zone-registered)))
+               (unwind-protect
+                    (let ((r (ece-eval-string
+                              "(let ((log '()))
+                                 (dynamic-wind
+                                   (lambda () (set! log (cons 'before log)))
+                                   (lambda () (set! log (cons 'body log)) 'result)
+                                   (lambda () (set! log (cons 'after log))))
+                                 (reverse log))")))
+                      (ok (equal (mapcar (lambda (s) (string (ece-sym s)))
+                                         r)
+                                 '("before" "body" "after"))
+                          "dynamic-wind runs before/body/after in order"))
+                 (ensure-assembler-zone-registered)))))
+
+(deftest test-shipped-zone-files-load-and-register
+    (testing "every bootstrap/*-zone.lisp file installs an fbound zone-NAME function"
+             (let* ((bootstrap-dir
+                     (asdf:system-relative-pathname :ece "bootstrap/"))
+                    (pattern (merge-pathnames "*-zone.lisp" bootstrap-dir))
+                    (files (directory pattern)))
+               (ok (>= (length files) 1)
+                   "at least one bootstrap/*-zone.lisp file ships with the build")
+               (dolist (file files)
+                 (let* ((base (pathname-name file))
+                        (space-name (subseq base 0 (- (length base)
+                                                      (length "-zone"))))
+                        (defun-name (concatenate 'string "ZONE-" (string-upcase base))))
+                   ;; Defun naming: file `assembler-zone.lisp` defines
+                   ;; `zone-assembler-zone` (zone- + filename root). The
+                   ;; codegen prepends "zone-" to the space name passed in,
+                   ;; so when the Makefile invokes generate-zone-cl! with
+                   ;; "assembler" the function is `zone-assembler`, NOT
+                   ;; `zone-assembler-zone`. Verify by stripping `-zone`
+                   ;; from the basename and looking for `zone-NAME`.
+                   (let ((sym (find-symbol (concatenate 'string
+                                                        "ZONE-"
+                                                        (string-upcase space-name))
+                                           :ece)))
+                     (ok (and sym (fboundp sym))
+                         (format nil "~A defines fbound ~A" file sym))
+                     (let* ((space-id (intern space-name :ece))
+                            (registered (gethash space-id ece::*compiled-zone-functions*)))
+                       (ok registered
+                           (format nil "~A registered in *compiled-zone-functions*" space-name))
+                       (ok (eq registered (and sym (symbol-function sym)))
+                           "registered function matches the defun"))))))))
+
+(deftest test-shipped-zone-files-determinism
+    (testing "regenerating the assembler zone file twice produces byte-identical output"
+             (load-codegen-cl-inline)
+             (let ((path-a (uiop:with-temporary-file (:pathname p :type "lisp" :keep t)
+                             (namestring p)))
+                   (path-b (uiop:with-temporary-file (:pathname p :type "lisp" :keep t)
+                             (namestring p))))
+               (unwind-protect
+                    (progn
+                      (run-zone-codegen "assembler" path-a)
+                      (run-zone-codegen "assembler" path-b)
+                      (let ((bytes-a (alexandria:read-file-into-byte-vector path-a))
+                            (bytes-b (alexandria:read-file-into-byte-vector path-b)))
+                        (ok (equalp bytes-a bytes-b)
+                            "two runs against the assembler space produce identical bytes")))
+                 (ignore-errors (delete-file path-a))
+                 (ignore-errors (delete-file path-b))))))
+
+(deftest test-real-space-parity-continuation-serialization
+    (testing "continuation captured under compiled-zone dispatch round-trips through the serializer"
+             (let ((space-id (ensure-assembler-zone-registered)))
+               (unwind-protect
+                    (let ((r (ece-eval-string
+                              "(let ((k #f))
+                                 (call/cc (lambda (c) (set! k c)))
+                                 ;; Serialize → read string → deserialize.
+                                 ;; The round-tripped object should be a
+                                 ;; continuation matching the original
+                                 ;; structurally. (Invoking it is tricky
+                                 ;; under the test harness; existing
+                                 ;; serialization tests note the same.)
+                                 (let* ((s (serialize-value k))
+                                        (form (read (open-input-string s)))
+                                        (k2 (deserialize-value form)))
+                                   (continuation? k2)))")))
+                      (ok (eq r t)
+                          "deserialized continuation is still a continuation"))
+                 (ensure-assembler-zone-registered)))))
+
+(deftest test-real-space-parity-redefinition
+    (testing "REPL-style (define foo ...) takes effect across the compiled zone"
+             (let ((space-id (ensure-assembler-zone-registered)))
+               (unwind-protect
+                    (progn
+                      (ece-eval-string "(define stage1-test-fn (lambda (x) (* x 10)))")
+                      (let ((before (ece-eval-string "(stage1-test-fn 7)")))
+                        (ok (= before 70) "stage1-test-fn 7 = 70 before redef"))
+                      (ece-eval-string "(define stage1-test-fn (lambda (x) (* x 100)))")
+                      (let ((after (ece-eval-string "(stage1-test-fn 7)")))
+                        (ok (= after 700) "stage1-test-fn 7 = 700 after redef")))
+                 (ensure-assembler-zone-registered)))))
+
+(deftest test-inline-codegen-branch-and-goto
+    (testing "codegen handles test, branch, goto, labels, and runs to halt"
+             (build-branchy-zone-space)
+             (load-codegen-cl-inline)
+             (let* ((space-id (intern "branchy-zone" :ece))
+                    (interp-val
+                     (ece::execute-instructions space-id 0 ece:*global-env*))
+                    (output (uiop:with-temporary-file (:pathname p :type "lisp" :keep nil)
+                              (namestring p))))
+               (ok (= interp-val 200)
+                   "interpreted branchy-zone takes the else-arm and halts with 200")
+               (run-zone-codegen "branchy-zone" output)
+               (load output)
+               (let ((zone-fn (find-symbol "ZONE-BRANCHY-ZONE" :ece)))
+                 (ok (and zone-fn (fboundp zone-fn))
+                     "zone-branchy-zone is fboundp")
+                 (when (and zone-fn (fboundp zone-fn))
+                   (multiple-value-bind (pc val env proc argl continue stack)
+                       (funcall zone-fn 0 nil ece:*global-env* nil nil nil nil)
+                     (declare (ignore env proc argl continue stack))
+                     (ok (= val 200)
+                         (format nil "compiled branchy-zone halts with val=200 (pc=~A)" pc))
+                     (ok (= val interp-val)
+                         "compiled and interpreted branchy-zone agree")))))))
