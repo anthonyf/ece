@@ -47,6 +47,16 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Mark bootstrap outputs as up-to-date
+        run: |
+          # Git checkout sets all timestamps to "now", so Make can't tell
+          # that checked-in generated files are newer than their sources.
+          # Touch outputs so Make skips unnecessary regeneration.
+          sleep 1
+          touch bootstrap/primitives-auto.lisp
+          touch bootstrap/bootstrap.ecec
+          touch bootstrap/*-zone.lisp
+
       - name: Build ece binary
         run: make ece
 
