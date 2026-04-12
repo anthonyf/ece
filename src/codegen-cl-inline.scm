@@ -190,9 +190,9 @@ re-loading the file just overwrites the entry with the same function."
   (let loop ((start 0))
     (cond
      ((>= start count)
-      ;; Final cond-clause: catches any out-of-range pc and bails. Four
+      ;; Final cond-clause: catches any out-of-range pc and bails. Three
       ;; closing parens: close (cl:go zone-exit), close (cl:t ...), close
-      ;; (cl:cond ...), then leave the rest to the outer tagbody/let.
+      ;; (cl:cond ...).
       (write-string "       (cl:t (cl:go zone-exit)))" out) (newline out))
      (else
       (let ((end (let ((proposed (+ start entry-dispatch-bucket-size)))
