@@ -26,4 +26,4 @@ Only tier 4 (`list`, `clear-screen`) is genuinely portable and was implemented.
 - [x] 2.1 Verify `bootstrap/primitives-auto.lisp` has 2 fewer `defun` forms (`ece-list`, `ece-clear-screen` removed) — confirmed 171 vs 173
 - [x] 2.2 Verify `bootstrap/*-zone.lisp` files regenerated — prelude-zone went from 43910 to 44106 PCs (+196 for the two ECE defs)
 - [x] 2.3 Update the change's spec delta to reflect the narrowed scope
-- [ ] 2.4 Open PR with tier 4 commit and a summary of why tiers 1-3 were abandoned
+- [x] 2.4 Open PR with tier 4 commit and a summary of why tiers 1-3 were abandoned — https://github.com/anthonyf/ece/pull/144
