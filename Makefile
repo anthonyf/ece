@@ -201,9 +201,10 @@ repl: share/ece/ece-main.ecec
 run-lisp:
 	qlot exec sbcl --dynamic-space-size 4096 --disable-debugger --eval '(asdf:load-system :ece)' $(ARGS)
 
-ZONE_STAMP := $(BOOTSTRAP_DIR)/.zones.stamp
+ZONE_SENTINEL := $(BOOTSTRAP_DIR)/assembler-zone.lisp
+ZONE_FILES := $(BOOTSTRAP_DIR)/boot-env-zone.lisp $(BOOTSTRAP_DIR)/compilation-unit-zone.lisp $(BOOTSTRAP_DIR)/reader-zone.lisp $(BOOTSTRAP_DIR)/syntax-rules-zone.lisp $(BOOTSTRAP_DIR)/compiler-zone.lisp $(BOOTSTRAP_DIR)/prelude-zone.lisp
 
-bootstrap: $(BOOTSTRAP_DIR)/primitives-auto.lisp $(BOOTSTRAP_DIR)/bootstrap.ecec $(ZONE_STAMP)
+bootstrap: $(BOOTSTRAP_DIR)/primitives-auto.lisp $(BOOTSTRAP_DIR)/bootstrap.ecec $(ZONE_SENTINEL)
 
 # Bootstrap bundle: compiled-system output for all .scm modules. Must be
 # regenerated whenever any .scm source changes (so the assembler space's
@@ -235,7 +236,11 @@ $(BOOTSTRAP_DIR)/primitives-auto.lisp: primitives.def src/primitives.scm src/cod
 # in a single SBCL session via generate-all-zones!, avoiding N separate boots.
 # Depends on bootstrap.ecec because generate-zone-cl! reads each space's
 # instruction vector from the currently-loaded image.
-$(ZONE_STAMP): primitives.def src/primitives.scm src/codegen-cl.scm src/codegen-cl-inline.scm $(BOOTSTRAP_SRCS) $(BOOTSTRAP_DIR)/bootstrap.ecec
+# Sentinel target: assembler-zone.lisp stands for all zone files.
+# generate-all-zones! produces all seven in one SBCL session.
+# The other zone files declare the sentinel as a prerequisite so Make
+# knows they exist but doesn't re-run the recipe.
+$(ZONE_SENTINEL): primitives.def src/primitives.scm src/codegen-cl.scm src/codegen-cl-inline.scm $(BOOTSTRAP_SRCS) $(BOOTSTRAP_DIR)/bootstrap.ecec
 	@mkdir -p $(BOOTSTRAP_DIR)
 	@echo "Regenerating all compiled zones in $(BOOTSTRAP_DIR)/..."
 	qlot exec sbcl --dynamic-space-size 4096 --non-interactive --disable-debugger \
@@ -245,8 +250,9 @@ $(ZONE_STAMP): primitives.def src/primitives.scm src/codegen-cl.scm src/codegen-
 	  --eval '(ece:evaluate (list (quote load) "src/codegen-cl-inline.scm"))' \
 	  --eval '(ece:evaluate (list (intern "generate-all-zones!" :ece) "$(BOOTSTRAP_DIR)"))' \
 	  --quit
-	@touch $@
 	@echo "Generated all compiled zones"
+
+$(ZONE_FILES): $(ZONE_SENTINEL)
 
 sandbox: ece
 	@mkdir -p .tmp/sandbox-build sandbox
@@ -323,6 +329,6 @@ setup:
 	@echo "Pre-commit hook installed."
 
 clean:
-	rm -rf .fasl-cache/ $(ZONE_STAMP)
+	rm -rf .fasl-cache/
 
 clean-fasl: clean
