@@ -161,30 +161,56 @@ or bare-symbol forms as variadic (last symbol is the rest list)."
 ;;; ─────────────────────────────────────────────────────────────────────────
 ;;; Template expander
 ;;; ─────────────────────────────────────────────────────────────────────────
+;;;
+;;; Two consumers:
+;;;   * Defun-path (Stage 0): bindings = #f, each ,NAME becomes the bare NAME
+;;;     symbol so it lines up with the CL defun's parameter list.
+;;;   * Inline-path (Stage 1): bindings is an alist mapping each parameter
+;;;     symbol to a CL form; each ,NAME is replaced with its associated form.
 
-(define (expand-template template)
-  "Walk a quasiquoted template body and substitute (unquote NAME) slots with
-the bare NAME symbol. Returns the substituted s-expression."
+(define (expand-host-primitive-template template bindings)
+  "Walk a quasiquoted template body and substitute (unquote NAME) slots.
+
+If BINDINGS is #f, each ,NAME is replaced with the bare symbol NAME — this
+is the defun-emission path.
+
+If BINDINGS is an alist of (name . cl-form) pairs, each ,NAME is replaced
+with its associated CL form — this is the inline-substitution path. An
+unbound slot raises an error."
   (unless (and (pair? template) (eq? (car template) 'quasiquote))
-    (%raw-error "expand-template: not a quasiquote form"))
-  (expand-template-walk (cadr template)))
+    (%raw-error "expand-host-primitive-template: not a quasiquote form"))
+  (expand-host-primitive-template-walk (cadr template) bindings))
 
-(define (expand-template-walk node)
+(define (expand-host-primitive-template-walk node bindings)
   (cond
    ((null? node) '())
    ((symbol? node) node)
    ((pair? node)
     (cond
      ((eq? (car node) 'unquote)
-      (cadr node))
+      (let ((slot (cadr node)))
+        (cond
+         ((not bindings) slot)
+         (else
+          (let ((pair (assq slot bindings)))
+            (if pair
+                (cdr pair)
+                (%raw-error
+                 (string-append "expand-host-primitive-template: unbound slot ,"
+                                (symbol->string slot)))))))))
      ((eq? (car node) 'unquote-splicing)
-      (%raw-error "expand-template-walk: stray unquote-splicing"))
+      (%raw-error "expand-host-primitive-template-walk: stray unquote-splicing"))
      ((eq? (car node) 'quasiquote)
-      (%raw-error "expand-template-walk: nested quasiquote"))
+      (%raw-error "expand-host-primitive-template-walk: nested quasiquote"))
      (else
-      (cons (expand-template-walk (car node))
-            (expand-template-walk (cdr node))))))
+      (cons (expand-host-primitive-template-walk (car node) bindings)
+            (expand-host-primitive-template-walk (cdr node) bindings)))))
    (else node)))
+
+(define (expand-template template)
+  "Defun-path template expansion. Thin wrapper over
+expand-host-primitive-template that substitutes ,NAME with the bare NAME."
+  (expand-host-primitive-template template #f))
 
 ;;; ─────────────────────────────────────────────────────────────────────────
 ;;; Lookup helpers
@@ -205,6 +231,55 @@ the bare NAME symbol. Returns the substituted s-expression."
 (define (host-primitive-names)
   "Return a list of all registered primitive names."
   (hash-keys *host-primitives*))
+
+;;; ─────────────────────────────────────────────────────────────────────────
+;;; Inline-substitution entry point
+;;; ─────────────────────────────────────────────────────────────────────────
+;;;
+;;; Consumed by src/codegen-cl-inline.scm (Stage 1). Given a primitive name
+;;; and a list of CL forms representing argument values at a call site,
+;;; returns the :cl template body with parameters substituted.
+
+(define (host-primitive-cl-body name arg-forms)
+  "Return the inlined :cl template body for primitive NAME, with its
+parameters substituted by the corresponding CL forms in ARG-FORMS.
+
+Returns #f if NAME has no :cl template registered, or if ARG-FORMS and the
+primitive's declared params are incompatible (wrong arity).
+
+Examples:
+  (host-primitive-cl-body 'car '(x))     ;; => (cl:car x)
+  (host-primitive-cl-body '+ '(a b))     ;; => (cl:apply (cl:function cl:+) (cl:list a b))"
+  (let ((template (host-primitive-target name ':cl))
+        (params (host-primitive-params name)))
+    (and template
+         (let ((bindings (build-host-primitive-bindings params arg-forms)))
+           (and bindings
+                (expand-host-primitive-template template bindings))))))
+
+(define (build-host-primitive-bindings params arg-forms)
+  "Build an alist of (param-symbol . cl-form) for template substitution.
+
+Returns #f when PARAMS and ARG-FORMS are incompatible.
+
+Proper params map one-to-one with ARG-FORMS. Variadic params (a bare symbol
+or a dotted tail) absorb the remaining ARG-FORMS into a (cl:list ...) form,
+matching how the defun-path defuns receive their &rest arguments as a
+pre-built list."
+  (cond
+   ((null? params)
+    (and (null? arg-forms) '()))
+   ((symbol? params)
+    (list (cons params (cons 'cl:list arg-forms))))
+   ((pair? params)
+    (cond
+     ((null? arg-forms) #f)
+     (else
+      (let ((rest (build-host-primitive-bindings (cdr params) (cdr arg-forms))))
+        (and rest
+             (cons (cons (car params) (car arg-forms))
+                   rest))))))
+   (else #f)))
 
 ;;; ─────────────────────────────────────────────────────────────────────────
 ;;; Manifest parser
