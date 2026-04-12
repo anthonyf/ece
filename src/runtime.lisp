@@ -1825,12 +1825,22 @@ Uses the CL reader (not the ECE reader) so this works at boot before the ECE rea
 (defun load-compiled-zones ()
   "Find and load every bootstrap/*-zone.lisp file. Each file is expected
 to define a zone-NAME function and register it in *compiled-zone-functions*.
-Errors during load are propagated with a hint about regeneration."
+Uses compile-file to produce cached FASLs so subsequent loads skip
+compilation. Errors during load are propagated with a hint about
+regeneration."
   (let* ((bootstrap-dir (asdf:system-relative-pathname :ece "bootstrap/"))
          (pattern (merge-pathnames "*-zone.lisp" bootstrap-dir))
-         (files (sort (directory pattern) #'string< :key #'namestring)))
+         (files (sort (directory pattern) #'string< :key #'namestring))
+         (fasl-dir (asdf:apply-output-translations bootstrap-dir)))
+    (ensure-directories-exist (merge-pathnames "x" fasl-dir))
     (dolist (path files)
-      (handler-case (load path)
+      (handler-case
+          (let* ((fasl-name (make-pathname :type "fasl" :defaults (file-namestring path)))
+                 (fasl-path (merge-pathnames fasl-name fasl-dir)))
+            (when (or (not (probe-file fasl-path))
+                      (> (file-write-date path) (file-write-date fasl-path)))
+              (compile-file path :output-file fasl-path :print nil))
+            (load fasl-path))
         (error (e)
           (error "Failed to load compiled-zone file ~A: ~A~%~
                   The file may be stale — try `make bootstrap` to regenerate, ~
