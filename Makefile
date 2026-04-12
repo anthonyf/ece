@@ -19,7 +19,7 @@ ece: bootstrap wasm bin/ece
 
 bin/ece: scripts/build-ece-binary.lisp bootstrap/bootstrap.ecec share/ece/ece-main.ecec
 	@mkdir -p bin
-	qlot exec sbcl --non-interactive --load scripts/build-ece-binary.lisp
+	qlot exec sbcl --dynamic-space-size 4096 --non-interactive --load scripts/build-ece-binary.lisp
 	@ln -sf ece bin/ece-repl
 	@ln -sf ece bin/ece-build
 	@ln -sf ece bin/ece-test
@@ -27,7 +27,7 @@ bin/ece: scripts/build-ece-binary.lisp bootstrap/bootstrap.ecec share/ece/ece-ma
 
 share/ece/ece-main.ecec: src/sdk-lib.scm src/ece-main.scm src/ece-unit.scm src/ece-build.scm src/ece-test.scm bootstrap/bootstrap.ecec
 	@mkdir -p share/ece/templates
-	qlot exec sbcl --non-interactive --disable-debugger \
+	qlot exec sbcl --dynamic-space-size 4096 --non-interactive --disable-debugger \
 	  --eval '(asdf:load-system :ece)' \
 	  --eval '(ece:evaluate (list (intern "compile-system" :ece) (quote (quote ("src/sdk-lib.scm" "src/ece-unit.scm" "src/ece-main.scm" "src/ece-build.scm" "src/ece-test.scm"))) "share/ece/ece-main.ecec"))' \
 	  --quit
@@ -192,7 +192,7 @@ test-web-apps: sandbox
 	@node wasm/test-web-apps.js
 
 repl: share/ece/ece-main.ecec
-	qlot exec sbcl --load ece.asd --eval '(asdf:load-system :ece)' \
+	qlot exec sbcl --dynamic-space-size 4096 --load ece.asd --eval '(asdf:load-system :ece)' \
 	  --eval '(in-package :ece)' \
 	  --eval '(evaluate (quote (begin (load-bundle "share/ece/ece-main.ecec") (repl))))'
 
@@ -210,7 +210,7 @@ bootstrap: $(BOOTSTRAP_DIR)/primitives-auto.lisp $(BOOTSTRAP_DIR)/bootstrap.ecec
 # instruction vector reflects current src/assembler.scm).
 $(BOOTSTRAP_DIR)/bootstrap.ecec: $(BOOTSTRAP_SRCS) $(BOOTSTRAP_DIR)/primitives-auto.lisp
 	@mkdir -p $(BOOTSTRAP_DIR)
-	qlot exec sbcl --eval '(asdf:load-system :ece)' \
+	qlot exec sbcl --dynamic-space-size 4096 --eval '(asdf:load-system :ece)' \
 	  --eval '(in-package :ece)' \
 	  --eval '(evaluate (list (quote eval) (list (quote read) (list (quote open-input-string) "(load \"src/compilation-unit.scm\")"))))' \
 	  --eval '(evaluate (list (quote eval) (list (quote read) (list (quote open-input-string) "(compile-system (quote (\"src/boot-env.scm\" \"src/prelude.scm\" \"src/compiler.scm\" \"src/reader.scm\" \"src/assembler.scm\" \"src/compilation-unit.scm\" \"src/syntax-rules.scm\" \"src/browser-lib.scm\")) \"bootstrap/bootstrap.ecec\")"))))' \
@@ -223,7 +223,7 @@ $(BOOTSTRAP_DIR)/bootstrap.ecec: $(BOOTSTRAP_SRCS) $(BOOTSTRAP_DIR)/primitives-a
 $(BOOTSTRAP_DIR)/primitives-auto.lisp: primitives.def src/primitives.scm src/codegen-cl.scm
 	@mkdir -p $(BOOTSTRAP_DIR)
 	@echo "Regenerating $(BOOTSTRAP_DIR)/primitives-auto.lisp from src/primitives.scm..."
-	qlot exec sbcl --non-interactive --disable-debugger \
+	qlot exec sbcl --dynamic-space-size 4096 --non-interactive --disable-debugger \
 	  --eval '(asdf:load-system :ece)' \
 	  --eval '(ece:evaluate (list (quote load) "src/codegen-cl.scm"))' \
 	  --eval '(ece:evaluate (list (quote load) "src/primitives.scm"))' \
@@ -258,7 +258,7 @@ sandbox: ece
 	@node scripts/gen-programs-js.js
 	@# Pre-compile canned programs (Hello World .scm → .ecec → base64 in JS)
 	@echo "Compiling canned programs..."
-	@qlot exec sbcl --disable-debugger --eval '(asdf:load-system :ece)' \
+	@qlot exec sbcl --dynamic-space-size 4096 --disable-debugger --eval '(asdf:load-system :ece)' \
 	  --eval '(ece:evaluate (list (intern "compile-file" :ece) "sandbox/programs/hello-world.scm"))' \
 	  --quit 2>/dev/null
 	@echo '// Pre-compiled ECE programs — auto-generated' > sandbox/ece-compiled.js
