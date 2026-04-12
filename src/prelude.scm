@@ -10,6 +10,17 @@
 (define (cdddr x) (cdr (cdr (cdr x))))
 (define (cadddr x) (car (cdr (cdr (cdr x)))))
 
+;; list: rest-arg parameter is already bound to the argument list.
+(define (list . args) args)
+
+;; clear-screen: emit ANSI clear + cursor-home (ESC [2J ESC [H).
+(define (clear-screen)
+  (display (string (integer->char 27)))
+  (display "[2J")
+  (display (string (integer->char 27)))
+  (display "[H")
+  '())
+
 (define (list-ref lst n)
   (if (= n 0)
       (car lst)

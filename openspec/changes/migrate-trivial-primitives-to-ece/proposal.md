@@ -1,24 +1,24 @@
 ## Why
 
-Stage 1 coverage expansion (PR #143) put all bootstrap spaces in compiled zones, eliminating the interpreter overhead that previously made "everything in ECE" too slow. We can now move trivial primitives — pure list accessors, constructors, and predicates — from `src/primitives.scm` to `src/prelude.scm` without measurable performance impact, because the ECE definitions get compiled to native CL via the same codegen as the rest of the prelude. Each primitive moved is one less function to port to WAT in Phase 2 (the WASM runtime), shrinking the portability surface area.
+Stage 1 coverage expansion (PR #143) put all bootstrap spaces in compiled zones, eliminating the interpreter overhead that previously made "everything in ECE" too slow. We can now move a small set of trivial primitives from `src/primitives.scm` to `src/prelude.scm` without measurable performance impact, because the ECE definitions get compiled to native CL via the same codegen as the rest of the prelude. Each primitive moved is one less function to port to WAT in Phase 2 (the WASM runtime), shrinking the portability surface area.
 
-The criterion for "movable": **the function's body can be expressed using existing primitives + ECE language features, with no host capability dependency**. Anything that needs to inspect a host type tag, manipulate a cons cell directly, or call a syscall stays primitive.
+The criterion for "movable": **the function's body can be expressed using existing primitives + ECE language features, with no host capability dependency, AND the same ECE implementation must produce correct results on both the CL and WASM runtimes**.
+
+### Scope narrowed during implementation
+
+The original proposal included 4 tiers totaling ~26 primitives. During implementation, tiers 1-3 were discovered to violate the criterion above: the targeted primitives (`compiled-procedure-*`, `continuation-*`, `%primitive-id-of`, `%global-env-frame`, `port-line`, `port-col`, `%make-*`, and the type predicates) have **platform-specific representations**. On CL they're tagged lists, but on WASM they're WasmGC structs — compiled-procs, continuations, primitives, and ports each use `struct.get` field access on WASM (see `wasm/runtime.wat` lines 4852-5043). A portable ECE definition like `(define (compiled-procedure-entry p) (cadr p))` works on CL but fails on WASM with "car: not a pair" because the WASM struct is not a pair. Until the ECE language has a portable way to dispatch on platform-specific representations, these primitives must stay primitive.
+
+Only **tier 4** (`list`, `clear-screen`) is genuinely portable and was implemented. Tiers 1-3 are abandoned.
 
 ## What Changes
 
-- **MODIFIED** `src/prelude.scm` — add ECE definitions for ~23 primitives that currently live in `src/primitives.scm` as `:cl` templates. Group: pure list accessors, list constructors, structural predicates, and a few trivial standalone functions.
-- **MODIFIED** `src/primitives.scm` — remove the `define-host-primitive` declarations for the migrated primitives. Their primitive IDs are removed from `primitives.def` (or marked unused) and the corresponding `ece-NAME` functions disappear from the regenerated `bootstrap/primitives-auto.lisp`.
-- **MODIFIED** `bootstrap/primitives-auto.lisp` — regenerated; ~23 fewer `defun` forms.
-- **MODIFIED** `bootstrap/bootstrap.ecec` — regenerated to pick up the new prelude definitions and the removed primitive references.
-- **MODIFIED** `bootstrap/<space>-zone.lisp` files — regenerated; call sites that previously dispatched to the moved primitives now compile to direct calls into the prelude space.
-- **NO BREAKING CHANGES** — all moved primitives keep the same public name, parameter list, and observable behavior. Only the implementation location changes.
-
-### Migration tiers (in execution order)
-
-1. **Tier 1 — pure list accessors** (9 primitives): `compiled-procedure-entry`, `compiled-procedure-env`, `continuation-stack`, `continuation-conts`, `continuation-winds`, `%primitive-id-of`, `%global-env-frame`, `port-line`, `port-col`
-2. **Tier 2 — pure list constructors** (4 primitives): `%make-compiled-procedure`, `%make-continuation`, `%make-primitive`, `make-parameter`
-3. **Tier 3 — structural and tagged-list predicates** (11 primitives): `input-port?`, `output-port?`, `port?`, `parameter?`, `keyword?`, `null?`, `compiled-procedure?`, `continuation?`, `primitive?`, `procedure?`, `%env-frame?`
-4. **Tier 4 — trivial standalone** (2 primitives): `list`, `clear-screen`
+- **MODIFIED** `src/prelude.scm` — add ECE definitions for `list` and `clear-screen`.
+- **MODIFIED** `src/primitives.scm` — remove the `define-host-primitive` declarations for `list` and `clear-screen`.
+- **MODIFIED** `primitives.def` — change the `platform` field for IDs 8 (`list`) and 84 (`clear-screen`) from `core` to `ece`. IDs are not renumbered.
+- **MODIFIED** `bootstrap/primitives-auto.lisp` — regenerated; 2 fewer `defun` forms (`ece-list`, `ece-clear-screen`).
+- **MODIFIED** `bootstrap/bootstrap.ecec` — regenerated to pick up the new prelude definitions.
+- **MODIFIED** `bootstrap/<space>-zone.lisp` files — regenerated to reflect the new call sites.
+- **NO BREAKING CHANGES** — both migrated functions keep the same public name, parameter list, and observable behavior on CL. On WASM, `list` behaves identically; `clear-screen` now writes ANSI escape sequences (previously a no-op), which is a change for browser contexts but is not exercised by any existing test or sandbox program.
 
 ### What stays primitive (and why)
 
@@ -50,9 +50,9 @@ None — every migrated primitive keeps its public name, parameter list, and obs
 
 ## Impact
 
-- **Affected code**: `src/primitives.scm` (removals), `src/prelude.scm` (additions), `primitives.def` (ID list), `bootstrap/primitives-auto.lisp` (regenerated), `bootstrap/bootstrap.ecec` (regenerated), all `bootstrap/*-zone.lisp` files (regenerated since call sites change).
-- **CL kernel size**: shrinks by ~26 `defun` forms (~120-150 lines of CL).
+- **Affected code**: `src/primitives.scm` (removed `list` and `clear-screen`), `src/prelude.scm` (added ECE definitions), `primitives.def` (IDs 8 and 84 marked `ece`), `bootstrap/primitives-auto.lisp` (regenerated), `bootstrap/bootstrap.ecec` (regenerated), all `bootstrap/*-zone.lisp` files (regenerated).
+- **CL kernel size**: shrinks by 2 `defun` forms.
 - **Performance**: negligible — moved primitives now go through the regular ECE function-call path (a goto into the prelude space), but the prelude space runs as a compiled zone so the cost is one CL function call rather than an interpreter dispatch.
-- **WASM port**: each migrated primitive is one less function to implement in WAT for Phase 2.
-- **Two-pass bootstrap required** — per the documented pitfall in MEMORY.md, primitive removal needs (1) add ECE def + bootstrap, (2) remove host primitive + bootstrap again. Each tier is its own commit and each commit must be a clean two-pass cycle.
-- **Rollback**: per-tier reverts are clean — re-add the `define-host-primitive` form, re-bootstrap. No data migration involved.
+- **WASM port**: 2 fewer functions to implement in WAT for Phase 2. `list` is a trivial rest-arg identity; `clear-screen` is browser-context garbage (writes escape sequences to console instead of no-op), but no existing test or sandbox program calls it on browser.
+- **Two-pass bootstrap required** — per the documented pitfall in MEMORY.md, primitive removal needs (1) add ECE def + bootstrap, (2) remove host primitive + bootstrap again.
+- **Rollback**: `git revert` the single commit cleanly restores the primitives.

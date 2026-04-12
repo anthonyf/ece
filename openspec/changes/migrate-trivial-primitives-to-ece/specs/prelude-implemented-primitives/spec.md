@@ -1,34 +1,31 @@
 ## ADDED Requirements
 
-### Requirement: Trivial primitives implemented in ECE prelude
-The following functions, previously implemented as host primitives via `define-host-primitive` in `src/primitives.scm` with `:cl` templates, SHALL be implemented as ECE source in `src/prelude.scm`. Their observable behavior is unchanged. Compiled call sites SHALL dispatch through the prelude space's compiled zone rather than through the primitive ID table.
+### Requirement: `list` and `clear-screen` implemented in ECE prelude
+The functions `list` and `clear-screen`, previously implemented as host primitives via `define-host-primitive` in `src/primitives.scm` with `:cl` templates, SHALL be implemented as ECE source in `src/prelude.scm`. Their observable behavior is unchanged on CL. Compiled call sites SHALL dispatch through the prelude space's compiled zone rather than through the primitive ID table.
 
-The migrated functions are:
+- `list` is implemented as `(define (list . args) args)` — the rest-arg parameter is already bound to the argument list by the compiler.
+- `clear-screen` is implemented to write ANSI escape sequences (`ESC [2J ESC [H`) via `display`, returning `'()`.
 
-- **List accessors** (9): `compiled-procedure-entry`, `compiled-procedure-env`, `continuation-stack`, `continuation-conts`, `continuation-winds`, `%primitive-id-of`, `%global-env-frame`, `port-line`, `port-col`
-- **List constructors** (4): `%make-compiled-procedure`, `%make-continuation`, `%make-primitive`, `make-parameter`
-- **Structural and tagged-list predicates** (11): `input-port?`, `output-port?`, `port?`, `parameter?`, `keyword?`, `null?`, `compiled-procedure?`, `continuation?`, `primitive?`, `procedure?`, `%env-frame?`
-- **Trivial standalone** (2): `list`, `clear-screen`
+No primitive ID renumbering SHALL occur — the removed primitives' slots in `primitives.def` remain present but their `platform` column is changed from `core` to `ece` so the CL runtime no longer generates a dispatch function for them.
 
-Each function SHALL preserve its existing public name, parameter list, and return value. No primitive ID renumbering SHALL occur — removed primitive IDs are left empty so existing `.ecec` files remain valid.
-
-#### Scenario: Migrated function callable from compiled code
-- **WHEN** compiled code calls one of the migrated functions (e.g., `(compiled-procedure-entry proc)`)
-- **THEN** the call SHALL succeed and return the same value as the prior host-primitive implementation
+#### Scenario: `list` callable from compiled code
+- **WHEN** compiled code calls `(list 1 2 3)`
+- **THEN** the call SHALL return `'(1 2 3)`
 - **AND** the call SHALL dispatch through the prelude zone's compiled function (no primitive ID lookup)
 
-#### Scenario: Migrated function callable from REPL
-- **WHEN** the REPL evaluates `(keyword? :foo)` or any other migrated function
-- **THEN** the call SHALL succeed and return the same value as the prior host-primitive implementation
+#### Scenario: `clear-screen` returns nil
+- **WHEN** the REPL evaluates `(clear-screen)` with `*standard-output*` bound to a capture stream
+- **THEN** the call SHALL return `'()` (CL nil)
+- **AND** the capture stream SHALL have received the ANSI escape bytes
 
 #### Scenario: Removed primitive IDs are not reused
-- **WHEN** a primitive is removed from `src/primitives.scm`
-- **THEN** its slot in `primitives.def` SHALL remain unused (commented or absent)
+- **WHEN** a primitive is migrated to ECE
+- **THEN** its slot in `primitives.def` SHALL keep the same ID number
+- **AND** the `platform` field SHALL change from `core` to `ece`
 - **AND** subsequent primitive IDs SHALL NOT be renumbered
-- **AND** existing `.ecec` files referencing the removed ID's slot by number SHALL still load (the slot is no longer dispatched, but the ID space is preserved)
 
 #### Scenario: All test suites pass after migration
-- **WHEN** `make test-rove`, `make test-ece`, `make test-conformance`, and `make test-wasm` are run after the full migration
+- **WHEN** `make test-rove`, `make test-ece`, `make test-conformance`, and `make test-wasm` are run after the migration
 - **THEN** all four suites SHALL report zero failures
 
 ### Requirement: Two-pass bootstrap discipline
@@ -42,11 +39,11 @@ Each tier of the migration SHALL be a clean two-pass bootstrap cycle to keep the
 
 #### Scenario: Pass 2 — remove host primitive
 - **WHEN** the host-primitive declaration is removed from `src/primitives.scm`
-- **AND** the corresponding line in `primitives.def` is removed (or commented)
+- **AND** the corresponding line in `primitives.def` is changed from `core` to `ece`
 - **THEN** `make bootstrap` SHALL succeed
 - **AND** the test suites SHALL pass
 
-#### Scenario: Each tier is one commit
-- **WHEN** a tier is implemented
+#### Scenario: Migration is one commit
+- **WHEN** the migration is implemented
 - **THEN** the commit SHALL contain both passes (the consolidated end state)
 - **AND** the commit message SHALL list the migrated primitives by name

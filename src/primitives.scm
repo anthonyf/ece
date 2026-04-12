@@ -55,8 +55,7 @@
 (define-host-primitive (cons a d)
   :cl `(cl:cons ,a ,d))
 
-(define-host-primitive (list . args)
-  :cl `,args)
+;; list: implemented in src/prelude.scm.
 
 (define-host-primitive (set-car! pair val)
   :cl `(cl:rplaca ,pair ,val))
@@ -271,12 +270,7 @@
 (define-host-primitive (sleep seconds)
   :cl `(cl:progn (cl:sleep ,seconds) cl:nil))
 
-(define-host-primitive (clear-screen)
-  :cl `(cl:progn
-        (cl:format cl:t "~c[2J~c[H"
-                   (cl:code-char 27) (cl:code-char 27))
-        (cl:finish-output)
-        cl:nil))
+;; clear-screen: implemented in src/prelude.scm.
 
 ;;; ─────────────────────────────────────────────────────────────────────────
 ;;; Compiler support (ids 85-91)

@@ -258,9 +258,6 @@
 (defun ece-char? (x)
   (scheme-bool (cl:characterp x)))
 
-(defun ece-clear-screen ()
-  (cl:progn (cl:format cl:t "~c[2J~c[H" (cl:code-char 27) (cl:code-char 27)) (cl:finish-output) cl:nil))
-
 (defun ece-close-input-port (port)
   (cl:progn (cl:close (ece-port-stream port)) cl:nil))
 
@@ -365,9 +362,6 @@
 
 (defun ece-keyword? (x)
   (scheme-bool (cl:and (cl:symbolp x) (let ((name (cl:symbol-name x))) (cl:and (cl:> (cl:length name) 1) (cl:char= (cl:char name 0) #\:))))))
-
-(defun ece-list (&rest args)
-  args)
 
 (defun ece-make-parameter (&rest args)
   (cl:list 'parameter (cl:cons (cl:car args) (cl:if (cl:cdr args) (cl:cadr args) cl:nil))))

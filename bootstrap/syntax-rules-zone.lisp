@@ -45747,7 +45747,7 @@
            (stack initial-stack)
            (bail cl:nil))
     (cl:loop
-      (cl:when (cl:>= pc 12221)
+      (cl:when (cl:or (cl:>= pc 12221) (cl:< pc 0))
         (cl:return (cl:values pc val env proc argl continue stack)))
       (cl:cond
         ((cl:< pc 4096)

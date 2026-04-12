@@ -1,3 +1,11 @@
+## Implementation Outcome (added 2026-04-12)
+
+The proposal's premise that 26 primitives could be moved to ECE turned out to be wrong for tiers 1-3. The targeted primitives (`compiled-procedure-entry`, `continuation-stack`, `port-line`, the tagged-list predicates, and the constructors) have **platform-specific representations**: tagged lists on CL, WasmGC structs on WASM. An ECE function like `(cadr p)` only works on the list representation. See the analysis in `openspec/changes/migrate-trivial-primitives-to-ece/implementation-outcome.md` (below) for the concrete evidence.
+
+Only **tier 4** (`list`, `clear-screen`) is portable. Tier 4 was implemented and all four test suites pass. The rest of this design document reflects the original 26-primitive plan and is retained for historical context.
+
+---
+
 ## Context
 
 `src/primitives.scm` declares ~140 host primitives via `define-host-primitive`. Each declaration has a `:cl` template that the codegen (`src/codegen-cl.scm`) expands into a CL `defun` in `bootstrap/primitives-auto.lisp`. At runtime, these CL functions are dispatched via the primitive ID table (`*primitive-dispatch-table*`).
