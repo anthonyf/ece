@@ -28,13 +28,7 @@
 (test "base64 of 'foobar'" (lambda ()
   (assert-equal (bytes->base64 (string->bytes "foobar")) "Zm9vYmFy")))
 
-(test "base64 of RFC 6455 WebSocket handshake sha1 digest" (lambda ()
-  ;; End-to-end check from the WebSocket RFC example:
-  ;;   key        = "dGhlIHNhbXBsZSBub25jZQ=="
-  ;;   concat     = key || "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
-  ;;   sha1 hex   = b37a4f2cc0624f1690f64606cf385945b2bec4ea
-  ;;   base64     = "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
-  (assert-equal
-    (bytes->base64
-      (sha1-string "dGhlIHNhbXBsZSBub25jZQ==258EAFA5-E914-47DA-95CA-C5AB0DC85B11"))
-    "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=")))
+;; NOTE: The end-to-end `base64(sha1(...))` WebSocket handshake test lives in
+;; tests/ece/cl-only/test-sha1-base64-websocket.scm because SHA-1 currently
+;; only produces correct results on the CL runtime (see src/sha1.scm header
+;; for the WASM limitation).

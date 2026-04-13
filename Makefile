@@ -72,9 +72,13 @@ uninstall:
 export ASDF_OUTPUT_TRANSLATIONS = (:output-translations ("$(CURDIR)/" "$(CURDIR)/.fasl-cache/") :inherit-configuration)
 
 # WASM test bundle: framework + reusable utilities + common/ (platform-independent) tests + runner.
-# sha1.scm and base64.scm must come before the test files so their exports are
-# defined when the test-sha1 / test-base64 files run.
-WASM_TEST_SRCS := src/ece-unit.scm src/sha1.scm src/base64.scm $(wildcard tests/ece/common/test-*.scm) wasm/wasm-test-runner.scm
+# base64.scm must come before the test files so its exports are defined when
+# test-base64 runs. sha1.scm is intentionally excluded here: SHA-1 needs
+# 32-bit arithmetic, and ECE's WASM runtime uses 30-bit signed fixnums with
+# incomplete large-integer support in bitwise-or/xor/not/arithmetic-shift.
+# See src/sha1.scm header for details. The sha1 tests live under
+# tests/ece/cl-only/ so they only run on the CL runtime for now.
+WASM_TEST_SRCS := src/ece-unit.scm src/base64.scm $(wildcard tests/ece/common/test-*.scm) wasm/wasm-test-runner.scm
 
 # Temp dir for test output capture
 TEST_OUTPUT_DIR := .tmp/test-output

@@ -9,6 +9,35 @@
 ;;;   (sha1-string str)        → list of 20 bytes (integers 0-255)
 ;;;   (sha1-bytes byte-list)   → list of 20 bytes
 ;;;
+;;; ── Runtime support ────────────────────────────────────────────────────
+;;; **CL runtime**: works correctly. ECE on CL uses arbitrary-precision
+;;; integers, so the 32-bit arithmetic SHA-1 requires lives comfortably
+;;; within bignum range and all the bitwise primitives behave as the
+;;; algorithm expects.
+;;;
+;;; **WASM runtime**: CURRENTLY PRODUCES INCORRECT RESULTS. ECE's WASM
+;;; runtime uses 30-bit signed fixnums (i31ref tagged `<< 1`), with
+;;; large integers boxed as f64 floats. `bitwise-and` already handles
+;;; that dual representation correctly (via `to-f64` + `safe-trunc-i32`),
+;;; but `bitwise-or`, `bitwise-xor`, `bitwise-not`, and `arithmetic-shift`
+;;; all cast their inputs to `(ref i31)` unconditionally. Any SHA-1
+;;; intermediate value that exceeds the 30-bit fixnum range (the 80
+;;; round constants, most rotated words, almost any sum) therefore gets
+;;; silently corrupted in the cast. Until those WASM primitives are
+;;; updated to mirror `bitwise-and`'s float-friendly path, SHA-1 must
+;;; only be invoked from the CL side.
+;;;
+;;; For this reason:
+;;;   - `src/sha1.scm` is loaded by `make ece`'s `compile-system` into the
+;;;     CL-hosted `bin/ece` binary, where it works correctly.
+;;;   - `src/sha1.scm` is NOT bundled into `WASM_TEST_SRCS`, and the
+;;;     SHA-1 tests live under `tests/ece/cl-only/` so they only run on
+;;;     the CL runtime.
+;;;   - A follow-up change should fix the WASM runtime's bitwise-op
+;;;     handling of large integers, after which this file can be added
+;;;     back to `WASM_TEST_SRCS` and the tests moved back to `common/`.
+;;;
+;;; ── Security caveats ───────────────────────────────────────────────────
 ;;; Not a constant-time implementation. Not suitable for password hashing
 ;;; or other security-sensitive comparisons. SHA-1 itself is broken for
 ;;; collision resistance; its use here is confined to the WebSocket
