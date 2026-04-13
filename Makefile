@@ -97,6 +97,8 @@ test-ece:
 	@qlot exec sbcl --dynamic-space-size 4096 --disable-debugger \
 	  --eval '(asdf:load-system :ece)' \
 	  --eval '(ece:evaluate (list (quote load) "src/sdk-lib.scm"))' \
+	  --eval '(ece:evaluate (list (quote load) "src/sha1.scm"))' \
+	  --eval '(ece:evaluate (list (quote load) "src/base64.scm"))' \
 	  --eval '(ece:evaluate (list (quote load) "src/ece-unit.scm"))' \
 	  --eval '(ece:evaluate (list (quote load) "src/ece-test.scm"))' \
 	  --eval '(ece:evaluate (list (intern "ece-test-main" :ece) (list (quote list) "tests/ece/common" "tests/ece/cl-only")))' \
