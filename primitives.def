@@ -33,7 +33,7 @@
 (5   car                1   core   "First element of pair")
 (6   cdr                1   core   "Rest of pair")
 (7   cons               2   core   "Construct pair")
-(8   list              -1   core   "Construct list from arguments")
+(8   list              -1   ece    "Construct list from arguments")
 (9   set-car!           2   core   "Mutate car of pair")
 (10  set-cdr!           2   core   "Mutate cdr of pair")
 

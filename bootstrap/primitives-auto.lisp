@@ -366,9 +366,6 @@
 (defun ece-keyword? (x)
   (scheme-bool (cl:and (cl:symbolp x) (let ((name (cl:symbol-name x))) (cl:and (cl:> (cl:length name) 1) (cl:char= (cl:char name 0) #\:))))))
 
-(defun ece-list (&rest args)
-  args)
-
 (defun ece-make-parameter (&rest args)
   (cl:list 'parameter (cl:cons (cl:car args) (cl:if (cl:cdr args) (cl:cadr args) cl:nil))))
 

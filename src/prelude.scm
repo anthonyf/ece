@@ -10,6 +10,9 @@
 (define (cdddr x) (cdr (cdr (cdr x))))
 (define (cadddr x) (car (cdr (cdr (cdr x)))))
 
+;; list: rest-arg parameter is already bound to the argument list.
+(define (list . args) args)
+
 (define (list-ref lst n)
   (if (= n 0)
       (car lst)

@@ -55,8 +55,7 @@
 (define-host-primitive (cons a d)
   :cl `(cl:cons ,a ,d))
 
-(define-host-primitive (list . args)
-  :cl `,args)
+;; list: implemented in src/prelude.scm.
 
 (define-host-primitive (set-car! pair val)
   :cl `(cl:rplaca ,pair ,val))

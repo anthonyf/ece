@@ -3138,12 +3138,6 @@
     (global.get $false)
   )
 
-  ;; --- Variadic list constructor ---
-  (func $prim-list (param $args (ref null eq)) (result (ref null eq))
-    ;; args is already a list — just return it
-    (local.get $args)
-  )
-
   ;; --- number->string ---
   (func $prim-number-to-string (param $v (ref null eq)) (result (ref null eq))
     ;; For fixnums, convert digit by digit
@@ -3906,9 +3900,7 @@
     ;; 7 = cons
     (if (i32.eq (local.get $id) (i32.const 7))
       (then (return (call $cons (call $arg1 (local.get $args)) (call $arg2 (local.get $args))))))
-    ;; 8 = list
-    (if (i32.eq (local.get $id) (i32.const 8))
-      (then (return (call $prim-list (local.get $args)))))
+    ;; 8 = list — now in prelude.scm (platform ece); no primitive dispatch.
     ;; 9 = set-car! (type-guarded)
     (if (i32.eq (local.get $id) (i32.const 9))
       (then
