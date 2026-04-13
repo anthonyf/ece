@@ -37,6 +37,19 @@ jobs:
           key: fasl-${{ hashFiles('src/*.lisp', 'ece.asd', 'bootstrap/*-zone.lisp') }}
           restore-keys: fasl-
 
+      - name: Mark bootstrap outputs as up-to-date
+        # Must run BEFORE Warm FASL cache so that the zone sources touched here
+        # stay OLDER than the FASLs that Warm FASL cache compiles next. If the
+        # order is reversed, touch sets source mtimes newer than the freshly
+        # compiled FASLs, and the subsequent `make ece` step's SBCL invocation
+        # (at 4GB heap) redundantly recompiles all 7 zones from scratch —
+        # which is right at the memory margin and OOMs non-deterministically.
+        run: |
+          sleep 1
+          touch bootstrap/primitives-auto.lisp
+          touch bootstrap/bootstrap.ecec
+          touch bootstrap/*-zone.lisp
+
       - name: Warm FASL cache
         run: |
           # Pre-compile zone FASLs in a dedicated session so subsequent
@@ -55,13 +68,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-
-      - name: Mark bootstrap outputs as up-to-date
-        run: |
-          sleep 1
-          touch bootstrap/primitives-auto.lisp
-          touch bootstrap/bootstrap.ecec
-          touch bootstrap/*-zone.lisp
 
       - name: Build ece binary
         run: make ece

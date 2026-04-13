@@ -1,25 +1,27 @@
-## 1. Reproduce the double compile locally
+## 1. Reproduce locally
 
-- [ ] 1.1 Clean state: `rm -rf .fasl-cache/ share/ece/ece-main.ecec` and record the timestamp of `bootstrap/reader-zone.lisp`.
-- [ ] 1.2 Run the exact command from `Makefile:28-33` (the `share/ece/ece-main.ecec` target's SBCL invocation) in a terminal, with SBCL's `*compile-verbose*` and `*load-verbose*` both set to `t`, and capture the full output.
-- [ ] 1.3 Confirm that the output contains `; compiling file "bootstrap/reader-zone.lisp"` at least twice. If not, try replicating CI conditions: `touch bootstrap/*-zone.lisp` before the run (CI does this at `.github/workflows/test.yml:59-64`). Repeat until the double compile is reliably reproducible.
-- [ ] 1.4 Record the wall-clock delta between the two `; compiling file` lines and whether any GC happens between them. Save the captured log to `.tmp/double-compile.log` (gitignored) for reference.
+- [x] 1.1 Read the CI failure log for PR #145 (run 24340826867) and the main failing run (24321876664). Identify that the two `compiling file` events for `reader-zone.lisp` span different step boundaries (first is the "Warm FASL cache" step, second is the "Build ece binary" step). This contradicted the original "twice in one image" framing.
+- [x] 1.2 Run the `share/ece/ece-main.ecec` target's SBCL invocation locally with `ASDF_OUTPUT_TRANSLATIONS` set to the project-local `.fasl-cache/`. Observed: one pass, 7 zone compiles, succeeds at 4GB.
+- [x] 1.3 Touch `bootstrap/*-zone.lisp` to simulate the CI touch step, re-run SBCL, and observe: 7 zone recompiles triggered by the mtime check. First run crashed on prelude-zone mid-compile (0-byte FASL corpse). Second run succeeded. **Non-deterministic failure at 4GB confirms the memory ceiling is at the margin.**
+- [x] 1.4 Captured logs at `/tmp/claude/repro2.log`, `/tmp/claude/touch-test.log`, `/tmp/claude/fix-test.log`.
 
 ## 2. Identify the cause
 
-- [ ] 2.1 Bisect: comment out the second `--eval` in the Makefile target (the `ece:evaluate` call). Does the double compile still happen? If yes, the cause is inside `asdf:load-system`; if no, it is inside `compile-system` or its callees.
-- [ ] 2.2 If the cause is inside `compile-system`, grep ECE source for `load-system`, `compile-file`, and `asdf:` calls that fire during compile-system. Trace what touches zone files.
-- [ ] 2.3 If the cause is inside `asdf:load-system` alone, instrument with `(trace asdf:operate asdf:compile-file*)` before the second `--eval` and observe what forces a recompile.
-- [ ] 2.4 Check the FASL cache state between the two compiles. Does `.fasl-cache/bootstrap/reader-zone.fasl` exist after the first compile? If yes, why does ASDF decide it's stale for the second?
-- [ ] 2.5 Specifically validate or rule out each hypothesis from `design.md` § Context (ASDF freshness re-check, `compile-system` side-effect, output-translation mismatch, `*features*` change).
-- [ ] 2.6 Write the confirmed cause and supporting evidence into `design.md` under a new `## Root Cause (confirmed)` section before implementing the fix.
+- [x] 2.1 Bisected via CI log step boundaries: two distinct SBCL processes, not one image with two compiles. First SBCL in warm-cache step compiles zones at 8GB, second SBCL in build-ece step recompiles them at 4GB.
+- [x] 2.2 Traced the recompile to `load-compiled-zones` in `src/runtime.lisp:1825-1848`. The function's mtime check `(> (file-write-date path) (file-write-date fasl-path))` fires when the CI touch step makes zone sources newer than cached FASLs.
+- [x] 2.3 Confirmed the touch step at `.github/workflows/test.yml:59-64` is load-bearing for `make`'s dependency tracking (it prevents `$(ZONE_SENTINEL)` from being re-run because `src/*.scm` and `primitives.def` have equal-ish checkout mtimes to bootstrap outputs). So removing the touch is not an option without restructuring make.
+- [x] 2.4 Confirmed `.fasl-cache/bootstrap/*-zone.fasl` exists after SBCL #1 in the warm-cache step, but SBCL #2 sees it as "stale" purely because of touched source mtime — the content is still correct.
+- [x] 2.5 Verified that no ECE source file (compile-system, compile-file-to-port, SDK files) writes to zone sources or triggers `asdf:load-system :force t`. The mtime check is the ONLY cause of the recompile.
+- [x] 2.6 Documented the confirmed root cause in `proposal.md` § Why and this section.
 
 ## 3. Implement the fix
 
-- [ ] 3.1 Based on the confirmed cause, apply the smallest scoped change that eliminates the second compile. Examples of scope: removing a `:force t` argument, fixing an `ASDF_OUTPUT_TRANSLATIONS` inconsistency, hoisting a pushnew out of the initialization path, skipping an unnecessary `load-system` reinvocation.
-- [ ] 3.2 Confirm the fix locally: re-run the invocation from task 1.2 and verify `; compiling file "bootstrap/reader-zone.lisp"` appears **at most once** in the output.
-- [ ] 3.3 Run `make ece` on a clean cache with the existing 4GB ceiling (`Makefile:30` stays at `--dynamic-space-size 4096`). Confirm it succeeds without `Heap exhausted`.
-- [ ] 3.4 Run `make test` (full suite: `test-rove test-ece test-wasm test-conformance test-golden test-web-server test-web-apps`) to confirm no regression.
+- [x] 3.1 First attempt: modified `src/runtime.lisp` `load-compiled-zones` to drop the mtime check entirely and modified `Makefile` `$(ZONE_SENTINEL)` to `rm -f .fasl-cache/bootstrap/*-zone.fasl`. Locally verified to pass. Pushed as PR #147 commit `516e647`. **Failed in CI**: `actions/cache@v4`'s `restore-keys: fasl-` prefix match restored FASLs from commit `d8a920c4...` (not an exact match for PR #147's source hash), and without the mtime check warm-cache loaded those stale zone FASLs as-is. `compile-system` then errored at runtime with `Unknown label: NIL` inside `strip-source-locations` — the FASL was incompatible with the newly-compiled runtime. **Reverted `src/runtime.lisp` and `Makefile` changes.**
+- [x] 3.2 Second attempt: revert the source changes. Instead, reorder `.github/workflows/test.yml` so `Mark bootstrap outputs as up-to-date` runs **before** `Warm FASL cache`. The mtime check in `load-compiled-zones` stays as a stale-cache safety net. With the reordering:
+  - Touch sets source mtimes to ~T1.
+  - Warm FASL cache at 8GB: asdf:load-system sees touched sources newer than restored (stale) FASLs → mtime check triggers recompile → writes fresh FASLs at ~T2 > T1.
+  - Build ece binary at 4GB: sees fresh FASL mtimes > touched source mtimes → mtime check skips recompile → compile-system runs at low heap.
+- [ ] 3.3 CI verification: push the reordering, confirm CI passes and that `Build ece binary` step does not show zone `compiling file` events (it loads cached FASLs).
 
 ## 4. Verify on CI
 
