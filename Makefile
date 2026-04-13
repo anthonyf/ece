@@ -25,11 +25,11 @@ bin/ece: scripts/build-ece-binary.lisp bootstrap/bootstrap.ecec share/ece/ece-ma
 	@ln -sf ece bin/ece-test
 	@echo "Built bin/ece + symlinks (ece-repl, ece-build, ece-test)"
 
-share/ece/ece-main.ecec: src/sdk-lib.scm src/ece-main.scm src/ece-unit.scm src/ece-build.scm src/ece-test.scm bootstrap/bootstrap.ecec
+share/ece/ece-main.ecec: src/sdk-lib.scm src/ece-main.scm src/ece-unit.scm src/base64.scm src/sha1.scm src/ece-build.scm src/ece-test.scm bootstrap/bootstrap.ecec
 	@mkdir -p share/ece/templates
 	qlot exec sbcl --dynamic-space-size 4096 --non-interactive --disable-debugger \
 	  --eval '(asdf:load-system :ece)' \
-	  --eval '(ece:evaluate (list (intern "compile-system" :ece) (quote (quote ("src/sdk-lib.scm" "src/ece-unit.scm" "src/ece-main.scm" "src/ece-build.scm" "src/ece-test.scm"))) "share/ece/ece-main.ecec"))' \
+	  --eval '(ece:evaluate (list (intern "compile-system" :ece) (quote (quote ("src/sdk-lib.scm" "src/ece-unit.scm" "src/base64.scm" "src/sha1.scm" "src/ece-main.scm" "src/ece-build.scm" "src/ece-test.scm"))) "share/ece/ece-main.ecec"))' \
 	  --quit
 	@# Stage the other share/ece/ files so in-tree `bin/ece` works
 	@cp bootstrap/bootstrap.ecec share/ece/bootstrap.ecec
@@ -71,8 +71,14 @@ uninstall:
 # FASL output goes to project-local .fasl-cache/ (sandbox-friendly, portable)
 export ASDF_OUTPUT_TRANSLATIONS = (:output-translations ("$(CURDIR)/" "$(CURDIR)/.fasl-cache/") :inherit-configuration)
 
-# WASM test bundle: framework + common/ (platform-independent) tests + runner.
-WASM_TEST_SRCS := src/ece-unit.scm $(wildcard tests/ece/common/test-*.scm) wasm/wasm-test-runner.scm
+# WASM test bundle: framework + reusable utilities + common/ (platform-independent) tests + runner.
+# base64.scm must come before the test files so its exports are defined when
+# test-base64 runs. sha1.scm is intentionally excluded here: SHA-1 needs
+# 32-bit arithmetic, and ECE's WASM runtime uses 30-bit signed fixnums with
+# incomplete large-integer support in bitwise-or/xor/not/arithmetic-shift.
+# See src/sha1.scm header for details. The sha1 tests live under
+# tests/ece/cl-only/ so they only run on the CL runtime for now.
+WASM_TEST_SRCS := src/ece-unit.scm src/base64.scm $(wildcard tests/ece/common/test-*.scm) wasm/wasm-test-runner.scm
 
 # Temp dir for test output capture
 TEST_OUTPUT_DIR := .tmp/test-output
@@ -97,6 +103,8 @@ test-ece:
 	@qlot exec sbcl --dynamic-space-size 4096 --disable-debugger \
 	  --eval '(asdf:load-system :ece)' \
 	  --eval '(ece:evaluate (list (quote load) "src/sdk-lib.scm"))' \
+	  --eval '(ece:evaluate (list (quote load) "src/sha1.scm"))' \
+	  --eval '(ece:evaluate (list (quote load) "src/base64.scm"))' \
 	  --eval '(ece:evaluate (list (quote load) "src/ece-unit.scm"))' \
 	  --eval '(ece:evaluate (list (quote load) "src/ece-test.scm"))' \
 	  --eval '(ece:evaluate (list (intern "ece-test-main" :ece) (list (quote list) "tests/ece/common" "tests/ece/cl-only")))' \
