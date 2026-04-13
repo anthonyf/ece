@@ -31,7 +31,8 @@
 (%register-primitive! 'car 5)
 (%register-primitive! 'cdr 6)
 (%register-primitive! 'cons 7)
-(%register-primitive! 'list 8)
+;; 'list (id 8) is implemented in src/prelude.scm (platform ece),
+;; so no runtime primitive registration.
 (%register-primitive! 'set-car! 9)
 (%register-primitive! 'set-cdr! 10)
 
