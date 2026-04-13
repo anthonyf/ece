@@ -30,5 +30,5 @@
 ## 4. Commit
 
 - [x] 4.1 Rebuild sandbox assets if needed (`make sandbox` — only required if something regenerates `sandbox/sandbox.js` from elsewhere; this is a hand-edit so unlikely). Confirmed via Makefile: `make sandbox` builds `ece-runtime.js`, `ece-bootstrap.js`, `ece-compiled.js` — does NOT regenerate `sandbox.js`. No rebuild needed.
-- [ ] 4.2 Commit with a message naming both fixes: "Sandbox: clear yield state in finishRun + resume yielded computations from evalRepl"
-- [ ] 4.3 Open PR with the manual test sequence from section 3 as the test plan
+- [x] 4.2 Commit with a message naming both fixes: "Sandbox: clear yield state in finishRun + resume yielded computations from evalRepl"
+- [x] 4.3 Open PR with the manual test sequence from section 3 as the test plan — https://github.com/anthonyf/ece/pull/145
