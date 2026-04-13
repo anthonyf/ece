@@ -19,7 +19,7 @@ ece: bootstrap wasm bin/ece
 
 bin/ece: scripts/build-ece-binary.lisp bootstrap/bootstrap.ecec share/ece/ece-main.ecec
 	@mkdir -p bin
-	qlot exec sbcl --dynamic-space-size 4096 --non-interactive --load scripts/build-ece-binary.lisp
+	qlot exec sbcl --dynamic-space-size 8192 --non-interactive --load scripts/build-ece-binary.lisp
 	@ln -sf ece bin/ece-repl
 	@ln -sf ece bin/ece-build
 	@ln -sf ece bin/ece-test
@@ -27,7 +27,7 @@ bin/ece: scripts/build-ece-binary.lisp bootstrap/bootstrap.ecec share/ece/ece-ma
 
 share/ece/ece-main.ecec: src/sdk-lib.scm src/ece-main.scm src/ece-unit.scm src/ece-build.scm src/ece-test.scm bootstrap/bootstrap.ecec
 	@mkdir -p share/ece/templates
-	qlot exec sbcl --dynamic-space-size 4096 --non-interactive --disable-debugger \
+	qlot exec sbcl --dynamic-space-size 8192 --non-interactive --disable-debugger \
 	  --eval '(asdf:load-system :ece)' \
 	  --eval '(ece:evaluate (list (intern "compile-system" :ece) (quote (quote ("src/sdk-lib.scm" "src/ece-unit.scm" "src/ece-main.scm" "src/ece-build.scm" "src/ece-test.scm"))) "share/ece/ece-main.ecec"))' \
 	  --quit
