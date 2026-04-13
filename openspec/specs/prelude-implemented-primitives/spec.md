@@ -1,7 +1,7 @@
 # prelude-implemented-primitives Specification
 
 ## Purpose
-TBD - created by archiving change migrate-trivial-primitives-to-ece. Update Purpose after archive.
+Specify the migration of primitives whose bodies can be expressed in ECE without host-capability dependencies from `src/primitives.scm` (`define-host-primitive`) to `src/prelude.scm` (plain ECE `define`), while preserving observable behavior, keeping primitive IDs stable in `primitives.def`, and maintaining a clean two-pass bootstrap cycle at every commit.
 ## Requirements
 ### Requirement: `list` and `clear-screen` implemented in ECE prelude
 The functions `list` and `clear-screen`, previously implemented as host primitives via `define-host-primitive` in `src/primitives.scm` with `:cl` templates, SHALL be implemented as ECE source in `src/prelude.scm`. Their observable behavior is unchanged on CL. Compiled call sites SHALL dispatch through the prelude space's compiled zone rather than through the primitive ID table.

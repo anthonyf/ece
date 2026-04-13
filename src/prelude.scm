@@ -13,12 +13,13 @@
 ;; list: rest-arg parameter is already bound to the argument list.
 (define (list . args) args)
 
-;; clear-screen: emit ANSI clear + cursor-home (ESC [2J ESC [H).
+;; clear-screen: emit ANSI clear + cursor-home (ESC [2J ESC [H) in one write
+;; so current-output-port sees a single flush instead of four.
+(define %clear-screen-sequence
+  (let ((esc (string (integer->char 27))))
+    (string-append esc "[2J" esc "[H")))
 (define (clear-screen)
-  (display (string (integer->char 27)))
-  (display "[2J")
-  (display (string (integer->char 27)))
-  (display "[H")
+  (display %clear-screen-sequence)
   '())
 
 (define (list-ref lst n)
