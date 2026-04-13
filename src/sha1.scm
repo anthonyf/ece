@@ -76,21 +76,21 @@
     (arithmetic-shift b2 8)
     b3)))
 
-(define (sha1/block->words block-vec start)
-  "Extract 16 big-endian 32-bit words from block-vec at byte offset start.
-   Returns a 80-element vector with the first 16 slots filled."
-  (let ((w (make-vector 80 0)))
-    (let loop ((i 0))
-      (when (< i 16)
-        (let ((off (+ start (* i 4))))
-          (vector-set! w i
-                       (sha1/bytes->u32-be
-                        (vector-ref block-vec off)
-                        (vector-ref block-vec (+ off 1))
-                        (vector-ref block-vec (+ off 2))
-                        (vector-ref block-vec (+ off 3)))))
-        (loop (+ i 1))))
-    w))
+(define (sha1/fill-words! w block-vec start)
+  "Fill the first 16 slots of the reusable 80-element schedule vector w
+   with big-endian 32-bit words read from block-vec at byte offset start.
+   The caller owns w and reuses it across blocks; this procedure mutates
+   in place to avoid per-block allocation churn."
+  (let loop ((i 0))
+    (when (< i 16)
+      (let ((off (+ start (* i 4))))
+        (vector-set! w i
+                     (sha1/bytes->u32-be
+                      (vector-ref block-vec off)
+                      (vector-ref block-vec (+ off 1))
+                      (vector-ref block-vec (+ off 2))
+                      (vector-ref block-vec (+ off 3)))))
+      (loop (+ i 1)))))
 
 (define (sha1/extend-words! w)
   "Extend the initial 16 words to 80 via the SHA-1 message schedule."
@@ -131,38 +131,41 @@
    ((<= t 59) 2400959708)     ; 0x8F1BBCDC
    (else      3395469782)))   ; 0xCA62C1D6
 
-(define (sha1/process-block state block-vec start)
-  "Process one 64-byte block. state is a 5-element vector (h0..h4);
-   updated in place."
-  (let ((w (sha1/block->words block-vec start)))
-    (sha1/extend-words! w)
-    (let loop ((t 0)
-               (a (vector-ref state 0))
-               (b (vector-ref state 1))
-               (c (vector-ref state 2))
-               (d (vector-ref state 3))
-               (e (vector-ref state 4)))
-      (if (< t 80)
-          (let ((temp (sha1/u32+
-                       (sha1/u32+
-                        (sha1/u32+
-                         (sha1/u32+ (sha1/rotl a 5)
-                                    (sha1/f t b c d))
-                         e)
-                        (vector-ref w t))
-                       (sha1/k t))))
-            (loop (+ t 1)
-                  temp
-                  a
-                  (sha1/rotl b 30)
-                  c
-                  d))
-          (begin
-            (vector-set! state 0 (sha1/u32+ (vector-ref state 0) a))
-            (vector-set! state 1 (sha1/u32+ (vector-ref state 1) b))
-            (vector-set! state 2 (sha1/u32+ (vector-ref state 2) c))
-            (vector-set! state 3 (sha1/u32+ (vector-ref state 3) d))
-            (vector-set! state 4 (sha1/u32+ (vector-ref state 4) e)))))))
+(define (sha1/process-block state w block-vec start)
+  "Process one 64-byte block of block-vec starting at byte offset start.
+   state is a 5-element vector (h0..h4), updated in place.
+   w is the reusable 80-element schedule vector, allocated once by the
+   caller and overwritten each block — the first 16 slots are filled from
+   block-vec and the remaining 64 are computed by the message schedule."
+  (sha1/fill-words! w block-vec start)
+  (sha1/extend-words! w)
+  (let loop ((t 0)
+             (a (vector-ref state 0))
+             (b (vector-ref state 1))
+             (c (vector-ref state 2))
+             (d (vector-ref state 3))
+             (e (vector-ref state 4)))
+    (if (< t 80)
+        (let ((temp (sha1/u32+
+                     (sha1/u32+
+                      (sha1/u32+
+                       (sha1/u32+ (sha1/rotl a 5)
+                                  (sha1/f t b c d))
+                       e)
+                      (vector-ref w t))
+                     (sha1/k t))))
+          (loop (+ t 1)
+                temp
+                a
+                (sha1/rotl b 30)
+                c
+                d))
+        (begin
+          (vector-set! state 0 (sha1/u32+ (vector-ref state 0) a))
+          (vector-set! state 1 (sha1/u32+ (vector-ref state 1) b))
+          (vector-set! state 2 (sha1/u32+ (vector-ref state 2) c))
+          (vector-set! state 3 (sha1/u32+ (vector-ref state 3) d))
+          (vector-set! state 4 (sha1/u32+ (vector-ref state 4) e))))))
 
 ;; ── Top-level API ───────────────────────────────────────────────────────
 
@@ -184,11 +187,14 @@
           v))))
 
 (define (sha1-bytes bytes)
-  "Compute SHA-1 of a list of integer bytes (0-255). Returns a 20-byte list."
+  "Compute SHA-1 of a list of integer bytes (0-255). Returns a 20-byte list.
+   Allocates the 5-element state vector and the 80-element message schedule
+   vector once up front and reuses them across all blocks of the input."
   (let* ((padded (sha1/pad bytes))
          (block-vec (sha1/list->vector padded))
          (total-len (vector-length block-vec))
-         (state (make-vector 5 0)))
+         (state (make-vector 5 0))
+         (w (make-vector 80 0)))
     (vector-set! state 0 1732584193)    ; 0x67452301
     (vector-set! state 1 4023233417)    ; 0xEFCDAB89
     (vector-set! state 2 2562383102)    ; 0x98BADCFE
@@ -203,7 +209,7 @@
            (sha1/u32->bytes-be (vector-ref state 3))
            (sha1/u32->bytes-be (vector-ref state 4)))
           (begin
-            (sha1/process-block state block-vec start)
+            (sha1/process-block state w block-vec start)
             (loop (+ start 64)))))))
 
 (define (sha1-string str)
