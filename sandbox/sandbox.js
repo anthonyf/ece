@@ -209,6 +209,8 @@ const Sandbox = {
 
   finishRun() {
     Sandbox.running = false;
+    ECE.wasm.clear_yield_cont();
+    ECE.wasm.set_yield_flag(0);
     document.getElementById("run-btn").textContent = "\u25B6 Run";
     document.getElementById("run-btn").classList.remove("stop");
   },
@@ -314,6 +316,10 @@ const Sandbox = {
       replOutput += text;
     };
 
+    // Only fresh yield state (not an existing animation's stored continuation)
+    // should count as "this eval yielded" — so gate on !wasRunning below.
+    const wasRunning = Sandbox.running;
+    let yieldPending = false;
     try {
       // Use ECE's own reader and compiler via eval-string-last
       const evalStrLastProc = w.env_lookup(Sandbox.envHandle, ECE.internSym("eval-string-last"));
@@ -322,6 +328,10 @@ const Sandbox = {
       const rc = w.write_val(lastResult);
       if (rc === 0) replOutput += "Error: unbound variable";
       // rc===1 is void (silent), rc===2 means value was printed
+      yieldPending = !wasRunning && (ECE.wasm.get_yield_flag() || Sandbox.hasYieldCont());
+      if (yieldPending) {
+        replOutput += (replOutput ? "\n" : "") + ";; yielded — animation resumed";
+      }
     } catch(e) {
       replOutput += "Error: " + e.message;
     }
@@ -335,6 +345,13 @@ const Sandbox = {
     Sandbox.replOutputEl.appendChild(entry);
     Sandbox.replOutputEl.scrollTop = Sandbox.replOutputEl.scrollHeight;
     Sandbox.replInputEl.value = "";
+
+    if (yieldPending) {
+      Sandbox.running = true;
+      document.getElementById("run-btn").textContent = "\u25A0 Stop";
+      document.getElementById("run-btn").classList.add("stop");
+      Sandbox.animationLoop();
+    }
   },
 
   escapeHtml(s) {
