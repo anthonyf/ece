@@ -27,13 +27,13 @@ If we do not fix this, the 4GB ceiling failures will continue non-deterministica
 ## Capabilities
 
 ### Modified Capabilities
-- `bootstrap-compilation` (or whichever existing capability owns the bootstrap-zone compile flow) — add a requirement that each bootstrap zone is compiled at most once per SBCL image during `make ece`. If no such capability exists yet, create one.
+- `bootstrap-compilation` — add a requirement that CI's dedicated `Warm FASL cache` SBCL process may recompile stale bootstrap zones once (as a stale-cache safety net), and that the subsequent `Build ece binary` / `make ece` SBCL process must reuse those fresh FASLs without recompiling. If no such capability exists yet, this change creates one.
 
 ## Impact
 
-- **Affected code**: likely `src/` files that implement `compile-system` and its interaction with ASDF-managed zone FASLs, plus possibly the Makefile's `ece-main.ecec` target if the fix requires separating the two SBCL invocations. Scope should be small once the cause is identified.
-- **Affected workflows**: CI build time should drop noticeably (eliminating a ~20s + some-minutes-of-second-pass compile). Local `make ece` also benefits.
-- **Performance**: peak SBCL heap during `make ece` should drop back below the 4GB ceiling once the second compile is eliminated, and CI goes green at the existing ceiling.
-- **Test plan**: reproduce the double-compile locally with `*compile-verbose*` and `*load-verbose*` set to `t`, or by running the compile-system invocation manually and watching for `; compiling file "bootstrap/reader-zone.lisp"` appearing twice in one image. After the fix, confirm it appears exactly once. Run full `make test` to confirm no regression.
-- **Rollback**: single-commit revert.
+- **Affected code**: `.github/workflows/test.yml` only. No `src/` or `Makefile` source changes in the final landed version.
+- **Affected workflows**: CI build time drops noticeably in the `Build ece binary` step (eliminating a ~2-3 minute zone-recompile pass at 4GB). Total CI time improves by ~2 minutes on a typical run. Local `make ece` is unaffected (no touch step locally).
+- **Performance**: peak SBCL heap in the `Build ece binary` step drops from near-4GB-OOM-territory to a low value, because SBCL #2 now just loads cached FASLs and runs `compile-system`.
+- **Test plan**: verify the expected log pattern across CI steps, not within a single SBCL image. In `Warm FASL cache`, expect `load-compiled-zones` to compile `bootstrap/*-zone.lisp` files if the restored cache is stale or missing. In the later `Build ece binary` step, confirm there are **zero** `; compiling file "bootstrap/*-zone.lisp"` log lines — SBCL #2 must reuse the freshly-written FASLs. The full CI `make test` suite must still pass.
+- **Rollback**: single-commit revert of `.github/workflows/test.yml`.
 - **Blocks**: PR #145 (sandbox-live-coding-fixes) and any other open PR, because main is currently red and this is the path back to green.

@@ -1,37 +1,41 @@
 ## ADDED Requirements
 
-### Requirement: Each bootstrap zone file is compiled at most once per SBCL image during `make ece`
-A fresh `make ece` invocation MUST compile each `bootstrap/*-zone.lisp` file at most once within the lifetime of a single SBCL process. Compiling the same zone twice in one image is wasted work and, for the largest zones (currently `reader-zone.lisp` at ~376k lines), pushes SBCL's dynamic heap past the 4GB default ceiling because IR1 optimization state from the first compile has not been released before the second begins.
+### Requirement: CI reuses warm-cache zone FASLs in the `make ece` step instead of recompiling
+The CI workflow in `.github/workflows/test.yml` runs two separate SBCL processes that both load `:ece`: the `Warm FASL cache` step (SBCL #1 at `--dynamic-space-size 8192`) and the `Build ece binary` step (SBCL #2 at `--dynamic-space-size 4096`, via `make ece`). SBCL #2 SHALL reuse the zone FASLs that SBCL #1 compiled instead of recompiling them from scratch, so that peak SBCL heap in the `Build ece binary` step stays comfortably below its 4GB dynamic-space-size.
 
-This requirement applies to the `share/ece/ece-main.ecec` Makefile target (Makefile:28-33), which runs one SBCL image executing both `(asdf:load-system :ece)` and `(ece:evaluate (compile-system ...))`. Both invocations happen in the same image; neither may recompile a zone file the other already compiled in that image.
+This SHALL be achieved by ordering the workflow steps so that:
+1. The `Mark bootstrap outputs as up-to-date` step (which touches `bootstrap/*-zone.lisp`) runs **before** `Warm FASL cache`.
+2. `Warm FASL cache` runs after the touch, so its freshly-compiled FASLs land with mtimes strictly newer than the touched source mtimes.
+3. `Build ece binary` runs last, and its `load-compiled-zones` mtime check sees FASL mtime > source mtime, triggering the "load cached FASL, no recompile" path.
 
-#### Scenario: Fresh build on a clean FASL cache
-- **WHEN** the FASL cache is empty (`rm -rf .fasl-cache/`) and `make ece` is invoked
-- **AND** the build reaches the `share/ece/ece-main.ecec` target
-- **THEN** each `bootstrap/*-zone.lisp` file SHALL be compiled exactly once by SBCL/ASDF during the lifetime of the single SBCL process that executes that target
-- **AND** no `; compiling file "bootstrap/*-zone.lisp"` log line from SBCL's `compile-file` SHALL appear more than once for the same file in that image's output
+The `load-compiled-zones` mtime check in `src/runtime.lisp` SHALL NOT be removed. It is load-bearing as a stale-cache safety net: if `actions/cache@v4`'s `restore-keys: fasl-` prefix match restores FASLs from a commit whose zone sources differ, the mtime check in SBCL #1 (warm-cache) detects the stale FASL and triggers a recompile before any stale code can be loaded.
 
-#### Scenario: Warm build with a populated FASL cache
-- **WHEN** `.fasl-cache/bootstrap/*-zone.fasl` files already exist and are newer than their `.lisp` sources
-- **AND** `make ece` is invoked
-- **AND** the build reaches the `share/ece/ece-main.ecec` target
-- **THEN** ASDF SHALL load the cached FASLs without recompiling any zone file
-- **AND** no `compile-file` invocation on `bootstrap/*-zone.lisp` SHALL occur during the SBCL process for that target
+#### Scenario: CI cache hit on exact key, no stale restore
+- **WHEN** `actions/cache@v4` restores FASLs on an exact key match (same source hash as the current commit)
+- **AND** the `Mark bootstrap outputs as up-to-date` step touches `bootstrap/*-zone.lisp`
+- **AND** the `Warm FASL cache` step runs `(asdf:load-system :ece)` at 8GB
+- **THEN** `load-compiled-zones` SHALL see touched source mtimes newer than restored FASL mtimes and SHALL recompile each zone file once, writing fresh FASLs at even-newer mtimes
+- **AND** the subsequent `Build ece binary` step SHALL run `(asdf:load-system :ece)` and `(ece:evaluate (compile-system ...))` at 4GB, see fresh FASL mtimes > touched source mtimes, skip all zone recompilation, and complete `compile-system` with peak heap well under 4GB
+- **AND** the `Build ece binary` step's stdout SHALL contain zero `; compiling file "bootstrap/*-zone.lisp"` lines
 
-#### Scenario: CI-style build with `touch bootstrap/*-zone.lisp` ahead of `make ece`
-- **WHEN** the CI workflow runs `touch bootstrap/*-zone.lisp` (as currently done in `.github/workflows/test.yml` lines 59-64 to mark outputs up-to-date)
-- **AND** `make ece` is invoked afterwards
-- **AND** the build reaches the `share/ece/ece-main.ecec` target
-- **THEN** each zone file SHALL be compiled at most once within that target's SBCL image
-- **AND** whether the compile happens zero times (FASL newer than touched source) or one time (touch made the source newer than cached FASL) is acceptable, but recompiling the same file twice in one image SHALL NOT happen
+#### Scenario: CI prefix-match restore with stale FASLs
+- **WHEN** `actions/cache@v4`'s `restore-keys: fasl-` pulls in FASLs from a commit with different zone source content
+- **AND** the `Mark bootstrap outputs as up-to-date` step touches `bootstrap/*-zone.lisp`
+- **AND** `Warm FASL cache` runs at 8GB
+- **THEN** `load-compiled-zones` SHALL see touched source mtimes newer than the stale restored FASL mtimes and SHALL recompile each zone file, writing fresh FASLs that match the current commit's zone sources
+- **AND** the subsequent `Build ece binary` step SHALL still skip all zone recompilation (FASL mtimes from warm-cache are newer than touched source mtimes) and SHALL successfully load the freshly-compiled FASLs
 
-### Requirement: Peak SBCL heap during `make ece` stays below 4GB on a normal build
-After the double-compile is eliminated, a fresh `make ece` on a normal build (clean or warm cache) SHALL NOT exceed 4GB of SBCL dynamic heap at any point. The 8GB ceiling from PR #146 SHALL remain in place as headroom for future bootstrap expansion, but SHALL NOT be load-bearing — the build SHALL succeed at 4GB if the ceiling were temporarily restored.
+#### Scenario: Local build with no CI cache involvement
+- **WHEN** a developer runs `make ece` locally on a clean `.fasl-cache/`
+- **THEN** `load-compiled-zones` SHALL see missing FASLs and compile each zone file once
+- **AND** subsequent `make ece` invocations SHALL reuse the cached FASLs because the zone sources have not been touched
 
-Note: this requirement is aspirational for the current state of `prelude.scm` and `reader-zone.lisp`. If a single zone file legitimately requires more than 4GB of compile heap even without duplication, that is a separate scaling concern (splitting `prelude.scm` into smaller zones) tracked outside this change.
+### Requirement: `make ece` build heap stays at the existing 4GB ceiling
+The `bin/ece` and `share/ece/ece-main.ecec` Makefile targets SHALL continue to run their SBCL invocations at `--dynamic-space-size 4096`. The CI `Warm FASL cache` step's separate use of `--dynamic-space-size 8192` is operational headroom specific to pre-warming restore-key-mismatched caches, not a load-bearing requirement of the normal build. After this change, the normal build path SHALL succeed at 4GB.
 
-#### Scenario: Measuring peak heap after the fix
-- **WHEN** the fix for the double-compile is applied
-- **AND** `make ece` is run on a clean FASL cache with SBCL started at `--dynamic-space-size 4096` (temporarily, for measurement only)
-- **THEN** the build SHALL complete successfully without `Heap exhausted` errors
-- **AND** peak GC triggers SHALL show dynamic-space usage below 4GB at all points during the run
+#### Scenario: Post-fix CI observation
+- **WHEN** this change has landed and CI runs
+- **AND** the `Build ece binary` step executes `make ece`
+- **THEN** SBCL runs at `--dynamic-space-size 4096` (unchanged from before this change)
+- **AND** no `Heap exhausted` error SHALL appear in the `Build ece binary` step's output
+- **AND** the `compile-system` invocation SHALL produce a valid `share/ece/ece-main.ecec` output file

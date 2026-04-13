@@ -9,7 +9,7 @@
 
 - [x] 2.1 Bisected via CI log step boundaries: two distinct SBCL processes, not one image with two compiles. First SBCL in warm-cache step compiles zones at 8GB, second SBCL in build-ece step recompiles them at 4GB.
 - [x] 2.2 Traced the recompile to `load-compiled-zones` in `src/runtime.lisp:1825-1848`. The function's mtime check `(> (file-write-date path) (file-write-date fasl-path))` fires when the CI touch step makes zone sources newer than cached FASLs.
-- [x] 2.3 Confirmed the touch step at `.github/workflows/test.yml:59-64` is load-bearing for `make`'s dependency tracking (it prevents `$(ZONE_SENTINEL)` from being re-run because `src/*.scm` and `primitives.def` have equal-ish checkout mtimes to bootstrap outputs). So removing the touch is not an option without restructuring make.
+- [x] 2.3 Confirmed the `Mark bootstrap outputs as up-to-date` step in `.github/workflows/test.yml` is load-bearing for `make`'s dependency tracking (it prevents `$(ZONE_SENTINEL)` from being re-run because `src/*.scm` and `primitives.def` have equal-ish checkout mtimes to bootstrap outputs). So removing the touch is not an option without restructuring make.
 - [x] 2.4 Confirmed `.fasl-cache/bootstrap/*-zone.fasl` exists after SBCL #1 in the warm-cache step, but SBCL #2 sees it as "stale" purely because of touched source mtime — the content is still correct.
 - [x] 2.5 Verified that no ECE source file (compile-system, compile-file-to-port, SDK files) writes to zone sources or triggers `asdf:load-system :force t`. The mtime check is the ONLY cause of the recompile.
 - [x] 2.6 Documented the confirmed root cause in `proposal.md` § Why and this section.
