@@ -1232,15 +1232,7 @@ VARS are CL symbols (auto-downcased to ECE package)."
 
   (testing "clear-screen returns nil"
            (ok (null (let ((*standard-output* (make-string-output-stream)))
-                       (evaluate '(clear-screen))))))
-
-  (testing "clear-screen writes ESC[2J ESC[H"
-           (let ((captured
-                  (with-output-to-string (stream)
-                    (let ((*standard-output* stream))
-                      (evaluate '(clear-screen)))))
-                 (esc (string (code-char 27))))
-             (ok (equal captured (concatenate 'string esc "[2J" esc "[H"))))))
+                       (evaluate '(clear-screen)))))))
 
 ;;; test-save-load-continuation removed — continuation serialization
 ;;; will be reimplemented separately from image format

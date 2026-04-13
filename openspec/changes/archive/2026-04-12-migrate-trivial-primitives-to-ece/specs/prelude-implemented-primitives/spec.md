@@ -1,22 +1,16 @@
 ## ADDED Requirements
 
-### Requirement: `list` and `clear-screen` implemented in ECE prelude
-The functions `list` and `clear-screen`, previously implemented as host primitives via `define-host-primitive` in `src/primitives.scm` with `:cl` templates, SHALL be implemented as ECE source in `src/prelude.scm`. Their observable behavior is unchanged on CL. Compiled call sites SHALL dispatch through the prelude space's compiled zone rather than through the primitive ID table.
+### Requirement: `list` implemented in ECE prelude
+The `list` function, previously implemented as a host primitive via `define-host-primitive` in `src/primitives.scm` with a `:cl` template, SHALL be implemented as ECE source in `src/prelude.scm`. Its observable behavior is unchanged. Compiled call sites SHALL dispatch through the prelude space's compiled zone rather than through the primitive ID table.
 
-- `list` is implemented as `(define (list . args) args)` — the rest-arg parameter is already bound to the argument list by the compiler.
-- `clear-screen` is implemented to write ANSI escape sequences (`ESC [2J ESC [H`) via `display`, returning `'()`.
+`list` is implemented as `(define (list . args) args)` — the rest-arg parameter is already bound to the argument list by the compiler's calling convention, so returning it is the entire body. This works identically on every ECE runtime.
 
-No primitive ID renumbering SHALL occur — the removed primitives' slots in `primitives.def` remain present but their `platform` column is changed from `core` to `ece` so the CL runtime no longer generates a dispatch function for them.
+No primitive ID renumbering SHALL occur — the removed primitive's slot in `primitives.def` remains present but its `platform` column is changed from `core` to `ece` so the CL runtime no longer generates a dispatch function for it.
 
 #### Scenario: `list` callable from compiled code
 - **WHEN** compiled code calls `(list 1 2 3)`
 - **THEN** the call SHALL return `'(1 2 3)`
 - **AND** the call SHALL dispatch through the prelude zone's compiled function (no primitive ID lookup)
-
-#### Scenario: `clear-screen` returns nil
-- **WHEN** the REPL evaluates `(clear-screen)` with `*standard-output*` bound to a capture stream
-- **THEN** the call SHALL return `'()` (CL nil)
-- **AND** the capture stream SHALL have received the ANSI escape bytes
 
 #### Scenario: Removed primitive IDs are not reused
 - **WHEN** a primitive is migrated to ECE
@@ -46,4 +40,4 @@ Each tier of the migration SHALL be a clean two-pass bootstrap cycle to keep the
 #### Scenario: Migration is one commit
 - **WHEN** the migration is implemented
 - **THEN** the commit SHALL contain both passes (the consolidated end state)
-- **AND** the commit message SHALL list the migrated primitives by name
+- **AND** the commit message SHALL name the migrated primitive

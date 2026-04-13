@@ -6,19 +6,23 @@ The criterion for "movable": **the function's body can be expressed using existi
 
 ### Scope narrowed during implementation
 
-The original proposal included 4 tiers totaling ~26 primitives. During implementation, tiers 1-3 were discovered to violate the criterion above: the targeted primitives (`compiled-procedure-*`, `continuation-*`, `%primitive-id-of`, `%global-env-frame`, `port-line`, `port-col`, `%make-*`, and the type predicates) have **platform-specific representations**. On CL they're tagged lists, but on WASM they're WasmGC structs — compiled-procs, continuations, primitives, and ports each use `struct.get` field access on WASM (see `wasm/runtime.wat` lines 4852-5043). A portable ECE definition like `(define (compiled-procedure-entry p) (cadr p))` works on CL but fails on WASM with "car: not a pair" because the WASM struct is not a pair. Until the ECE language has a portable way to dispatch on platform-specific representations, these primitives must stay primitive.
+The original proposal included 4 tiers totaling ~26 primitives. During implementation the scope was reduced twice:
 
-Only **tier 4** (`list`, `clear-screen`) is genuinely portable and was implemented. Tiers 1-3 are abandoned.
+1. **Tiers 1-3 abandoned.** The targeted primitives (`compiled-procedure-*`, `continuation-*`, `%primitive-id-of`, `%global-env-frame`, `port-line`, `port-col`, `%make-*`, and the type predicates) have **platform-specific representations**. On CL they're tagged lists, but on WASM they're WasmGC structs — compiled-procs, continuations, primitives, and ports each use `struct.get` field access on WASM (see `wasm/runtime.wat` lines 4852-5043). A portable ECE definition like `(define (compiled-procedure-entry p) (cadr p))` works on CL but fails on WASM with "car: not a pair" because the WASM struct is not a pair. Until the ECE language has a portable way to dispatch on platform-specific representations, these primitives must stay primitive.
+
+2. **`clear-screen` reverted from tier 4.** Migrating it to ECE changed WASM semantics from a no-op to writing `ESC[2J ESC[H` into the browser console as visible garbage. That belongs in a platform library, not the kernel — `clear-screen` is a terminal-control function specific to CL/TTY, and the WASM-side answer is a future canvas/DOM operation (`canvas-clear`, `document.body.innerHTML = ""`, or a raylib FFI call) that should live in a browser library with its own dispatch. Kernel minimization is about pulling truly-portable operations into ECE, not about unifying platform-specific display semantics under one CL-centric implementation.
+
+Only `list` was actually migrated. It's genuinely portable because the compiler's rest-arg handling builds `args` on every runtime in the same way, so `(define (list . args) args)` works identically on CL and WASM. `clear-screen` stays as a CL primitive in `src/primitives.scm`.
 
 ## What Changes
 
-- **MODIFIED** `src/prelude.scm` — add ECE definitions for `list` and `clear-screen`.
-- **MODIFIED** `src/primitives.scm` — remove the `define-host-primitive` declarations for `list` and `clear-screen`.
-- **MODIFIED** `primitives.def` — change the `platform` field for IDs 8 (`list`) and 84 (`clear-screen`) from `core` to `ece`. IDs are not renumbered.
-- **MODIFIED** `bootstrap/primitives-auto.lisp` — regenerated; 2 fewer `defun` forms (`ece-list`, `ece-clear-screen`).
-- **MODIFIED** `bootstrap/bootstrap.ecec` — regenerated to pick up the new prelude definitions.
+- **MODIFIED** `src/prelude.scm` — add `(define (list . args) args)`.
+- **MODIFIED** `src/primitives.scm` — remove the `define-host-primitive` declaration for `list`.
+- **MODIFIED** `primitives.def` — change the `platform` field for ID 8 (`list`) from `core` to `ece`. ID is not renumbered.
+- **MODIFIED** `bootstrap/primitives-auto.lisp` — regenerated; 1 fewer `defun` form (`ece-list`).
+- **MODIFIED** `bootstrap/bootstrap.ecec` — regenerated to pick up the new prelude definition.
 - **MODIFIED** `bootstrap/<space>-zone.lisp` files — regenerated to reflect the new call sites.
-- **NO BREAKING CHANGES** — both migrated functions keep the same public name, parameter list, and observable behavior on CL. On WASM, `list` behaves identically; `clear-screen` now writes ANSI escape sequences (previously a no-op), which is a change for browser contexts but is not exercised by any existing test or sandbox program.
+- **NO BREAKING CHANGES** — `list` keeps the same public name, parameter list, and observable behavior on both runtimes. `clear-screen` is untouched — the CL primitive continues writing ANSI escapes, and the WASM primitive continues to be a no-op.
 
 ### What stays primitive (and why)
 
@@ -50,9 +54,9 @@ None — every migrated primitive keeps its public name, parameter list, and obs
 
 ## Impact
 
-- **Affected code**: `src/primitives.scm` (removed `list` and `clear-screen`), `src/prelude.scm` (added ECE definitions), `primitives.def` (IDs 8 and 84 marked `ece`), `bootstrap/primitives-auto.lisp` (regenerated), `bootstrap/bootstrap.ecec` (regenerated), all `bootstrap/*-zone.lisp` files (regenerated).
-- **CL kernel size**: shrinks by 2 `defun` forms.
-- **Performance**: negligible — moved primitives now go through the regular ECE function-call path (a goto into the prelude space), but the prelude space runs as a compiled zone so the cost is one CL function call rather than an interpreter dispatch.
-- **WASM port**: 2 fewer functions to implement in WAT for Phase 2. `list` is a trivial rest-arg identity; `clear-screen` is browser-context garbage (writes escape sequences to console instead of no-op), but no existing test or sandbox program calls it on browser.
+- **Affected code**: `src/primitives.scm` (removed `list`), `src/prelude.scm` (added `(define (list . args) args)`), `primitives.def` (ID 8 marked `ece`), `bootstrap/primitives-auto.lisp` (regenerated), `bootstrap/bootstrap.ecec` (regenerated), all `bootstrap/*-zone.lisp` files (regenerated).
+- **CL kernel size**: shrinks by 1 `defun` form.
+- **Performance**: negligible — `list` now goes through the regular ECE function-call path (a goto into the prelude space), but the prelude space runs as a compiled zone so the cost is one CL function call rather than an interpreter dispatch.
+- **WASM port**: 1 fewer function to implement in WAT for Phase 2. `list` is a trivial rest-arg identity that works uniformly on both runtimes.
 - **Two-pass bootstrap required** — per the documented pitfall in MEMORY.md, primitive removal needs (1) add ECE def + bootstrap, (2) remove host primitive + bootstrap again.
-- **Rollback**: `git revert` the single commit cleanly restores the primitives.
+- **Rollback**: `git revert` the commit cleanly restores the primitive.

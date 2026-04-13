@@ -2,24 +2,19 @@
 
 ## Purpose
 Specify the migration of primitives whose bodies can be expressed in ECE without host-capability dependencies from `src/primitives.scm` (`define-host-primitive`) to `src/prelude.scm` (plain ECE `define`), while preserving observable behavior, keeping primitive IDs stable in `primitives.def`, and maintaining a clean two-pass bootstrap cycle at every commit.
+
 ## Requirements
-### Requirement: `list` and `clear-screen` implemented in ECE prelude
-The functions `list` and `clear-screen`, previously implemented as host primitives via `define-host-primitive` in `src/primitives.scm` with `:cl` templates, SHALL be implemented as ECE source in `src/prelude.scm`. Their observable behavior is unchanged on CL. Compiled call sites SHALL dispatch through the prelude space's compiled zone rather than through the primitive ID table.
+### Requirement: `list` implemented in ECE prelude
+The `list` function, previously implemented as a host primitive via `define-host-primitive` in `src/primitives.scm` with a `:cl` template, SHALL be implemented as ECE source in `src/prelude.scm`. Its observable behavior is unchanged. Compiled call sites SHALL dispatch through the prelude space's compiled zone rather than through the primitive ID table.
 
-- `list` is implemented as `(define (list . args) args)` — the rest-arg parameter is already bound to the argument list by the compiler.
-- `clear-screen` is implemented to write ANSI escape sequences (`ESC [2J ESC [H`) via `display`, returning `'()`.
+`list` is implemented as `(define (list . args) args)` — the rest-arg parameter is already bound to the argument list by the compiler, so returning it directly is the entire body. This works identically on every ECE runtime because rest-arg handling is part of the calling convention, not a host-specific feature.
 
-No primitive ID renumbering SHALL occur — the removed primitives' slots in `primitives.def` remain present but their `platform` column is changed from `core` to `ece` so the CL runtime no longer generates a dispatch function for them.
+No primitive ID renumbering SHALL occur — the removed primitive's slot in `primitives.def` remains present but its `platform` column is changed from `core` to `ece` so the CL runtime no longer generates a dispatch function for it.
 
 #### Scenario: `list` callable from compiled code
 - **WHEN** compiled code calls `(list 1 2 3)`
 - **THEN** the call SHALL return `'(1 2 3)`
 - **AND** the call SHALL dispatch through the prelude zone's compiled function (no primitive ID lookup)
-
-#### Scenario: `clear-screen` returns nil
-- **WHEN** the REPL evaluates `(clear-screen)` with `*standard-output*` bound to a capture stream
-- **THEN** the call SHALL return `'()` (CL nil)
-- **AND** the capture stream SHALL have received the ANSI escape bytes
 
 #### Scenario: Removed primitive IDs are not reused
 - **WHEN** a primitive is migrated to ECE

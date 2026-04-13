@@ -270,7 +270,12 @@
 (define-host-primitive (sleep seconds)
   :cl `(cl:progn (cl:sleep ,seconds) cl:nil))
 
-;; clear-screen: implemented in src/prelude.scm.
+(define-host-primitive (clear-screen)
+  :cl `(cl:progn
+        (cl:format cl:t "~c[2J~c[H"
+                   (cl:code-char 27) (cl:code-char 27))
+        (cl:finish-output)
+        cl:nil))
 
 ;;; ─────────────────────────────────────────────────────────────────────────
 ;;; Compiler support (ids 85-91)

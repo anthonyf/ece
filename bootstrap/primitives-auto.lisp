@@ -258,6 +258,9 @@
 (defun ece-char? (x)
   (scheme-bool (cl:characterp x)))
 
+(defun ece-clear-screen ()
+  (cl:progn (cl:format cl:t "~c[2J~c[H" (cl:code-char 27) (cl:code-char 27)) (cl:finish-output) cl:nil))
+
 (defun ece-close-input-port (port)
   (cl:progn (cl:close (ece-port-stream port)) cl:nil))
 
