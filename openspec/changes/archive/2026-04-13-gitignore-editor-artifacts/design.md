@@ -2,7 +2,7 @@
 
 The root `.gitignore` already covers build artefacts (`*.fasl`, `/.fasl-cache/`, `/.tmp/`, `/bin/ece*`, etc.) and generated files (`wasm/runtime.wasm`, `sandbox/ece-*.js`, `/share/`). It does not cover editor temporary files, so any Emacs user editing `.md` or `.scm` files leaves auto-save and lockfile artefacts in the tree. Similarly, the Claude Code CLI writes a scheduler lock under `.claude/` which is also not gitignored.
 
-The fix is a single-file edit to `.gitignore`. No tooling changes, no build changes, no spec deltas.
+The fix is a single-file edit to `.gitignore`. No tooling changes, no build changes, and no runtime or language-behaviour changes. (A `repo-hygiene` spec delta is added to record the requirement in the project's OpenSpec capability set.)
 
 ## Goals / Non-Goals
 
