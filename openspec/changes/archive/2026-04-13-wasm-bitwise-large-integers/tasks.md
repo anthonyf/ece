@@ -43,11 +43,6 @@
 
 ## 6. Archive and commit
 
-- [ ] 6.1 Archive this change in-PR BEFORE merging (`/opsx:archive wasm-bitwise-large-integers`) per the archive-before-merge memory rule.
-- [ ] 6.2 Commit with a message naming the fix scope: "Fix WASM bitwise primitives to handle large integers uniformly with bitwise-and".
-- [ ] 6.3 Open a PR with:
-  - A short summary pointing at PR #149's WASM gating as the motivation
-  - The list of modified primitives (77, 78, 79, 80)
-  - The new `$make-fixnum-or-float` helper
-  - Cross-runtime regression test coverage
-  - Confirmation that SHA-1 now works on both runtimes
+- [x] 6.1 Archive this change in-PR BEFORE merging (done via git mv to `archive/2026-04-13-wasm-bitwise-large-integers/`).
+- [x] 6.2 Commit with a message naming the fix scope.
+- [x] 6.3 PR #150 updated with implementation summary, root-cause analysis, and cross-runtime validation.
