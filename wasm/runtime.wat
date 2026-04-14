@@ -2902,6 +2902,61 @@
       (else (call $make-float (local.get $acc))))
   )
 
+  ;; --- Variadic bitwise ops ---
+  ;; Shape mirrors $fold-add but the accumulator is i32 and the starting
+  ;; value is the identity element for the op. Each arg is read via
+  ;; $to-f64 (handles fixnum + float-box) and wrapped to i32 via
+  ;; $trunc-to-i32-wrap so values > 2^31-1 retain their low-32-bit
+  ;; pattern. The final accumulator is boxed via $make-fixnum-or-float
+  ;; so results outside the 29-bit fixnum range become float-boxes.
+  (func $fold-bitwise-and (param $args (ref null eq)) (result (ref null eq))
+    (local $acc i32)
+    (local $cur (ref null eq))
+    (local.set $acc (i32.const -1))
+    (local.set $cur (local.get $args))
+    (block $done
+      (loop $loop
+        (br_if $done (ref.is_null (local.get $cur)))
+        (br_if $done (call $is-null (local.get $cur)))
+        (local.set $acc (i32.and (local.get $acc)
+          (call $trunc-to-i32-wrap (call $to-f64 (call $xcar (local.get $cur))))))
+        (local.set $cur (call $xcdr (local.get $cur)))
+        (br $loop)))
+    (call $make-fixnum-or-float (local.get $acc))
+  )
+
+  (func $fold-bitwise-or (param $args (ref null eq)) (result (ref null eq))
+    (local $acc i32)
+    (local $cur (ref null eq))
+    (local.set $acc (i32.const 0))
+    (local.set $cur (local.get $args))
+    (block $done
+      (loop $loop
+        (br_if $done (ref.is_null (local.get $cur)))
+        (br_if $done (call $is-null (local.get $cur)))
+        (local.set $acc (i32.or (local.get $acc)
+          (call $trunc-to-i32-wrap (call $to-f64 (call $xcar (local.get $cur))))))
+        (local.set $cur (call $xcdr (local.get $cur)))
+        (br $loop)))
+    (call $make-fixnum-or-float (local.get $acc))
+  )
+
+  (func $fold-bitwise-xor (param $args (ref null eq)) (result (ref null eq))
+    (local $acc i32)
+    (local $cur (ref null eq))
+    (local.set $acc (i32.const 0))
+    (local.set $cur (local.get $args))
+    (block $done
+      (loop $loop
+        (br_if $done (ref.is_null (local.get $cur)))
+        (br_if $done (call $is-null (local.get $cur)))
+        (local.set $acc (i32.xor (local.get $acc)
+          (call $trunc-to-i32-wrap (call $to-f64 (call $xcar (local.get $cur))))))
+        (local.set $cur (call $xcdr (local.get $cur)))
+        (br $loop)))
+    (call $make-fixnum-or-float (local.get $acc))
+  )
+
   (func $fold-sub (param $args (ref null eq)) (result (ref null eq))
     (local $first f64)
     (local $acc f64)
@@ -4270,28 +4325,22 @@
       (then (return (call $make-char
         (call $fixnum-value (ref.cast (ref i31) (call $arg1 (local.get $args))))))))
     ;; 45-49: char=?, char<?, char-whitespace?, char-alphabetic?, char-numeric? — now in prelude.scm
-    ;; Bitwise primitives 76-80 share a dispatch shape: read args via
-    ;; $trunc-to-i32-wrap + $to-f64 (accepts fixnum and float-box, wraps
-    ;; values > 2^31-1 back into signed i32 bit-pattern), compute in i32
-    ;; space, and promote the result to float-box if it overflows fixnum
-    ;; range via $make-fixnum-or-float. SHA-1 round constants such as
-    ;; 0xEFCDAB89 = 4023233417 are stored as f64 float-boxes; the wrap
-    ;; helper is what lets the bitwise ops see their correct low-32 bits.
-    ;; 76 = bitwise-and
+    ;; Bitwise primitives 76-80: the three variadic ones (76/77/78)
+    ;; delegate to $fold-bitwise-and/or/xor which walk the args list,
+    ;; starting from the identity element and folding left with the
+    ;; corresponding i32 op. 79 (unary) and 80 (binary) are not variadic
+    ;; and read args directly. $trunc-to-i32-wrap + $to-f64 accept both
+    ;; fixnum and float-box and wrap values > 2^31-1 back to the signed
+    ;; low-32-bit pattern, so SHA-1 round constants like 0xEFCDAB89 work.
+    ;; 76 = bitwise-and (variadic; identity -1)
     (if (i32.eq (local.get $id) (i32.const 76))
-      (then (return (call $make-fixnum-or-float (i32.and
-        (call $trunc-to-i32-wrap (call $to-f64 (call $arg1 (local.get $args))))
-        (call $trunc-to-i32-wrap (call $to-f64 (call $arg2 (local.get $args)))))))))
-    ;; 77 = bitwise-or
+      (then (return (call $fold-bitwise-and (local.get $args)))))
+    ;; 77 = bitwise-or (variadic; identity 0)
     (if (i32.eq (local.get $id) (i32.const 77))
-      (then (return (call $make-fixnum-or-float (i32.or
-        (call $trunc-to-i32-wrap (call $to-f64 (call $arg1 (local.get $args))))
-        (call $trunc-to-i32-wrap (call $to-f64 (call $arg2 (local.get $args)))))))))
-    ;; 78 = bitwise-xor
+      (then (return (call $fold-bitwise-or (local.get $args)))))
+    ;; 78 = bitwise-xor (variadic; identity 0)
     (if (i32.eq (local.get $id) (i32.const 78))
-      (then (return (call $make-fixnum-or-float (i32.xor
-        (call $trunc-to-i32-wrap (call $to-f64 (call $arg1 (local.get $args))))
-        (call $trunc-to-i32-wrap (call $to-f64 (call $arg2 (local.get $args)))))))))
+      (then (return (call $fold-bitwise-xor (local.get $args)))))
     ;; 79 = bitwise-not
     (if (i32.eq (local.get $id) (i32.const 79))
       (then (return (call $make-fixnum-or-float (i32.xor
