@@ -194,7 +194,7 @@
   ;;
   ;; Value representation scheme:
   ;;   i31ref                         →  fixnum (identity-encoded, full [-2^30, 2^30-1] range)
-  ;;   (ref $char)                    →  character (one i32 codepoint field)
+  ;;   (ref $char)                    →  character ($codepoint + $tag discriminator fields)
   ;;   (ref $false-type) $false       →  #f
   ;;   (ref $true-type)  $true        →  #t
   ;;   (ref $nil-type)   $nil         →  '()
@@ -454,7 +454,12 @@
       (then
         (local.set $f (call $float-value
           (ref.cast (ref $float-box) (local.get $v))))
-        (return (f64.eq (f64.trunc (local.get $f)) (local.get $f)))))
+        ;; Finite AND equal to its own trunc — rejects NaN (NaN != anything)
+        ;; and ±infinity (trunc(inf) == inf but inf is not finite).
+        (return
+          (i32.and
+            (f64.lt (f64.abs (local.get $f)) (f64.const inf))
+            (f64.eq (f64.trunc (local.get $f)) (local.get $f))))))
     (i32.const 0)
   )
 
@@ -4355,10 +4360,22 @@
             (call $arg1 (local.get $args))))))
         (return (call $make-fixnum
           (call $char-codepoint (ref.cast (ref $char) (call $arg1 (local.get $args))))))))
-    ;; 44 = integer->char (accepts fixnum or float-box)
+    ;; 44 = integer->char (type-guarded: integer in [0, 0x10FFFF])
     (if (i32.eq (local.get $id) (i32.const 44))
-      (then (return (call $make-char
-        (call $trunc-to-i32-wrap (call $to-f64 (call $arg1 (local.get $args))))))))
+      (then
+        (if (i32.eqz (call $is-integer (call $arg1 (local.get $args))))
+          (then (return (call $make-type-error
+            (call $prim-name-str (local.get $id)) (global.get $err-not-number)
+            (call $arg1 (local.get $args))))))
+        (local.set $id (i32.trunc_f64_s
+          (call $to-f64 (call $arg1 (local.get $args)))))
+        (if (i32.or
+              (i32.lt_s (local.get $id) (i32.const 0))
+              (i32.gt_s (local.get $id) (i32.const 0x10FFFF)))
+          (then (return (call $make-type-error
+            (call $prim-name-str (i32.const 44)) (global.get $err-not-number)
+            (call $arg1 (local.get $args))))))
+        (return (call $make-char (local.get $id)))))
     ;; 45-49: char=?, char<?, char-whitespace?, char-alphabetic?, char-numeric? — now in prelude.scm
     ;; Bitwise primitives 76-80: the three variadic ones (76/77/78)
     ;; delegate to $fold-bitwise-and/or/xor which walk the args list,

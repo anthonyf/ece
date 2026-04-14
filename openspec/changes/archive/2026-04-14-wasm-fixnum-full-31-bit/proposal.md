@@ -19,15 +19,17 @@ The structural fix is to evict chars and specials from i31 so that i31ref is use
 
 ## What Changes
 
-- **ADDED** new struct type `$char` (single `i32 $codepoint` field) in `wasm/runtime.wat`, replacing the tagged i31 char encoding.
-- **ADDED** singleton struct instances for the five specials. Each becomes a one-instance struct type (or a shared `$special` struct with an i32 tag), instantiated once at module-init as a global. `ref.eq` comparisons continue to work identically because each global holds a unique heap reference.
+- **ADDED** new struct type `$char` with an `i32 $codepoint` field and an `i32 $tag` discriminator in `wasm/runtime.wat`, replacing the tagged i31 char encoding. The `$tag` field is always `0` and is never read — it exists only because binaryen's `wasm-as` structurally deduplicates single-i32 struct types, and `$primitive` already occupies that shape; the discriminator gives `$char` its own type identity.
+- **ADDED** singleton struct instances for the five specials. Each becomes its own empty struct type (`$false-type`, `$true-type`, `$nil-type`, `$eof-type`, `$void-type`), instantiated once at module-init as a global. `ref.eq` comparisons continue to work identically because each global holds a unique heap reference.
 - **ADDED** a 128-element ASCII char intern table populated at startup so character operations on ASCII text (the overwhelmingly common case — string iteration, char predicates, parsers, the reader) stay allocation-free. Non-ASCII chars allocate on demand.
 - **MODIFIED** `$make-fixnum` to encode directly via `ref.i31 (local.get $n)` — no shift.
 - **MODIFIED** `$fixnum-value` to decode directly via `i31.get_s (local.get $v)` — no shift.
 - **MODIFIED** `$is-fixnum` to simplify to `ref.test (ref i31) (local.get $v)` — one check instead of two.
 - **MODIFIED** `$make-char`, `$char-codepoint`, `$is-char` to use the new struct type.
 - **MODIFIED** `$make-fixnum-or-float` range check to `[-2^30, 2^30-1]`.
-- **MODIFIED** `$f64-to-ece-number` range check to match.
+- **MODIFIED** `$f64-to-ece-number`, `$wrap-i32`, `$wrap-f64` range checks to match.
+- **MODIFIED** `$is-integer` to return `#t` for finite float-box values holding whole numbers (R7RS-compliant, and required to avoid an infinite loop in the prelude's `(number->string n)` when `n` is the result of integer `quotient` via f64 `/`). The CL-side `integer?` primitive is updated in lockstep.
+- **MODIFIED** `truncate`, `floor`, `integer->char` primitive dispatches to use `$f64-to-ece-number` / `$to-f64` + range validation instead of passing the raw output of `$safe-trunc-i32` to `$make-fixnum`. The old code silently corrupted values outside `[-2^30, 2^30-1]` via i31 sign-bit overflow; with identity encoding this corruption became exposed. `integer->char` also validates the Unicode scalar range `[0, 0x10FFFF]`.
 - **AUDITED** every direct `i31.get_s` / `i31.get_u` usage in `runtime.wat` for implicit assumptions about the shift encoding — such sites are updated or documented.
 - **ADDED** `tests/ece/common/test-fixnum-full-range.scm` — regression tests that exercise values in the new 30-bit band `[2^29, 2^30-1]` (and the mirrored negative band) and verify they behave as fixnums: identity through `+`/`-`, equality, arithmetic-shift round-trips, and display round-trips.
 - **BOOTSTRAP** — after the runtime change, `make bootstrap` is run and the refreshed `.ecec` files are committed. The `.ecec` serialization format does not change (fixnums still serialize as decimal integers, chars still as codepoints), so this is a pure runtime-representation change.

@@ -1,8 +1,8 @@
 ## 1. New struct types in wasm/runtime.wat
 
-- [x] 1.1 Add `(type $char (struct (field $codepoint i32)))` in the type section near `$primitive` and `$pair`.
+- [x] 1.1 Add `(type $char (struct (field $codepoint i32) (field $tag i32)))` in the type section near `$primitive` and `$pair`. The second `$tag` field is a discriminator — binaryen's `wasm-as` structurally deduplicates single-i32 struct types, and `$primitive` already occupies that shape, so `$char` needs a second field to get its own type identity. Only `$codepoint` is read at runtime.
 - [x] 1.2 Add five empty struct types for the specials: `$false-type`, `$true-type`, `$nil-type`, `$eof-type`, `$void-type`. Each is `(struct)` with no fields.
-- [x] 1.3 Add `$char-array` array type: `(type $char-array (array (ref $char)))` for the ASCII intern table.
+- [x] 1.3 Add `$char-array` array type: `(type $char-array (array (mut (ref $char))))` for the ASCII intern table. Mutable element type is required so the init function can populate slots via `array.set`.
 
 ## 2. Replace i31-tagged globals with struct singletons
 
@@ -52,11 +52,11 @@
 ## 9. Regression tests
 
 - [x] 9.1 Create `tests/ece/common/test-fixnum-full-range.scm` with tests for:
-  - Values `536870912`, `1073741823`, `-536870913`, `-1073741824` — round-trip through `(+ v 0)` / `(- v 0)` and assert identity. Previously these were float-boxes; now they're fixnums.
+  - Values `536870912`, `1073741823`, `-536870913`, `-1073741824` — round-trip through `(+ v 0)` / `(- v 0)` and assert identity. Previously these were float-boxes; now they're fixnums internally.
   - Display round-trip: `(string->number (number->string v))` = `v` for each.
-  - `fixnum?` returns `#t` for each (previously returned `#f`).
-  - `(+ 536870000 912)` = `536870912` and the result is a fixnum.
-  - Overflow check: `(+ 1073741823 1)` = `1073741824`, result is NOT a fixnum (float-box), arithmetic still works.
+  - `integer?` returns `#t` for each (ECE does not expose a `fixnum?` predicate — the fixnum/float-box distinction is internal, and `integer?` is the user-visible check).
+  - `(+ 536870000 912)` = `536870912` with exact integer arithmetic.
+  - Overflow check: `(+ 1073741823 1)` = `1073741824`; result now passes `integer?` (float-boxes holding whole-number values report `#t`) but arithmetic still works regardless of representation.
 - [x] 9.2 Verify `test-bitwise-large.scm` (PR #150) still passes.
 - [x] 9.3 Verify `test-bitwise-variadic.scm` (PR #152) still passes.
 - [x] 9.4 Verify `test-sha1.scm` still passes (RFC 3174 test vector for "abc").

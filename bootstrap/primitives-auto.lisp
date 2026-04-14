@@ -361,7 +361,7 @@
   (cl:code-char n))
 
 (defun ece-integer? (x)
-  (scheme-bool (cl:integerp x)))
+  (scheme-bool (cl:or (cl:integerp x) (cl:and (cl:floatp x) (cl:ignore-errors (cl:= x (cl:truncate x)))))))
 
 (defun ece-keyword? (x)
   (scheme-bool (cl:and (cl:symbolp x) (let ((name (cl:symbol-name x))) (cl:and (cl:> (cl:length name) 1) (cl:char= (cl:char name 0) #\:))))))

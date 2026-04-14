@@ -5,17 +5,19 @@ The WASM runtime SHALL represent fixnums as i31ref values with the identity enco
 
 For any integer `n` in this range, `(make-fixnum-or-float n)` SHALL return a fixnum (not a float-box). For integers outside this range, `$make-fixnum-or-float` SHALL return a `$float-box` so that values remain representable even when they exceed i31 capacity.
 
+Note: ECE does not expose `fixnum?` at the Scheme level — the fixnum/float-box distinction is runtime-internal. Scenarios below that reference a `fixnum?` predicate are describing the internal `$is-fixnum` helper.
+
 #### Scenario: Encoding round-trip at the positive edge
 - **WHEN** `(make-fixnum-or-float 1073741823)` is called (which is `2^30 - 1`)
 - **THEN** the result SHALL be an i31ref fixnum (not a float-box)
-- **AND** `(fixnum-value result)` SHALL return `1073741823`
-- **AND** `(fixnum? result)` SHALL return `#t`
+- **AND** `$fixnum-value` on the result SHALL return `1073741823`
+- **AND** `$is-fixnum` on the result SHALL return `#t`
 
 #### Scenario: Encoding round-trip at the negative edge
 - **WHEN** `(make-fixnum-or-float -1073741824)` is called (which is `-2^30`)
 - **THEN** the result SHALL be an i31ref fixnum
-- **AND** `(fixnum-value result)` SHALL return `-1073741824`
-- **AND** `(fixnum? result)` SHALL return `#t`
+- **AND** `$fixnum-value` on the result SHALL return `-1073741824`
+- **AND** `$is-fixnum` on the result SHALL return `#t`
 
 #### Scenario: Overflow one past the positive edge
 - **WHEN** `(make-fixnum-or-float 1073741824)` is called
@@ -25,7 +27,7 @@ For any integer `n` in this range, `(make-fixnum-or-float n)` SHALL return a fix
 #### Scenario: Old 29-bit boundary values are now fixnums
 - **WHEN** `(make-fixnum-or-float 536870912)` is called (old `2^29` overflow point)
 - **THEN** the result SHALL be an i31ref fixnum
-- **AND** `(fixnum-value result)` SHALL return `536870912`
+- **AND** `$fixnum-value` on the result SHALL return `536870912`
 - **AND** previously this value would have been a float-box
 
 #### Scenario: Arithmetic in the widened band stays fixnum
@@ -34,11 +36,11 @@ For any integer `n` in this range, `(make-fixnum-or-float n)` SHALL return a fix
 - **AND** chained arithmetic `(+ 536870000 912 0)` SHALL also stay fixnum
 
 ### Requirement: Characters are heap-allocated $char structs with ASCII interning
-Characters in the WASM runtime SHALL be instances of the `$char` struct type, which has a single `i32` field `$codepoint`. The five helpers are:
-- `$make-char(cp)` — for codepoints in `[0, 127]`, returns the pre-interned ASCII char; otherwise allocates a new `$char` struct.
+Characters in the WASM runtime SHALL be instances of the `$char` struct type, which has two `i32` fields: `$codepoint` (the Unicode scalar) and `$tag` (a discriminator, always `0`). The second field exists because binaryen's `wasm-as` structurally deduplicates single-i32 struct types, and `$primitive` already occupies that shape — without the `$tag` field, `ref.test (ref $char)` and `ref.test (ref $primitive)` would be indistinguishable. Only `$codepoint` is read at runtime. The five helpers are:
+- `$make-char(cp)` — for codepoints in `[0, 127]`, returns the pre-interned ASCII char; otherwise allocates a new `$char` struct with `$tag` set to `0`.
 - `$char-codepoint(v)` — reads the `$codepoint` field of a `(ref $char)`.
 - `$is-char(v)` — `ref.test (ref $char) v`.
-- The ASCII intern table is a 128-element `(array (ref $char))` populated at module init with one `$char` struct per codepoint `0..127`.
+- The ASCII intern table is a 128-element `(array (mut (ref $char)))` populated at module init with one `$char` struct per codepoint `0..127`. The `mut` modifier is required so the init function can populate slots via `array.set`.
 
 `(ref.eq a b)` between two ASCII chars of the same codepoint SHALL return `#t`, because both reference the same interned struct. For non-ASCII chars, `ref.eq` SHALL NOT be assumed to imply equality — callers must use `char=?` (which compares codepoints).
 
@@ -83,19 +85,19 @@ Comparison SHALL use `ref.eq` against the corresponding global. The semantics of
 - **THEN** the second call SHALL return `#t`
 
 #### Scenario: Specials are not fixnums and not chars
-- **WHEN** any of the five specials is passed to `fixnum?` or `char?`
+- **WHEN** any of the five specials is passed to `$is-fixnum` or `char?`
 - **THEN** both SHALL return `#f`
 
 ### Requirement: $is-fixnum simplifies to a single ref.test
 `$is-fixnum` SHALL test only that the value is an i31ref. No secondary bit-test on the payload is required, because i31ref is now used exclusively for fixnums.
 
 #### Scenario: Fixnum type test on a fixnum
-- **WHEN** `(fixnum? 42)` is evaluated
+- **WHEN** `$is-fixnum` is called on the internal representation of `42`
 - **THEN** the result SHALL be `#t`
 - **AND** the underlying wasm check SHALL be a single `ref.test (ref i31) v`
 
 #### Scenario: Fixnum type test on a non-fixnum
-- **WHEN** `(fixnum? #\a)` or `(fixnum? '())` or `(fixnum? 3.14)` is evaluated
+- **WHEN** `$is-fixnum` is called on a `#\a` char struct, a `$nil` singleton, or a `3.14` float-box
 - **THEN** each SHALL return `#f`
 
 ### Requirement: Bootstrap regenerates on top of the new runtime

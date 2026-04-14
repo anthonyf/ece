@@ -84,3 +84,41 @@
   (assert-equal (bitwise-and 1073741823 1073741823) 1073741823)
   (assert-equal (bitwise-or 536870912 536870911) 1073741823)
   (assert-equal (bitwise-xor 1073741823 536870912) 536870911)))
+
+;; ── (g) integer? now accepts float-box values that represent integers ──
+
+(test "integer?: float-boxed integer values are integers" (lambda ()
+  ;; (+ 1073741823 1) overflows fixnum range → float-box 1073741824.0
+  (assert-true (integer? (+ 1073741823 1)))
+  ;; (exact->inexact n) produces a float-box even for values in fixnum range
+  (assert-true (integer? (exact->inexact 3)))
+  (assert-true (integer? (exact->inexact 1073741823)))))
+
+(test "integer?: non-integer floats are not integers" (lambda ()
+  (assert-false (integer? 3.14))
+  (assert-false (integer? 0.5))))
+
+;; ── (h) integer->char rejects invalid codepoints and non-integers ─────
+
+(test "integer->char: rejects non-integer inputs" (lambda ()
+  (guard (e (#t #t))
+    (integer->char 3.14)
+    (assert-true #f))  ;; should not reach here
+  (assert-true #t)))
+
+(test "integer->char: rejects negative codepoints" (lambda ()
+  (guard (e (#t #t))
+    (integer->char -1)
+    (assert-true #f))
+  (assert-true #t)))
+
+(test "integer->char: rejects codepoints above 0x10FFFF" (lambda ()
+  (guard (e (#t #t))
+    (integer->char 1114112)  ;; 0x110000
+    (assert-true #f))
+  (assert-true #t)))
+
+(test "integer->char: accepts valid unicode range" (lambda ()
+  (assert-equal (char->integer (integer->char 97)) 97)
+  (assert-equal (char->integer (integer->char 955)) 955)        ;; Greek lambda
+  (assert-equal (char->integer (integer->char 1114111)) 1114111))) ;; 0x10FFFF

@@ -30,19 +30,21 @@ This proposal moves chars and all five specials out of i31 into heap-allocated s
 
 **Non-Goals:**
 - No i63 or 64-bit fixnum path. If a value exceeds the 31-bit range it still falls back to float-box (same as today, just with a wider fixnum band).
-- No user-visible API change. Scheme code sees the same `fixnum?`, `char?`, `eof-object?`, etc., with the same results for inputs that previously fit. Inputs in the newly-fixnum band now type-test as fixnums where they type-tested as "number" (float-box) before — a positive refinement, never a regression.
+- No user-visible Scheme-API change. Scheme code sees the same `char?`, `eof-object?`, etc., with the same results for inputs that previously fit. ECE does not expose a `fixnum?` predicate — the fixnum/float-box distinction is runtime-internal. Values in the newly-fixnum band behave identically to inputs that were fixnums before; the only observable change is that `integer?` now returns `#t` for float-boxes holding whole-number values (see Decision 7 — a pre-existing bug exposed by the range widening).
 - No change to how chars are displayed, read, or compared. The reader still produces `#\a` for the character `a`; `char=?` / `char<?` still work on codepoints.
 - No parallel code path. The new scheme replaces the old one — we're not carrying both in parallel behind a flag.
 
 ## Decisions
 
-### 1. Chars become a single `$char` struct with one i32 field
+### 1. Chars become a `$char` struct with a codepoint field and a tag discriminator
 
-**Choice:** Add `(type $char (struct (field $codepoint i32)))`. Every char reference is a `(ref $char)`. `$make-char` allocates a new struct (or returns an interned one — see decision 3). `$char-codepoint` reads the field. `$is-char` is `ref.test (ref $char) v`.
+**Choice:** Add `(type $char (struct (field $codepoint i32) (field $tag i32)))`. Every char reference is a `(ref $char)`. `$make-char` allocates a new struct (or returns an interned one — see decision 3). `$char-codepoint` reads `$codepoint`. `$is-char` is `ref.test (ref $char) v`. The `$tag` field is a discriminator that is always written as `0` and never read.
 
-**Rationale:** Straightforward and type-safe. Subtyping makes `(ref null eq)` a supertype, so chars still flow through the uniform value pipe.
+**Rationale:** Straightforward and type-safe. Subtyping makes `(ref null eq)` a supertype, so chars still flow through the uniform value pipe. The second `$tag` field is required because binaryen's `wasm-as` structurally deduplicates single-i32 struct types, and `$primitive` already has that shape — without the discriminator, `ref.test (ref $char)` and `ref.test (ref $primitive)` would match the same values. (The `$js-ref` type uses the same trick.)
 
 **Alternative considered:** Packing codepoint into a 21-bit immediate field and stealing another type bit. Rejected — modern GC-wasm toolchains are all designed around struct types for boxed values; reinventing a custom tag scheme provides no measurable benefit and loses type-safety on reads.
+
+**Alternative considered:** Putting `$char` in a rec group to defeat dedup without adding a field. Rejected — the extra field costs 4 bytes per non-ASCII char (negligible, and zero cost for the 128 ASCII chars which are interned) and is simpler than reasoning about binaryen's rec-group semantics.
 
 ### 2. Specials become singleton struct instances, one type each
 
@@ -107,6 +109,14 @@ Expected sites to audit:
 **Rationale:** A stale `.ecec` file compiled under the old runtime would embed assumptions about the fixnum boundary — for example, a literal `1073741823` in source code might have been compiled to a float-box under the old runtime. After the runtime update, that literal should be a fixnum. Regenerating guarantees consistency and catches any compile-time mismatch.
 
 **Validation gate:** `make bootstrap` must run clean twice in a row (self-hosting stability) before declaring the bootstrap fresh.
+
+### 7. Fix `integer?` to honour whole-number float-boxes
+
+**Choice:** `$is-integer` (the `integer?` primitive) previously returned `#t` only for fixnums. With the widened range, the Scheme prelude's `(number->string n)` began producing float-boxes at intermediate steps (e.g. `(quotient 1073741823 10)` = `107374182.3` truncated to `107374182.0` — a float-box because `/` goes through f64). The old `integer?` returned `#f` for this float-box, sending `number->string` down the `(number->string (truncate n))` branch, which recursed on the same float-box — infinite loop. The fix is to make `$is-integer` return `#t` for finite float-box values whose f64 equals its own `f64.trunc`, matching R7RS semantics where `(integer? 3.0) => #t`. The CL-side `integer?` is updated in lockstep so the test bundle passes on both runtimes.
+
+**Why this is scoped into this PR:** the infinite loop is reproducible only with the widened fixnum range, so the fix can't be deferred without shipping a broken runtime. It is also a genuine R7RS compliance improvement — `(integer? 3.0)` should be `#t` in any conforming Scheme.
+
+**Related fix:** `truncate`, `floor`, and `integer->char` previously passed the output of `$safe-trunc-i32` (clamped to i32 range) directly to `$make-fixnum`. With identity encoding, `$make-fixnum(1073741824)` silently overflows bit 30 of i31 and round-trips as `-1073741824` — silent corruption. These three primitives now use `$f64-to-ece-number` (for `truncate` / `floor`) or explicit range validation (for `integer->char`, which also validates the `[0, 0x10FFFF]` Unicode scalar range).
 
 ## Risks / Trade-offs
 
