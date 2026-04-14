@@ -3,39 +3,11 @@
 ;;; Implements SHA-1 per RFC 3174 / FIPS 180-1. Used by ece-serve.scm for
 ;;; the WebSocket handshake (RFC 6455 §4.2.2: Sec-WebSocket-Accept is
 ;;; base64(sha1(client-key || magic-guid))), and available as a general
-;;; reusable crypto utility.
+;;; reusable crypto utility. Runs on both CL and WASM runtimes.
 ;;;
 ;;; Public API:
 ;;;   (sha1-string str)        → list of 20 bytes (integers 0-255)
 ;;;   (sha1-bytes byte-list)   → list of 20 bytes
-;;;
-;;; ── Runtime support ────────────────────────────────────────────────────
-;;; **CL runtime**: works correctly. ECE on CL uses arbitrary-precision
-;;; integers, so the 32-bit arithmetic SHA-1 requires lives comfortably
-;;; within bignum range and all the bitwise primitives behave as the
-;;; algorithm expects.
-;;;
-;;; **WASM runtime**: CURRENTLY PRODUCES INCORRECT RESULTS. ECE's WASM
-;;; runtime uses 30-bit signed fixnums (i31ref tagged `<< 1`), with
-;;; large integers boxed as f64 floats. `bitwise-and` already handles
-;;; that dual representation correctly (via `to-f64` + `safe-trunc-i32`),
-;;; but `bitwise-or`, `bitwise-xor`, `bitwise-not`, and `arithmetic-shift`
-;;; all cast their inputs to `(ref i31)` unconditionally. Any SHA-1
-;;; intermediate value that exceeds the 30-bit fixnum range (the 80
-;;; round constants, most rotated words, almost any sum) therefore gets
-;;; silently corrupted in the cast. Until those WASM primitives are
-;;; updated to mirror `bitwise-and`'s float-friendly path, SHA-1 must
-;;; only be invoked from the CL side.
-;;;
-;;; For this reason:
-;;;   - `src/sha1.scm` is loaded by `make ece`'s `compile-system` into the
-;;;     CL-hosted `bin/ece` binary, where it works correctly.
-;;;   - `src/sha1.scm` is NOT bundled into `WASM_TEST_SRCS`, and the
-;;;     SHA-1 tests live under `tests/ece/cl-only/` so they only run on
-;;;     the CL runtime.
-;;;   - A follow-up change should fix the WASM runtime's bitwise-op
-;;;     handling of large integers, after which this file can be added
-;;;     back to `WASM_TEST_SRCS` and the tests moved back to `common/`.
 ;;;
 ;;; ── Security caveats ───────────────────────────────────────────────────
 ;;; Not a constant-time implementation. Not suitable for password hashing
@@ -55,12 +27,17 @@
   (sha1/u32 (+ a b)))
 
 (define (sha1/rotl x n)
-  "Rotate x left by n bits within a 32-bit word."
+  "Rotate x left by n bits within a 32-bit word. The right-shifted
+   contribution is masked with ((1 << n) - 1) so it carries exactly n
+   bits from the top of x — this gives the same result on runtimes
+   where arithmetic right shift sign-extends (WASM signed i32) as on
+   runtimes where it zero-extends (CL non-negative bignum)."
   (let ((masked (sha1/u32 x)))
     (sha1/u32
      (bitwise-or
       (arithmetic-shift masked n)
-      (arithmetic-shift masked (- n 32))))))
+      (bitwise-and (arithmetic-shift masked (- n 32))
+                   (- (arithmetic-shift 1 n) 1))))))
 
 ;; ── Message padding ─────────────────────────────────────────────────────
 
@@ -101,9 +78,11 @@
   (sha1/u32
    (bitwise-or
     (arithmetic-shift b0 24)
-    (arithmetic-shift b1 16)
-    (arithmetic-shift b2 8)
-    b3)))
+    (bitwise-or
+     (arithmetic-shift b1 16)
+     (bitwise-or
+      (arithmetic-shift b2 8)
+      b3)))))
 
 (define (sha1/fill-words! w block-vec start)
   "Fill the first 16 slots of the reusable 80-element schedule vector w
@@ -122,35 +101,41 @@
       (loop (+ i 1)))))
 
 (define (sha1/extend-words! w)
-  "Extend the initial 16 words to 80 via the SHA-1 message schedule."
+  "Extend the initial 16 words to 80 via the SHA-1 message schedule.
+   Uses nested binary bitwise-xor calls because the WASM primitive
+   dispatch only reads two arguments; the CL runtime would accept the
+   variadic form, but the binary shape is portable."
   (let loop ((t 16))
     (when (< t 80)
       (vector-set! w t
                    (sha1/rotl
                     (bitwise-xor
                      (vector-ref w (- t 3))
-                     (vector-ref w (- t 8))
-                     (vector-ref w (- t 14))
-                     (vector-ref w (- t 16)))
+                     (bitwise-xor
+                      (vector-ref w (- t 8))
+                      (bitwise-xor
+                       (vector-ref w (- t 14))
+                       (vector-ref w (- t 16)))))
                     1))
       (loop (+ t 1)))))
 
 (define (sha1/f t b c d)
-  "Round function per RFC 3174 §5."
+  "Round function per RFC 3174 §5. Uses nested binary bitwise calls
+   because the WASM primitive dispatch is binary only."
   (cond
    ((<= t 19)
     (bitwise-or
      (bitwise-and b c)
      (bitwise-and (sha1/u32 (bitwise-not b)) d)))
    ((<= t 39)
-    (bitwise-xor b c d))
+    (bitwise-xor b (bitwise-xor c d)))
    ((<= t 59)
     (bitwise-or
      (bitwise-and b c)
-     (bitwise-and b d)
-     (bitwise-and c d)))
+     (bitwise-or (bitwise-and b d)
+                 (bitwise-and c d))))
    (else
-    (bitwise-xor b c d))))
+    (bitwise-xor b (bitwise-xor c d)))))
 
 (define (sha1/k t)
   "Round constant per RFC 3174 §5."
