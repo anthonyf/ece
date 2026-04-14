@@ -1,23 +1,23 @@
 ## 1. Helper
 
-- [x] 1.1 Add `$make-fixnum-or-float` in `wasm/runtime.wat` near `$make-fixnum` (~line 248). Signature: `(param $n i32) (result (ref null eq))`. Behavior:
-  - If `$n` is in `[-1073741824, 1073741823]` (inclusive), return `$make-fixnum $n`.
+- [x] 1.1 Add `$make-fixnum-or-float` in `wasm/runtime.wat` near `$make-fixnum`. Signature: `(param $n i32) (result (ref null eq))`. Behaviour:
+  - If `$n` is in `[-536870912, 536870911]` = `[-2^29, 2^29-1]` (the actual i31-encoded fixnum range), return `$make-fixnum $n`.
   - Otherwise, return `(struct.new $float-box (f64.convert_i32_s $n))`.
-- [x] 1.2 Add a short comment above the helper explaining the 30-bit fixnum range, the purpose (overflow-safe boxing for bitwise-op outputs), and that it mirrors the logic in `$f64-to-ece-number` for the i32 input path.
+- [x] 1.2 Add a short comment above the helper explaining the fixnum range, the purpose (overflow-safe boxing for bitwise-op outputs), and that it mirrors the logic in `$f64-to-ece-number` for the i32 input path. Additionally introduce `$trunc-to-i32-wrap` (i64-backed f64→i32 preserving low 32 bits) and `$arith-shift-i32` (shift-count-clamped) as companion helpers.
 
 ## 2. Primitive dispatch updates
 
-- [x] 2.1 Rewrite the dispatch arm for primitive 77 (`bitwise-or`) in `wasm/runtime.wat` (~line 4207). Read both arguments via `$safe-trunc-i32 + $to-f64` (same as primitive 76), compute `i32.or`, return via `$make-fixnum-or-float`.
-- [x] 2.2 Same rewrite for primitive 78 (`bitwise-xor`, ~line 4213). `i32.xor` body.
-- [x] 2.3 Same rewrite for primitive 79 (`bitwise-not`, ~line 4217). Read single argument via `$safe-trunc-i32 + $to-f64`, compute `i32.xor $n (i32.const -1)`, return via `$make-fixnum-or-float`.
-- [x] 2.4 Rewrite the dispatch arm for primitive 80 (`arithmetic-shift`, ~line 4222). Read the value argument via `$safe-trunc-i32 + $to-f64`. Keep the shift-count read as-is (it's always small). Keep the signed vs unsigned shift logic (signed right shift for arithmetic shift semantics). Return via `$make-fixnum-or-float`.
-- [x] 2.5 Verify that `bitwise-and` (primitive 76) already uses the equivalent pattern (it does) and does not need changes. Note in a comment that the five bitwise primitives now share a consistent dispatch shape.
+- [x] 2.1 Rewrite the dispatch arm for primitive 77 (`bitwise-or`). Read both arguments via `$trunc-to-i32-wrap + $to-f64`, compute `i32.or`, return via `$make-fixnum-or-float`.
+- [x] 2.2 Same rewrite for primitive 78 (`bitwise-xor`). `i32.xor` body.
+- [x] 2.3 Same rewrite for primitive 79 (`bitwise-not`). Read single argument via `$trunc-to-i32-wrap + $to-f64`, compute `i32.xor $n (i32.const -1)`, return via `$make-fixnum-or-float`.
+- [x] 2.4 Rewrite the dispatch arm for primitive 80 (`arithmetic-shift`). Delegate to the new `$arith-shift-i32` helper so shift counts of 32+ clamp to a full-width result (WASM natively masks shift counts to the low 5 bits). Value argument read via `$trunc-to-i32-wrap + $to-f64`; shift-count read via `$fixnum-value`.
+- [x] 2.5 Also update primitive 76 (`bitwise-and`) to use `$trunc-to-i32-wrap` — its old `$safe-trunc-i32` path silently clamped inputs above 2^31-1, so it was wrong for SHA-1 round constants even though no existing test exercised that. The five bitwise primitives now share a consistent dispatch shape.
 
 ## 3. New regression tests
 
 - [x] 3.1 Create `tests/ece/common/test-bitwise-large.scm` with tests exercising each of the five bitwise primitives on inputs that:
-  - (a) Both fit in fixnum range.
-  - (b) One fits and one is a float-box (value above 2^30).
+  - (a) Both fit in fixnum range `[-2^29, 2^29-1]`.
+  - (b) One fits and one is a float-box (value above 2^29).
   - (c) Both are float-boxes.
   - (d) Result fits in fixnum range.
   - (e) Result overflows fixnum range.

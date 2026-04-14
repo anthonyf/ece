@@ -4,20 +4,26 @@ PR #149 (`sha1-base64-utilities`) added a pure-ECE SHA-1 implementation that wor
 
 Concretely:
 
-- ECE WASM fixnums are `i31ref`s encoded as `(n << 1)` via `$make-fixnum` (`wasm/runtime.wat:248`). Valid fixnum range is `[-2^30, 2^30-1]`. Anything outside that range is boxed as an f64 via `$f64-to-ece-number` (`wasm/runtime.wat:560`).
-- `bitwise-and` (primitive 76, `wasm/runtime.wat:4203-4206`) correctly uses `$safe-trunc-i32` + `$to-f64` on each argument, so it accepts both fixnums and float-boxes and returns a result of whichever type fits.
-- `bitwise-or` (77), `bitwise-xor` (78), `bitwise-not` (79), and `arithmetic-shift` (80) all do `(ref.cast (ref i31) arg)` + `$fixnum-value`. If the argument is an f64 float-box, the cast traps; if the argument happens to be a fixnum but the *result* overflows 30 bits, `$make-fixnum` silently truncates the top bits.
-- SHA-1 and any other algorithm that does 32-bit arithmetic hits both problems constantly: its round constants (e.g., `0x5A827999 = 1518500249`) are float-boxes, and its intermediate values (e.g., `byte << 24`) overflow 30 bits. The algorithm runs without crashing but produces wrong output.
+- ECE WASM fixnums are `i31ref`s encoded as `(n << 1)` via `$make-fixnum` (`wasm/runtime.wat:248`). The `<< 1` claims one bit of the i31 signed range, so the actual encodable range is `[-2^29, 2^29-1]`. Anything outside that range is boxed as an f64 via `$f64-to-ece-number` — though as implementation revealed, that helper used the too-wide `[-2^30, 2^30-1]` and silently corrupted literals in between, a latent bug fixed as part of this change.
+- `bitwise-and` (primitive 76) originally used `$safe-trunc-i32` + `$to-f64` — which accepts float-boxes but clamps values above `2^31-1`, so SHA-1's unsigned-valued round constants still come out wrong. The implementation here replaces the trunc helper with the new `$trunc-to-i32-wrap` (i64-backed) for the whole bitwise family.
+- `bitwise-or` (77), `bitwise-xor` (78), `bitwise-not` (79), and `arithmetic-shift` (80) all did `(ref.cast (ref i31) arg)` + `$fixnum-value`. If the argument is an f64 float-box, the cast traps; if the argument happens to be a fixnum but the *result* overflows the fixnum range, `$make-fixnum` silently truncates the top bits.
+- SHA-1 and any other algorithm that does 32-bit arithmetic hits all of these problems constantly: its round constants (e.g., `0x5A827999 = 1518500249`) are float-boxes, `0xEFCDAB89` is above `2^31-1`, and intermediate values (e.g., `byte << 24`) overflow the fixnum range. The algorithm runs without crashing but produces wrong output.
 
 PR #149's short-term fix was to gate SHA-1 tests to `tests/ece/cl-only/` and document the WASM limitation in `src/sha1.scm`'s header. That unblocks the CL-hosted ece-serve use case where SHA-1 runs on the host, but it leaves a real correctness gap: any ECE code running on WASM (sandbox, browser tests) that wants 32-bit arithmetic is broken. This change is the structural fix.
 
 ## What Changes
 
-- **MODIFIED** `wasm/runtime.wat` — rewrite the dispatch arms for primitives 77 (`bitwise-or`), 78 (`bitwise-xor`), 79 (`bitwise-not`), and 80 (`arithmetic-shift`) so they:
-  1. Read their integer arguments via `$safe-trunc-i32 + $to-f64` (the same pattern `bitwise-and` already uses), accepting both fixnum and float-box inputs.
+- **MODIFIED** `wasm/runtime.wat` — rewrite the dispatch arms for primitives 76-80 (all five bitwise primitives, including `bitwise-and` whose old pattern was also broken for unsigned-valued inputs) so they:
+  1. Read their integer arguments via `$trunc-to-i32-wrap + $to-f64`, accepting both fixnum and float-box inputs across the full `[-2^31, 2^32-1]` bit-pattern range.
   2. Compute the result in `i32` space as today.
-  3. Box the result via a new helper `$make-fixnum-or-float` (see below) that promotes to a float-box when the result exceeds the 30-bit signed range.
-- **ADDED** a new helper `$make-fixnum-or-float` in `wasm/runtime.wat` near `$make-fixnum`. Signature: `(param $n i32) (result (ref null eq))`. Behavior: if `$n` fits in `[-2^30, 2^30-1]`, call `$make-fixnum`; otherwise, convert to `f64` via `f64.convert_i32_s` and return a `$float-box`. This mirrors `$f64-to-ece-number` for the i32 input path and keeps the dispatch uniform across the bitwise primitives.
+  3. Box the result via a new helper `$make-fixnum-or-float` that promotes to a float-box when the result exceeds the fixnum range.
+- **ADDED** a new helper `$make-fixnum-or-float` near `$make-fixnum`. Signature: `(param $n i32) (result (ref null eq))`. Behaviour: if `$n` fits in `[-2^29, 2^29-1]` (the actual i31-encoded fixnum range), call `$make-fixnum`; otherwise, convert to `f64` via `f64.convert_i32_s` and return a `$float-box`. Mirrors `$f64-to-ece-number` for the i32 input path.
+- **ADDED** `$trunc-to-i32-wrap` — i64-backed f64→i32 converter that preserves the low 32 bits (vs `$safe-trunc-i32`'s clamping). Guards against traps on NaN/infinite/out-of-range f64 by returning 0.
+- **ADDED** `$arith-shift-i32` — portable shift helper that clamps shifts of `>= 32` to a full-width result (WASM natively masks shift counts to 5 bits, so `(arithmetic-shift x -32)` would otherwise be a no-op).
+- **FIXED** `$f64-to-ece-number` — use the correct fixnum range `[-2^29, 2^29-1]` (matching `$wrap-i32`) instead of the too-wide `[-2^30, 2^30-1]` that silently corrupted literals in between.
+- **FIXED** `$ecec-read-number` — parse integer literals via an i64 accumulator (so literals > 2^31 don't overflow) and route through `$f64-to-ece-number` rather than `$make-fixnum`.
+- **FIXED** `$prim-number-to-string` — use an i64 digit-loop accumulator so integer-valued float-boxes print exactly. Guard against non-integer and NaN/infinite float-boxes to avoid trapping.
+- **FIXED** `$write-to-string-impl` — handle integer-valued float-boxes directly; non-integer floats still fall through to `"#?"`.
 - **ADDED** targeted regression tests under `tests/ece/common/test-bitwise-large.scm` that exercise each of the four primitives with:
   1. Both inputs small (fixnum × fixnum).
   2. One input large (fixnum × float-box).

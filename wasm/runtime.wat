@@ -2805,8 +2805,20 @@
   ;; words, so the conversion goes via i64 to avoid an i32.trunc_f64_s
   ;; trap. f64 exactly represents integers up to 2^53, comfortably above
   ;; the range we care about for 32-bit bitwise operations.
+  ;;
+  ;; Values outside the f64-exact integer range (e.g. 1e30, NaN, infinity)
+  ;; would trap `i64.trunc_f64_s` directly. Guard with a finite/range check
+  ;; that returns 0 for unrepresentable inputs — bitwise semantics on such
+  ;; values are implementation-defined and a trap would be surprising.
   (func $trunc-to-i32-wrap (param $n f64) (result i32)
-    (i32.wrap_i64 (i64.trunc_f64_s (local.get $n)))
+    (if (result i32)
+      (i32.and
+        (f64.eq (local.get $n) (local.get $n))                       ;; not NaN
+        (i32.and
+          (f64.ge (local.get $n) (f64.const -9007199254740992))      ;; >= -2^53
+          (f64.le (local.get $n) (f64.const 9007199254740992))))     ;; <= 2^53
+      (then (i32.wrap_i64 (i64.trunc_f64_s (local.get $n))))
+      (else (i32.const 0)))
   )
 
   ;; Portable arithmetic shift helper. WASM's i32.shl / i32.shr_s mask the
@@ -3184,9 +3196,14 @@
   ;; Integer-valued numbers (fixnum or float-box) are converted digit by
   ;; digit using an i64 accumulator so large float-boxes (values outside
   ;; fixnum range) are printed without going through $make-fixnum, which
-  ;; would corrupt them via the 29-bit fixnum squeeze.
+  ;; would corrupt them via the 29-bit fixnum squeeze. Non-integer, NaN,
+  ;; and infinite float-boxes are not formatted here — they return `#?`
+  ;; as a non-trapping fallback. Full f64 decimal formatting is out of
+  ;; scope for this change; callers that need it should print floats
+  ;; via a future helper.
   (func $prim-number-to-string (param $v (ref null eq)) (result (ref null eq))
     (local $n i64)
+    (local $fv f64)
     (local $neg i32)
     (local $buf (ref $string))
     (local $i i32)
@@ -3200,9 +3217,19 @@
       (else
         (if (ref.test (ref $float-box) (local.get $v))
           (then
-            (local.set $n (i64.trunc_f64_s
-              (struct.get $float-box $val
-                (ref.cast (ref $float-box) (local.get $v))))))
+            (local.set $fv (struct.get $float-box $val
+              (ref.cast (ref $float-box) (local.get $v))))
+            ;; Guard: integer-valued AND finite (NaN fails trunc == self,
+            ;; infinity fails the in-range check below). i64 safely covers
+            ;; any f64-exact integer up to 2^53.
+            (if (i32.eqz (i32.and
+                  (f64.eq (local.get $fv) (f64.trunc (local.get $fv)))
+                  (i32.and
+                    (f64.ge (local.get $fv) (f64.const -9007199254740992))
+                    (f64.le (local.get $fv) (f64.const 9007199254740992)))))
+              (then (return (call $make-static-string
+                (i32.const 35) (i32.const 63)))))  ;; "#?"
+            (local.set $n (i64.trunc_f64_s (local.get $fv))))
           (else (return (global.get $void))))))
     (if (i64.eqz (local.get $n))
       (then
