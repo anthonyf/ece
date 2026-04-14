@@ -101,41 +101,35 @@
       (loop (+ i 1)))))
 
 (define (sha1/extend-words! w)
-  "Extend the initial 16 words to 80 via the SHA-1 message schedule.
-   Uses nested binary bitwise-xor calls because the WASM primitive
-   dispatch only reads two arguments; the CL runtime would accept the
-   variadic form, but the binary shape is portable."
+  "Extend the initial 16 words to 80 via the SHA-1 message schedule."
   (let loop ((t 16))
     (when (< t 80)
       (vector-set! w t
                    (sha1/rotl
                     (bitwise-xor
                      (vector-ref w (- t 3))
-                     (bitwise-xor
-                      (vector-ref w (- t 8))
-                      (bitwise-xor
-                       (vector-ref w (- t 14))
-                       (vector-ref w (- t 16)))))
+                     (vector-ref w (- t 8))
+                     (vector-ref w (- t 14))
+                     (vector-ref w (- t 16)))
                     1))
       (loop (+ t 1)))))
 
 (define (sha1/f t b c d)
-  "Round function per RFC 3174 §5. Uses nested binary bitwise calls
-   because the WASM primitive dispatch is binary only."
+  "Round function per RFC 3174 §5."
   (cond
    ((<= t 19)
     (bitwise-or
      (bitwise-and b c)
      (bitwise-and (sha1/u32 (bitwise-not b)) d)))
    ((<= t 39)
-    (bitwise-xor b (bitwise-xor c d)))
+    (bitwise-xor b c d))
    ((<= t 59)
     (bitwise-or
      (bitwise-and b c)
-     (bitwise-or (bitwise-and b d)
-                 (bitwise-and c d))))
+     (bitwise-and b d)
+     (bitwise-and c d)))
    (else
-    (bitwise-xor b (bitwise-xor c d)))))
+    (bitwise-xor b c d))))
 
 (define (sha1/k t)
   "Round constant per RFC 3174 §5."
