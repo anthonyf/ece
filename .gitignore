@@ -16,3 +16,9 @@ _site/
 /bin/ece-build
 /bin/ece-test
 /share/
+
+# Editor / tooling artefacts
+# (leading \# is escaped per .gitignore rules — a bare # starts a comment)
+\#*\#
+.\#*
+.claude/scheduled_tasks.lock
