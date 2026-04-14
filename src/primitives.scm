@@ -83,7 +83,12 @@
   :cl `(scheme-bool (cl:and (cl:symbolp ,x) ,x)))
 
 (define-host-primitive (integer? x)
-  :cl `(scheme-bool (cl:integerp ,x)))
+  :cl `(scheme-bool
+        (cl:or (cl:integerp ,x)
+               (cl:and (cl:floatp ,x)
+                       ;; ignore-errors handles NaN/infinity: (truncate inf)
+                       ;; signals arithmetic-error, truncate of NaN too.
+                       (cl:ignore-errors (cl:= ,x (cl:truncate ,x)))))))
 
 (define-host-primitive (char? x)
   :cl `(scheme-bool (cl:characterp ,x)))

@@ -107,6 +107,29 @@
   ;; Just a numeric ID into the dispatch table (from primitives.def).
   (type $primitive (struct (field $id i32)))
 
+  ;; --- Character ---
+  ;; i32 codepoint + discriminator $tag field. The $tag field
+  ;; distinguishes $char from $primitive (which is also a single-i32 struct),
+  ;; preventing binaryen struct type deduplication. Only $codepoint is read;
+  ;; $tag is always 0 and exists purely for type identity.
+  ;; ASCII chars (0-127) are pre-interned in $ascii-chars, so hot-path char
+  ;; creation is a single array load.
+  (type $char (struct (field $codepoint i32) (field $tag i32)))
+
+  ;; --- ASCII intern table ---
+  ;; 128-element array of $char structs, populated at module init.
+  (type $char-array (array (mut (ref $char))))
+
+  ;; --- Special singletons ---
+  ;; Each has its own empty struct type so $false, $true, $nil, $eof,
+  ;; $void each have a unique type identity distinct from each other
+  ;; and from every other heap value.
+  (type $false-type (struct))
+  (type $true-type  (struct))
+  (type $nil-type   (struct))
+  (type $eof-type   (struct))
+  (type $void-type  (struct))
+
   ;; --- Parameter (R7RS) ---
   ;; A mutable value cell. make-parameter creates one.
   (type $parameter (struct
@@ -167,28 +190,30 @@
   ;; Section 2: Singleton Constants
   ;; ═══════════════════════════════════════════════════════════════════
   ;; #t, #f, '(), eof, void — distinguished by identity (ref.eq).
-  ;; Encoded as i31ref with specific tag values.
+  ;; Each is a heap-allocated singleton struct of its own type.
   ;;
-  ;; Tag scheme for i31ref:
-  ;;   bit 0 = 0  →  fixnum (value in bits 1-30, signed)
-  ;;   bit 0 = 1  →  special immediate:
-  ;;     0x01 = #f
-  ;;     0x03 = #t
-  ;;     0x05 = '() (nil)
-  ;;     0x07 = eof
-  ;;     0x09 = void
-  ;;     0x0B+ = character (codepoint << 4 | 0x0B)
-  ;;     0x0D+ = primitive ID (id << 4 | 0x0D)
+  ;; Value representation scheme:
+  ;;   i31ref                         →  fixnum (identity-encoded, full [-2^30, 2^30-1] range)
+  ;;   (ref $char)                    →  character ($codepoint + $tag discriminator fields)
+  ;;   (ref $false-type) $false       →  #f
+  ;;   (ref $true-type)  $true        →  #t
+  ;;   (ref $nil-type)   $nil         →  '()
+  ;;   (ref $eof-type)   $eof         →  eof-object
+  ;;   (ref $void-type)  $void        →  void
+  ;;   (ref $primitive)               →  primitive procedure (numeric id field)
+  ;;   (ref $pair) / $string / etc.   →  other heap values
+  ;;
+  ;; Chars in the ASCII range [0, 127] are pre-interned in $ascii-chars at
+  ;; module init, so `(make-char 97)` twice returns the same heap reference.
 
-  ;; --- Tag constants ---
-  ;; Fixnums: value << 1 (bit 0 = 0)
-  ;; Specials: specific odd values
+  (global $false (ref eq) (struct.new $false-type))
+  (global $true  (ref eq) (struct.new $true-type))
+  (global $nil   (ref eq) (struct.new $nil-type))
+  (global $eof   (ref eq) (struct.new $eof-type))
+  (global $void  (ref eq) (struct.new $void-type))
 
-  (global $false (ref eq) (ref.i31 (i32.const 1)))   ;; 0x01
-  (global $true  (ref eq) (ref.i31 (i32.const 3)))   ;; 0x03
-  (global $nil   (ref eq) (ref.i31 (i32.const 5)))   ;; 0x05
-  (global $eof   (ref eq) (ref.i31 (i32.const 7)))   ;; 0x07
-  (global $void  (ref eq) (ref.i31 (i32.const 9)))   ;; 0x09
+  ;; ASCII intern table: populated at module init by $init-ascii-chars.
+  (global $ascii-chars (mut (ref null $char-array)) (ref.null $char-array))
 
   ;; Error message strings (UTF-16 arrays)
   ;; "Unbound variable: " (18 chars)
@@ -243,56 +268,66 @@
   ;; Section 3: Value Constructors and Accessors
   ;; ═══════════════════════════════════════════════════════════════════
 
-  ;; --- Fixnum (i31ref, tagged with bit 0 = 0) ---
+  ;; --- Fixnum (i31ref, identity-encoded, full signed 31-bit range) ---
 
   (func $make-fixnum (param $n i32) (result (ref eq))
-    ;; Encode: shift left 1 (bit 0 = 0 means fixnum)
-    (ref.i31 (i32.shl (local.get $n) (i32.const 1)))
+    (ref.i31 (local.get $n))
   )
 
   ;; Overflow-safe boxing for i32 outputs of bitwise primitives.
-  ;; Fixnum range is [-2^29, 2^29-1] (see $f64-to-ece-number for why).
+  ;; Fixnum range is the full signed i31: [-2^30, 2^30-1].
   ;; Values outside that range are boxed as an f64 float-box.
   (func $make-fixnum-or-float (param $n i32) (result (ref null eq))
-    (if (i32.and (i32.ge_s (local.get $n) (i32.const -536870912))
-                 (i32.le_s (local.get $n) (i32.const 536870911)))
+    (if (i32.and (i32.ge_s (local.get $n) (i32.const -1073741824))
+                 (i32.le_s (local.get $n) (i32.const 1073741823)))
       (then (return (call $make-fixnum (local.get $n)))))
     (struct.new $float-box (f64.convert_i32_s (local.get $n)))
   )
 
   (func $fixnum-value (param $v (ref i31)) (result i32)
-    ;; Decode: arithmetic shift right 1 (preserves sign)
-    (i32.shr_s (i31.get_s (local.get $v)) (i32.const 1))
+    (i31.get_s (local.get $v))
   )
 
   (func $is-fixnum (param $v (ref null eq)) (result i32)
-    ;; A value is a fixnum if it's an i31ref AND bit 0 is 0
-    (if (result i32) (ref.test (ref i31) (local.get $v))
-      (then
-        (i32.eqz (i32.and
-          (i31.get_s (ref.cast (ref i31) (local.get $v)))
-          (i32.const 1))))
-      (else (i32.const 0)))
+    (ref.test (ref i31) (local.get $v))
   )
 
-  ;; --- Character (i31ref, tagged: codepoint << 4 | 0x0B) ---
+  ;; --- Character ($char struct, ASCII-interned) ---
 
   (func $make-char (param $cp i32) (result (ref eq))
-    (ref.i31 (i32.or (i32.shl (local.get $cp) (i32.const 4)) (i32.const 11)))
+    (if (i32.lt_s (local.get $cp) (i32.const 128))
+      (then
+        (if (i32.ge_s (local.get $cp) (i32.const 0))
+          (then (return (array.get $char-array
+                          (ref.as_non_null (global.get $ascii-chars))
+                          (local.get $cp)))))))
+    (struct.new $char (local.get $cp) (i32.const 0))
   )
 
-  (func $char-codepoint (param $v (ref i31)) (result i32)
-    (i32.shr_u (i31.get_s (local.get $v)) (i32.const 4))
+  (func $char-codepoint (param $v (ref $char)) (result i32)
+    (struct.get $char $codepoint (local.get $v))
   )
 
   (func $is-char (param $v (ref null eq)) (result i32)
-    ;; i31ref with low 4 bits = 0x0B
-    (if (result i32) (ref.test (ref i31) (local.get $v))
-      (then
-        (i32.eq
-          (i32.and (i31.get_s (ref.cast (ref i31) (local.get $v))) (i32.const 15))
-          (i32.const 11)))
-      (else (i32.const 0)))
+    (ref.test (ref $char) (local.get $v))
+  )
+
+  ;; Populate the 128-element ASCII intern table. Called from the $start function.
+  (func $init-ascii-chars
+    (local $arr (ref $char-array))
+    (local $i i32)
+    (local.set $arr (array.new $char-array
+                      (struct.new $char (i32.const 0) (i32.const 0))
+                      (i32.const 128)))
+    (local.set $i (i32.const 0))
+    (block $done
+      (loop $loop
+        (br_if $done (i32.ge_s (local.get $i) (i32.const 128)))
+        (array.set $char-array (local.get $arr) (local.get $i)
+                   (struct.new $char (local.get $i) (i32.const 0)))
+        (local.set $i (i32.add (local.get $i) (i32.const 1)))
+        (br $loop)))
+    (global.set $ascii-chars (local.get $arr))
   )
 
   ;; --- Pair ---
@@ -412,7 +447,20 @@
   )
 
   (func $is-integer (param $v (ref null eq)) (result i32)
-    (call $is-fixnum (local.get $v))
+    (local $f f64)
+    (if (call $is-fixnum (local.get $v))
+      (then (return (i32.const 1))))
+    (if (ref.test (ref $float-box) (local.get $v))
+      (then
+        (local.set $f (call $float-value
+          (ref.cast (ref $float-box) (local.get $v))))
+        ;; Finite AND equal to its own trunc — rejects NaN (NaN != anything)
+        ;; and ±infinity (trunc(inf) == inf but inf is not finite).
+        (return
+          (i32.and
+            (f64.lt (f64.abs (local.get $f)) (f64.const inf))
+            (f64.eq (f64.trunc (local.get $f)) (local.get $f))))))
+    (i32.const 0)
   )
 
   (func $is-compiled-proc (param $v (ref null eq)) (result i32)
@@ -568,18 +616,15 @@
   )
 
   ;; Convert f64 to ECE number: fixnum if integer in range, float-box otherwise.
-  ;; The fixnum range is [-2^29, 2^29-1]: $make-fixnum encodes an i32 as
-  ;; `n << 1` into an i31, and the shift claims one bit of headroom for
-  ;; the tag, leaving 30 bits total (29 value bits plus sign). Values at
-  ;; or above 2^29 overflow bit 30 (the i31 sign bit) and round-trip back
-  ;; as the wrong sign — `$wrap-i32` already uses this stricter range; this
-  ;; check is updated to match. The f64 range check precedes the i32 trunc
-  ;; so SHA-1-style unsigned-valued literals like 4023233417 don't trap.
+  ;; The fixnum range is the full signed i31 range [-2^30, 2^30-1].
+  ;; Values outside that range (or non-integers) are boxed as f64. The
+  ;; f64 range check precedes the i32 trunc so SHA-1-style unsigned-valued
+  ;; literals like 4023233417 don't trap.
   (func $f64-to-ece-number (param $v f64) (result (ref null eq))
     (if (f64.eq (f64.trunc (local.get $v)) (local.get $v))
       (then
-        (if (i32.and (f64.ge (local.get $v) (f64.const -536870912))
-                     (f64.le (local.get $v) (f64.const 536870911)))
+        (if (i32.and (f64.ge (local.get $v) (f64.const -1073741824))
+                     (f64.le (local.get $v) (f64.const 1073741823)))
           (then (return (call $make-fixnum (i32.trunc_f64_s (local.get $v))))))))
     (struct.new $float-box (local.get $v))
   )
@@ -1997,12 +2042,11 @@
                       (result (ref null eq))
     (local $p (ref $pair))
     (local $type i32)
-    (local $raw-type i32)
     (local $reg-id i32)
     (local $pc i32)
     (local.set $p (ref.cast (ref $pair) (local.get $operand)))
-    (local.set $raw-type (i31.get_s (ref.cast (ref i31) (call $car (local.get $p)))))
-    (local.set $type (i32.shr_s (local.get $raw-type) (i32.const 1)))
+    (local.set $type
+      (call $fixnum-value (ref.cast (ref i31) (call $car (local.get $p)))))
     ;; const
     (if (i32.eqz (local.get $type))
       (then (return (call $cdr (local.get $p)))))
@@ -2010,17 +2054,13 @@
     (if (i32.eq (local.get $type) (i32.const 1))
       (then
         (local.set $reg-id
-          (i32.shr_s
-            (i31.get_s (ref.cast (ref i31) (call $cdr (local.get $p))))
-            (i32.const 1)))
+          (call $fixnum-value (ref.cast (ref i31) (call $cdr (local.get $p)))))
         (return (call $get-reg (local.get $reg-id)
           (local.get $val) (local.get $env) (local.get $proc)
           (local.get $argl) (local.get $cont) (local.get $stack)))))
     ;; label — return as space-qualified address pair
     (local.set $pc
-      (i32.shr_s
-        (i31.get_s (ref.cast (ref i31) (call $cdr (local.get $p))))
-        (i32.const 1)))
+      (call $fixnum-value (ref.cast (ref i31) (call $cdr (local.get $p)))))
     (call $cons
       (call $make-fixnum (local.get $space-id))
       (call $make-fixnum (local.get $pc)))
@@ -2780,11 +2820,11 @@
 
   ;; Wrap an i32 result, promoting to float if it overflows i31 fixnum range
   (func $wrap-i32 (param $n i32) (result (ref null eq))
-    ;; i31ref fixnum range after our tagging: -(2^29) to (2^29 - 1)
+    ;; i31ref fixnum range is the full signed i31: [-2^30, 2^30-1]
     (if (result (ref null eq))
       (i32.and
-        (i32.ge_s (local.get $n) (i32.const -536870912))
-        (i32.le_s (local.get $n) (i32.const 536870911)))
+        (i32.ge_s (local.get $n) (i32.const -1073741824))
+        (i32.le_s (local.get $n) (i32.const 1073741823)))
       (then (call $make-fixnum (local.get $n)))
       (else (call $make-float (f64.convert_i32_s (local.get $n)))))
   )
@@ -2843,13 +2883,13 @@
   ;; Range check BEFORE i32.trunc_f64_s to avoid WASM trap on large floats.
   (func $wrap-f64 (param $n f64) (result (ref null eq))
     (local $i i32)
-    ;; Check if it's an integer value AND in fixnum range
+    ;; Check if it's an integer value AND in fixnum range (full i31 signed)
     (if (result (ref null eq))
       (i32.and
         (f64.eq (local.get $n) (f64.trunc (local.get $n)))
         (i32.and
-          (f64.ge (local.get $n) (f64.const -536870912))
-          (f64.le (local.get $n) (f64.const 536870911))))
+          (f64.ge (local.get $n) (f64.const -1073741824))
+          (f64.le (local.get $n) (f64.const 1073741823))))
       (then
         (local.set $i (i32.trunc_f64_s (local.get $n)))
         (call $make-fixnum (local.get $i)))
@@ -3201,8 +3241,8 @@
     (if (i32.and (call $is-fixnum (local.get $a)) (call $is-fixnum (local.get $b)))
       (then (return (if (result (ref null eq))
         (i32.eq
-          (i31.get_s (ref.cast (ref i31) (local.get $a)))
-          (i31.get_s (ref.cast (ref i31) (local.get $b))))
+          (call $fixnum-value (ref.cast (ref i31) (local.get $a)))
+          (call $fixnum-value (ref.cast (ref i31) (local.get $b))))
         (then (global.get $true))
         (else (global.get $false))))))
     ;; Both strings
@@ -3406,7 +3446,7 @@
       (then (return (call $make-static-string (i32.const 40) (i32.const 41)))))  ;; "()"
     (if (call $is-char (local.get $v))
       (then (return (call $prim-char-to-string
-        (call $char-codepoint (ref.cast (ref i31) (local.get $v)))))))
+        (call $char-codepoint (ref.cast (ref $char) (local.get $v)))))))
     ;; Pairs/lists: build string by concatenating parts
     (if (call $is-pair (local.get $v))
       (then (return (call $wts-list (local.get $v)))))
@@ -3785,7 +3825,7 @@
     (if (call $is-char (local.get $v))
       (then
         (call $port-write-char (local.get $p)
-          (call $char-codepoint (ref.cast (ref i31) (local.get $v))))
+          (call $char-codepoint (ref.cast (ref $char) (local.get $v))))
         (return)))
     ;; For other types, convert to string via write-to-string, then write
     (local.set $str (ref.cast (ref $string) (call $write-to-string-impl (local.get $v))))
@@ -3896,7 +3936,7 @@
     (if (call $is-char (local.get $v))
       (then
         (i32.store16 (i32.const 0)
-          (call $char-codepoint (ref.cast (ref i31) (local.get $v))))
+          (call $char-codepoint (ref.cast (ref $char) (local.get $v))))
         (call $js-display-string (i32.const 1))
         (return)))
     ;; Pairs: (display (a . b))
@@ -4152,7 +4192,7 @@
     ;; 42 = string (char->string)
     (if (i32.eq (local.get $id) (i32.const 42))
       (then
-        (local.set $id (call $char-codepoint (ref.cast (ref i31) (call $arg1 (local.get $args)))))
+        (local.set $id (call $char-codepoint (ref.cast (ref $char) (call $arg1 (local.get $args)))))
         (return (call $prim-char-to-string (local.get $id)))))
     ;; 57 = display (value [port])
     ;; IDs 57 (display), 58 (write), 59 (newline) retired —
@@ -4319,11 +4359,23 @@
             (call $prim-name-str (local.get $id)) (global.get $err-not-char)
             (call $arg1 (local.get $args))))))
         (return (call $make-fixnum
-          (call $char-codepoint (ref.cast (ref i31) (call $arg1 (local.get $args))))))))
-    ;; 44 = integer->char
+          (call $char-codepoint (ref.cast (ref $char) (call $arg1 (local.get $args))))))))
+    ;; 44 = integer->char (type-guarded: integer in [0, 0x10FFFF])
     (if (i32.eq (local.get $id) (i32.const 44))
-      (then (return (call $make-char
-        (call $fixnum-value (ref.cast (ref i31) (call $arg1 (local.get $args))))))))
+      (then
+        (if (i32.eqz (call $is-integer (call $arg1 (local.get $args))))
+          (then (return (call $make-type-error
+            (call $prim-name-str (local.get $id)) (global.get $err-not-number)
+            (call $arg1 (local.get $args))))))
+        (local.set $id (i32.trunc_f64_s
+          (call $to-f64 (call $arg1 (local.get $args)))))
+        (if (i32.or
+              (i32.lt_s (local.get $id) (i32.const 0))
+              (i32.gt_s (local.get $id) (i32.const 0x10FFFF)))
+          (then (return (call $make-type-error
+            (call $prim-name-str (i32.const 44)) (global.get $err-not-number)
+            (call $arg1 (local.get $args))))))
+        (return (call $make-char (local.get $id)))))
     ;; 45-49: char=?, char<?, char-whitespace?, char-alphabetic?, char-numeric? — now in prelude.scm
     ;; Bitwise primitives 76-80: the three variadic ones (76/77/78)
     ;; delegate to $fold-bitwise-and/or/xor which walk the args list,
@@ -4475,20 +4527,18 @@
         (local.set $result (call $arg1 (local.get $args)))
         (if (result (ref null eq)) (call $is-fixnum (local.get $result))
           (then (return (local.get $result)))
-          (else (return (call $make-fixnum
-            (call $safe-trunc-i32
-              (f64.trunc (call $float-value
-                (ref.cast (ref $float-box) (local.get $result)))))))))))
+          (else (return (call $f64-to-ece-number
+            (f64.trunc (call $float-value
+              (ref.cast (ref $float-box) (local.get $result))))))))))
     ;; 109 = floor (toward -infinity)
     (if (i32.eq (local.get $id) (i32.const 109))
       (then
         (local.set $result (call $arg1 (local.get $args)))
         (if (result (ref null eq)) (call $is-fixnum (local.get $result))
           (then (return (local.get $result)))
-          (else (return (call $make-fixnum
-            (call $safe-trunc-i32
-              (f64.floor (call $float-value
-                (ref.cast (ref $float-box) (local.get $result)))))))))))
+          (else (return (call $f64-to-ece-number
+            (f64.floor (call $float-value
+              (ref.cast (ref $float-box) (local.get $result))))))))))
 
     ;; 110 = exact->inexact (convert to float)
     (if (i32.eq (local.get $id) (i32.const 110))
@@ -5201,12 +5251,12 @@
               (ref.cast (ref $port) (call $arg2 (local.get $args))))
           (then
             (i32.store16 (i32.const 0)
-              (call $char-codepoint (ref.cast (ref i31) (call $arg1 (local.get $args)))))
+              (call $char-codepoint (ref.cast (ref $char) (call $arg1 (local.get $args)))))
             (call $js-display-string (i32.const 1)))
           (else
             (call $port-write-char
               (ref.cast (ref $port) (call $arg2 (local.get $args)))
-              (call $char-codepoint (ref.cast (ref i31) (call $arg1 (local.get $args)))))))
+              (call $char-codepoint (ref.cast (ref $char) (call $arg1 (local.get $args)))))))
         (return (global.get $void))))
 
     ;; 183 = %write-string-to-port(string port) — write string to explicit port
@@ -6920,4 +6970,6 @@
         (call $deref-handle (local.get $env-handle))))
   )
 
+  ;; Module-init hook: populate the ASCII intern table before any code runs.
+  (start $init-ascii-chars)
 )
