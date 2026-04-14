@@ -250,6 +250,16 @@
     (ref.i31 (i32.shl (local.get $n) (i32.const 1)))
   )
 
+  ;; Overflow-safe boxing for i32 outputs of bitwise primitives.
+  ;; Fixnum range is [-2^29, 2^29-1] (see $f64-to-ece-number for why).
+  ;; Values outside that range are boxed as an f64 float-box.
+  (func $make-fixnum-or-float (param $n i32) (result (ref null eq))
+    (if (i32.and (i32.ge_s (local.get $n) (i32.const -536870912))
+                 (i32.le_s (local.get $n) (i32.const 536870911)))
+      (then (return (call $make-fixnum (local.get $n)))))
+    (struct.new $float-box (f64.convert_i32_s (local.get $n)))
+  )
+
   (func $fixnum-value (param $v (ref i31)) (result i32)
     ;; Decode: arithmetic shift right 1 (preserves sign)
     (i32.shr_s (i31.get_s (local.get $v)) (i32.const 1))
@@ -557,17 +567,20 @@
       (i32.const 116)(i32.const 105)(i32.const 118)(i32.const 101))  ;; "primitive"
   )
 
-  ;; Convert f64 to ECE number: fixnum if integer in range, float-box otherwise
+  ;; Convert f64 to ECE number: fixnum if integer in range, float-box otherwise.
+  ;; The fixnum range is [-2^29, 2^29-1]: $make-fixnum encodes an i32 as
+  ;; `n << 1` into an i31, and the shift claims one bit of headroom for
+  ;; the tag, leaving 30 bits total (29 value bits plus sign). Values at
+  ;; or above 2^29 overflow bit 30 (the i31 sign bit) and round-trip back
+  ;; as the wrong sign — `$wrap-i32` already uses this stricter range; this
+  ;; check is updated to match. The f64 range check precedes the i32 trunc
+  ;; so SHA-1-style unsigned-valued literals like 4023233417 don't trap.
   (func $f64-to-ece-number (param $v f64) (result (ref null eq))
-    (local $i i32)
-    ;; Check if f64 is an integer: trunc(v) == v and not NaN/Inf
     (if (f64.eq (f64.trunc (local.get $v)) (local.get $v))
       (then
-        (local.set $i (i32.trunc_f64_s (local.get $v)))
-        ;; Check fixnum range: -2^30 to 2^30-1
-        (if (i32.and (i32.ge_s (local.get $i) (i32.const -1073741824))
-                     (i32.le_s (local.get $i) (i32.const 1073741823)))
-          (then (return (call $make-fixnum (local.get $i)))))))
+        (if (i32.and (f64.ge (local.get $v) (f64.const -536870912))
+                     (f64.le (local.get $v) (f64.const 536870911)))
+          (then (return (call $make-fixnum (i32.trunc_f64_s (local.get $v))))))))
     (struct.new $float-box (local.get $v))
   )
 
@@ -2785,6 +2798,47 @@
         (else (i32.trunc_f64_s (local.get $n))))))
   )
 
+  ;; Wrap-around f64 to i32 truncation for bitwise semantics.
+  ;; Unlike $safe-trunc-i32 (which clamps), this takes the low 32 bits of
+  ;; the integer part of $n. SHA-1 and friends can produce intermediate
+  ;; values outside [-2^31, 2^32-1] while summing large unsigned 32-bit
+  ;; words, so the conversion goes via i64 to avoid an i32.trunc_f64_s
+  ;; trap. f64 exactly represents integers up to 2^53, comfortably above
+  ;; the range we care about for 32-bit bitwise operations.
+  ;;
+  ;; Values outside the f64-exact integer range (e.g. 1e30, NaN, infinity)
+  ;; would trap `i64.trunc_f64_s` directly. Guard with a finite/range check
+  ;; that returns 0 for unrepresentable inputs — bitwise semantics on such
+  ;; values are implementation-defined and a trap would be surprising.
+  (func $trunc-to-i32-wrap (param $n f64) (result i32)
+    (if (result i32)
+      (i32.and
+        (f64.eq (local.get $n) (local.get $n))                       ;; not NaN
+        (i32.and
+          (f64.ge (local.get $n) (f64.const -9007199254740992))      ;; >= -2^53
+          (f64.le (local.get $n) (f64.const 9007199254740992))))     ;; <= 2^53
+      (then (i32.wrap_i64 (i64.trunc_f64_s (local.get $n))))
+      (else (i32.const 0)))
+  )
+
+  ;; Portable arithmetic shift helper. WASM's i32.shl / i32.shr_s mask the
+  ;; shift count to the low 5 bits, so shifting by >= 32 wraps around and
+  ;; leaves the value unchanged. For parity with CL's unbounded bignum
+  ;; shifting, we clamp shifts of 32+ to a full-width result:
+  ;;   - left shift of 32+ bits  → 0 (all bits shifted out)
+  ;;   - right shift of 32+ bits → signed extension: 0 or -1
+  (func $arith-shift-i32 (param $val i32) (param $count i32) (result i32)
+    (if (result i32) (i32.ge_s (local.get $count) (i32.const 0))
+      (then
+        (if (result i32) (i32.ge_s (local.get $count) (i32.const 32))
+          (then (i32.const 0))
+          (else (i32.shl (local.get $val) (local.get $count)))))
+      (else
+        (if (result i32) (i32.le_s (local.get $count) (i32.const -32))
+          (then (i32.shr_s (local.get $val) (i32.const 31)))
+          (else (i32.shr_s (local.get $val)
+                  (i32.sub (i32.const 0) (local.get $count))))))))
+
   ;; Wrap an f64 result, demoting to fixnum if it's an integer in fixnum range.
   ;; Range check BEFORE i32.trunc_f64_s to avoid WASM trap on large floats.
   (func $wrap-f64 (param $n f64) (result (ref null eq))
@@ -3139,65 +3193,80 @@
   )
 
   ;; --- number->string ---
+  ;; Integer-valued numbers (fixnum or float-box) are converted digit by
+  ;; digit using an i64 accumulator so large float-boxes (values outside
+  ;; fixnum range) are printed without going through $make-fixnum, which
+  ;; would corrupt them via the 29-bit fixnum squeeze. Non-integer, NaN,
+  ;; and infinite float-boxes are not formatted here — they return `#?`
+  ;; as a non-trapping fallback. Full f64 decimal formatting is out of
+  ;; scope for this change; callers that need it should print floats
+  ;; via a future helper.
   (func $prim-number-to-string (param $v (ref null eq)) (result (ref null eq))
-    ;; For fixnums, convert digit by digit
-    (local $n i32)
+    (local $n i64)
+    (local $fv f64)
     (local $neg i32)
     (local $buf (ref $string))
     (local $i i32)
     (local $len i32)
     (local $digit i32)
     (local $result (ref $string))
-    (local $tmp i32)
     (if (call $is-fixnum (local.get $v))
       (then
-        (local.set $n (call $fixnum-value (ref.cast (ref i31) (local.get $v))))
-        (if (i32.eqz (local.get $n))
+        (local.set $n (i64.extend_i32_s
+          (call $fixnum-value (ref.cast (ref i31) (local.get $v))))))
+      (else
+        (if (ref.test (ref $float-box) (local.get $v))
           (then
-            (local.set $buf (array.new_default $string (i32.const 1)))
-            (array.set $string (local.get $buf) (i32.const 0) (i32.const 48)) ;; '0'
-            (return (local.get $buf))))
-        (local.set $neg (i32.lt_s (local.get $n) (i32.const 0)))
-        (if (local.get $neg)
-          (then (local.set $n (i32.sub (i32.const 0) (local.get $n)))))
-        ;; Write digits into buffer (reversed)
-        (local.set $buf (array.new_default $string (i32.const 12)))
-        (local.set $i (i32.const 0))
-        (block $done
-          (loop $digits
-            (br_if $done (i32.eqz (local.get $n)))
-            (local.set $digit (i32.rem_u (local.get $n) (i32.const 10)))
-            (array.set $string (local.get $buf) (local.get $i)
-              (i32.add (local.get $digit) (i32.const 48)))
-            (local.set $n (i32.div_u (local.get $n) (i32.const 10)))
-            (local.set $i (i32.add (local.get $i) (i32.const 1)))
-            (br $digits)))
-        (if (local.get $neg)
-          (then
-            (array.set $string (local.get $buf) (local.get $i) (i32.const 45)) ;; '-'
-            (local.set $i (i32.add (local.get $i) (i32.const 1)))))
-        (local.set $len (local.get $i))
-        ;; Reverse into result
-        (local.set $result (array.new_default $string (local.get $len)))
-        (local.set $i (i32.const 0))
-        (block $done2
-          (loop $rev
-            (br_if $done2 (i32.ge_u (local.get $i) (local.get $len)))
-            (array.set $string (local.get $result) (local.get $i)
-              (array.get_u $string (local.get $buf)
-                (i32.sub (i32.sub (local.get $len) (i32.const 1)) (local.get $i))))
-            (local.set $i (i32.add (local.get $i) (i32.const 1)))
-            (br $rev)))
-        (return (local.get $result))))
-    ;; Float — truncate to integer and convert
-    (if (ref.test (ref $float-box) (local.get $v))
+            (local.set $fv (struct.get $float-box $val
+              (ref.cast (ref $float-box) (local.get $v))))
+            ;; Guard: integer-valued AND finite (NaN fails trunc == self,
+            ;; infinity fails the in-range check below). i64 safely covers
+            ;; any f64-exact integer up to 2^53.
+            (if (i32.eqz (i32.and
+                  (f64.eq (local.get $fv) (f64.trunc (local.get $fv)))
+                  (i32.and
+                    (f64.ge (local.get $fv) (f64.const -9007199254740992))
+                    (f64.le (local.get $fv) (f64.const 9007199254740992)))))
+              (then (return (call $make-static-string
+                (i32.const 35) (i32.const 63)))))  ;; "#?"
+            (local.set $n (i64.trunc_f64_s (local.get $fv))))
+          (else (return (global.get $void))))))
+    (if (i64.eqz (local.get $n))
       (then
-        (return (call $prim-number-to-string
-          (call $make-fixnum
-            (i32.trunc_f64_s
-              (struct.get $float-box $val
-                (ref.cast (ref $float-box) (local.get $v)))))))))
-    (global.get $void)
+        (local.set $buf (array.new_default $string (i32.const 1)))
+        (array.set $string (local.get $buf) (i32.const 0) (i32.const 48)) ;; '0'
+        (return (local.get $buf))))
+    (local.set $neg (i64.lt_s (local.get $n) (i64.const 0)))
+    (if (local.get $neg)
+      (then (local.set $n (i64.sub (i64.const 0) (local.get $n)))))
+    ;; f64 exactly represents integers up to ~16 digits, plus sign — 20 bytes is ample.
+    (local.set $buf (array.new_default $string (i32.const 20)))
+    (local.set $i (i32.const 0))
+    (block $done
+      (loop $digits
+        (br_if $done (i64.eqz (local.get $n)))
+        (local.set $digit (i32.wrap_i64 (i64.rem_u (local.get $n) (i64.const 10))))
+        (array.set $string (local.get $buf) (local.get $i)
+          (i32.add (local.get $digit) (i32.const 48)))
+        (local.set $n (i64.div_u (local.get $n) (i64.const 10)))
+        (local.set $i (i32.add (local.get $i) (i32.const 1)))
+        (br $digits)))
+    (if (local.get $neg)
+      (then
+        (array.set $string (local.get $buf) (local.get $i) (i32.const 45)) ;; '-'
+        (local.set $i (i32.add (local.get $i) (i32.const 1)))))
+    (local.set $len (local.get $i))
+    (local.set $result (array.new_default $string (local.get $len)))
+    (local.set $i (i32.const 0))
+    (block $done2
+      (loop $rev
+        (br_if $done2 (i32.ge_u (local.get $i) (local.get $len)))
+        (array.set $string (local.get $result) (local.get $i)
+          (array.get_u $string (local.get $buf)
+            (i32.sub (i32.sub (local.get $len) (i32.const 1)) (local.get $i))))
+        (local.set $i (i32.add (local.get $i) (i32.const 1)))
+        (br $rev)))
+    (local.get $result)
   )
 
   ;; --- write-to-string for strings: wraps in quotes, escapes \ and " ---
@@ -3261,6 +3330,8 @@
   (func $write-to-string-impl (param $v (ref null eq)) (result (ref null eq))
     ;; Quick paths for common types (avoid display overhead)
     (if (call $is-fixnum (local.get $v))
+      (then (return (call $prim-number-to-string (local.get $v)))))
+    (if (ref.test (ref $float-box) (local.get $v))
       (then (return (call $prim-number-to-string (local.get $v)))))
     (if (call $is-string (local.get $v))
       (then
@@ -4199,37 +4270,41 @@
       (then (return (call $make-char
         (call $fixnum-value (ref.cast (ref i31) (call $arg1 (local.get $args))))))))
     ;; 45-49: char=?, char<?, char-whitespace?, char-alphabetic?, char-numeric? — now in prelude.scm
-    ;; 76 = bitwise-and (handles fixnum and float args)
+    ;; Bitwise primitives 76-80 share a dispatch shape: read args via
+    ;; $trunc-to-i32-wrap + $to-f64 (accepts fixnum and float-box, wraps
+    ;; values > 2^31-1 back into signed i32 bit-pattern), compute in i32
+    ;; space, and promote the result to float-box if it overflows fixnum
+    ;; range via $make-fixnum-or-float. SHA-1 round constants such as
+    ;; 0xEFCDAB89 = 4023233417 are stored as f64 float-boxes; the wrap
+    ;; helper is what lets the bitwise ops see their correct low-32 bits.
+    ;; 76 = bitwise-and
     (if (i32.eq (local.get $id) (i32.const 76))
-      (then (return (call $make-fixnum (i32.and
-        (call $safe-trunc-i32 (call $to-f64 (call $arg1 (local.get $args))))
-        (call $safe-trunc-i32 (call $to-f64 (call $arg2 (local.get $args)))))))))
+      (then (return (call $make-fixnum-or-float (i32.and
+        (call $trunc-to-i32-wrap (call $to-f64 (call $arg1 (local.get $args))))
+        (call $trunc-to-i32-wrap (call $to-f64 (call $arg2 (local.get $args)))))))))
     ;; 77 = bitwise-or
     (if (i32.eq (local.get $id) (i32.const 77))
-      (then (return (call $make-fixnum (i32.or
-        (call $fixnum-value (ref.cast (ref i31) (call $arg1 (local.get $args))))
-        (call $fixnum-value (ref.cast (ref i31) (call $arg2 (local.get $args)))))))))
+      (then (return (call $make-fixnum-or-float (i32.or
+        (call $trunc-to-i32-wrap (call $to-f64 (call $arg1 (local.get $args))))
+        (call $trunc-to-i32-wrap (call $to-f64 (call $arg2 (local.get $args)))))))))
     ;; 78 = bitwise-xor
     (if (i32.eq (local.get $id) (i32.const 78))
-      (then (return (call $make-fixnum (i32.xor
-        (call $fixnum-value (ref.cast (ref i31) (call $arg1 (local.get $args))))
-        (call $fixnum-value (ref.cast (ref i31) (call $arg2 (local.get $args)))))))))
+      (then (return (call $make-fixnum-or-float (i32.xor
+        (call $trunc-to-i32-wrap (call $to-f64 (call $arg1 (local.get $args))))
+        (call $trunc-to-i32-wrap (call $to-f64 (call $arg2 (local.get $args)))))))))
     ;; 79 = bitwise-not
     (if (i32.eq (local.get $id) (i32.const 79))
-      (then (return (call $make-fixnum (i32.xor
-        (call $fixnum-value (ref.cast (ref i31) (call $arg1 (local.get $args))))
+      (then (return (call $make-fixnum-or-float (i32.xor
+        (call $trunc-to-i32-wrap (call $to-f64 (call $arg1 (local.get $args))))
         (i32.const -1))))))
-    ;; 80 = arithmetic-shift
+    ;; 80 = arithmetic-shift. Uses $arith-shift-i32 for portable shift
+    ;; semantics (clamped shift counts) — see that helper for details.
     (if (i32.eq (local.get $id) (i32.const 80))
       (then
-        (local.set $id (call $fixnum-value (ref.cast (ref i31) (call $arg2 (local.get $args)))))
-        (if (result (ref null eq)) (i32.ge_s (local.get $id) (i32.const 0))
-          (then (return (call $make-fixnum (i32.shl
-            (call $fixnum-value (ref.cast (ref i31) (call $arg1 (local.get $args))))
-            (local.get $id)))))
-          (else (return (call $make-fixnum (i32.shr_s
-            (call $fixnum-value (ref.cast (ref i31) (call $arg1 (local.get $args))))
-            (i32.sub (i32.const 0) (local.get $id)))))))))
+        (return (call $make-fixnum-or-float
+          (call $arith-shift-i32
+            (call $trunc-to-i32-wrap (call $to-f64 (call $arg1 (local.get $args))))
+            (call $fixnum-value (ref.cast (ref i31) (call $arg2 (local.get $args)))))))))
     ;; 88 = make-parameter
     (if (i32.eq (local.get $id) (i32.const 88))
       (then
@@ -5403,7 +5478,7 @@
 
   ;; Read a number (first char is digit or sign followed by digit)
   (func $ecec-read-number (param $first-ch i32) (result (ref null eq))
-    (local $val i32)
+    (local $val i64)
     (local $neg i32)
     (local $ch i32)
     (local $has-dot i32)
@@ -5415,16 +5490,20 @@
       (then
         (local.set $neg (i32.const 1))
         (local.set $first-ch (call $ecec-read))))
-    ;; Parse integer part
-    (local.set $val (i32.sub (local.get $first-ch) (i32.const 48)))
+    ;; Parse integer part using i64 to cleanly hold any integer f64 can
+    ;; exactly represent (up to 2^53), in particular the unsigned-valued
+    ;; SHA-1 round constants and similar > 2^31 values.
+    (local.set $val (i64.extend_i32_s
+      (i32.sub (local.get $first-ch) (i32.const 48))))
     (block $done (loop $again
       (local.set $ch (call $ecec-peek))
       (if (i32.and (i32.ge_u (local.get $ch) (i32.const 48))
                    (i32.le_u (local.get $ch) (i32.const 57)))
         (then
           (drop (call $ecec-read))
-          (local.set $val (i32.add (i32.mul (local.get $val) (i32.const 10))
-                                   (i32.sub (local.get $ch) (i32.const 48))))
+          (local.set $val (i64.add (i64.mul (local.get $val) (i64.const 10))
+                                   (i64.extend_i32_s
+                                     (i32.sub (local.get $ch) (i32.const 48)))))
           (br $again)))
       ;; Check for decimal point
       (if (i32.eq (local.get $ch) (i32.const 46))  ;; '.'
@@ -5434,7 +5513,7 @@
     ;; If has decimal point, parse fractional part
     (if (local.get $has-dot)
       (then
-        (local.set $fval (f64.convert_i32_s (local.get $val)))
+        (local.set $fval (f64.convert_i64_s (local.get $val)))
         (local.set $fdiv (f64.const 10))
         (block $done2 (loop $again2
           (local.set $ch (call $ecec-peek))
@@ -5450,10 +5529,12 @@
         (if (local.get $neg)
           (then (local.set $fval (f64.neg (local.get $fval)))))
         (return (struct.new $float-box (local.get $fval)))))
-    ;; Integer result
+    ;; Integer result. Route through $f64-to-ece-number so the fixnum/
+    ;; float-box decision matches the rest of the runtime (in particular,
+    ;; values outside [-2^29, 2^29-1] are boxed rather than corrupted).
     (if (local.get $neg)
-      (then (local.set $val (i32.sub (i32.const 0) (local.get $val)))))
-    (call $make-fixnum (local.get $val)))
+      (then (local.set $val (i64.sub (i64.const 0) (local.get $val)))))
+    (call $f64-to-ece-number (f64.convert_i64_s (local.get $val))))
 
   ;; Read one s-expression from the ecec buffer
   (func $ecec-read-sexp (result (ref null eq))
