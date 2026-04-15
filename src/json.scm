@@ -4,8 +4,8 @@
 ;;; server's WebSocket broadcast needs — strings (with full RFC 8259
 ;;; string escaping for the ASCII control range plus `"`, `\`, `\n`,
 ;;; `\r`, `\t`, `\b`, `\f`), integers, booleans (#t / #f), JSON null
-;;; (the keyword :null or the symbol 'null), arrays (Scheme lists), and
-;;; objects (alists with string keys). Unicode beyond ASCII is
+;;; (the symbol `'null` or the empty list `'()`), arrays (Scheme lists),
+;;; and objects (alists with string keys). Unicode beyond ASCII is
 ;;; emitted as-is — the dev server's traffic is UTF-8 source text, and
 ;;; RFC 8259 permits UTF-8 literals in strings.
 ;;;
@@ -18,7 +18,7 @@
 ;;;        string → quoted + escaped
 ;;;        integer → decimal representation
 ;;;        #t / #f → "true" / "false"
-;;;        'null / :null / '() (R7RS empty list used as JSON null) → "null"
+;;;        'null / '() (R7RS empty list used as JSON null) → "null"
 ;;;        pair whose CAR is a pair → object (alist)
 ;;;        pair whose CAR is not a pair → array (list)
 ;;;

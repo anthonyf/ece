@@ -334,6 +334,62 @@ the path-join of *walker-tmp-dir* is a subdir."
          (req (http-parse-request raw)))
     (assert-equal (ece-serve/dispatch req) 'upgrade))))
 
+;; ── ece-serve/dispatch: directory path returns 404 (C6 Copilot regression) ───
+
+(test "ece-serve/dispatch: GET /programs (directory) returns 404 not crash" (lambda ()
+  ;; Pre-fix: %file-exists? returns #t for directories on CL; serve-static
+  ;; then called open-*-input-file on the directory which raised a host
+  ;; error, got swallowed by the connection handler's outer guard, and
+  ;; closed the socket without an HTTP reply. Post-fix: serve-static has
+  ;; a guard around the read+build path that returns 404 on any I/O error
+  ;; so the client always gets a valid HTTP reply.
+  (let* ((crlf (string-append (string (integer->char 13)) (string #\newline)))
+         (crlf-crlf (string-append crlf crlf))
+         (raw (string-append "GET /programs HTTP/1.1" crlf-crlf))
+         (req (http-parse-request raw))
+         (resp (ece-serve/dispatch req)))
+    (assert-true (string? resp))
+    (assert-true (starts-with? resp
+                               (string-append "HTTP/1.1 404 Not Found" crlf))))))
+
+;; ── ece-serve/parse-options validation (C2 Copilot regression) ───────
+
+(test "ece-serve/parse-options: accepts valid :port + :poll-interval" (lambda ()
+  (let ((result (ece-serve/parse-options (list ':port 9090 ':poll-interval 500))))
+    (assert-equal (car result) 9090)
+    (assert-equal (car (cdr result)) 500))))
+
+(test "ece-serve/parse-options: defaults when no options given" (lambda ()
+  (let ((result (ece-serve/parse-options '())))
+    (assert-equal (car result) 8080)
+    (assert-equal (car (cdr result)) 250))))
+
+(test "ece-serve/parse-options: rejects :port 0 and :port 65536" (lambda ()
+  (let ((too-low  (guard (e (#t 'error)) (ece-serve/parse-options (list ':port 0))))
+        (too-high (guard (e (#t 'error)) (ece-serve/parse-options (list ':port 65536)))))
+    (assert-equal too-low 'error)
+    (assert-equal too-high 'error))))
+
+(test "ece-serve/parse-options: rejects non-integer :port" (lambda ()
+  (let ((result (guard (e (#t 'error))
+                       (ece-serve/parse-options (list ':port "not-a-number")))))
+    (assert-equal result 'error))))
+
+(test "ece-serve/parse-options: rejects negative :poll-interval" (lambda ()
+  (let ((result (guard (e (#t 'error))
+                       (ece-serve/parse-options (list ':poll-interval -1)))))
+    (assert-equal result 'error))))
+
+(test "ece-serve/parse-options: rejects unknown option" (lambda ()
+  (let ((result (guard (e (#t 'error))
+                       (ece-serve/parse-options (list ':bogus 42)))))
+    (assert-equal result 'error))))
+
+(test "ece-serve/parse-options: rejects dangling key with no value" (lambda ()
+  (let ((result (guard (e (#t 'error))
+                       (ece-serve/parse-options (list ':port)))))
+    (assert-equal result 'error))))
+
 ;; ── ece-serve/build-ws-upgrade-response — full 101 envelope ──────────
 
 (test "ece-serve/build-ws-upgrade-response uses RFC 6455 §1.3 accept-key" (lambda ()

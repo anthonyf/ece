@@ -218,6 +218,22 @@ Returns a 400/404 response STRING on miss (both are text)."
       (http-build-response 404 "Not Found" '()
                            (string-append "Not Found: "
                                           (http-request-path req))))
+     ;; %file-exists? returns true for directories on CL as well as for
+     ;; regular files, and open-*-input-file on a directory raises a
+     ;; host-level stream error that ECE's `guard` macro currently can
+     ;; NOT catch — apply-primitive-procedure only converts CL
+     ;; `division-by-zero` and `type-error` to sentinels, so stream /
+     ;; file errors propagate at the CL level past ECE's exception
+     ;; machinery and reach the CL top-level handler. Until that kernel
+     ;; limitation is fixed, we avoid the problem here by rejecting any
+     ;; path without a file extension as 404: every legitimate static
+     ;; asset under `sandbox/` has an extension (html / js / wasm / ico
+     ;; / png / css / scm / ecec), so "no extension" is a safe proxy
+     ;; for "probably a directory or something we can't safely read."
+     ((not (ece-serve/%has-any-extension? fs-path))
+      (http-build-response 404 "Not Found" '()
+                           (string-append "Not Found: "
+                                          (http-request-path req))))
      (else
       (let ((content-type (ece-serve/content-type-for fs-path)))
         (cond
@@ -237,6 +253,24 @@ Returns a 400/404 response STRING on miss (both are text)."
                                        ;; picks up manual edits.
                                        (cons "Cache-Control" "no-store"))
                                  body)))))))))
+
+(define (ece-serve/%has-any-extension? path)
+  "Test whether PATH has a file extension: a `.` somewhere after the
+last `/`. A directory like `sandbox/programs` returns #f. A file like
+`sandbox/index.html` returns #t. Used by serve-static as a directory
+rejection proxy — see the big comment at the call site."
+  (let ((len (string-length path)))
+    (let loop ((i (- len 1)))
+      (cond
+       ((< i 0) #f)
+       ((char=? (string-ref path i) #\/) #f)
+       ((char=? (string-ref path i) #\.)
+        ;; Guard against hidden files: a leading `.` in the last
+        ;; segment (e.g., `.gitignore`) isn't really an extension.
+        ;; Require at least one non-`.` char before the dot.
+        (and (> i 0)
+             (not (char=? (string-ref path (- i 1)) #\/))))
+       (else (loop (- i 1)))))))
 
 (define (ece-serve/build-binary-response content-type body-bytes)
   "Build a 200 OK response for a binary body. Returns a list of byte
@@ -371,7 +405,7 @@ treated as an absolute path. Otherwise it is joined with BASE-DIR."
 
 ;; ---- Accept loop ----
 
-(define (ece-serve/accept-loop sched server clients-box port)
+(define (ece-serve/accept-loop sched server clients-box)
   "Accept loop: wait for the server socket to become readable, accept
 all pending connections, spawn a handler fiber for each, then sleep
 until the next notification. A transient accept error (EMFILE on a
@@ -387,13 +421,13 @@ level error there should kill this fiber loudly."
        (cond
         ((or (not conn) (eq? conn #f)) #f)
         (else
-         (ece-serve/spawn-connection-handler sched conn clients-box port)
+         (ece-serve/spawn-connection-handler sched conn clients-box)
          ;; Drain additional connections that arrived in the same tick.
          (inner (tcp-accept-nowait server))))))
     (wait-for sched 'tcp-accept-ready)
     (loop)))
 
-(define (ece-serve/spawn-connection-handler sched conn clients-box port)
+(define (ece-serve/spawn-connection-handler sched conn clients-box)
   "Spawn a per-connection handler fiber that owns CONN for its lifetime.
 The handler either serves a static asset + closes, or performs the
 WebSocket upgrade and transitions to the WS message loop."
@@ -405,7 +439,7 @@ WebSocket upgrade and transitions to the WS message loop."
           ;; Defensive: any error in a handler crashes only that
           ;; fiber. Close the conn so we don't leak file descriptors.
           (ece-serve/%try-close conn)))
-      (ece-serve/handle-connection sched conn clients-box port)))))
+      (ece-serve/handle-connection sched conn clients-box)))))
 
 (define (ece-serve/%try-close handle)
   "Close a TCP handle, swallowing any error from double-close."
@@ -414,7 +448,7 @@ WebSocket upgrade and transitions to the WS message loop."
 
 ;; ---- Per-connection handler ----
 
-(define (ece-serve/handle-connection sched conn clients-box port)
+(define (ece-serve/handle-connection sched conn clients-box)
   "Read the HTTP request header block from CONN, dispatch the request,
 and either write a static response + close, or upgrade to WebSocket."
   (let ((raw (ece-serve/read-http-request sched conn)))
@@ -454,12 +488,14 @@ success, the symbol 'closed if the peer closed before the header
 completed, or 'malformed if the request exceeds a sane byte limit
 (1 MiB — protects against slowloris-ish pile-ups even on localhost).
 
-The byte count is threaded as a loop variable so the slowloris guard
-is O(1) per iteration, not O(n) via `length`. Accumulation itself
-still uses append (O(len(chunk))) which is fine because each chunk
-is bounded at 4096 bytes."
+Accumulation is O(n), not O(n²): chunks are stored in REVERSE order
+without flattening, and the CRLF CRLF terminator is searched for in
+a small tail window (last 3 bytes from the prior chunk + the current
+chunk) so a terminator that straddles a chunk boundary is still
+detected. Only the successful path flattens + converts to a string,
+and that happens exactly once."
   (let ((max-bytes 1048576))
-    (let loop ((accumulated '()) (byte-count 0))
+    (let loop ((chunks-rev '()) (byte-count 0) (tail '()))
       (cond
        ((> byte-count max-bytes) 'malformed)
        (else
@@ -470,23 +506,54 @@ is bounded at 4096 bytes."
             ;; Stage 1 uses a shared 'tcp-read-ready tag; every waiting
             ;; handler wakes on each poll and re-checks its own conn.
             (wait-for sched 'tcp-read-ready)
-            (loop accumulated byte-count))
+            (loop chunks-rev byte-count tail))
            ((eq? chunk (ece-serve/%ece-eof))
-            (cond
-             ((null? accumulated) 'closed)
-             (else
-              (let ((s (ascii-bytes->string accumulated)))
-                (cond
-                 ((http-header-end-string s) s)
-                 (else 'closed))))))
+            ;; EOF without a terminator is always 'closed — every
+            ;; successful-read branch already scans for the sentinel
+            ;; and returns the string if it's present, so by the time
+            ;; we hit EOF we know we haven't seen one.
+            'closed)
            ((pair? chunk)
             (let* ((chunk-len (length chunk))
-                   (combined (append accumulated chunk)))
-              (let ((s (ascii-bytes->string combined)))
-                (cond
-                 ((http-header-end-string s) s)
-                 (else (loop combined (+ byte-count chunk-len)))))))
-           (else (loop accumulated byte-count)))))))))
+                   (new-byte-count (+ byte-count chunk-len))
+                   (window (append tail chunk)))
+              (cond
+               ((> new-byte-count max-bytes) 'malformed)
+               ((http-header-end-bytes window)
+                (ascii-bytes->string
+                 (ece-serve/%flatten-chunks-in-order
+                  (cons chunk chunks-rev))))
+               (else
+                (loop (cons chunk chunks-rev)
+                      new-byte-count
+                      (ece-serve/%tail-bytes window 3))))))
+           (else (loop chunks-rev byte-count tail)))))))))
+
+(define (ece-serve/%flatten-chunks-in-order chunks-rev)
+  "Given a list of byte chunks in REVERSE order, return a flat byte
+list in original order. Total work is O(sum(chunk lengths)) because
+each `append` is O(length of its first arg), and we walk each chunk
+exactly once."
+  (let loop ((rest chunks-rev) (acc '()))
+    (cond
+     ((null? rest) acc)
+     (else
+      ;; rest is in reverse order, so prepending (car rest) to acc
+      ;; (via append first=chunk) puts the chunks back in original
+      ;; order by the time the loop terminates.
+      (loop (cdr rest) (append (car rest) acc))))))
+
+(define (ece-serve/%tail-bytes xs n)
+  "Return the last N elements of XS. XS is bounded by chunk size
+(~4096 + carry) so this is effectively O(1) relative to the total
+bytes read across the whole slowloris scan."
+  (let* ((len (length xs))
+         (skip (if (> len n) (- len n) 0)))
+    (let inner ((rest xs) (k skip))
+      (cond
+       ((<= k 0) rest)
+       ((null? rest) rest)
+       (else (inner (cdr rest) (- k 1)))))))
 
 ;; Cached references to the 'would-block / 'eof sentinels returned by
 ;; the tcp-recv-nowait primitive. Both are interned in the :ece package
@@ -677,25 +744,57 @@ poll interval; this source just gives it a heartbeat."
 (define *ece-serve/default-port* 8080)
 (define *ece-serve/default-poll-interval-ms* 250)
 
+(define (ece-serve/%show v)
+  "Format V as a readable string for use in error messages. Uses the
+runtime's write so symbols, numbers, and strings round-trip sensibly.
+Kept local so ece-serve.scm doesn't pull in the full prelude helper
+surface."
+  (let ((out (open-output-string)))
+    (write v out)
+    (get-output-string out)))
+
 (define (ece-serve/parse-options opts)
   "Parse the keyword args passed to (ece-serve entry . opts). Returns
 a record-like list (port poll-interval-ms). Options:
-  :port INT          listen port (default 8080)
-  :poll-interval INT ms between file-watch polls (default 250)"
+  :port INT          listen port (integer in [1, 65535], default 8080)
+  :poll-interval INT ms between file-watch polls (non-negative integer,
+                     default 250)
+
+All values are validated and any failure raises an error that names
+the offending option key (and value, where relevant) so programmatic
+callers can diagnose the miscall without reading this source."
   (let loop ((rest opts) (port *ece-serve/default-port*)
              (interval *ece-serve/default-poll-interval-ms*))
     (cond
      ((null? rest) (list port interval))
      ((null? (cdr rest))
-      (error "ece-serve: option without value"))
+      (error (string-append "ece-serve: option "
+                            (ece-serve/%show (car rest))
+                            " given without a value")))
      (else
       (let ((key (car rest))
             (val (car (cdr rest)))
             (more (cdr (cdr rest))))
         (cond
-         ((eq? key ':port) (loop more val interval))
-         ((eq? key ':poll-interval) (loop more port val))
-         (else (error (string-append "ece-serve: unknown option")))))))))
+         ((eq? key ':port)
+          (cond
+           ((and (integer? val) (>= val 1) (<= val 65535))
+            (loop more val interval))
+           (else
+            (error (string-append
+                    "ece-serve: :port must be an integer in [1, 65535], got "
+                    (ece-serve/%show val))))))
+         ((eq? key ':poll-interval)
+          (cond
+           ((and (integer? val) (>= val 0))
+            (loop more port val))
+           (else
+            (error (string-append
+                    "ece-serve: :poll-interval must be a non-negative integer, got "
+                    (ece-serve/%show val))))))
+         (else
+          (error (string-append "ece-serve: unknown option "
+                                (ece-serve/%show key))))))))))
 
 (define (ece-serve entry-file . opts)
   "Start the dev server for ENTRY-FILE. Blocks until interrupted.
@@ -726,7 +825,7 @@ Options: :port (default 8080), :poll-interval (milliseconds, default 250)."
       (scheduler-register-event-source! sched (ece-serve/make-timer-source))
       ;; Spawn the long-lived fibers
       (scheduler-spawn! sched
-                        (lambda () (ece-serve/accept-loop sched server clients-box port)))
+                        (lambda () (ece-serve/accept-loop sched server clients-box)))
       (scheduler-spawn! sched
                         (lambda () (ece-serve/watch-loop sched watch-set clients-box poll-interval)))
       ;; Run forever (until interrupted)
@@ -775,8 +874,9 @@ then calls (ece-serve). Unknown flags print an error and exit."
            (else
             (let ((n (string->number (car (cdr rest)))))
               (cond
-               ((not n)
-                (display "Error: --poll-interval value must be an integer") (newline)
+               ((or (not n) (not (integer? n)) (< n 0))
+                (display "Error: --poll-interval value must be an integer >= 0")
+                (newline)
                 (exit 2))
                (else (loop (cdr (cdr rest)) port n entry)))))))
          ((or (string=? arg "-h") (string=? arg "--help"))
