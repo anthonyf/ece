@@ -899,3 +899,41 @@
 
 (define-host-primitive (%create-repl-space! name size)
   :cl `(cl:locally (cl:declare (cl:ignore ,name ,size)) cl:nil))
+
+;;; ─────────────────────────────────────────────────────────────────────────
+;;; Dev-tooling (ids 229-236) — TCP sockets and file watching for `ece serve`
+;;;
+;;; CL-only. These are not portable to WASM and exist solely to support the
+;;; `ece serve` dev server (see openspec/changes/ece-serve/). The non-blocking
+;;; socket helpers wrap usocket; the polling file watcher uses file-write-date
+;;; mtimes, which is portable across SBCL targets and good enough for an
+;;; interactive dev loop. Helper defuns live in src/runtime.lisp.
+;;; ─────────────────────────────────────────────────────────────────────────
+
+(define-host-primitive (tcp-listen port host)
+  :cl `(usocket:socket-listen ,host ,port
+                              :reuse-address cl:t
+                              :element-type '(cl:unsigned-byte 8)))
+
+(define-host-primitive (tcp-accept-nowait server)
+  :cl `(cl:if (usocket:wait-for-input ,server :timeout 0 :ready-only cl:t)
+              (usocket:socket-accept ,server :element-type '(cl:unsigned-byte 8))
+              (scheme-bool cl:nil)))
+
+(define-host-primitive (tcp-recv-nowait conn max-bytes)
+  :cl `(ece-tcp-recv-nowait-impl ,conn ,max-bytes))
+
+(define-host-primitive (tcp-send-nowait conn bytes)
+  :cl `(ece-tcp-send-nowait-impl ,conn ,bytes))
+
+(define-host-primitive (tcp-close handle)
+  :cl `(cl:progn (usocket:socket-close ,handle) cl:nil))
+
+(define-host-primitive (fs-watch-start paths)
+  :cl `(ece-fs-watch-start-impl ,paths))
+
+(define-host-primitive (fs-watch-poll watcher)
+  :cl `(ece-fs-watch-poll-impl ,watcher))
+
+(define-host-primitive (fs-watch-stop watcher)
+  :cl `(ece-fs-watch-stop-impl ,watcher))
