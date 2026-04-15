@@ -222,11 +222,13 @@ Returns the value of the last expression."
      ((string=? tool "ece-repl") (ece-repl-main rest))
      ((string=? tool "ece-build") (ece-build-main rest))
      ((string=? tool "ece-test") (ece-test-main rest))
+     ((string=? tool "ece-serve") (ece-serve-main rest))
      (else (ece-default-main rest)))))
 
 ;; Tool entry points are stubs unless their .scm files are loaded.
-;; Callers (the saved image) are responsible for loading ece-build.scm and
-;; ece-test.scm BEFORE dispatch so these definitions are overridden.
+;; Callers (the saved image) are responsible for loading ece-build.scm,
+;; ece-test.scm, and ece-serve.scm BEFORE dispatch so these definitions
+;; are overridden.
 
 (define (ece-build-main argv)
   (display "Error: ece-build.scm not loaded")
@@ -235,5 +237,10 @@ Returns the value of the last expression."
 
 (define (ece-test-main argv)
   (display "Error: ece-test.scm not loaded")
+  (newline)
+  (exit 2))
+
+(define (ece-serve-main argv)
+  (display "Error: ece-serve.scm not loaded")
   (newline)
   (exit 2))
