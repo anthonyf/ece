@@ -110,6 +110,31 @@
     (scheduler-step! s)
     (assert-equal (reverse log) '(red-done blue-done)))))
 
+(test "scheduler: FIFO order survives notifies of interleaved tags" (lambda ()
+  ;; Four fibers wait in alternating tags: A(red) B(blue) C(red) D(blue).
+  ;; Notify blue first (wakes B and D). A and C must remain in the waiting
+  ;; set IN ORIGINAL ORDER — without the reverse fix in waiting-remove-matching!
+  ;; they'd end up reversed, and the subsequent red notify would run C before A.
+  (let* ((s (make-scheduler))
+         (log '())
+         (log! (lambda (x) (set! log (cons x log)))))
+    (scheduler-spawn! s (lambda () (wait-for s 'red)  (log! 'a-red)))
+    (scheduler-spawn! s (lambda () (wait-for s 'blue) (log! 'b-blue)))
+    (scheduler-spawn! s (lambda () (wait-for s 'red)  (log! 'c-red)))
+    (scheduler-spawn! s (lambda () (wait-for s 'blue) (log! 'd-blue)))
+    (scheduler-step! s)
+    (assert-equal (scheduler-waiting-count s) 4)
+    ;; Notify blue — wakes B and D in FIFO order.
+    (assert-equal (scheduler-notify! s 'blue) 2)
+    (scheduler-step! s)
+    (assert-equal (reverse log) '(b-blue d-blue))
+    ;; A and C still waiting, and must remain in their original order.
+    (assert-equal (scheduler-waiting-count s) 2)
+    (assert-equal (scheduler-notify! s 'red) 2)
+    (scheduler-step! s)
+    ;; If waiting order was preserved, A runs before C.
+    (assert-equal (reverse log) '(b-blue d-blue a-red c-red)))))
+
 ;; ── Scheduler-run! ──────────────────────────────────────────────────────
 
 (test "scheduler-run!: drains ready queue of independent fibers" (lambda ()

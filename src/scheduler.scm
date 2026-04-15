@@ -165,13 +165,16 @@ dev server's small fiber counts."
 
 (define (waiting-remove-matching! sched tag)
   "Remove and return the list of waiting fibers whose tag is eq? to TAG.
-The remaining waiting fibers stay in the waiting set."
+The remaining waiting fibers stay in the waiting set in their original
+FIFO order — both `kept` and `removed` are accumulated via cons and
+reversed before use so that the on-disk order reflects the order in
+which the fibers originally called wait-for."
   (let loop ((remaining (sched-state-waiting-fibers sched))
              (kept '())
              (removed '()))
     (cond
      ((null? remaining)
-      (set-sched-state-waiting-fibers! sched kept)
+      (set-sched-state-waiting-fibers! sched (reverse kept))
       (reverse removed))
      (else
       (let* ((f (car remaining))
