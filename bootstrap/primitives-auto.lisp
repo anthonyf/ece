@@ -321,6 +321,15 @@
 (defun ece-floor (x)
   (cl:values (cl:floor x)))
 
+(defun ece-fs-watch-poll (watcher)
+  (ece-fs-watch-poll-impl watcher))
+
+(defun ece-fs-watch-start (paths)
+  (ece-fs-watch-start-impl paths))
+
+(defun ece-fs-watch-stop (watcher)
+  (ece-fs-watch-stop-impl watcher))
+
 (defun ece-get-environment-variable (name)
   (cl:or (sb-ext:posix-getenv name) *scheme-false*))
 
@@ -479,6 +488,21 @@
 
 (defun ece-symbol? (x)
   (scheme-bool (cl:and (cl:symbolp x) x)))
+
+(defun ece-tcp-accept-nowait (server)
+  (cl:if (usocket:wait-for-input server :timeout 0 :ready-only cl:t) (usocket:socket-accept server :element-type '(cl:unsigned-byte 8)) (scheme-bool cl:nil)))
+
+(defun ece-tcp-close (handle)
+  (cl:progn (usocket:socket-close handle) cl:nil))
+
+(defun ece-tcp-listen (port host)
+  (usocket:socket-listen host port :reuse-address cl:t :element-type '(cl:unsigned-byte 8)))
+
+(defun ece-tcp-recv-nowait (conn max-bytes)
+  (ece-tcp-recv-nowait-impl conn max-bytes))
+
+(defun ece-tcp-send-nowait (conn bytes)
+  (ece-tcp-send-nowait-impl conn bytes))
 
 (defun ece-trace (name)
   (let ((original (lookup-variable-value name *global-env*))) (cl:when (cl:gethash name *traced-procedures*) (cl:return-from ece-trace name)) (cl:setf (cl:gethash name *traced-procedures*) original) (let ((wrapper-sym (cl:intern (cl:format cl:nil "TRACE-~A" name) :ece))) (cl:setf (cl:symbol-function wrapper-sym) (cl:lambda (cl:&rest args) (let ((indent (cl:make-string (cl:* 2 *trace-depth*) :initial-element #\Space))) (cl:format cl:t "~A(~A~{ ~S~})~%" indent name args) (cl:incf *trace-depth*) (let ((result (cl:if (compiled-procedure-p original) (execute-compiled-call original args) (apply-primitive-procedure original args)))) (cl:decf *trace-depth*) (cl:format cl:t "~A=> ~S~%" indent result) result)))) (set-variable-value! name (cl:list '|primitive| wrapper-sym) *global-env*)) name))

@@ -1,7 +1,7 @@
-## 1. CL dependencies and socket primitive wrappers
+## 1. CL dependencies and socket primitive wrappers  (**PRE-LANDED via ece-serve-tcp-fs-primitives**)
 
-- [ ] 1.1 Add `usocket` to `qlfile` and pin its version via `qlfile.lock`. Run `qlot install` and confirm it loads into the `ece` ASDF system without regressions.
-- [ ] 1.2 Add primitive entries to `primitives.def` for the narrow socket + file-watch surface. Every entry MUST have platform `cl`:
+- [x] 1.1 Add `usocket` to `qlfile` and pin its version via `qlfile.lock`. Run `qlot install` and confirm it loads into the `ece` ASDF system without regressions.
+- [x] 1.2 Add primitive entries to `primitives.def` for the narrow socket + file-watch surface. Every entry MUST have platform `cl`:
   - `tcp-listen` — bind and listen on a TCP port, default host `127.0.0.1`, return server handle
   - `tcp-accept-nowait` — non-blocking accept; return connection handle or `#f`
   - `tcp-recv-nowait` — non-blocking read; return bytevector, `'would-block`, or `'eof`
@@ -10,8 +10,8 @@
   - `fs-watch-start` — begin watching a list of file paths, return watcher handle
   - `fs-watch-poll` — non-blocking poll; return list of paths that changed since last poll
   - `fs-watch-stop` — shut down a watcher
-- [ ] 1.3 Implement each primitive as a CL function (in `src/runtime.lisp` or a new `src/dev-tools-primitives.lisp` if the runtime.lisp addition would be large). The socket primitives wrap `usocket`; the file-watch primitives start as a polling implementation over `file-write-date` comparisons on the watch set.
-- [ ] 1.4 Regenerate the bootstrap so new primitive IDs are baked into `primitives-auto.lisp` and the zone files regenerate cleanly. `make bootstrap` and `make ece` must both complete successfully with no CI regressions.
+- [x] 1.3 Implement each primitive as a CL function (in `src/runtime.lisp` or a new `src/dev-tools-primitives.lisp` if the runtime.lisp addition would be large). The socket primitives wrap `usocket`; the file-watch primitives start as a polling implementation over `file-write-date` comparisons on the watch set.
+- [x] 1.4 Regenerate the bootstrap so new primitive IDs are baked into `primitives-auto.lisp` and the zone files regenerate cleanly. `make bootstrap` and `make ece` must both complete successfully with no CI regressions.
 
 ## 2. `src/scheduler.scm` — cooperative scheduler built on `call/cc`
 

@@ -1629,6 +1629,101 @@ When ENV is supplied, it is passed to mc-compile-and-go."
         (execute-compiled-call mc-cag (list expr env))
         (execute-compiled-call mc-cag (list expr)))))
 
+;;; ─────────────────────────────────────────────────────────────────────────
+;;; Dev-tooling helpers (TCP sockets + filesystem watch)
+;;;
+;;; CL-only support code for the `ece serve` dev server. Wraps usocket and
+;;; provides a simple polling file watcher. The corresponding ECE-level
+;;; primitives are declared in src/primitives.scm and entered in the manifest
+;;; at primitives.def ids 229-236. These helpers are not portable to WASM
+;;; and exist solely so the ece-serve change can drive sockets and file
+;;; watching from ECE code.
+;;; ─────────────────────────────────────────────────────────────────────────
+
+(defun ece-tcp-recv-nowait-impl (conn max-bytes)
+  "Try to read up to MAX-BYTES from CONN without blocking.
+Returns a list of byte integers, the ECE symbol would-block if no data is
+currently available and the connection is still open, or the ECE symbol eof
+if the peer has closed the connection. Both sentinels are interned in the
+:ece package so ECE `eq?` against the literal symbols `'would-block` and
+`'eof` works as expected."
+  ;; Guard against MAX-BYTES <= 0 — the caller asked for zero (or nonsense)
+  ;; bytes; honour that by returning an empty list without consuming any
+  ;; input. Otherwise usocket:wait-for-input reports the socket ready when
+  ;; EITHER data is pending OR the peer has closed. We then attempt to read
+  ;; one byte: nil means EOF, otherwise pull the rest of the buffered run
+  ;; via (listen ...) so we don't block waiting for additional data.
+  (cond
+    ((<= max-bytes 0) nil)
+    ((not (usocket:wait-for-input conn :timeout 0 :ready-only t))
+     (intern "would-block" :ece))
+    (t
+     (let* ((stream (usocket:socket-stream conn))
+            (first-byte (read-byte stream nil nil)))
+       (cond
+         ((null first-byte) (intern "eof" :ece))
+         (t
+          (let ((bytes (list first-byte))
+                (count 1))
+            (loop while (and (< count max-bytes) (listen stream))
+                  do (let ((b (read-byte stream nil nil)))
+                       (cond
+                         ((null b) (loop-finish))
+                         (t (push b bytes) (incf count)))))
+            (nreverse bytes))))))))
+
+(defun ece-tcp-send-nowait-impl (conn bytes)
+  "Write BYTES (a list of integers in [0, 255]) to CONN. Returns the number
+of bytes written. Pragmatically blocking on the underlying TCP buffer — the
+:would-block return value is reserved for a future enhancement once usocket
+exposes non-blocking write semantics cleanly."
+  (let* ((stream (usocket:socket-stream conn))
+         (vec (make-array (length bytes) :element-type '(unsigned-byte 8))))
+    (loop for b in bytes
+          for i from 0
+          do (setf (aref vec i) b))
+    (write-sequence vec stream)
+    (force-output stream)
+    (length bytes)))
+
+(defvar *fs-watchers* (make-hash-table :test 'eql)
+  "Map watcher-id → hash-table of (path → last-known mtime).")
+
+(defvar *fs-watcher-counter* 0
+  "Monotonic counter for fresh watcher ids.")
+
+(defun ece-fs-watch-start-impl (paths)
+  "Begin watching PATHS (a list of file path strings). Returns a watcher id
+suitable for ece-fs-watch-poll-impl / ece-fs-watch-stop-impl."
+  (let ((id (incf *fs-watcher-counter*))
+        (table (make-hash-table :test 'equal)))
+    (dolist (path paths)
+      (setf (gethash path table) (or (file-write-date path) 0)))
+    (setf (gethash id *fs-watchers*) table)
+    id))
+
+(defun ece-fs-watch-poll-impl (watcher)
+  "Return list of paths whose mtime changed since the previous poll for
+WATCHER. Updates the stored mtimes as a side effect. Unknown watchers
+return an empty list."
+  (let ((table (gethash watcher *fs-watchers*)))
+    (cond
+      ((null table) nil)
+      (t
+       (let ((changed nil))
+         (maphash (lambda (path stored-mtime)
+                    (let ((current (or (file-write-date path) 0)))
+                      (when (/= current stored-mtime)
+                        (setf (gethash path table) current)
+                        (push path changed))))
+                  table)
+         (nreverse changed))))))
+
+(defun ece-fs-watch-stop-impl (watcher)
+  "Forget WATCHER. Subsequent polls return an empty list."
+  (remhash watcher *fs-watchers*)
+  nil)
+
 ;;; Load auto-generated primitive defuns. The file contains one (defun ece-NAME ...)
 ;;; per core/cl primitive in primitives.def. It is regenerated from
 ;;; src/primitives.scm via `make bootstrap` and committed under bootstrap/.

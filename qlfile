@@ -1,2 +1,3 @@
 dist http://dist.ultralisp.org/
 ql rove
+ql usocket

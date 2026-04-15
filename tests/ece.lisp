@@ -3492,3 +3492,200 @@ zone-assembler defun."
                          (format nil "compiled branchy-zone halts with val=200 (pc=~A)" pc))
                      (ok (= val interp-val)
                          "compiled and interpreted branchy-zone agree")))))))
+
+;;; ─────────────────────────────────────────────────────────────────────────
+;;; Dev-tooling primitives — TCP sockets and file watching for `ece serve`
+;;; ─────────────────────────────────────────────────────────────────────────
+
+(defun poll-until (thunk ready-p &key (timeout 1.0) (interval 0.005))
+  "Call THUNK repeatedly until READY-P returns true on its result, or TIMEOUT
+seconds have elapsed. Returns the final value of THUNK regardless of success.
+Used to replace fixed sleeps in the TCP tests so they don't flake on slow CI."
+  (let ((deadline (+ (get-internal-real-time)
+                     (round (* timeout internal-time-units-per-second)))))
+    (loop
+          for value = (funcall thunk)
+          when (funcall ready-p value) do (return value)
+          when (>= (get-internal-real-time) deadline) do (return value)
+          do (sleep interval))))
+
+(defun connection-ready-p (value)
+  "READY-P predicate for accept-nowait: truthy AND not scheme #f."
+  (and value (not (ece::scheme-false-p value))))
+
+(defun recv-ready-p (value)
+  "READY-P predicate for recv-nowait: non-empty byte list (not would-block / eof symbol)."
+  (and (consp value) (integerp (car value))))
+
+(defparameter *ece-would-block* (intern "would-block" :ece))
+(defparameter *ece-eof* (intern "eof" :ece))
+
+(deftest test-tcp-listen-accept-roundtrip
+    (testing "TCP server-client byte round-trip via ece-tcp-* primitives"
+             (let* ((server (ece::ece-tcp-listen 0 "127.0.0.1"))  ; port 0 = OS-assign
+                    (port (usocket:get-local-port server))
+                    (client nil)
+                    (conn nil))
+               (unwind-protect
+                    (progn
+                      ;; No pending connection yet — accept-nowait returns the runtime's
+                      ;; #f sentinel rather than nil/() so ECE callers can distinguish it.
+                      (let ((no-conn (ece::ece-tcp-accept-nowait server)))
+                        (ok (ece::scheme-false-p no-conn)
+                            "accept-nowait returns scheme #f when no client is pending"))
+                      ;; Open a client connection.
+                      (setf client (usocket:socket-connect "127.0.0.1" port
+                                                           :element-type '(unsigned-byte 8)))
+                      ;; Poll for the connection to arrive rather than sleeping.
+                      (setf conn (poll-until (lambda () (ece::ece-tcp-accept-nowait server))
+                                             #'connection-ready-p))
+                      (ok (and conn (not (ece::scheme-false-p conn)))
+                          "accept-nowait returns a connection once a client arrives")
+                      ;; Client → server: send three bytes, server should read them back.
+                      (let ((stream (usocket:socket-stream client)))
+                        (write-byte 65 stream) ; #\A
+                        (write-byte 66 stream) ; #\B
+                        (write-byte 67 stream) ; #\C
+                        (force-output stream))
+                      (let ((bytes (poll-until (lambda () (ece::ece-tcp-recv-nowait conn 16))
+                                               #'recv-ready-p)))
+                        (ok (equal bytes '(65 66 67))
+                            "recv-nowait returns the three bytes the client sent"))
+                      ;; Server → client: send a byte list, client reads back.
+                      (let ((written (ece::ece-tcp-send-nowait conn '(88 89 90))))
+                        (ok (= written 3) "send-nowait returns bytes-written"))
+                      ;; Wait for the client socket to become readable rather than sleeping.
+                      (ok (usocket:wait-for-input client :timeout 1.0 :ready-only t)
+                          "client socket becomes readable after server sends data")
+                      (let ((stream (usocket:socket-stream client)))
+                        (ok (= (read-byte stream) 88) "client reads back X")
+                        (ok (= (read-byte stream) 89) "client reads back Y")
+                        (ok (= (read-byte stream) 90) "client reads back Z")))
+                 ;; Cleanup — order matters for SO_REUSEADDR semantics.
+                 (when conn (ignore-errors (ece::ece-tcp-close conn)))
+                 (when client (ignore-errors (usocket:socket-close client)))
+                 (ignore-errors (ece::ece-tcp-close server))))))
+
+(deftest test-tcp-recv-would-block
+    (testing "recv-nowait returns the ECE symbol would-block when no data is buffered"
+             (let* ((server (ece::ece-tcp-listen 0 "127.0.0.1"))
+                    (port (usocket:get-local-port server))
+                    (client nil)
+                    (conn nil))
+               (unwind-protect
+                    (progn
+                      (setf client (usocket:socket-connect "127.0.0.1" port
+                                                           :element-type '(unsigned-byte 8)))
+                      (setf conn (poll-until (lambda () (ece::ece-tcp-accept-nowait server))
+                                             #'connection-ready-p))
+                      (ok (and conn (not (ece::scheme-false-p conn))) "got a connection")
+                      (let ((result (ece::ece-tcp-recv-nowait conn 16)))
+                        (ok (eq result *ece-would-block*)
+                            "recv on idle connection returns ECE symbol would-block")
+                        (ok (eq (symbol-package result) (find-package :ece))
+                            "would-block sentinel is interned in the :ece package")))
+                 (when conn (ignore-errors (ece::ece-tcp-close conn)))
+                 (when client (ignore-errors (usocket:socket-close client)))
+                 (ignore-errors (ece::ece-tcp-close server))))))
+
+(deftest test-tcp-recv-eof-on-closed-peer
+    (testing "recv-nowait returns the ECE symbol eof after peer closes"
+             (let* ((server (ece::ece-tcp-listen 0 "127.0.0.1"))
+                    (port (usocket:get-local-port server))
+                    (client nil)
+                    (conn nil))
+               (unwind-protect
+                    (progn
+                      (setf client (usocket:socket-connect "127.0.0.1" port
+                                                           :element-type '(unsigned-byte 8)))
+                      (setf conn (poll-until (lambda () (ece::ece-tcp-accept-nowait server))
+                                             #'connection-ready-p))
+                      ;; Peer closes immediately without sending data.
+                      (usocket:socket-close client)
+                      (setf client nil)
+                      ;; Wait for the server to notice the FIN.
+                      (let ((result
+                             (poll-until (lambda () (ece::ece-tcp-recv-nowait conn 16))
+                                         (lambda (v) (eq v *ece-eof*)))))
+                        (ok (eq result *ece-eof*)
+                            "recv after peer close returns ECE symbol eof")
+                        (ok (eq (symbol-package result) (find-package :ece))
+                            "eof sentinel is interned in the :ece package")))
+                 (when conn (ignore-errors (ece::ece-tcp-close conn)))
+                 (when client (ignore-errors (usocket:socket-close client)))
+                 (ignore-errors (ece::ece-tcp-close server))))))
+
+(deftest test-tcp-recv-zero-max-bytes
+    (testing "recv-nowait with max-bytes=0 returns empty without consuming input"
+             (let* ((server (ece::ece-tcp-listen 0 "127.0.0.1"))
+                    (port (usocket:get-local-port server))
+                    (client nil)
+                    (conn nil))
+               (unwind-protect
+                    (progn
+                      (setf client (usocket:socket-connect "127.0.0.1" port
+                                                           :element-type '(unsigned-byte 8)))
+                      (setf conn (poll-until (lambda () (ece::ece-tcp-accept-nowait server))
+                                             #'connection-ready-p))
+                      ;; Push a byte from the client side.
+                      (let ((stream (usocket:socket-stream client)))
+                        (write-byte 42 stream)
+                        (force-output stream))
+                      ;; Wait until the server sees readable data.
+                      (poll-until
+                       (lambda () (usocket:wait-for-input conn :timeout 0 :ready-only t))
+                       (lambda (v) (not (null v))))
+                      ;; max-bytes=0 must return the empty list without reading.
+                      (let ((r0 (ece::ece-tcp-recv-nowait conn 0)))
+                        (ok (null r0) "max-bytes=0 returns empty list"))
+                      ;; The byte is still buffered — a real read should find it.
+                      (let ((r1 (ece::ece-tcp-recv-nowait conn 16)))
+                        (ok (equal r1 '(42))
+                            "pending byte still readable after a max-bytes=0 call")))
+                 (when conn (ignore-errors (ece::ece-tcp-close conn)))
+                 (when client (ignore-errors (usocket:socket-close client)))
+                 (ignore-errors (ece::ece-tcp-close server))))))
+
+(deftest test-fs-watch-detects-modification
+    (testing "fs-watch-poll reports a path whose mtime advanced"
+             (uiop:with-temporary-file
+                 (:pathname tmp :type "scm" :keep nil)
+               ;; Seed file with initial content.
+               (with-open-file (out tmp :direction :output :if-exists :supersede)
+                 (write-string ";; v1" out))
+               (let ((path (namestring tmp))
+                     (watcher nil))
+                 (unwind-protect
+                      (progn
+                        (setf watcher (ece::ece-fs-watch-start (list path)))
+                        (ok (integerp watcher) "fs-watch-start returns an integer id")
+                        ;; First poll right after start — nothing changed.
+                        (let ((changes (ece::ece-fs-watch-poll watcher)))
+                          (ok (null changes)
+                              "first poll after start sees no changes"))
+                        ;; Mtime granularity on file-write-date is 1 second on most
+                        ;; filesystems — sleep past it before the modification.
+                        (sleep 1.1)
+                        (with-open-file (out tmp :direction :output :if-exists :supersede)
+                          (write-string ";; v2" out))
+                        (let ((changes (ece::ece-fs-watch-poll watcher)))
+                          (ok (member path changes :test #'string=)
+                              "modified path appears in fs-watch-poll result"))
+                        ;; Subsequent poll without further mtime change is empty.
+                        (let ((changes (ece::ece-fs-watch-poll watcher)))
+                          (ok (null changes)
+                              "second poll after mtime caught up returns empty list")))
+                   (when watcher (ece::ece-fs-watch-stop watcher)))))))
+
+(deftest test-fs-watch-stop-discards-watcher
+    (testing "fs-watch-stop forgets the watcher; later polls return empty"
+             (uiop:with-temporary-file
+                 (:pathname tmp :type "scm" :keep nil)
+               (with-open-file (out tmp :direction :output :if-exists :supersede)
+                 (write-string ";; init" out))
+               (let* ((path (namestring tmp))
+                      (watcher (ece::ece-fs-watch-start (list path))))
+                 (ece::ece-fs-watch-stop watcher)
+                 (let ((changes (ece::ece-fs-watch-poll watcher)))
+                   (ok (null changes)
+                       "polling a stopped watcher returns the empty list"))))))
