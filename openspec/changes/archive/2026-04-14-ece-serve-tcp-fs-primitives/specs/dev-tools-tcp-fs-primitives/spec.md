@@ -24,15 +24,19 @@ The `tcp-accept-nowait` primitive (id 230, platform `cl`) SHALL accept a server 
 
 ### Requirement: `tcp-recv-nowait` distinguishes idle, data, and EOF states
 The `tcp-recv-nowait` primitive (id 231, platform `cl`) SHALL accept a connection handle and a `max-bytes` integer, and SHALL return one of:
-- a non-empty list of byte integers in `[0, 255]` (length ≤ `max-bytes`) when data is available;
-- the symbol `would-block` when no data is currently buffered AND the connection is still open;
-- the symbol `eof` when the peer has closed the connection.
+- the empty list `()` when `max-bytes <= 0` (no bytes requested, no input consumed);
+- a non-empty list of byte integers in `[0, 255]` (length between 1 and `max-bytes` inclusive) when data is available;
+- the ECE-package symbol `would-block` when no data is currently buffered AND the connection is still open;
+- the ECE-package symbol `eof` when the peer has closed the connection.
 
-The implementation SHALL use `usocket:wait-for-input :timeout 0 :ready-only t` to detect readiness, then distinguish "data ready" from "peer closed" by attempting a single `(read-byte stream nil nil)` and treating a `nil` result as EOF.
+The `would-block` and `eof` sentinel symbols SHALL be interned in the `:ece` package (not the CL keyword package, not `:common-lisp-user`) so ECE code using `(eq? result 'would-block)` / `(eq? result 'eof)` matches correctly. ECE's `eq?` is backed by `cl:eq`, and equality between the sentinel and a quoted ECE symbol requires that both resolve to the same `:ece`-package symbol.
+
+The implementation SHALL use `usocket:wait-for-input :timeout 0 :ready-only t` to detect readiness, then distinguish "data ready" from "peer closed" by attempting a single `(read-byte stream nil nil)` and treating a `nil` result as EOF. For `max-bytes <= 0` the implementation SHALL return without invoking `wait-for-input` or reading any bytes.
 
 #### Scenario: Recv from an idle, open connection
 - **WHEN** `tcp-recv-nowait` is called on a connection where the peer has not sent any data
-- **THEN** the result SHALL be the symbol `would-block`
+- **THEN** the result SHALL be the ECE-package symbol `would-block`
+- **AND** `(symbol-package result)` SHALL be the `:ece` package
 
 #### Scenario: Recv after the peer sent N bytes
 - **WHEN** the peer writes 3 bytes (e.g. `65 66 67`) to its end of the connection
@@ -44,10 +48,17 @@ The implementation SHALL use `usocket:wait-for-input :timeout 0 :ready-only t` t
 - **WHEN** the peer closes its end of the connection without sending any further data
 - **AND** the kernel has delivered the FIN
 - **AND** `tcp-recv-nowait` is then called
-- **THEN** the result SHALL be the symbol `eof`
+- **THEN** the result SHALL be the ECE-package symbol `eof`
+- **AND** `(symbol-package result)` SHALL be the `:ece` package
+
+#### Scenario: Recv with max-bytes=0 is a non-consuming no-op
+- **GIVEN** a connection with a pending byte buffered by the kernel
+- **WHEN** `(tcp-recv-nowait conn 0)` is called
+- **THEN** the result SHALL be the empty list `()`
+- **AND** a subsequent `(tcp-recv-nowait conn 16)` SHALL still return the previously-buffered byte
 
 ### Requirement: `tcp-send-nowait` writes a list of byte integers
-The `tcp-send-nowait` primitive (id 232, platform `cl`) SHALL accept a connection handle and a list of byte integers in `[0, 255]`, and SHALL write those bytes to the connection in order. The result SHALL be the number of bytes written. Pragmatic implementation note: under typical TCP send-buffer conditions this primitive returns immediately, but it MAY block on a full kernel send buffer; the `would-block` return value is reserved for a future enhancement that switches to a true non-blocking write path.
+The `tcp-send-nowait` primitive (id 232, platform `cl`) SHALL accept a connection handle and a list of byte integers in `[0, 255]`, and SHALL write those bytes to the connection in order. The result SHALL be the number of bytes written (always an integer — the primitive does NOT return `would-block` in the current implementation). Pragmatic implementation note: under typical TCP send-buffer conditions this primitive returns immediately, but it MAY block on a full kernel send buffer. A future enhancement may add a true non-blocking path and introduce a `would-block` return value; until that lands, callers SHOULD treat the return value as "count of bytes handed to the kernel" and NOT rely on any `would-block` sentinel.
 
 #### Scenario: Send three bytes
 - **WHEN** `(tcp-send-nowait conn '(88 89 90))` is called

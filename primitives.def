@@ -320,13 +320,13 @@
 
 ;;; ═══════════════════════════════════════════════════════════════════════
 ;;; DEV-TOOLING PRIMITIVES (229-236) — TCP sockets and file watching for `ece serve`
-;;; CL-only. Not portable to WASM. Bound to 127.0.0.1 by default.
+;;; CL-only. Not portable to WASM.
 ;;; ═══════════════════════════════════════════════════════════════════════
 
 (229 tcp-listen            2  cl     "Bind/listen on host:port; return server handle")
 (230 tcp-accept-nowait     1  cl     "Non-blocking accept; return connection handle or #f")
-(231 tcp-recv-nowait       2  cl     "Non-blocking read up to N bytes; list of byte ints, 'would-block, or 'eof")
-(232 tcp-send-nowait       2  cl     "Non-blocking write of byte list; return bytes-sent or 'would-block")
+(231 tcp-recv-nowait       2  cl     "Non-blocking read up to N bytes; byte list, symbol would-block, or symbol eof")
+(232 tcp-send-nowait       2  cl     "Write byte list to connection; return bytes-sent count")
 (233 tcp-close             1  cl     "Close TCP server or connection handle")
 (234 fs-watch-start        1  cl     "Begin watching list of file paths; return watcher handle")
 (235 fs-watch-poll         1  cl     "Non-blocking poll; return list of changed paths since last call")

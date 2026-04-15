@@ -1642,21 +1642,26 @@ When ENV is supplied, it is passed to mc-compile-and-go."
 
 (defun ece-tcp-recv-nowait-impl (conn max-bytes)
   "Try to read up to MAX-BYTES from CONN without blocking.
-Returns a list of byte integers, :would-block if no data is currently
-available and the connection is still open, or :eof if the peer has
-closed the connection."
-  ;; usocket:wait-for-input reports the socket ready when EITHER data is
-  ;; pending OR the peer has closed. We then attempt to read one byte:
-  ;; nil means EOF, otherwise pull the rest of the buffered run via
-  ;; (listen ...) so we don't block waiting for additional data.
+Returns a list of byte integers, the ECE symbol would-block if no data is
+currently available and the connection is still open, or the ECE symbol eof
+if the peer has closed the connection. Both sentinels are interned in the
+:ece package so ECE `eq?` against the literal symbols `'would-block` and
+`'eof` works as expected."
+  ;; Guard against MAX-BYTES <= 0 — the caller asked for zero (or nonsense)
+  ;; bytes; honour that by returning an empty list without consuming any
+  ;; input. Otherwise usocket:wait-for-input reports the socket ready when
+  ;; EITHER data is pending OR the peer has closed. We then attempt to read
+  ;; one byte: nil means EOF, otherwise pull the rest of the buffered run
+  ;; via (listen ...) so we don't block waiting for additional data.
   (cond
+    ((<= max-bytes 0) nil)
     ((not (usocket:wait-for-input conn :timeout 0 :ready-only t))
-     :would-block)
+     (intern "would-block" :ece))
     (t
      (let* ((stream (usocket:socket-stream conn))
             (first-byte (read-byte stream nil nil)))
        (cond
-         ((null first-byte) :eof)
+         ((null first-byte) (intern "eof" :ece))
          (t
           (let ((bytes (list first-byte))
                 (count 1))
