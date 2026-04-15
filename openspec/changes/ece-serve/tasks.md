@@ -15,7 +15,7 @@
 
 ## 2. `src/scheduler.scm` — cooperative scheduler built on `call/cc`
 
-- [ ] 2.1 Create `src/scheduler.scm` as a standalone module (not inlined into `ece-serve.scm`). The module exports:
+- [x] 2.1 Create `src/scheduler.scm` as a standalone module (not inlined into `ece-serve.scm`). The module exports:
   - `(make-scheduler)` — create a new scheduler instance with an empty fiber table and event-source registry
   - `(scheduler-spawn! sched proc)` — create a new fiber that will run `proc` when next scheduled
   - `(scheduler-step! sched)` — run all currently-ready fibers until none are ready, then return
@@ -23,10 +23,10 @@
   - `(wait-for sched event-tag . args)` — used inside a fiber to yield until an event with matching tag arrives; captures the current continuation via `call/cc` and jumps to the scheduler's saved continuation
   - `(scheduler-notify! sched event-tag . args)` — called from outside fibers (e.g. during `poll-events`) to wake any fiber that was waiting on this event tag
   - `(scheduler-register-event-source! sched source-proc)` — add a pluggable event source that the scheduler will call during `poll-events`
-- [ ] 2.2 Implement the core `call/cc` dance: scheduler captures its own continuation into a per-instance slot (NOT `$yield-continuation` — the scheduler owns its own fiber table), fiber `wait-for` captures its continuation into the fiber table entry and jumps to the scheduler continuation. Test that two fibers can yield and resume independently without interfering.
-- [ ] 2.3 Implement event tags as generic symbols dispatched through the pluggable event-source registry. The Stage 1 event sources are `'tcp-accept-ready`, `'tcp-read-ready`, `'tcp-write-ready`, `'file-changed`, `'timer-expired`. Adding `'frame-tick` in a future change (per Decision 9) should require no changes to the scheduler core.
-- [ ] 2.4 Document the scheduler's API at the top of `src/scheduler.scm`, including a reference to Dybvig & Hieb's "Engines from Continuations" paper and a note that this module is intentionally designed to subsume the runtime `%yield!` machinery in a future refactor (see design doc Decision 9).
-- [ ] 2.5 Add unit tests under `tests/ece/common/test-scheduler.scm`: spawn two fibers, verify they interleave correctly, verify event delivery wakes the right fiber, verify a fiber that finishes normally is removed from the table.
+- [x] 2.2 Implement the core `call/cc` dance: scheduler captures its own continuation into a per-instance slot (NOT `$yield-continuation` — the scheduler owns its own fiber table), fiber `wait-for` captures its continuation into the fiber table entry and jumps to the scheduler continuation. Test that two fibers can yield and resume independently without interfering.
+- [x] 2.3 Implement event tags as generic symbols dispatched through the pluggable event-source registry. The Stage 1 event sources are `'tcp-accept-ready`, `'tcp-read-ready`, `'tcp-write-ready`, `'file-changed`, `'timer-expired`. Adding `'frame-tick` in a future change (per Decision 9) should require no changes to the scheduler core. **Note:** Stage 1 matches on the tag alone — fibers waiting on the same tag all wake together. Per-resource matching (e.g., wait only for reads on a specific socket) can be achieved by using distinct per-resource tags; finer-grained args-based matching is a future refinement if needed.
+- [x] 2.4 Document the scheduler's API at the top of `src/scheduler.scm`, including a reference to Dybvig & Hieb's "Engines from Continuations" paper and a note that this module is intentionally designed to subsume the runtime `%yield!` machinery in a future refactor (see design doc Decision 9).
+- [x] 2.5 Add unit tests under `tests/ece/common/test-scheduler.scm`: spawn two fibers, verify they interleave correctly, verify event delivery wakes the right fiber, verify a fiber that finishes normally is removed from the table. **Landed:** 13 tests, 46 assertions, covering single-fiber lifecycle, FIFO wakeup ordering, mismatched-tag rejection, scheduler-run! drain, deadlock detection, event sources, mid-run spawning, current-fiber introspection, and wait-for-outside-fiber error path.
 
 ## 3. `src/sha1.scm` and `src/base64.scm` — reusable utilities  (**PRE-LANDED via sha1-base64-utilities change**)
 
