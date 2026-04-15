@@ -90,6 +90,13 @@ frame-length boundary tests since ECE doesn't expose make-string."
 (test "ws-codec: encode-pong-frame with empty payload" (lambda ()
   (assert-equal (ws-encode-pong-frame '()) '(138 0))))
 
+(test "ws-codec: encode-ping-frame with payload" (lambda ()
+  ;; 0x89 = 137 (FIN + ping opcode)
+  (assert-equal (ws-encode-ping-frame '(72 105)) '(137 2 72 105))))
+
+(test "ws-codec: encode-ping-frame with empty payload" (lambda ()
+  (assert-equal (ws-encode-ping-frame '()) '(137 0))))
+
 ;; ── Frame decoder: RFC 6455 §5.7 masked text example ───────────────────
 
 (test "ws-codec: decode masked \"Hello\" text frame (RFC 6455 §5.7)" (lambda ()
@@ -128,6 +135,39 @@ frame-length boundary tests since ECE doesn't expose make-string."
   ;; byte 0 = 0x8F = FIN + opcode=0xF (reserved). Masked, zero-length.
   (assert-equal (ws-decode-frame '(143 128 0 0 0 0))
                 'malformed)))
+
+(test "ws-codec: decode rejects frames with any RSV bit set" (lambda ()
+  ;; RSV1 set: byte 0 = 0xC1 = 193 (FIN + RSV1 + text)
+  (assert-equal (ws-decode-frame '(193 128 0 0 0 0)) 'malformed)
+  ;; RSV2 set: byte 0 = 0xA1 = 161 (FIN + RSV2 + text)
+  (assert-equal (ws-decode-frame '(161 128 0 0 0 0)) 'malformed)
+  ;; RSV3 set: byte 0 = 0x91 = 145 (FIN + RSV3 + text)
+  (assert-equal (ws-decode-frame '(145 128 0 0 0 0)) 'malformed)))
+
+(test "ws-codec: decode rejects 64-bit length with non-zero high bytes" (lambda ()
+  ;; byte 0 = 0x81 FIN+text, byte 1 = 0xFF (MASK + len7=127), then
+  ;; 8 length bytes with high bytes non-zero (claims length > 2^32).
+  ;; Decoder must not silently truncate to the low 32 bits.
+  (assert-equal (ws-decode-frame
+                 '(129 255 1 0 0 0 0 0 0 0  ; high byte = 1
+                   0 0 0 0))                 ; mask key placeholder
+                'malformed)
+  (assert-equal (ws-decode-frame
+                 '(129 255 0 0 0 255 0 0 0 0 ; fourth byte = 255
+                   0 0 0 0))
+                'malformed)))
+
+(test "ws-codec: decode rejects control frames with payload > 125" (lambda ()
+  ;; byte 0 = 0x88 (FIN + close), byte 1 = 0xFE (MASK + len7=126 → 16-bit),
+  ;; length = 126. Per RFC 6455 §5.5 control frames are limited to 125
+  ;; bytes of payload.
+  (let* ((header '(136 254 0 126))  ; 0x88 0xFE 0x00 0x7E
+         (mask-key '(0 0 0 0))
+         (payload (let loop ((i 0) (acc '()))
+                    (if (>= i 126) (reverse acc)
+                        (loop (+ i 1) (cons 0 acc)))))
+         (bytes (append header mask-key payload)))
+    (assert-equal (ws-decode-frame bytes) 'malformed))))
 
 ;; ── Frame decoder: close and ping echo ──────────────────────────────────
 

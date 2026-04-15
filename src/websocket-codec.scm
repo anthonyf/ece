@@ -1,18 +1,20 @@
 ;;; websocket-codec.scm — WebSocket (RFC 6455) subset for ece-serve.
 ;;;
 ;;; Pure byte/string transforms: handshake accept-key computation, text/
-;;; close/ping/pong frame encoders for server→client traffic, and a frame
-;;; decoder for client→server traffic (which is always masked per RFC §5.3).
-;;; No sockets, no fibers, no streaming — the caller feeds complete frames
-;;; (a frame's bytes include the entire header + payload).
+;;; close/ping/pong frame encoders for both directions of the wire, and
+;;; a frame decoder for client→server traffic (which is always masked
+;;; per RFC §5.3). No sockets, no fibers, no streaming — the caller
+;;; feeds complete frames (a frame's bytes include the entire header
+;;; plus payload).
 ;;;
 ;;; Scope: text frames (opcode 0x1), close (0x8), ping (0x9), pong (0xA),
-;;; no fragmentation (FIN must be 1), no extensions, no continuation frames.
-;;; Anything else is rejected by the decoder; the encoder only produces
-;;; what it supports.
+;;; no fragmentation (FIN must be 1), no extensions (RSV bits must be 0),
+;;; no continuation frames. Control frames (close/ping/pong) are limited
+;;; to 125-byte payloads per RFC 6455 §5.5. Anything else is rejected by
+;;; the decoder; the encoder only produces what it supports.
 ;;;
 ;;; Depends on `src/sha1.scm` and `src/base64.scm` which must be loaded
-;;; first (sha1-string, base64-encode-bytes).
+;;; first (sha1-string, bytes->base64).
 ;;;
 ;;; ─────────────────────────────────────────────────────────────────────
 ;;; API
@@ -28,6 +30,9 @@
 ;;;
 ;;;  (ws-encode-close-frame)
 ;;;      — encode a close frame with no status code (FIN=1, opcode=8).
+;;;
+;;;  (ws-encode-ping-frame payload-bytes)
+;;;      — encode a ping frame carrying PAYLOAD-BYTES (FIN=1, opcode=9).
 ;;;
 ;;;  (ws-encode-pong-frame payload-bytes)
 ;;;      — encode a pong reply carrying the ping's payload (FIN=1, opcode=A).
@@ -134,6 +139,12 @@ Returns a list of integers ready for tcp-send-nowait."
 permits a close frame with an empty payload."
   (%ws-encode-frame-unmasked %ws-opcode-close '()))
 
+(define (ws-encode-ping-frame payload-bytes)
+  "Encode a ping frame carrying PAYLOAD-BYTES. Control frames may not
+exceed 125 bytes per RFC 6455 §5.5 — the caller is responsible for
+respecting that limit."
+  (%ws-encode-frame-unmasked %ws-opcode-ping payload-bytes))
+
 (define (ws-encode-pong-frame payload-bytes)
   "Encode a pong reply carrying PAYLOAD-BYTES (the ping's original payload).
 RFC 6455 §5.5.3 requires the pong to echo the ping payload verbatim."
@@ -211,23 +222,33 @@ consumed from BYTES including the initial length byte."
         (cond
          ((not (%ws-list-length-at-least? bytes 9)) #f)
          (else
-          ;; Realistic dev-loop frames never exceed 2^30 bytes, so we
-          ;; only consume the low 4 bytes of the 64-bit length and
-          ;; ignore the high 4. If somebody sends a frame with a
-          ;; non-zero high 4 bytes we'll still decode the low portion —
-          ;; the length mismatch check below catches genuinely truncated
-          ;; frames.
+          ;; RFC 6455 §5.2 specifies a 64-bit unsigned length with the
+          ;; most-significant bit clear. This implementation only handles
+          ;; payload lengths that fit in the low 32 bits — frames with
+          ;; any non-zero byte in the high 32 bits are rejected as
+          ;; malformed rather than silently truncating. (ECE fixnums top
+          ;; out at 2^30-1 so we can't represent genuinely huge lengths
+          ;; anyway, and the dev server never sends them.)
           (let* ((tail (cdr bytes))  ; skip length byte
+                 (b1 (list-ref tail 0))
+                 (b2 (list-ref tail 1))
+                 (b3 (list-ref tail 2))
+                 (b4 (list-ref tail 3))
                  (b5 (list-ref tail 4))
                  (b6 (list-ref tail 5))
                  (b7 (list-ref tail 6))
                  (b8 (list-ref tail 7)))
-            (list (bitwise-or
-                   (arithmetic-shift b5 24)
-                   (arithmetic-shift b6 16)
-                   (arithmetic-shift b7 8)
-                   b8)
-                  9))))))))))
+            (cond
+             ((or (not (= b1 0)) (not (= b2 0))
+                  (not (= b3 0)) (not (= b4 0)))
+              'malformed)
+             (else
+              (list (bitwise-or
+                     (arithmetic-shift b5 24)
+                     (arithmetic-shift b6 16)
+                     (arithmetic-shift b7 8)
+                     b8)
+                    9))))))))))))
 
 (define (%ws-build-frame opcode payload total)
   "Construct a ws-frame, attaching a decoded text view if OPCODE is text."
@@ -236,15 +257,24 @@ consumed from BYTES including the initial length byte."
    (if (= opcode %ws-opcode-text) (%ws-bytes->string payload) #f)
    total))
 
+(define (%ws-control-opcode? opcode)
+  "Test whether OPCODE is a control opcode (close / ping / pong).
+Control frames carry additional restrictions per RFC 6455 §5.5."
+  (or (= opcode %ws-opcode-close)
+      (= opcode %ws-opcode-ping)
+      (= opcode %ws-opcode-pong)))
+
 (define (%ws-finish-decode opcode payload total)
-  "Final step of ws-decode-frame: reject unsupported opcodes, otherwise
-return the completed frame record."
+  "Final step of ws-decode-frame: reject unsupported opcodes, enforce the
+RFC 6455 §5.5 rule that control frames (close/ping/pong) have at most
+125 bytes of payload, otherwise return the completed frame record."
   (cond
-   ((or (= opcode %ws-opcode-text)
-        (= opcode %ws-opcode-close)
-        (= opcode %ws-opcode-ping)
-        (= opcode %ws-opcode-pong))
+   ((= opcode %ws-opcode-text)
     (%ws-build-frame opcode payload total))
+   ((%ws-control-opcode? opcode)
+    (if (> (length payload) 125)
+        'malformed
+        (%ws-build-frame opcode payload total)))
    (else 'malformed)))
 
 (define (%ws-decode-after-length bytes opcode payload-len len-bytes)
@@ -272,12 +302,15 @@ integers from tcp-recv-nowait's return value). Returns:
    (else
     (let* ((b0 (car bytes))
            (fin (bitwise-and b0 128))       ; FIN bit
+           (rsv (bitwise-and b0 112))       ; RSV1/RSV2/RSV3 bits (0x70)
            (opcode (bitwise-and b0 15))     ; low 4 bits
            (after-b0 (cdr bytes))
            (len-info (%ws-decode-length after-b0)))
       (cond
-       ((= fin 0) 'malformed)
-       ((eq? len-info 'unmasked) 'malformed)
+       ((= fin 0) 'malformed)                ; no fragmentation
+       ((not (= rsv 0)) 'malformed)          ; RSV bits must be 0 (no extensions)
+       ((eq? len-info 'unmasked) 'malformed) ; client must mask
+       ((eq? len-info 'malformed) 'malformed); 64-bit high bytes non-zero
        ((not len-info) 'incomplete)
        (else
         (%ws-decode-after-length

@@ -238,13 +238,19 @@ lower-cased names internally."
 
 (define (%http-format-headers headers)
   "Render an alist of headers as a CRLF-terminated block. Each line
-is \"Name: value\" followed by CRLF."
-  (let loop ((rest headers) (acc ""))
-    (cond
-     ((null? rest) acc)
-     (else
-      (loop (cdr rest)
-            (string-append acc (car (car rest)) ": " (cdr (car rest)) %crlf))))))
+is \"Name: value\" followed by CRLF. Accumulates into an output-string
+port so the total cost is linear in the header block size rather than
+the quadratic cost of repeated string-append on a growing accumulator."
+  (let ((out (open-output-string)))
+    (let loop ((rest headers))
+      (cond
+       ((null? rest) (get-output-string out))
+       (else
+        (display (car (car rest)) out)
+        (display ": " out)
+        (display (cdr (car rest)) out)
+        (display %crlf out)
+        (loop (cdr rest)))))))
 
 (define (%http-alist-has? headers name-lower)
   "True if HEADERS contains a (case-insensitive) entry for NAME-LOWER."
