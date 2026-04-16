@@ -84,6 +84,9 @@ When not on PATH, derived from this file's location (emacs/../bin/ece-repl)."
 Parses ((result \"...\") (output . \"...\")) responses and displays
 just the result value, with any side-effect output prepended.
 Preserves trailing text (e.g., the prompt) after the parsed alist."
+  (if (and (boundp 'comint-redirect-completed)
+           (not comint-redirect-completed))
+      output
   (condition-case nil
       (let* ((read-result (read-from-string output))
              (parsed (car read-result))
@@ -105,7 +108,7 @@ Preserves trailing text (e.g., the prompt) after the parsed alist."
                  "")
                remaining))
           output))
-    (error output)))
+    (error output))))
 
 (defun geiser-ece--startup (_remote)
   "Actions run after the ECE REPL process starts."
