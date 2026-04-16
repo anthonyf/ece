@@ -35,5 +35,5 @@ ECE's `--geiser` REPL mode wraps all output in `((result "...") (output . "...")
 
 ## Risks / Trade-offs
 
-- **[Risk] Regex fragility.** The filter needs to recognize alist responses vs. other output. A malformed response could slip through. Mitigation: use `read-from-string` to parse, fall back to raw display on parse failure.
+- **[Risk] Reader/parse fragility on partial chunks.** The filter needs to distinguish alist responses from other output, and `read-from-string` can fail if comint delivers incomplete data. Mitigation: attempt to parse with `read-from-string`, fall back to raw display on parse failure.
 - **[Trade-off] Result re-printing.** The result is a string representation from ECE's `write-to-string-flat`. We display it as-is (not re-formatted by elisp). This means ECE's print conventions are preserved.

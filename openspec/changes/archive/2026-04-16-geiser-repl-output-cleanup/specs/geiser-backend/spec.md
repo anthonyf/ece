@@ -17,7 +17,7 @@ The Geiser REPL buffer SHALL display evaluation results in clean form, not as ra
 #### Scenario: Void result shows nothing
 
 - **WHEN** user types `(define x 1)` in the REPL buffer
-- **THEN** the REPL buffer SHALL display the compiled-procedure representation or nothing, not a raw alist
+- **THEN** the REPL buffer SHALL display nothing, not a raw alist
 
 #### Scenario: Parse failure falls back to raw display
 
