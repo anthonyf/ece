@@ -19,17 +19,17 @@
 ;; Then M-x run-geiser, select `ece'.
 ;;
 ;; Design notes:
-;;  - The wire protocol sends RAW Scheme forms (not wrapped in geiser:eval).
+;;  - The wire protocol sends RAW Scheme forms for eval (not wrapped in
+;;    geiser:eval).  For load-file, it sends `(load PATH)' directly.
 ;;    The --geiser REPL mode captures stdout during eval and emits a
 ;;    chibi-style alist response: ((result "...") (output . "..."))
 ;;  - Version detection uses `bin/ece-repl -V' (the version-command slot).
-;;  - Handler names use hyphens (geiser-load-file), not colons, because
-;;    ECE's reader doesn't roundtrip colon-symbols through file compilation.
 ;;
 ;; See openspec/changes/geiser-ece-day-1/ for full design rationale.
 
 ;;; Code:
 
+(require 'cl-lib)
 (require 'geiser-impl)
 (require 'geiser-custom)
 (require 'geiser-base)

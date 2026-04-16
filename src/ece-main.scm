@@ -174,6 +174,8 @@ Returns the value of the last expression."
 ;; Both modes wrap `read` in a `guard` so reader errors (unbalanced
 ;; parens, unexpected EOF in list) don't crash the subprocess.
 
+(define *repl-read-error* (list 'repl-read-error))
+
 (define (repl . opts)
   (let ((geiser? (and (not (null? opts)) (car opts))))
     (display "ece> ")
@@ -194,14 +196,14 @@ Returns the value of the last expression."
                                            (error-object-message e)
                                            e))
                               (newline)))
-                            '*repl-read-error*))
+                            *repl-read-error*))
                         (read))))
       (cond
        ((eof? input)
         (newline)
         (display "Bye!")
         (newline))
-       ((eq? input '*repl-read-error*)
+       ((eq? input *repl-read-error*)
         (repl geiser?))
        (else
         (cond
