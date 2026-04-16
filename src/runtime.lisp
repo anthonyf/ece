@@ -1411,6 +1411,11 @@ variables inline — no throw/catch, no dispatcher, no allocation per transition
   "Maps space-qualified entry addresses (space-id . local-pc) to procedure name symbols.
 Populated at assembly time from procedure-name pseudo-instructions.")
 
+(defvar *procedure-params-table*
+  (make-hash-table :test 'equal)
+  "Maps space-qualified entry addresses (space-id . local-pc) to (param-names . rest?) pairs.
+Populated at assembly time from procedure-params pseudo-instructions.")
+
 (defvar *traced-procedures*
   (make-hash-table :test 'eq)
   "Maps symbol names to their original procedure values when traced.")
@@ -1545,6 +1550,12 @@ entry fall through to the interpreted dispatch loop unchanged.")
          (let ((local-pc (gethash (cadr item) labels)))
            (when local-pc
              (setf (gethash (cons space-id local-pc) *procedure-name-table*)
+                   (caddr item)))))
+        ((and (consp item) (eq (car item) '|procedure-params|))
+         ;; Pseudo-instruction: (procedure-params <label> <params-info>)
+         (let ((local-pc (gethash (cadr item) labels)))
+           (when local-pc
+             (setf (gethash (cons space-id local-pc) *procedure-params-table*)
                    (caddr item)))))
         ;; Source-location marker — skip (used by compile-file for source-map)
         ((and (consp item) (eq (car item) '|source-location|)))

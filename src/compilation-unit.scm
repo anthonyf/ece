@@ -111,6 +111,9 @@ sorted by PC. Source-location markers are removed from the instruction list."
            ;; Pseudo-instruction procedure-name: keep it, don't increment PC
            ((and (pair? item) (eq? (car item) 'procedure-name))
             (loop (cdr items) pc (cons item stripped) entries))
+           ;; Pseudo-instruction procedure-params: keep it, don't increment PC
+           ((and (pair? item) (eq? (car item) 'procedure-params))
+            (loop (cdr items) pc (cons item stripped) entries))
            ;; Regular instruction: keep it, increment PC
            (else
             (loop (cdr items) (+ pc 1) (cons item stripped) entries)))))))

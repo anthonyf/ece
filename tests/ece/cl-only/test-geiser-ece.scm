@@ -11,11 +11,39 @@
 ;; ---- Test geiser-completions ----
 ;; (stub-era "returns empty" test removed — real handler returns results now)
 
-;; ---- Test geiser-autodoc stub ----
+;; ---- Test %procedure-params ----
 
-(test "geiser-autodoc returns empty list"
+(define (test-proc-for-params a b) (+ a b))
+
+(test "%procedure-params returns metadata for defined procedure"
   (lambda ()
-    (assert-equal (geiser-autodoc '(foo)) '())))
+    (let ((params (%procedure-params test-proc-for-params)))
+      (assert (pair? params) "returns a pair")
+      (assert-equal (car params) '("a" "b"))
+      (assert-equal (cdr params) 0))))
+
+(test "%procedure-params returns #f for non-procedures"
+  (lambda ()
+    (assert-equal (%procedure-params 42) #f)))
+
+(test "%procedure-params returns arity for host primitives"
+  (lambda ()
+    (let ((params (%procedure-params car)))
+      (assert (pair? params) "returns a pair for primitive")
+      (assert-equal (length (car params)) 1)
+      (assert-equal (cdr params) 0))))
+
+;; ---- Test geiser-autodoc ----
+
+(test "geiser-autodoc returns non-empty alist for known function"
+  (lambda ()
+    (let ((result (geiser-autodoc '(map))))
+      (assert (pair? result) "non-empty for map")
+      (assert (pair? (car result)) "first entry is a pair"))))
+
+(test "geiser-autodoc returns empty list for unknowns"
+  (lambda ()
+    (assert-equal (geiser-autodoc '(zzz-nonexistent)) '())))
 
 ;; ---- Test alist formatting via write-to-string-flat ----
 

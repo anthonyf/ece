@@ -70,6 +70,7 @@
  (perform (op define-variable!) (const add) (reg val) (reg env))
  (assign val (reg val))
  (procedure-name L12 add)
+ (procedure-params L12 (("a" "b") . 0))
  (assign env (op lookup-variable-value) (const *global-env*) (reg env))
  (assign proc (op lookup-variable-value) (const add) (reg env))
  (assign val (op lookup-variable-value) (const y) (reg env))

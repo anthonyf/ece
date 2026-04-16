@@ -100,6 +100,7 @@
  (perform (op define-variable!) (const loop-n) (reg val) (reg env))
  (assign val (reg val))
  (procedure-name L7 loop-n)
+ (procedure-params L7 (("n") . 0))
  (assign env (op lookup-variable-value) (const *global-env*) (reg env))
  (assign val (op make-compiled-procedure) (label L27) (reg env))
  (goto (label L26))
@@ -236,4 +237,5 @@
  L26
  (perform (op define-variable!) (const fib-iter) (reg val) (reg env))
  (assign val (reg val))
- (procedure-name L27 fib-iter))
+ (procedure-name L27 fib-iter)
+ (procedure-params L27 (("a" "b" "count") . 0)))
