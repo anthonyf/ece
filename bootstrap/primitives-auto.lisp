@@ -66,6 +66,9 @@
 (defun ece-%global-env-frame ()
   (cl:car *global-env*))
 
+(defun ece-%global-env-symbols ()
+  (let ((keys '())) (cl:labels ((find-hf (e) (cl:cond ((cl:null e) cl:nil) ((hash-frame-p (cl:car e)) (cl:car e)) (cl:t (find-hf (cl:cdr e)))))) (cl:let ((hf (find-hf *global-env*))) (cl:when hf (cl:maphash (cl:lambda (k v) (cl:declare (cl:ignore v)) (cl:push (cl:symbol-name k) keys)) (cl:cdr hf)))) keys)))
+
 (defun ece-%hash-frame-entries (frame)
   (cl:progn (cl:unless (cl:and (cl:consp frame) (cl:hash-table-p (cl:cdr frame))) (cl:error "ece-%hash-frame-entries: expected (:hash-frame . <hash-table>), got ~S" frame)) (let ((entries '())) (cl:maphash (cl:lambda (k v) (cl:push (cl:cons k v) entries)) (cl:cdr frame)) entries)))
 

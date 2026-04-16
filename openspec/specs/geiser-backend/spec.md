@@ -90,14 +90,38 @@ ECE SHALL ship automated tests (CL-only Rove tests under `tests/ece.lisp` and un
 - **THEN** the first response's `output` SHALL contain a non-empty error message
 - **AND** the second response SHALL have `result` equal to the expected value and `output` empty
 
+### Requirement: geiser-completions returns prefix-filtered global symbols
+
+The `geiser-completions` handler in `src/geiser-ece.scm` SHALL accept a prefix string and optional extra arguments, query `%global-env-symbols` for all global bindings, filter to those whose name starts with the prefix, sort alphabetically, and return the resulting list of strings. The Geiser elisp side SHALL wire `C-M-i` (completion-at-point) and REPL TAB to call this handler.
+
+#### Scenario: Prefix match returns filtered results
+
+- **WHEN** `(geiser-completions "string-")` is called
+- **THEN** it SHALL return a sorted list of strings, each starting with `"string-"` (e.g., `"string-append"`, `"string-length"`, `"string-ref"`)
+
+#### Scenario: Empty prefix returns all symbols
+
+- **WHEN** `(geiser-completions "")` is called
+- **THEN** it SHALL return a sorted list of all global symbol names
+
+#### Scenario: No match returns empty list
+
+- **WHEN** `(geiser-completions "zzz-nonexistent-prefix-xyz")` is called
+- **THEN** it SHALL return the empty list `()`
+
+#### Scenario: C-M-i triggers completions in emacs
+
+- **WHEN** user types `(str` in a `.scm` buffer and presses `C-M-i`
+- **THEN** Geiser SHALL display a completion popup containing symbol names starting with `"str"` (e.g., `"string-append"`, `"string-length"`)
+
 ### Requirement: Day 1 scope bounds
 
 The geiser-backend capability SHALL explicitly NOT provide completions, autodoc / arglist hints, jump-to-definition, symbol documentation, macro expansion, module browser, inspector, debugger, or tracing in day 1. When Geiser requests any of these, the backend SHALL respond with a graceful "not supported" response rather than crashing or hanging.
 
-#### Scenario: Completion request returns empty list gracefully
+#### Scenario: Completion request now returns real results (day 2)
 
-- **WHEN** Geiser sends a `geiser-completions` request to the day-1 backend
-- **THEN** the backend SHALL respond with an empty completion list wrapped in the same alist envelope
+- **WHEN** Geiser sends a `geiser-completions` request
+- **THEN** the backend SHALL respond with prefix-filtered global symbols (see `geiser-completions` requirement above)
 
 #### Scenario: Autodoc request returns empty gracefully
 

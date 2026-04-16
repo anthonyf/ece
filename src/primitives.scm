@@ -937,3 +937,22 @@
 
 (define-host-primitive (fs-watch-stop watcher)
   :cl `(ece-fs-watch-stop-impl ,watcher))
+
+;;; ─────────────────────────────────────────────────────────────────────────
+;;; Introspection (id 237+) — global environment inspection
+;;; ─────────────────────────────────────────────────────────────────────────
+
+(define-host-primitive (%global-env-symbols)
+  :cl `(let ((keys '()))
+         (cl:labels ((find-hf (e)
+                              (cl:cond
+                               ((cl:null e) cl:nil)
+                               ((hash-frame-p (cl:car e)) (cl:car e))
+                               (cl:t (find-hf (cl:cdr e))))))
+                    (cl:let ((hf (find-hf *global-env*)))
+                            (cl:when hf
+                                     (cl:maphash (cl:lambda (k v)
+                                                            (cl:declare (cl:ignore v))
+                                                            (cl:push (cl:symbol-name k) keys))
+                                                 (cl:cdr hf))))
+                    keys)))

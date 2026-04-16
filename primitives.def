@@ -331,3 +331,9 @@
 (234 fs-watch-start        1  cl     "Begin watching list of file paths; return watcher handle")
 (235 fs-watch-poll         1  cl     "Non-blocking poll; return list of changed paths since last call")
 (236 fs-watch-stop         1  cl     "Stop and remove a watcher")
+
+;;; ═══════════════════════════════════════════════════════════════════════
+;;; INTROSPECTION PRIMITIVES (237+) — global environment inspection
+;;; ═══════════════════════════════════════════════════════════════════════
+
+(237 %global-env-symbols    0  cl     "List all bound symbol names in global env")
