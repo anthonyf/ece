@@ -10,8 +10,8 @@
 ;;; Commentary:
 
 ;; Geiser backend for the ECE Scheme implementation.  Supports eval at
-;; point (C-x C-e), load file (C-c C-l), REPL buffer, and symbol
-;; completions (C-M-i).  No autodoc or jump-to-def yet.
+;; point (C-x C-e), load file (C-c C-l), REPL buffer, symbol completions
+;; (C-M-i), and autodoc (eldoc-mode signature hints).  No jump-to-def yet.
 ;;
 ;; Usage: add to your init.el:
 ;;   (load "/path/to/ece/emacs/geiser-ece.el")
@@ -149,16 +149,16 @@ In ECE's Geiser mode the REPL handles eval/load directly:
                  output-buf proc nil t)
                 (while (and (process-live-p proc)
                             (not comint-redirect-completed))
-                  (accept-process-output proc 0.1)))
-              (when (and (process-live-p proc) comint-redirect-completed)
-                (with-current-buffer output-buf
-                  (goto-char (point-min))
-                  (condition-case nil
-                      (let* ((response (read (current-buffer)))
-                             (result-str (cadr (assq 'result response))))
-                        (when (and result-str (not (string= result-str "")))
-                          (car (read-from-string result-str))))
-                    (error nil)))))
+                  (accept-process-output proc 0.1))
+                (when (and (process-live-p proc) comint-redirect-completed)
+                  (with-current-buffer output-buf
+                    (goto-char (point-min))
+                    (condition-case nil
+                        (let* ((response (read (current-buffer)))
+                               (result-str (cadr (assq 'result response))))
+                          (when (and result-str (not (string= result-str "")))
+                            (car (read-from-string result-str))))
+                      (error nil))))))
           (kill-buffer output-buf))))))
 
 (defun geiser-ece--complete-at-point ()
@@ -182,6 +182,89 @@ In ECE's Geiser mode the REPL handles eval/load directly:
 
 (add-hook 'geiser-mode-hook #'geiser-ece--setup-completion)
 (add-hook 'geiser-repl-mode-hook #'geiser-ece--setup-completion)
+
+;;; Autodoc (direct REPL query, same comint-redirect pattern as completions)
+
+(defun geiser-ece--sync-autodoc (symbol-name)
+  "Query the ECE REPL for autodoc on SYMBOL-NAME."
+  (when (and symbol-name
+             (string-match-p "\\`[^()\";\n\t ]+\\'" symbol-name))
+    (let* ((repl-buf (geiser-ece--repl-buffer))
+           (proc (and repl-buf (get-buffer-process repl-buf))))
+      (when proc
+        (let ((output-buf (generate-new-buffer " *ece-autodoc*")))
+          (unwind-protect
+              (with-timeout (3 nil)
+                (with-current-buffer repl-buf
+                  (comint-redirect-send-command-to-process
+                   (format "(geiser-autodoc '(%s))" symbol-name)
+                   output-buf proc nil t)
+                  (while (and (process-live-p proc)
+                              (not comint-redirect-completed))
+                    (accept-process-output proc 0.1))
+                  (when (and (process-live-p proc) comint-redirect-completed)
+                    (with-current-buffer output-buf
+                      (goto-char (point-min))
+                      (condition-case nil
+                          (let* ((response (read (current-buffer)))
+                                 (result-str (cadr (assq 'result response))))
+                            (when (and result-str (not (string= result-str ""))
+                                       (not (string= result-str "()")))
+                              (car (read-from-string result-str))))
+                        (error nil))))))
+            (kill-buffer output-buf)))))))
+
+(defun geiser-ece--function-at-point ()
+  "Return the name of the function at or around point."
+  (save-excursion
+    (let ((ppss (syntax-ppss)))
+      (when (> (nth 0 ppss) 0)
+        (goto-char (nth 1 ppss))
+        (forward-char 1)
+        (let ((sym-start (point)))
+          (with-syntax-table scheme-mode-syntax-table
+            (skip-syntax-forward "^-()> "))
+          (when (> (point) sym-start)
+            (buffer-substring-no-properties sym-start (point))))))))
+
+(defun geiser-ece--format-autodoc (autodoc-result)
+  "Format AUTODOC-RESULT as an eldoc string."
+  (when autodoc-result
+    (let* ((entry (car autodoc-result))
+           (name (car entry))
+           (args-spec (cadr entry))
+           (required (cdr (assq 'required (cdr args-spec))))
+           (rest-arg (cadr (assq 'rest (cdr args-spec))))
+           (parts (mapcar #'symbol-name required)))
+      (when rest-arg
+        (setq parts (append parts (list "." (symbol-name rest-arg)))))
+      (let ((args (mapconcat #'identity parts " ")))
+        (if (string-empty-p args)
+            (format "(%s)" name)
+          (format "(%s %s)" name args))))))
+
+(defun geiser-ece--eldoc-function (&optional callback &rest _)
+  "Eldoc function for ECE Scheme.
+Works with both `eldoc-documentation-functions' (Emacs 28+)
+and the legacy `eldoc-documentation-function' API."
+  (let ((fn-name (geiser-ece--function-at-point)))
+    (when fn-name
+      (let ((doc (geiser-ece--format-autodoc
+                  (geiser-ece--sync-autodoc fn-name))))
+        (when doc
+          (if callback
+              (funcall callback doc)
+            doc))))))
+
+(defun geiser-ece--setup-eldoc ()
+  "Set up eldoc for ECE Scheme buffers."
+  (if (boundp 'eldoc-documentation-functions)
+      (add-hook 'eldoc-documentation-functions
+                #'geiser-ece--eldoc-function nil t)
+    (setq-local eldoc-documentation-function #'geiser-ece--eldoc-function)))
+
+(add-hook 'geiser-mode-hook #'geiser-ece--setup-eldoc)
+(add-hook 'geiser-repl-mode-hook #'geiser-ece--setup-eldoc)
 
 ;;; Registration
 

@@ -2607,7 +2607,13 @@ Returns captured stdout."
            (let ((output (run-repl-geiser "(geiser-completions \"str\")")))
              (ok (search "result" output) "has result field")
              (ok (search "string-append" output) "includes string-append")
-             (ok (search "string-length" output) "includes string-length"))))
+             (ok (search "string-length" output) "includes string-length")))
+
+  (testing "geiser-autodoc returns structured result"
+           (let ((output (run-repl-geiser "(geiser-autodoc '(map))")))
+             (ok (search "result" output) "has result field")
+             (ok (search "map" output) "includes map")
+             (ok (search "args" output) "includes args structure"))))
 
 (deftest test-ece-assembler
     (testing "assemble and execute"

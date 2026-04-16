@@ -150,6 +150,12 @@
 (defun ece-%procedure-name-set! (pc-or-qualified name)
   (cl:progn (cl:setf (cl:gethash pc-or-qualified *procedure-name-table*) name) cl:nil))
 
+(defun ece-%procedure-params (proc)
+  (cl:cond ((compiled-procedure-p proc) (cl:let* ((entry (cl:cadr proc)) (params (cl:or (cl:gethash entry *procedure-params-table*) (cl:when (cl:consp entry) (cl:gethash (cl:cdr entry) *procedure-params-table*))))) (cl:or params *scheme-false*))) ((primitive-procedure-p proc) (cl:let* ((id (cl:cadr proc)) (entry (cl:find id *manifest-entries* :key (cl:function cl:first)))) (cl:if entry (cl:let ((arity (cl:third entry))) (cl:if (cl:= arity -1) (cl:cons (cl:list "args") 1) (cl:let ((names cl:nil)) (cl:dotimes (i arity) (cl:push (cl:format cl:nil "arg~D" (cl:1+ i)) names)) (cl:cons (cl:nreverse names) 0)))) *scheme-false*))) (cl:t *scheme-false*)))
+
+(defun ece-%procedure-params-set! (entry-addr params-info)
+  (cl:progn (cl:setf (cl:gethash entry-addr *procedure-params-table*) params-info) cl:nil))
+
 (defun ece-%raw-error (&rest args)
   (cl:apply (cl:function cl:error) args))
 

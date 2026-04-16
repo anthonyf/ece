@@ -956,3 +956,30 @@
                                                             (cl:push (cl:symbol-name k) keys))
                                                  (cl:cdr hf))))
                     keys)))
+
+(define-host-primitive (%procedure-params-set! entry-addr params-info)
+  :cl `(cl:progn
+        (cl:setf (cl:gethash ,entry-addr *procedure-params-table*) ,params-info)
+        cl:nil))
+
+(define-host-primitive (%procedure-params proc)
+  :cl `(cl:cond
+        ((compiled-procedure-p ,proc)
+         (cl:let* ((entry (cl:cadr ,proc))
+                   (params (cl:or (cl:gethash entry *procedure-params-table*)
+                                  (cl:when (cl:consp entry)
+                                           (cl:gethash (cl:cdr entry) *procedure-params-table*)))))
+                  (cl:or params *scheme-false*)))
+        ((primitive-procedure-p ,proc)
+         (cl:let* ((id (cl:cadr ,proc))
+                   (entry (cl:find id *manifest-entries* :key (cl:function cl:first))))
+                  (cl:if entry
+                         (cl:let ((arity (cl:third entry)))
+                                 (cl:if (cl:= arity -1)
+                                        (cl:cons (cl:list "args") 1)
+                                        (cl:let ((names cl:nil))
+                                                (cl:dotimes (i arity)
+                                                            (cl:push (cl:format cl:nil "arg~D" (cl:1+ i)) names))
+                                                (cl:cons (cl:nreverse names) 0))))
+                         *scheme-false*)))
+        (cl:t *scheme-false*)))

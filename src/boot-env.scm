@@ -266,6 +266,8 @@
 
 ;; --- Introspection ---
 (%register-primitive! '%global-env-symbols 237)
+(%register-primitive! '%procedure-params-set! 238)
+(%register-primitive! '%procedure-params 239)
 
 ;;; ═══════════════════════════════════════════════════════════════════
 ;;; 2. Initialize assembler symbol table

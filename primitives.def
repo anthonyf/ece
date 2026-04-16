@@ -337,3 +337,5 @@
 ;;; ═══════════════════════════════════════════════════════════════════════
 
 (237 %global-env-symbols    0  cl     "List all bound symbol names in global env")
+(238 %procedure-params-set! 2  cl     "Store parameter metadata for a compiled procedure entry")
+(239 %procedure-params      1  cl     "Look up parameter metadata for a callable value")

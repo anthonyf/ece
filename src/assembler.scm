@@ -17,6 +17,11 @@
          (let ((pc (%space-label-ref sid (cadr item))))
            (when pc
              (%procedure-name-set! (cons sid pc) (caddr item)))))
+        ;; Pseudo-instruction: (procedure-params <label> <params-info>)
+        ((and (pair? item) (eq? (car item) 'procedure-params))
+         (let ((pc (%space-label-ref sid (cadr item))))
+           (when pc
+             (%procedure-params-set! (cons sid pc) (caddr item)))))
         ;; Source-location marker — skip (used by compile-file for source-map)
         ((and (pair? item) (eq? (car item) 'source-location))
          #f)

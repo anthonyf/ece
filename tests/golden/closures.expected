@@ -40,6 +40,7 @@
  (perform (op define-variable!) (const make-adder) (reg val) (reg env))
  (assign val (reg val))
  (procedure-name L7 make-adder)
+ (procedure-params L7 (("n") . 0))
  (assign env (op lookup-variable-value) (const *global-env*) (reg env))
  (save env)
  (assign proc (op lookup-variable-value) (const make-adder) (reg env))
@@ -164,4 +165,5 @@
  L25
  (perform (op define-variable!) (const compose) (reg val) (reg env))
  (assign val (reg val))
- (procedure-name L26 compose))
+ (procedure-name L26 compose)
+ (procedure-params L26 (("f" "g") . 0)))

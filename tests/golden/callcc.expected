@@ -90,4 +90,5 @@
  L6
  (perform (op define-variable!) (const escape-with-value) (reg val) (reg env))
  (assign val (reg val))
- (procedure-name L7 escape-with-value))
+ (procedure-name L7 escape-with-value)
+ (procedure-params L7 (() . 0)))

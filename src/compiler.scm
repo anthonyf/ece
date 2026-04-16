@@ -459,6 +459,18 @@
                   (mc-find-entry-label (cdr instruction-list))))
             (mc-find-entry-label (cdr instruction-list))))))
 
+(define (extract-lambda-params formals)
+  (cond
+   ((null? formals) (cons '() 0))
+   ((symbol? formals) (cons (list (symbol->string formals)) 1))
+   ((pair? formals)
+    (let loop ((f formals) (names '()))
+      (cond
+       ((null? f) (cons (reverse names) 0))
+       ((symbol? f) (cons (reverse (cons (symbol->string f) names)) 1))
+       (else (loop (cdr f) (cons (symbol->string (car f)) names))))))
+   (else (cons '() 0))))
+
 (define (mc-compile-define expr target linkage)
   (let* ((variable (if (pair? (cadr expr)) (car (cadr expr)) (cadr expr)))
          (value-expr (if (pair? (cadr expr))
@@ -488,11 +500,13 @@
                           #f)))
     (end-with-linkage linkage
                       (if entry-label
-                          (append-instruction-sequences
-                           define-code
-                           (make-instruction-sequence
-                            '() '()
-                            (list (list 'procedure-name entry-label variable))))
+                          (let ((params-info (extract-lambda-params (cadr value-expr))))
+                            (append-instruction-sequences
+                             define-code
+                             (make-instruction-sequence
+                              '() '()
+                              (list (list 'procedure-name entry-label variable)
+                                    (list 'procedure-params entry-label params-info)))))
                           define-code))))
 
 (define (mc-compile-callcc expr target linkage)
