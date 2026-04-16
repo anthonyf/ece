@@ -2601,7 +2601,13 @@ Returns captured stdout."
   (testing "terminal mode unchanged"
            (let ((output (run-repl "(+ 1 2)")))
              (ok (search "3" output))
-             (ok (not (search "result" output))))))
+             (ok (not (search "result" output)))))
+
+  (testing "geiser-completions returns filtered results"
+           (let ((output (run-repl-geiser "(geiser-completions \"str\")")))
+             (ok (search "result" output) "has result field")
+             (ok (search "string-append" output) "includes string-append")
+             (ok (search "string-length" output) "includes string-length"))))
 
 (deftest test-ece-assembler
     (testing "assemble and execute"

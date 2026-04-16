@@ -7,10 +7,9 @@
 ;;;    result as a chibi-style alist `((result "...") (output . "..."))`,
 ;;;    and writes it via write-to-string-flat. This is the wire protocol.
 ;;;
-;;; 2. Helper layer (this file): provides `geiser-no-values` and stub
-;;;    handlers for feature probes that Geiser's elisp side might send.
-;;;    Eval and load-file are handled inline by the REPL's --geiser mode
-;;;    (see %geiser-eval-and-respond in ece-main.scm).
+;;; 2. Helper layer (this file): provides `geiser-no-values` and the
+;;;    completions handler. Eval and load-file are handled inline by the
+;;;    REPL's --geiser mode (see %geiser-eval-and-respond in ece-main.scm).
 ;;;
 ;;; The elisp side (`emacs/geiser-ece.el`) formats `C-x C-e` as a raw
 ;;; expression (not wrapped in `(geiser:eval ...)`), and `C-c C-l` as
@@ -22,9 +21,36 @@
 
 (define (geiser-no-values) #f)
 
-;; Day-1 stubs for features Geiser probes during connection setup.
+(define (string-prefix? prefix str)
+  (let ((plen (string-length prefix))
+        (slen (string-length str)))
+    (and (<= plen slen)
+         (string=? prefix (substring str 0 plen)))))
+
+(define (sort-strings lst)
+  (define (merge a b)
+    (cond
+     ((null? a) b)
+     ((null? b) a)
+     ((string<? (car a) (car b))
+      (cons (car a) (merge (cdr a) b)))
+     (else
+      (cons (car b) (merge a (cdr b))))))
+  (define (merge-sort xs)
+    (if (or (null? xs) (null? (cdr xs)))
+        xs
+        (let ((mid (quotient (length xs) 2)))
+          (let take-left ((rest xs) (n mid) (acc '()))
+            (if (= n 0)
+                (merge (merge-sort (reverse acc))
+                       (merge-sort rest))
+                (take-left (cdr rest) (- n 1) (cons (car rest) acc)))))))
+  (merge-sort lst))
+
 (define (geiser-completions prefix . rest)
-  '())
+  (let ((syms (%global-env-symbols)))
+    (sort-strings
+     (filter (lambda (s) (string-prefix? prefix s)) syms))))
 
 (define (geiser-autodoc ids . rest)
   '())

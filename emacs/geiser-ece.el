@@ -9,9 +9,9 @@
 
 ;;; Commentary:
 
-;; Geiser backend for the ECE Scheme implementation.  Day 1 scope: eval at
-;; point (C-x C-e), load file (C-c C-l), REPL buffer.  No completions,
-;; autodoc, or jump-to-def yet.
+;; Geiser backend for the ECE Scheme implementation.  Supports eval at
+;; point (C-x C-e), load file (C-c C-l), REPL buffer, and symbol
+;; completions (C-M-i).  No autodoc or jump-to-def yet.
 ;;
 ;; Usage: add to your init.el:
 ;;   (load "/path/to/ece/emacs/geiser-ece.el")
@@ -124,6 +124,62 @@ In ECE's Geiser mode the REPL handles eval/load directly:
 
 (defun geiser-ece--case-sensitive-p ()
   t)
+
+;;; Completions (direct REPL query, bypasses geiser-eval--send/wait)
+
+(defun geiser-ece--repl-buffer ()
+  "Find the live ECE Geiser REPL buffer."
+  (cl-loop for buf in (buffer-list)
+           when (and (string-match-p "\\*Geiser Ece REPL\\*" (buffer-name buf))
+                     (get-buffer-process buf)
+                     (process-live-p (get-buffer-process buf)))
+           return buf))
+
+(defun geiser-ece--sync-completions (prefix)
+  "Query the ECE REPL for completions matching PREFIX."
+  (let* ((repl-buf (geiser-ece--repl-buffer))
+         (proc (and repl-buf (get-buffer-process repl-buf)))
+         (output-buf (generate-new-buffer " *ece-comp*")))
+    (when proc
+      (unwind-protect
+          (progn
+            (with-current-buffer repl-buf
+              (comint-redirect-send-command-to-process
+               (format "(geiser-completions %S)" prefix)
+               output-buf proc nil t)
+              (while (not comint-redirect-completed)
+                (accept-process-output proc 5)))
+            (with-current-buffer output-buf
+              (goto-char (point-min))
+              (condition-case nil
+                  (let* ((response (read (current-buffer)))
+                         (result-str (cadr (assq 'result response))))
+                    (when (and result-str (not (string= result-str "")))
+                      (car (read-from-string result-str))))
+                (error nil))))
+        (kill-buffer output-buf)))))
+
+(defun geiser-ece--complete-at-point ()
+  "Completion-at-point function for ECE Scheme buffers."
+  (when (geiser-ece--repl-buffer)
+    (let ((end (point))
+          (beg (save-excursion
+                 (with-syntax-table scheme-mode-syntax-table
+                   (skip-syntax-backward "^-()> ")
+                   (point)))))
+      (when (> end beg)
+        (let* ((prefix (buffer-substring-no-properties beg end))
+               (completions (geiser-ece--sync-completions prefix)))
+          (when completions
+            (list beg end completions :exclusive 'no)))))))
+
+(defun geiser-ece--setup-completion ()
+  "Add ECE completion to `completion-at-point-functions'."
+  (add-hook 'completion-at-point-functions
+            #'geiser-ece--complete-at-point nil t))
+
+(add-hook 'geiser-mode-hook #'geiser-ece--setup-completion)
+(add-hook 'geiser-repl-mode-hook #'geiser-ece--setup-completion)
 
 ;;; Registration
 

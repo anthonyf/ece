@@ -264,6 +264,9 @@
 (%register-primitive! '%set-error-sym! 226)
 (%register-primitive! '%create-repl-space! 227)
 
+;; --- Introspection ---
+(%register-primitive! '%global-env-symbols 237)
+
 ;;; ═══════════════════════════════════════════════════════════════════
 ;;; 2. Initialize assembler symbol table
 ;;; ═══════════════════════════════════════════════════════════════════
