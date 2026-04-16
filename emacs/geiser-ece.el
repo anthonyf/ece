@@ -46,8 +46,11 @@
 
 (geiser-custom--defcustom geiser-ece-binary
   (or (executable-find "ece-repl")
-      "bin/ece-repl")
-  "Name or path of the ECE REPL binary."
+      (let ((dir (file-name-directory (or load-file-name buffer-file-name ""))))
+        (when dir
+          (expand-file-name "bin/ece-repl" (file-name-directory (directory-file-name dir))))))
+  "Name or path of the ECE REPL binary.
+When not on PATH, derived from this file's location (emacs/../bin/ece-repl)."
   :type '(choice string (repeat string))
   :group 'geiser-ece)
 
