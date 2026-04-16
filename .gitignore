@@ -15,6 +15,7 @@ _site/
 /bin/ece-repl
 /bin/ece-build
 /bin/ece-test
+/bin/ece-serve
 /share/
 
 # Editor / tooling artefacts

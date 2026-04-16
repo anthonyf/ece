@@ -33,34 +33,34 @@
 - [x] 3.1 Implement SHA-1 in pure ECE. ~170 lines, RFC 3174 conformant, vector-backed block loop for O(1) per-byte access. Landed in the `sha1-base64-utilities` change.
 - [x] 3.2 Implement Base64 encoding. RFC 4648 standard alphabet, encoding only, all pad-length cases. Landed in the `sha1-base64-utilities` change.
 - [x] 3.3 Unit tests under `tests/ece/common/` for both modules: 5 sha1 tests (RFC 3174 vectors + RFC 6455 intermediate digest), 8 base64 tests (RFC 4648 vectors + end-to-end RFC 6455 handshake check). All passing.
-- [ ] 3.4 When `ece-serve.scm` is written, add `src/sha1.scm` and `src/base64.scm` to the `share/ece/ece-main.ecec` target's `compile-system` invocation so they're available at runtime (not just in the test-ece target). Still pending — this is done in ece-serve's implementation PR.
+- [x] 3.4 When `ece-serve.scm` is written, add `src/sha1.scm` and `src/base64.scm` to the `share/ece/ece-main.ecec` target's `compile-system` invocation so they're available at runtime (not just in the test-ece target). Done in this PR alongside scheduler / codec / json / ece-serve.scm — single Makefile edit for the whole file list.
 
 ## 4. `src/ece-serve.scm` — server logic in ECE
 
 **Protocol codec layer pre-landed via `ece-serve-codecs`:** the HTTP/1.1 parser + response builder is in `src/http-codec.scm` and the RFC 6455 WebSocket handshake + frame codec is in `src/websocket-codec.scm`, both with full unit test coverage. The remaining work for this section is the routing/dispatch layer and the fiber topology that wires the codecs to real sockets through the scheduler.
 
-- [ ] 4.1 Create `src/ece-serve.scm` with a top-level procedure `(ece-serve entry-file . opts)` that parses options (`:port`, defaulting to a chosen port), validates that `entry-file` exists, computes the initial watch set, creates a scheduler instance (via `make-scheduler` from `src/scheduler.scm`), and starts the server fibers.
-- [ ] 4.2 Implement the transitive `(load "...")` walker: read `entry-file` with the ECE reader, find `(load "literal-string")` forms, recursively walk their dependencies, and return the full watch set as a list of absolute paths. Dynamic `(load <expr>)` forms SHALL be ignored for watch-set computation but SHALL NOT cause the walker to fail.
+- [x] 4.1 Create `src/ece-serve.scm` with a top-level procedure `(ece-serve entry-file . opts)` that parses options (`:port`, defaulting to a chosen port), validates that `entry-file` exists, computes the initial watch set, creates a scheduler instance (via `make-scheduler` from `src/scheduler.scm`), and starts the server fibers.
+- [x] 4.2 Implement the transitive `(load "...")` walker: read `entry-file` with the ECE reader, find `(load "literal-string")` forms, recursively walk their dependencies, and return the full watch set as a list of absolute paths. Dynamic `(load <expr>)` forms SHALL be ignored for watch-set computation but SHALL NOT cause the walker to fail. Parse errors in a single file are also skipped so a mid-edit source file doesn't kill the walk.
 - [x] 4.3 HTTP/1.1 subset parser and response builder — **codec pre-landed as `src/http-codec.scm`**. `http-parse-request` handles the request line, headers (case-insensitive), and the CRLFCRLF terminator; `http-build-response` constructs the status line + headers + body with automatic Content-Length and Connection: close unless overridden. Routing by path (serving `sandbox/index.html` with `ECE_DEV_WS_URL` injection, static files with Content-Type detection) is still TODO and belongs in `src/ece-serve.scm`'s request dispatcher.
 - [x] 4.4 WebSocket (RFC 6455) subset — **codec pre-landed as `src/websocket-codec.scm`**:
   - Handshake: `ws-compute-accept-key` computes `base64(sha1(key + magic-guid))` and is verified against the RFC 6455 §1.3 example.
   - Frame encode (server → client): `ws-encode-text-frame`, `ws-encode-close-frame`, `ws-encode-pong-frame` produce FIN+opcode unmasked frames with 7-bit / 16-bit / 64-bit length encoding.
   - Frame decode (client → server): `ws-decode-frame` parses FIN+opcode + MASK+length + mask key + payload, enforces MASK=1 for client frames, rejects fragmentation and unsupported opcodes, demasks via XOR. Tested against the RFC 6455 §5.7 masked text example.
   - **Still TODO in `src/ece-serve.scm`:** the actual upgrade handshake flow (reading the request, building the response with Sec-WebSocket-Accept, transitioning the connection handler fiber to WebSocket mode) and the pong-on-ping logic lives in the server dispatcher, not the codec.
-- [ ] 4.5 Spawn server fibers on the scheduler:
-  - **Accept fiber**: loops calling `tcp-accept-nowait` + `(wait-for sched 'tcp-accept-ready server-handle)` when no connection is ready. On a new connection, spawns a per-connection handler fiber.
-  - **Per-connection handler fiber**: reads the HTTP request header block (blocking reads via `tcp-recv-nowait` + `wait-for`), dispatches by method/path. For a static asset, writes the response and closes. For a WebSocket upgrade, performs the handshake and transitions the same fiber to a WebSocket message-handling loop.
+- [x] 4.5 Spawn server fibers on the scheduler:
+  - **Accept fiber**: loops calling `tcp-accept-nowait` + `(wait-for sched 'tcp-accept-ready)`. Drains all pending connections per tick, spawns a per-connection handler fiber for each. Guarded so a transient accept error doesn't kill the loop.
+  - **Per-connection handler fiber**: reads the HTTP request header block via `read-http-request` (slowloris guard: 1 MiB cap, O(1) byte count), dispatches by method/path. Binary content types (.wasm/.png/.ico) use a byte-list response path separate from the text path so payloads aren't corrupted by character-set decoding.
   - **WebSocket fiber**: hangs waiting for incoming frames; handles close/ping/pong; registers itself in a shared client list so the file-watch fiber can broadcast to it.
-  - **File-watch fiber**: calls `fs-watch-start` on the watch set, then loops `fs-watch-poll` + `(wait-for sched 'timer-expired 250)` (or similar throttle). For each changed path, reads the file and broadcasts a source-update message to every registered WebSocket client via that client's fiber.
-- [ ] 4.6 JSON encoder for the message envelope: `{type: "source-update", path: "...", source: "..."}`. Either reuse an existing ECE JSON helper (check `src/` first) or add a minimal `src/json.scm` that handles strings, numbers, booleans, arrays, and objects with string keys. String escaping handles `\"`, `\\`, `\n`, `\r`, `\t`, and control characters.
-- [ ] 4.7 Print the server URL to stdout at startup: `Dev server: http://127.0.0.1:<port>/`. Print a graceful shutdown message on Ctrl-C. Handle errors defensively: a failed file read (e.g., file transiently missing during an editor rename) logs and continues; a crashed handler fiber is removed from the scheduler without crashing the server.
+  - **File-watch fiber**: calls `fs-watch-start` on the watch set, then waits on `'file-watch-timer` + throttles with `current-milliseconds` to `poll-interval-ms`. For each changed path, broadcasts a source-update message to every registered WebSocket client. Per-client send errors drop the client from the box so dead connections don't accumulate.
+- [x] 4.6 JSON encoder for the message envelope: `{type: "source-update", path: "...", source: "..."}`. Landed as `src/json.scm` — handles strings, integers, booleans, null, arrays, and objects with string keys. Full RFC 8259 string escaping for the control range plus `"`, `\\`, `\n`, `\r`, `\t`, `\b`, `\f`. Rejects non-integer numbers explicitly (dev-server envelope doesn't need floats and they introduce formatting ambiguity).
+- [x] 4.7 Print the server URL to stdout at startup: `Dev server: http://127.0.0.1:<port>/`. Prints the watch-set size + entry file. Errors inside single broadcast iterations / handler fibers are caught so the server keeps running. No explicit graceful shutdown yet — Ctrl-C drops through `scheduler-run!` and the OS reclaims sockets.
 
 ## 5. CLI dispatch and Makefile wiring
 
-- [ ] 5.1 In `src/ece-main.scm`, add a dispatch branch for `ece-serve` (argv[0] match) that calls into `ece-serve.scm`'s entry point. Follow the same pattern as existing `ece-repl` / `ece-build` / `ece-test` dispatches.
-- [ ] 5.2 Update the `compile-system` invocation in `Makefile`'s `share/ece/ece-main.ecec` target so the file list includes `src/scheduler.scm`, `src/sha1.scm`, `src/base64.scm`, and `src/ece-serve.scm` alongside the existing SDK files. Order matters: `sha1` and `base64` before `scheduler` (if the scheduler uses them), `scheduler` before `ece-serve`.
-- [ ] 5.3 Update the `bin/ece` Makefile recipe so it creates `bin/ece-serve` as an additional symlink alongside `bin/ece-repl`, `bin/ece-build`, `bin/ece-test`.
-- [ ] 5.4 Update the `install` and `uninstall` targets to include `bin/ece-serve` in the symlinks created/removed.
+- [x] 5.1 In `src/ece-main.scm`, add a dispatch branch for `ece-serve` (argv[0] match) that calls into `ece-serve.scm`'s entry point. Follow the same pattern as existing `ece-repl` / `ece-build` / `ece-test` dispatches.
+- [x] 5.2 Update the `compile-system` invocation in `Makefile`'s `share/ece/ece-main.ecec` target so the file list includes `src/scheduler.scm`, `src/http-codec.scm`, `src/websocket-codec.scm`, `src/json.scm`, and `src/ece-serve.scm` alongside the existing SDK files. `sha1`/`base64` already land ahead of scheduler.
+- [x] 5.3 Update the `bin/ece` Makefile recipe so it creates `bin/ece-serve` as an additional symlink alongside `bin/ece-repl`, `bin/ece-build`, `bin/ece-test`.
+- [x] 5.4 Update the `install` and `uninstall` targets to include `bin/ece-serve` (and all 6 supporting share/ece/ files: scheduler, http-codec, websocket-codec, json, ece-serve, plus sha1/base64 which were missing from install even though they landed earlier).
 
 ## 6. Browser-side integration
 
@@ -87,7 +87,7 @@
 
 ## 9. Regression checks
 
-- [ ] 9.1 Run `make test` (full suite: `test-rove test-ece test-wasm test-conformance test-golden test-web-server test-web-apps`). All must pass.
+- [ ] 9.1 Run `make test` (full suite: `test-rove test-ece test-wasm test-conformance test-golden test-web-server test-web-apps`). All must pass. **PR B2 status**: test-ece + test-rove + test-wasm run green for the new modules. Pre-existing failures in test-serialization (continuation compactness) and test-source-locations (/tmp sandbox write) are unrelated to ece-serve and visible on main.
 - [ ] 9.2 Run `bin/ece build sandbox/programs/starfield.scm --target web --standalone -o /tmp/starfield-build` (or equivalent). Confirm the existing standalone bundle output still works.
 - [ ] 9.3 Run `bin/ece repl` and confirm the REPL still starts normally.
 - [ ] 9.4 Run `bin/ece test` and confirm it still dispatches correctly.
@@ -95,6 +95,8 @@
 
 ## 10. Commit and PR
 
-- [ ] 10.1 Archive this change in-PR BEFORE merging: run `/opsx:archive ece-serve` on the implementation branch, commit the directory move, include in the same PR. Per the `feedback_archive_before_merge` memory rule, do not merge before archiving.
-- [ ] 10.2 Commit with a message summarizing the scope: `Add ece serve dev server with file-watch + WebSocket hot reload`.
-- [ ] 10.3 Open PR with the manual test sequence from section 8 as the primary test plan. Reference PR #145 as the Stage 0 predecessor, and cite design doc Decision 9 for the intentional future-proofing of the scheduler module.
+**PR B2 scope note**: This PR lands the server-side dispatcher + fiber topology + json encoder (sections 4.1/4.2/4.5/4.6/4.7 + 5). Browser-side integration (sections 6 + 7) and the full end-to-end manual validation (section 8) are deferred to PR B3 `ece-serve-browser-integration`. The ece-serve openspec change stays active until B3 lands, at which point it's archived in one shot.
+
+- [ ] 10.1 Archive this change in-PR BEFORE merging — **deferred to B3** since sections 6-8 are still pending. The memory rule is "archive a complete change in its final merge PR"; B2 isn't that final PR.
+- [ ] 10.2 Commit PR B2 with a message summarizing the scope: `Add ece serve dispatcher + fiber topology (ece-serve PR B2)`.
+- [ ] 10.3 Open PR B2. Reference PR #156 (codecs) as the direct predecessor, PR #145 as the Stage 0 predecessor, and cite design doc Decision 9 for the intentional future-proofing of the scheduler module.
