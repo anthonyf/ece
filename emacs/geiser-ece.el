@@ -238,7 +238,10 @@ In ECE's Geiser mode the REPL handles eval/load directly:
            (parts (mapcar #'symbol-name required)))
       (when rest-arg
         (setq parts (append parts (list "." (symbol-name rest-arg)))))
-      (format "(%s %s)" name (mapconcat #'identity parts " ")))))
+      (let ((args (mapconcat #'identity parts " ")))
+        (if (string-empty-p args)
+            (format "(%s)" name)
+          (format "(%s %s)" name args))))))
 
 (defun geiser-ece--eldoc-function (&optional callback &rest _)
   "Eldoc function for ECE Scheme.
