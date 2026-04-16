@@ -109,7 +109,7 @@ In ECE's Geiser mode the REPL handles eval/load directly:
 (defun geiser-ece--import-command (_module)
   nil)
 
-(defun geiser-ece--find-module ()
+(defun geiser-ece--find-module (&optional _module)
   nil)
 
 (defun geiser-ece--symbol-begin (_module)
