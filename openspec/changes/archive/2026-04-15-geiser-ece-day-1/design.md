@@ -79,28 +79,41 @@ The current REPL has one memory-tracked pitfall that matters for day 1: error re
 - **WASM-first** — would force the protocol to be host-agnostic from day 1, which is good. Rejected because the user is already productive on the CL host and the urgency is emacs integration, not WASM coverage.
 - **Dual-host day 1** — twice the test surface, twice the chance of a regression, for no practical gain in day 1 user experience.
 
-### Decision 3: Structured wire protocol via in-band alist sentinel
+### Decision 3: Structured wire protocol — chibi-style alist, no sentinel
 
-**Choice:** The `--geiser` REPL mode prints responses as `((result "...") (output "...") (error #f))` on a line prefixed with a recognizable sentinel marker (exact string TBD during implementation — probably something like `;;geiser-response: ` or a zero-width ASCII prefix). The prompt `ece> ` is unchanged.
+**Choice (revised after task-1 research):** The `--geiser` REPL mode prints responses as a plain `((result "<value>") (output . "<captured>"))` alist via `(write alist) (newline)`, with `output` as a **dotted pair** (not a list). **No sentinel prefix.** Stdout is redirected to a capture port for the duration of `eval` so user-code `display` calls never land on the wire stream — they end up in the `output` field of the alist instead. The prompt `ece> ` is unchanged.
 
-**Rationale:** Geiser backends almost universally use in-band stdio responses; SLIME's socket-based protocol is explicitly *not* the Geiser model. Keeping it in-band means no new transport layer, no sockets, no port allocation, no firewall rules. The elisp side just scans comint output for the sentinel. An explicit prefix disambiguates structured responses from free-form output that the eval'd code itself writes.
+**Rationale:** Task-1 research of chibi's `src/geiser/geiser.scm` (the canonical small backend) and guile's `src/geiser/evaluation.scm` revealed that *no Geiser backend uses a sentinel*. The framing discipline is: "capture stdout during eval so nothing user-written escapes to the wire, then write exactly one alist via `write` + `newline`." The elisp side (`geiser-eval.el`) reads one s-expression back after sending a request, keyed off the REPL prompt regex. A sentinel would be dead weight.
 
-**Alternatives considered:**
-
-- **Out-of-band socket protocol** — richer, supports async notifications, but doubles the transport complexity and requires a port allocation dance. Rejected.
-- **JSON envelope** — industry standard, but ECE already has an alist JSON encoder (`src/json.scm`) we could reuse. Geiser's own convention is S-expressions, and reading an S-expression on the elisp side is trivial (`(read (current-buffer))`), so JSON adds no value.
-- **No prefix, rely on line shape** — fragile, especially if eval'd code prints something that looks like an alist. Rejected.
-
-### Decision 4: Error recovery fix — bundle if ≤50 lines, else prereq PR
-
-**Choice:** Investigate the "stale labels in bootstrap space" pitfall during implementation. If the fix is a localised change to `compile-and-go` (or a new `compile-and-go-throwaway` variant that allocates a fresh space per REPL input), bundle it. If it requires changes to the assembler or executor, extract to a prereq PR named `fix-repl-error-recovery` and cite it in the commit message of this change.
-
-**Rationale:** Day 1 utility depends on the fix — `C-c C-l` batch-sending a file with any syntax error in its middle will poison every later form. But the user also explicitly said "if you can bundle" — not "you must bundle" — so large/invasive fixes get their own change. The investigation is mandatory; the bundling is contingent.
+Also revised: **no `error` key in the alist.** Real backends prepend error text to the `output` field (so emacs displays it alongside whatever partial output the form produced) and don't carry a separate error slot. ECE day-1 follows this convention.
 
 **Alternatives considered:**
 
-- **Ship day 1 without the fix and document the limitation** — rejected because it makes the feature immediately frustrating the first time a user `C-c C-l`s a mid-edit file.
-- **Fix first in a separate PR regardless** — would delay the Geiser day-1 ship by the time it takes to PR, review, and merge the error-recovery fix. Only worth it if the fix is invasive.
+- **Sentinel-prefixed alist** (my original assumption) — rejected after reading chibi. No real backend uses one; emacs already disambiguates via capture + prompt regex.
+- **Out-of-band socket protocol** — SLIME's model; explicitly *not* Geiser's. Rejected.
+- **JSON envelope** — ECE has `src/json.scm`, but Geiser's elisp side expects S-expressions (`read` on the comint buffer). Rejected.
+- **Keep the error key anyway** — would diverge from every real backend and confuse elisp-side parsing of multi-field responses. Rejected.
+
+### Decision 4: Error recovery fix — bundle the REPL `read` wrap
+
+**Choice (revised after task-2 investigation):** Bundle a ~10-line fix in `src/ece-main.scm`'s `(repl)` that wraps the `(read)` call in a `guard` form. The guard catches reader errors raised via ECE's exception system, prints them, and re-enters the REPL loop. No assembler/executor changes.
+
+**Rationale:** The original concern — "stale labels in bootstrap space leave subsequent expressions hitting Unknown label" — turned out to be **pre-`.ecec`-era residue, not a live bug**. Empirical test of the current REPL:
+- Compile errors (unbalanced macro forms): recovered cleanly.
+- Unbound variable references: recovered cleanly.
+- Division by zero: recovered cleanly.
+- Type errors (car of non-pair): recovered cleanly.
+- Explicit `(error "boom")`: recovered cleanly.
+
+The *actual* currently-live bug is: **top-level reader errors crash the REPL.** ECE's reader (written in ECE in `src/reader.scm`) raises via `error` → `raise`. When no handler is installed (because `(read)` is called outside `try-eval` in the REPL), `raise` falls through to `%raw-error` → CL `error` → SBCL abort. Users see an unhandled-condition backtrace and the subprocess dies.
+
+The fix is to install a `guard` around the `read` call. Since ECE's reader uses the exception system cleanly, `guard` catches reader errors and the REPL recovers. Separately, `geiser:load-file` applies the same `guard` pattern around `load` so batch-loading a file with a mid-file syntax error cleanly reports the error in the response alist instead of corrupting the wire protocol.
+
+**Alternatives considered:**
+
+- **Ship day 1 without the fix** — rejected because `C-c C-l` would kill the subprocess the first time a user loads a mid-edit file.
+- **Extract to prereq PR** — rejected because the fix is 10 lines; shipping it in a separate PR is ceremony without benefit.
+- **Use CL-side `try-eval` to wrap the read** — viable (works via `(try-eval '(read))`) but forces the REPL to exit on reader error (no way to distinguish read-error from legitimate EOF without more machinery). The `guard`-based fix cleanly retries the loop.
 
 ### Decision 5: `bin/ece-repl --geiser` flag, not a new binary
 

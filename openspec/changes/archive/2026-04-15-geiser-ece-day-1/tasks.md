@@ -1,26 +1,26 @@
 ## 1. Research — ground the wire protocol in reality
 
-- [ ] 1.1 Fetch and read a small existing Geiser backend (chibi or chicken) via `gh api` or `WebFetch`. Note the exact elisp registration API (`geiser-impl:define` / `geiser-implementation-help` / whatever the current Geiser version uses), the exact Scheme-side handler signatures, and the exact response format. Record findings in a short memory file or inline comment in `emacs/geiser-ece.el`.
-- [ ] 1.2 Verify ECE reader limitations that may affect the wire protocol: `\r` in strings, `#x` hex literals, non-printable bytes in string literals. Plan the sentinel prefix around these constraints (e.g., avoid characters that would force escaping in the reader).
-- [ ] 1.3 Confirm the exact shape Geiser expects for the `((result "...") (output "...") (error #f))` response — check whether it's an alist, a plist, or a list-of-values. Adjust the design before writing code if the assumption is wrong.
+- [x] 1.1 Fetched chibi's `geiser-chibi.el` + `src/geiser/geiser.scm` and guile's `src/geiser/emacs.scm` + `src/geiser/evaluation.scm` from gitlab.com/emacs-geiser. Findings: elisp registration is `define-geiser-implementation`, not `geiser-impl:define`. Minimum handlers for `C-x C-e` + `C-c C-l` are `eval`, `load-file`, `no-values` — unimplemented optionals are gracefully skipped by elisp, not errored/hung. No Scheme-side `geiser:version` — elisp runs `binary -V` via the `version-command` slot.
+- [x] 1.2 N/A — no sentinel prefix needed. Real Geiser backends just `(write alist) (newline)` and rely on stdout redirection during eval to keep user-code output out of the wire stream. ECE reader limitations are moot for the wire protocol.
+- [x] 1.3 Shape is `((result "<written-value>") (output . "<captured-output>"))` — alist with `output` as a **dotted pair** (not a list), **no error key**. Errors are prepended to `output` or captured via the same mechanism. Chibi (not guile) is the right template since it uses plain `define`d procedures. See updated `design.md` Decision 3.
 
 ## 2. REPL error-recovery investigation + decision
 
-- [ ] 2.1 Read `src/compiler.scm`'s `compile-and-go` entry point and trace how bootstrap-space labels get populated during REPL input compilation. Identify exactly where stale labels could be left on failure.
-- [ ] 2.2 Prototype the fix: either a fresh throwaway space per REPL input, or a transactional label-table update that rolls back on compilation failure. Time-box to one workday.
-- [ ] 2.3 Decide: bundle in this PR if the fix is localised (~50 lines), or extract to prereq PR `fix-repl-error-recovery` if it touches the assembler or executor. Document the decision in an updated note on this tasks.md.
-- [ ] 2.4 If extracting: create the prereq change via `openspec new change fix-repl-error-recovery`, write a minimal proposal, land that PR first, and add a dependency note in this change.
-- [ ] 2.5 If bundling: write a regression test that sends a compile-error expression followed by a successful expression to `repl` and verifies the second expression evaluates correctly. Live in `tests/ece/cl-only/test-repl-error-recovery.scm`.
+- [x] 2.1 Read `src/compiler.scm`'s `mc-compile-and-go`, `src/assembler.scm`'s `ece-assemble-into-global`, and the label-registration path. Traced empirically with `printf | bin/ece-repl`: compile errors, unbound variables, division-by-zero, type errors, and `(error "...")` all **already recover cleanly** in the current `.ecec`-boot world. The old "stale labels in bootstrap space" note referred to the pre-`.ecec` image-boot era and is no longer the live issue. The actual remaining bug is: **top-level reader errors crash the REPL**. ECE's reader (`src/reader.scm`) calls `error` → `raise` when it sees an unbalanced paren or unexpected EOF; `raise` has no installed handler in `(repl)` because `read` is invoked OUTSIDE `try-eval`, so it falls through to `%raw-error` → CL `error` → SBCL abort.
+- [x] 2.2 Fix design: wrap the `(read)` call in `(repl)` with a `guard` that catches reader errors, prints them, and re-enters the loop without exiting. ~8-line change in `src/ece-main.scm`. No assembler/executor changes. Time-boxed investigation finished in ~1 hour.
+- [x] 2.3 **Decision: BUNDLE in this PR.** Fix is tiny (~10 lines, localised to `src/ece-main.scm`'s `(repl)`), and it's load-bearing for Geiser's `C-c C-l` flow once `geiser:load-file` uses the same `guard` pattern internally.
+- [ ] 2.4 N/A — fix is bundled, no prereq PR needed.
+- [ ] 2.5 Regression test: send an unbalanced-paren expression followed by a successful expression to `repl`; verify the REPL prints an error for the first and returns the correct result for the second. Lives in `tests/ece/cl-only/test-repl-error-recovery.scm` (or inline in the existing `tests/ece.lisp` `repl` section).
 
 ## 3. `src/geiser-ece.scm` — Scheme-side handlers
 
 - [ ] 3.1 Create `src/geiser-ece.scm` with a module header explaining the Geiser wire protocol and pointing at `openspec/changes/geiser-ece-day-1/design.md` for rationale.
 - [ ] 3.2 Implement `%geiser-with-output-capture thunk`: install a fresh `open-output-string` port as `current-output-port` for the duration of `thunk`, return `(values thunk-result captured-output-string)`. Restore the previous port on normal and abnormal exit (use `dynamic-wind`).
-- [ ] 3.3 Implement `(geiser:eval module expr)`: `%geiser-with-output-capture` around `(guard (e (#t <error-case>)) (evaluate expr))`, then build the structured alist response `((result "<written-value>") (output "<captured>") (error <#f-or-string>))`. Module arg is ignored in day 1.
+- [ ] 3.3 Implement `(geiser:eval module form . rest)`: `%geiser-with-output-capture` around `(guard (e (#t <error-case>)) (evaluate form))`, then build the chibi-style alist `((result "<written-value>") (output . "<captured>"))`. `module` arg ignored in day 1 (elisp sends `#f` when no module). Errors: stringify the condition and prepend to `output`; `result` is still emitted as the empty string or the no-values marker.
 - [ ] 3.4 Implement `(geiser:load-file path)`: same capture + guard pattern around `load`, return the same alist shape. Add a sanity check that `path` is a string and the file exists before calling `load`.
-- [ ] 3.5 Implement `(geiser:version)`: return a non-empty string. Pull the value from whatever ECE already uses for `ece -V` so there's a single source of truth.
-- [ ] 3.6 Implement `(geiser:no-values)`: return whatever Geiser recognizes as the no-values marker (likely `'no-values` or `(values)`). Confirm from task 1.3 findings.
-- [ ] 3.7 Implement `(geiser:completions prefix)` and `(geiser:autodoc symbols)` as stub handlers that return empty results with `error #f`, so a day-1 backend handles Geiser's graceful-degradation feature checks.
+- [ ] 3.5 N/A — Geiser's elisp side reads ECE version via `binary -V` (the `version-command` slot), not via a Scheme-side `geiser:version` handler. Nothing to write on the Scheme side.
+- [ ] 3.6 Implement `(geiser:no-values)`: return `#f` (chibi style). This is what Geiser reads when a form evaluates to no values.
+- [ ] 3.7 Implement `(geiser:completions prefix . rest)` and `(geiser:autodoc ids . rest)` as stub handlers — both take `. rest` per chibi's shape since elisp sometimes sends extra args. Return empty lists in the same alist envelope so graceful-degradation feature probes succeed.
 
 ## 4. `--geiser` flag on `bin/ece-repl`
 

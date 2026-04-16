@@ -42,6 +42,8 @@
   (newline)
   (display "  -i, --interactive     Enter REPL after processing files")
   (newline)
+  (display "  --geiser              Run REPL in Geiser wire-protocol mode")
+  (newline)
   (display "  --                    Stop option processing")
   (newline)
   (display "  -h, --help            Show this help and exit")
@@ -63,34 +65,39 @@
 ;;   help?        — #t if -h/--help seen
 ;;   version?     — #t if -V/--version seen
 ;;   extra-args   — list of strings after --
+;;   geiser?      — #t if --geiser seen (REPL in Geiser wire-protocol mode)
 
 (define (parse-argv argv)
   "Parse argv (excluding argv[0]). Returns
- (list interactive? help? version? extra-args steps)."
+ (list interactive? help? version? extra-args steps geiser?)."
   (let loop ((rest argv)
              (interactive? #f)
              (help? #f)
              (version? #f)
              (extra-args '())
-             (steps '()))
+             (steps '())
+             (geiser? #f))
     (cond
      ((null? rest)
-      (list interactive? help? version? extra-args (reverse steps)))
+      (list interactive? help? version? extra-args (reverse steps) geiser?))
      (else
       (let ((arg (car rest)))
         (cond
          ;; -- : take everything after it as passthrough args
          ((opt-terminator? arg)
-          (list interactive? help? version? (cdr rest) (reverse steps)))
+          (list interactive? help? version? (cdr rest) (reverse steps) geiser?))
          ;; --help / -h
          ((or (string=? arg "--help") (string=? arg "-h"))
-          (loop (cdr rest) interactive? #t version? extra-args steps))
+          (loop (cdr rest) interactive? #t version? extra-args steps geiser?))
          ;; --version / -V
          ((or (string=? arg "--version") (string=? arg "-V"))
-          (loop (cdr rest) interactive? help? #t extra-args steps))
+          (loop (cdr rest) interactive? help? #t extra-args steps geiser?))
          ;; --interactive / -i
          ((or (string=? arg "--interactive") (string=? arg "-i"))
-          (loop (cdr rest) #t help? version? extra-args steps))
+          (loop (cdr rest) #t help? version? extra-args steps geiser?))
+         ;; --geiser
+         ((string=? arg "--geiser")
+          (loop (cdr rest) interactive? help? version? extra-args steps #t))
          ;; --load FILE
          ((string=? arg "--load")
           (if (or (null? (cdr rest)))
@@ -99,7 +106,7 @@
                 (newline)
                 (exit 2))
               (loop (cddr rest) interactive? help? version? extra-args
-                    (cons (list 'load (cadr rest)) steps))))
+                    (cons (list 'load (cadr rest)) steps) geiser?)))
          ;; --eval EXPR / -e EXPR
          ((or (string=? arg "--eval") (string=? arg "-e"))
           (if (or (null? (cdr rest)))
@@ -110,7 +117,7 @@
                 (newline)
                 (exit 2))
               (loop (cddr rest) interactive? help? version? extra-args
-                    (cons (list 'eval (cadr rest)) steps))))
+                    (cons (list 'eval (cadr rest)) steps) geiser?)))
          ;; Unknown long option
          ((long-opt? arg)
           (display "Error: unknown option: ")
@@ -126,7 +133,7 @@
          ;; Positional file argument
          (else
           (loop (cdr rest) interactive? help? version? extra-args
-                (cons (list 'load arg) steps)))))))))
+                (cons (list 'load arg) steps) geiser?))))))))
 
 ;; ---- Step execution ----
 
@@ -160,21 +167,64 @@ Returns the value of the last expression."
   (for-each run-step steps))
 
 ;; ---- REPL ----
+;;
+;; `repl` accepts an optional geiser? flag. In geiser mode, the REPL
+;; captures current-output-port during evaluation and formats each
+;; result as a chibi-style alist `((result "...") (output . "..."))`.
+;; Both modes wrap `read` in a `guard` so reader errors (unbalanced
+;; parens, unexpected EOF in list) don't crash the subprocess.
 
-(define (repl)
-  (display "ece> ")
-  (let ((input (read)))
-    (cond
-     ((eof? input)
-      (newline)
-      (display "Bye!")
-      (newline))
-     (else
-      (let ((result (try-eval input)))
-        (when (not (eof? result))
-          (write result)
-          (newline)))
-      (repl)))))
+(define (repl . opts)
+  (let ((geiser? (and (not (null? opts)) (car opts))))
+    (display "ece> ")
+    (let ((input (guard (e (#t
+                            (cond
+                             (geiser?
+                              (display (write-to-string-flat
+                                        (list (list 'result "")
+                                              (cons 'output
+                                                    (string-append "Read error: "
+                                                                   (if (error-object? e)
+                                                                       (error-object-message e)
+                                                                       (write-to-string e)))))))
+                              (newline))
+                             (else
+                              (display "Error: ")
+                              (display (if (error-object? e)
+                                           (error-object-message e)
+                                           e))
+                              (newline)))
+                            '*repl-read-error*))
+                        (read))))
+      (cond
+       ((eof? input)
+        (newline)
+        (display "Bye!")
+        (newline))
+       ((eq? input '*repl-read-error*)
+        (repl geiser?))
+       (else
+        (cond
+         (geiser?
+          (%geiser-eval-and-respond input))
+         (else
+          (let ((result (try-eval input)))
+            (when (not (eof? result))
+              (write result)
+              (newline)))))
+        (repl geiser?))))))
+
+(define (%geiser-eval-and-respond input)
+  ;; Capture user-code output, evaluate via try-eval, emit chibi-style alist.
+  (let ((capture (open-output-string)))
+    (let ((value (parameterize ((current-output-port capture))
+                   (try-eval input))))
+      (let ((output (get-output-string capture)))
+        (display (write-to-string-flat
+                  (list (list 'result
+                              (if (eof? value) "" (write-to-string-flat value)))
+                        (cons 'output output))))
+        (newline)))))
 
 ;; ---- Default main (ece / unknown argv[0]) ----
 
@@ -185,15 +235,16 @@ Returns the value of the last expression."
          (help? (list-ref parsed 1))
          (version? (list-ref parsed 2))
          (_extra (list-ref parsed 3))
-         (steps (list-ref parsed 4)))
+         (steps (list-ref parsed 4))
+         (geiser? (list-ref parsed 5)))
     (cond
      (help? (print-usage) (exit 0))
      (version? (print-version) (exit 0))
      (else
       (run-steps steps)
       (cond
-       (interactive? (repl))
-       ((null? steps) (repl))
+       (interactive? (repl geiser?))
+       ((null? steps) (repl geiser?))
        (else (exit 0)))))))
 
 ;; ---- ece-repl entry point ----
@@ -203,13 +254,14 @@ Returns the value of the last expression."
   (let* ((parsed (parse-argv argv))
          (help? (list-ref parsed 1))
          (version? (list-ref parsed 2))
-         (steps (list-ref parsed 4)))
+         (steps (list-ref parsed 4))
+         (geiser? (list-ref parsed 5)))
     (cond
      (help? (print-usage) (exit 0))
      (version? (print-version) (exit 0))
      (else
       (run-steps steps)
-      (repl)))))
+      (repl geiser?)))))
 
 ;; ---- argv[0] dispatch ----
 
