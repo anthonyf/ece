@@ -138,26 +138,28 @@ In ECE's Geiser mode the REPL handles eval/load directly:
 (defun geiser-ece--sync-completions (prefix)
   "Query the ECE REPL for completions matching PREFIX."
   (let* ((repl-buf (geiser-ece--repl-buffer))
-         (proc (and repl-buf (get-buffer-process repl-buf)))
-         (output-buf (generate-new-buffer " *ece-comp*")))
+         (proc (and repl-buf (get-buffer-process repl-buf))))
     (when proc
-      (unwind-protect
-          (progn
-            (with-current-buffer repl-buf
-              (comint-redirect-send-command-to-process
-               (format "(geiser-completions %S)" prefix)
-               output-buf proc nil t)
-              (while (not comint-redirect-completed)
-                (accept-process-output proc 5)))
-            (with-current-buffer output-buf
-              (goto-char (point-min))
-              (condition-case nil
-                  (let* ((response (read (current-buffer)))
-                         (result-str (cadr (assq 'result response))))
-                    (when (and result-str (not (string= result-str "")))
-                      (car (read-from-string result-str))))
-                (error nil))))
-        (kill-buffer output-buf)))))
+      (let ((output-buf (generate-new-buffer " *ece-comp*")))
+        (unwind-protect
+            (with-timeout (5 nil)
+              (with-current-buffer repl-buf
+                (comint-redirect-send-command-to-process
+                 (format "(geiser-completions %S)" prefix)
+                 output-buf proc nil t)
+                (while (and (process-live-p proc)
+                            (not comint-redirect-completed))
+                  (accept-process-output proc 0.1)))
+              (when (and (process-live-p proc) comint-redirect-completed)
+                (with-current-buffer output-buf
+                  (goto-char (point-min))
+                  (condition-case nil
+                      (let* ((response (read (current-buffer)))
+                             (result-str (cadr (assq 'result response))))
+                        (when (and result-str (not (string= result-str "")))
+                          (car (read-from-string result-str))))
+                    (error nil)))))
+          (kill-buffer output-buf))))))
 
 (defun geiser-ece--complete-at-point ()
   "Completion-at-point function for ECE Scheme buffers."

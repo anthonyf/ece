@@ -106,4 +106,7 @@
   (lambda ()
     (let ((result (geiser-completions "")))
       (assert (pair? result) "non-empty for empty prefix")
-      (assert (> (length result) 100) "returns many symbols"))))
+      (assert (member "map" result) "includes map")
+      (assert (member "+" result) "includes +")
+      (assert (member "test-completion-xyz" result)
+              "includes test-completion-xyz"))))
