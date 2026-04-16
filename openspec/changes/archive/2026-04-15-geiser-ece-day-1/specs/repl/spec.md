@@ -1,28 +1,3 @@
-## MODIFIED Requirements
-
-### Requirement: I/O primitives are available
-The evaluator SHALL expose `read`, `print`, `display`, and `newline` as primitive procedures in the global environment. After bootstrap, `read` SHALL use the ECE reader (reading from `current-input-port`) instead of CL's `read`.
-
-#### Scenario: read is callable
-- **WHEN** `read` is looked up in `*global-env*`
-- **THEN** it SHALL resolve to a primitive that reads an s-expression from current-input-port
-
-#### Scenario: read uses ECE reader after bootstrap
-- **WHEN** `(read (open-input-string "(+ 1 2)"))` is called after bootstrap
-- **THEN** it SHALL parse the expression using the ECE reader and return `(+ 1 2)`
-
-#### Scenario: print is callable
-- **WHEN** evaluating `(print 42)`
-- **THEN** it SHALL print `42` to standard output and return `42`
-
-#### Scenario: display writes without leading newline
-- **WHEN** evaluating `(display "hello")`
-- **THEN** it SHALL write `hello` to standard output without a leading newline
-
-#### Scenario: newline writes a newline
-- **WHEN** evaluating `(newline)`
-- **THEN** it SHALL write a newline character to standard output
-
 ## ADDED Requirements
 
 ### Requirement: REPL supports Geiser mode via --geiser flag
@@ -43,6 +18,8 @@ The `bin/ece-repl` binary SHALL accept a `--geiser` command-line flag that switc
 
 - **WHEN** user runs `bin/ece-repl --bogus-flag`
 - **THEN** the REPL SHALL print a usage error and exit with a nonzero status
+
+## MODIFIED Requirements
 
 ### Requirement: REPL defined in ECE
 The `repl` function SHALL be defined in `ece-main.scm` as an ECE function callable from compiled bytecode. When an expression raises an error during compilation or execution, the REPL SHALL recover such that subsequent expressions evaluate normally — error recovery SHALL NOT leave stale compilation state (labels, instruction-vector entries) in shared spaces that could affect later expressions.

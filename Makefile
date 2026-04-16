@@ -8,7 +8,7 @@ SHARE_FILES := \
 	bootstrap/bootstrap.ecec \
 	wasm/runtime.wasm \
 	wasm/glue.js \
-	src/sdk-lib.scm src/ece-main.scm src/ece-unit.scm src/ece-build.scm src/ece-test.scm src/ece-serve.scm src/http-codec.scm src/websocket-codec.scm src/json.scm src/scheduler.scm src/sha1.scm src/base64.scm
+	src/sdk-lib.scm src/ece-main.scm src/ece-unit.scm src/ece-build.scm src/ece-test.scm src/ece-serve.scm src/geiser-ece.scm src/http-codec.scm src/websocket-codec.scm src/json.scm src/scheduler.scm src/sha1.scm src/base64.scm
 
 # Default target: build the ece binary and ECE bundles so in-tree dev works.
 all: ece
@@ -26,11 +26,11 @@ bin/ece: scripts/build-ece-binary.lisp bootstrap/bootstrap.ecec share/ece/ece-ma
 	@ln -sf ece bin/ece-serve
 	@echo "Built bin/ece + symlinks (ece-repl, ece-build, ece-test, ece-serve)"
 
-share/ece/ece-main.ecec: src/sdk-lib.scm src/ece-main.scm src/ece-unit.scm src/base64.scm src/sha1.scm src/scheduler.scm src/http-codec.scm src/websocket-codec.scm src/json.scm src/ece-build.scm src/ece-test.scm src/ece-serve.scm bootstrap/bootstrap.ecec
+share/ece/ece-main.ecec: src/sdk-lib.scm src/ece-main.scm src/ece-unit.scm src/base64.scm src/sha1.scm src/scheduler.scm src/http-codec.scm src/websocket-codec.scm src/json.scm src/ece-build.scm src/ece-test.scm src/ece-serve.scm src/geiser-ece.scm bootstrap/bootstrap.ecec
 	@mkdir -p share/ece/templates
 	qlot exec sbcl --dynamic-space-size 4096 --non-interactive --disable-debugger \
 	  --eval '(asdf:load-system :ece)' \
-	  --eval '(ece:evaluate (list (intern "compile-system" :ece) (quote (quote ("src/sdk-lib.scm" "src/ece-unit.scm" "src/base64.scm" "src/sha1.scm" "src/scheduler.scm" "src/http-codec.scm" "src/websocket-codec.scm" "src/json.scm" "src/ece-main.scm" "src/ece-build.scm" "src/ece-test.scm" "src/ece-serve.scm"))) "share/ece/ece-main.ecec"))' \
+	  --eval '(ece:evaluate (list (intern "compile-system" :ece) (quote (quote ("src/sdk-lib.scm" "src/ece-unit.scm" "src/base64.scm" "src/sha1.scm" "src/scheduler.scm" "src/http-codec.scm" "src/websocket-codec.scm" "src/json.scm" "src/ece-main.scm" "src/ece-build.scm" "src/ece-test.scm" "src/ece-serve.scm" "src/geiser-ece.scm"))) "share/ece/ece-main.ecec"))' \
 	  --quit
 	@# Stage the other share/ece/ files so in-tree `bin/ece` works
 	@cp bootstrap/bootstrap.ecec share/ece/bootstrap.ecec
@@ -59,6 +59,7 @@ install: ece
 	install -m 644 src/ece-build.scm $(DESTDIR)$(PREFIX)/share/ece/ece-build.scm
 	install -m 644 src/ece-test.scm $(DESTDIR)$(PREFIX)/share/ece/ece-test.scm
 	install -m 644 src/ece-serve.scm $(DESTDIR)$(PREFIX)/share/ece/ece-serve.scm
+	install -m 644 src/geiser-ece.scm $(DESTDIR)$(PREFIX)/share/ece/geiser-ece.scm
 	install -m 644 src/sha1.scm $(DESTDIR)$(PREFIX)/share/ece/sha1.scm
 	install -m 644 src/base64.scm $(DESTDIR)$(PREFIX)/share/ece/base64.scm
 	install -m 644 src/scheduler.scm $(DESTDIR)$(PREFIX)/share/ece/scheduler.scm
@@ -85,7 +86,7 @@ export ASDF_OUTPUT_TRANSLATIONS = (:output-translations ("$(CURDIR)/" "$(CURDIR)
 # base64.scm and sha1.scm must come before the test files so their exports
 # are defined when test-base64 / test-sha1 run. Both run on CL and WASM now
 # that the bitwise primitives handle large integers uniformly.
-WASM_TEST_SRCS := src/sdk-lib.scm src/ece-unit.scm src/base64.scm src/sha1.scm src/scheduler.scm src/http-codec.scm src/websocket-codec.scm src/json.scm src/ece-serve.scm $(wildcard tests/ece/common/test-*.scm) wasm/wasm-test-runner.scm
+WASM_TEST_SRCS := src/sdk-lib.scm src/ece-unit.scm src/base64.scm src/sha1.scm src/scheduler.scm src/http-codec.scm src/websocket-codec.scm src/json.scm src/ece-serve.scm src/geiser-ece.scm $(wildcard tests/ece/common/test-*.scm) wasm/wasm-test-runner.scm
 
 # Temp dir for test output capture
 TEST_OUTPUT_DIR := .tmp/test-output
@@ -117,6 +118,7 @@ test-ece:
 	  --eval '(ece:evaluate (list (quote load) "src/websocket-codec.scm"))' \
 	  --eval '(ece:evaluate (list (quote load) "src/json.scm"))' \
 	  --eval '(ece:evaluate (list (quote load) "src/ece-serve.scm"))' \
+	  --eval '(ece:evaluate (list (quote load) "src/geiser-ece.scm"))' \
 	  --eval '(ece:evaluate (list (quote load) "src/ece-unit.scm"))' \
 	  --eval '(ece:evaluate (list (quote load) "src/ece-test.scm"))' \
 	  --eval '(ece:evaluate (list (intern "ece-test-main" :ece) (list (quote list) "tests/ece/common" "tests/ece/cl-only")))' \

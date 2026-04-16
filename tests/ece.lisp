@@ -2568,6 +2568,41 @@ rebindings redirect ECE's I/O."
         :for i :from 0 :to (- (length string) len)
         :count (string= substr string :start2 i :end2 (+ i len))))
 
+(defun run-repl-geiser (input-string)
+  "Run the ECE REPL in --geiser mode with INPUT-STRING as input.
+Returns captured stdout."
+  (ensure-ece-main-loaded)
+  (with-input-from-string (*standard-input* input-string)
+    (with-output-to-string (*standard-output*)
+      (evaluate (list (intern "repl" :ece) t)))))
+
+(deftest test-repl-geiser-mode
+    (testing "simple eval returns structured alist"
+             (let ((output (run-repl-geiser "(+ 1 2)")))
+               (ok (search "((result" output))
+               (ok (search "\"3\"" output))
+               (ok (search "(output . \"\")" output))))
+
+  (testing "eval with display captures output in alist"
+           (let ((output (run-repl-geiser (format nil "(begin (display \"hi\") 42)"))))
+             (ok (search "\"42\"" output))
+             (ok (search "hi" output))))
+
+  (testing "error recovery: subsequent eval works"
+           (let ((output (run-repl-geiser
+                          (format nil "undefined-var-xyz~%(+ 100 200)"))))
+             (ok (search "\"300\"" output))))
+
+  (testing "reader error produces clean alist"
+           (let ((output (run-repl-geiser "(foo (bar baz")))
+             (ok (search "Read error" output))
+             (ok (search "Unexpected EOF" output))))
+
+  (testing "terminal mode unchanged"
+           (let ((output (run-repl "(+ 1 2)")))
+             (ok (search "3" output))
+             (ok (not (search "result" output))))))
+
 (deftest test-ece-assembler
     (testing "assemble and execute"
              ;; Compile an expression with ECE compiler, assemble with ECE assembler, execute
