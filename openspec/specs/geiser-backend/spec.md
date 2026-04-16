@@ -142,6 +142,30 @@ The `geiser-autodoc` handler in `src/geiser-ece.scm` SHALL accept a list of iden
 - **WHEN** user positions cursor inside `(map |` in a `.scm` buffer with an active Geiser REPL
 - **THEN** the minibuffer SHALL display the function signature showing parameter names
 
+### Requirement: REPL buffer displays clean results
+
+The Geiser REPL buffer SHALL display evaluation results in clean form, not as raw wire protocol alists. Side-effect output SHALL appear before the result value.
+
+#### Scenario: Simple eval shows clean result
+
+- **WHEN** user types `(+ 1 2)` in the REPL buffer and presses Enter
+- **THEN** the REPL buffer SHALL display `3`, not `((result "3") (output . ""))`
+
+#### Scenario: Eval with side-effect output
+
+- **WHEN** user types `(begin (display "hello") 42)` in the REPL buffer
+- **THEN** the REPL buffer SHALL display `hello` followed by `42`
+
+#### Scenario: Void result shows nothing
+
+- **WHEN** user types `(define x 1)` in the REPL buffer
+- **THEN** the REPL buffer SHALL display nothing, not a raw alist
+
+#### Scenario: Parse failure falls back to raw display
+
+- **WHEN** the REPL emits output that cannot be parsed as an alist
+- **THEN** the REPL buffer SHALL display the raw output unchanged
+
 ### Requirement: CL host only for day 1
 
 The geiser-backend capability SHALL support only the CL-hosted ECE runtime in day 1. The WASM runtime SHALL not be exposed via Geiser in day 1; that integration is deferred to a subsequent change.

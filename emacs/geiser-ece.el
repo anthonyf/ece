@@ -10,8 +10,9 @@
 ;;; Commentary:
 
 ;; Geiser backend for the ECE Scheme implementation.  Supports eval at
-;; point (C-x C-e), load file (C-c C-l), REPL buffer, symbol completions
-;; (C-M-i), and autodoc (eldoc-mode signature hints).  No jump-to-def yet.
+;; point (C-x C-e), load file (C-c C-l), REPL buffer with clean output,
+;; symbol completions (C-M-i), and autodoc (eldoc-mode signature hints).
+;; No jump-to-def yet.
 ;;
 ;; Usage: add to your init.el:
 ;;   (load "/path/to/ece/emacs/geiser-ece.el")
@@ -78,8 +79,38 @@ When not on PATH, derived from this file's location (emacs/../bin/ece-repl)."
   "Return the version string from BINARY."
   (car (process-lines binary "--version")))
 
+(defun geiser-ece--output-filter (output)
+  "Clean up raw alist wire protocol in the REPL buffer.
+Parses ((result \"...\") (output . \"...\")) responses and displays
+just the result value, with any side-effect output prepended.
+Preserves trailing text (e.g., the prompt) after the parsed alist."
+  (condition-case nil
+      (let* ((read-result (read-from-string output))
+             (parsed (car read-result))
+             (end-pos (cdr read-result))
+             (remaining (string-trim-left (substring output end-pos)))
+             (result-entry (assq 'result parsed))
+             (output-entry (assq 'output parsed)))
+        (if (and result-entry output-entry)
+            (let ((result-str (cadr result-entry))
+                  (output-str (cdr output-entry)))
+              (concat
+               (if (and output-str (not (string= output-str "")))
+                   (concat output-str "\n")
+                 "")
+               (if (and result-str (not (string= result-str ""))
+                        (not (string-prefix-p "(compiled-procedure " result-str))
+                        (not (string-prefix-p "(primitive " result-str)))
+                   (concat result-str "\n")
+                 "")
+               remaining))
+          output))
+    (error output)))
+
 (defun geiser-ece--startup (_remote)
-  "Actions run after the ECE REPL process starts.")
+  "Actions run after the ECE REPL process starts."
+  (add-hook 'comint-preoutput-filter-functions
+            #'geiser-ece--output-filter nil t))
 
 (defun geiser-ece--geiser-procedure (proc &rest args)
   "Translate a Geiser request PROC with ARGS into a Scheme form string.
