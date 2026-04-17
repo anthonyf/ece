@@ -268,6 +268,7 @@
 (%register-primitive! '%global-env-symbols 237)
 (%register-primitive! '%procedure-params-set! 238)
 (%register-primitive! '%procedure-params 239)
+(%register-primitive! '%procedure-name-ref 240)
 
 ;;; ═══════════════════════════════════════════════════════════════════
 ;;; 2. Initialize assembler symbol table

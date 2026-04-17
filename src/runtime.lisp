@@ -174,6 +174,7 @@
            #:%label-table-set!
            #:%label-table-ref
            #:%procedure-name-set!
+           #:%procedure-name-ref
            #:extend-environment
            #:ece-runtime-error
            #:ece-original-error
