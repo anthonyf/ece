@@ -214,8 +214,18 @@
         (cons #t (%eq-hash-ref ht sym))
         (cons #f #f))))
 
+;; `disassemble` reaches into `*global-env*` via `(cdr (%global-env-frame))`
+;; and `%eq-hash-has-key?`/`%eq-hash-keys` — all CL-only today. On other
+;; runtimes we print a clear "not supported" message instead of erroring.
+(define (dis/supported?)
+  (and (platform-has? '%eq-hash-has-key?)
+       (platform-has? '%eq-hash-keys)))
+
 (define (disassemble x)
   (cond
+   ((not (dis/supported?))
+    (display "; disassemble: not supported on this runtime (requires CL host)")
+    (newline))
    ((compiled-procedure? x) (dis/disassemble-compiled x))
    ((symbol? x)
     (let ((lookup (dis/lookup-global x)))

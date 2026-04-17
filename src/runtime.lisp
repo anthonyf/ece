@@ -175,6 +175,7 @@
            #:%label-table-ref
            #:%procedure-name-set!
            #:%procedure-name-ref
+           #:disassemble
            #:extend-environment
            #:ece-runtime-error
            #:ece-original-error

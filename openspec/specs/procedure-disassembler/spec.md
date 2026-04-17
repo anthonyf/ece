@@ -1,7 +1,7 @@
 # procedure-disassembler Specification
 
 ## Purpose
-TBD - created by archiving change add-disassemble. Update Purpose after archive.
+Define the `disassemble` procedure exported by the `ece` package: the accepted inputs (compiled procedures and symbols resolved in `*global-env*`), the printed output format (header + reached instructions with inline labels and branch/goto PC annotations), and the error messages for non-disassemblable inputs. `disassemble` is a runtime introspection tool for viewing a compiled procedure's register-machine bytecode.
 ## Requirements
 ### Requirement: disassemble accepts compiled procedures and symbols
 
@@ -34,10 +34,11 @@ ECE SHALL provide a `disassemble` procedure, exported from the `ece` package, th
 - **WHEN** `disassemble` is called on a compiled procedure whose entry is `(prelude . 142)` and whose registered name is `square`
 - **THEN** the output SHALL begin with a header line containing `square` and `prelude:142`
 
-#### Scenario: Header indicates compiled-zone procedures
+#### Scenario: Compiled-zone header annotation is deferred
 
 - **WHEN** `disassemble` is called on a compiled procedure whose space has `compiled-fn` set (CL codegen / native zone)
-- **THEN** the header SHALL contain a note that the space is compiled to the host and that the instructions shown are the source form the host code was generated from
+- **THEN** this capability imposes no requirement on the header to indicate compiled-zone status
+- **AND** support for detecting `compiled-fn` and emitting a host-compiled note is deferred until a primitive to query that state is specified and implemented
 
 ### Requirement: disassemble emits one line per reached instruction
 
