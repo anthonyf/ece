@@ -94,7 +94,12 @@
   (type $compiled-proc (struct
     (field $space i32)
     (field $pc i32)
-    (field $env (ref null eq))))
+    (field $env (ref null eq))
+    ;; §6.6 coexistence: when non-null, this closure targets a code-object
+    ;; (body at pc 0). $space and $pc are ignored in that case. §11 will
+    ;; retire the old fields. Typed as (ref null eq) because $code-object
+    ;; is defined later in the file — cast at use sites.
+    (field $code-obj (mut (ref null eq)))))
 
   ;; --- Continuation ---
   ;; Captured by call/cc: the stack, return address, and winding stack at capture time.
@@ -379,7 +384,7 @@
   ;; --- Compiled procedure ---
 
   (func $make-compiled-proc (param $space i32) (param $pc i32) (param $env (ref null eq)) (result (ref $compiled-proc))
-    (struct.new $compiled-proc (local.get $space) (local.get $pc) (local.get $env))
+    (struct.new $compiled-proc (local.get $space) (local.get $pc) (local.get $env) (ref.null eq))
   )
 
   (func $compiled-proc-space (param $p (ref $compiled-proc)) (result i32)
@@ -5107,12 +5112,20 @@
         (ref.cast (ref $primitive) (call $arg1 (local.get $args))))))))
 
     ;; 163 = %make-compiled-procedure(entry, env) → compiled-proc
-    ;; entry is (space-id . pc) pair
+    ;; entry is (space-id . pc) pair, or a bare code-object (§7.1 shape).
     (if (i32.eq (local.get $id) (i32.const 163))
-      (then (return (struct.new $compiled-proc
-        (call $fixnum-value (ref.cast (ref i31) (call $xcar (call $arg1 (local.get $args)))))
-        (call $fixnum-value (ref.cast (ref i31) (call $xcdr (call $arg1 (local.get $args)))))
-        (call $arg2 (local.get $args))))))
+      (then
+        ;; §7.1 shape: bare code-object entry → store in $code-obj field.
+        (if (ref.test (ref $code-object) (call $arg1 (local.get $args)))
+          (then (return (struct.new $compiled-proc
+            (i32.const 0) (i32.const 0)
+            (call $arg2 (local.get $args))
+            (call $arg1 (local.get $args))))))
+        (return (struct.new $compiled-proc
+          (call $fixnum-value (ref.cast (ref i31) (call $xcar (call $arg1 (local.get $args)))))
+          (call $fixnum-value (ref.cast (ref i31) (call $xcdr (call $arg1 (local.get $args)))))
+          (call $arg2 (local.get $args))
+          (ref.null eq)))))
 
     ;; 164 = %make-continuation(stack, conts, winds) → continuation
     (if (i32.eq (local.get $id) (i32.const 164))
