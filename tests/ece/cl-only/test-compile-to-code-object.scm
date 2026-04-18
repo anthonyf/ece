@@ -277,3 +277,15 @@ make-compiled-procedure instruction inside CO, or #f if none."
 (test "execute-from-pc accepts (code-obj . 0) pair" (lambda ()
   (let ((co (mc-compile-to-code-object '(* 6 7))))
     (assert-equal 42 (execute-from-pc (cons co 0))))))
+
+;;; ─────────────────────────────────────────────────────────────────────────
+;;; §6.5: when a code-object's native-fn slot holds a procedure, the
+;;; executor dispatches to it directly (no hash lookup). Populating the
+;;; slot is out of scope here; this test just validates plumbing.
+;;; ─────────────────────────────────────────────────────────────────────────
+
+(test "default native-fn is #f (dispatch falls through to bytecode)" (lambda ()
+  (let ((co (mc-compile-to-code-object '(+ 1 2))))
+    (assert-equal #f (code-object-native-fn co))
+    ;; Still executable via bytecode path.
+    (assert-equal 3 (execute-code-object co)))))

@@ -1299,7 +1299,14 @@ variables inline — no throw/catch, no dispatcher, no allocation per transition
                  ;; instruction's setf pc runs after switch-space returns).
                  (setf just-entered-space t)))
              (maybe-dispatch-compiled-zone ()
-               (let ((zone-fn (gethash space-id *compiled-zone-functions*)))
+               ;; Zone-function source of truth:
+               ;; - When space-id is a code-object, read its native-fn slot
+               ;;   directly (§6.5 — no hash lookup).
+               ;; - When space-id is a symbol (classic space), fall back to
+               ;;   the *compiled-zone-functions* registry.
+               (let ((zone-fn (if (code-object-p space-id)
+                                  (code-object-native-fn space-id)
+                                  (gethash space-id *compiled-zone-functions*))))
                  (when zone-fn
                    (multiple-value-bind (new-pc new-val new-env new-proc
                                                 new-argl new-continue new-stack)

@@ -50,7 +50,8 @@
 - [ ] 6.3 Update the `goto (reg ...)` dispatch case: `(eq? (car addr) space-id)` becomes `(eq? (car addr) current-code-obj)`. The `addr` shape changes from `(space-id . local-pc)` to `(code-obj . local-pc)`.
 - [x] 6.4 Update `execute-from-pc` to accept either a (code-obj . local-pc) pair or a bare code-obj (implying local-pc = 0).
       *CL primitive now dispatches on `(code-object-p start)` (bare) and `(consp start) && (code-object-p (car start))` (pair) before falling through to the legacy qualified-address path. Tests cover both shapes.*
-- [ ] 6.5 Replace `*compiled-zone-functions*` hash lookups with direct `code-object-native-fn` field reads.
+- [x] 6.5 Replace `*compiled-zone-functions*` hash lookups with direct `code-object-native-fn` field reads.
+      *`maybe-dispatch-compiled-zone` now reads `code-object-native-fn` directly when space-id is a code-object, and falls back to the hash lookup for legacy symbol-keyed spaces. Code-object native-fn defaults to #f so dispatch falls through to bytecode — populating the slot stays a future compile-to-host proposal.*
 - [ ] 6.6 Parallel WASM executor changes in `wasm/runtime.wat`: `$current-space-id` → `$current-code-obj` (struct pointer). `$switch-space` → `$switch-code-obj`. Remove the `get-space` equivalent.
 
 ## 7. Closure shape and continuation shape
