@@ -147,6 +147,9 @@
 (defun ece-%primitive-name (id)
   (cl:if (cl:and (cl:integerp id) (cl:< id (cl:length *primitive-name-table*))) (cl:or (cl:aref *primitive-name-table* id) *scheme-false*) *scheme-false*))
 
+(defun ece-%procedure-name-ref (pc-or-qualified)
+  (cl:or (cl:gethash pc-or-qualified *procedure-name-table*) *scheme-false*))
+
 (defun ece-%procedure-name-set! (pc-or-qualified name)
   (cl:progn (cl:setf (cl:gethash pc-or-qualified *procedure-name-table*) name) cl:nil))
 

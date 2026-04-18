@@ -353,6 +353,10 @@
         (cl:setf (cl:gethash ,pc-or-qualified *procedure-name-table*) ,name)
         cl:nil))
 
+(define-host-primitive (%procedure-name-ref pc-or-qualified)
+  :cl `(cl:or (cl:gethash ,pc-or-qualified *procedure-name-table*)
+              *scheme-false*))
+
 ;;; ─────────────────────────────────────────────────────────────────────────
 ;;; Platform discovery (ids 98-99)
 ;;; ─────────────────────────────────────────────────────────────────────────

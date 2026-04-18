@@ -4472,7 +4472,8 @@
                     ;; Exclude known WASM stubs/no-ops:
                     ;; sleep (83), clear-screen (84), try-eval (90),
                     ;; %procedure-name-set! (97), open-input/output-file (100/101),
-                    ;; %space-label-entries (135), %make-directory (194), %chmod (195)
+                    ;; %space-label-entries (135), %make-directory (194), %chmod (195),
+                    ;; %procedure-name-ref (240)
                     (local.set $id (struct.get $primitive $id
                           (ref.cast (ref $primitive) (local.get $result))))
                     (if (i32.or (i32.eq (local.get $id) (i32.const 83))
@@ -4483,7 +4484,8 @@
                                   (i32.or (i32.eq (local.get $id) (i32.const 101))
                                     (i32.or (i32.eq (local.get $id) (i32.const 135))
                                       (i32.or (i32.eq (local.get $id) (i32.const 194))
-                                              (i32.eq (local.get $id) (i32.const 195))))))))))
+                                        (i32.or (i32.eq (local.get $id) (i32.const 195))
+                                                (i32.eq (local.get $id) (i32.const 240)))))))))))
                       (then (return (global.get $false)))
                       (else (return (global.get $true))))))
                 (return (global.get $false))))))
@@ -4693,6 +4695,12 @@
     ;; 97 = %procedure-name-set! (pc, name) — no-op for now
     (if (i32.eq (local.get $id) (i32.const 97))
       (then (return (global.get $void))))
+
+    ;; 240 = %procedure-name-ref (pc) — always #f on WASM: no name table
+    ;; (procedure-name-set! is also a no-op, so there is nothing to look up).
+    ;; Callers that want the name for diagnostics get "<anonymous>".
+    (if (i32.eq (local.get $id) (i32.const 240))
+      (then (return (global.get $false))))
 
     ;; --- Compilation space primitives (core IDs 125-135) ---
 
