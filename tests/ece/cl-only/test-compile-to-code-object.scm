@@ -332,3 +332,68 @@ make-compiled-procedure instruction inside CO, or #f if none."
            (out (with-output-to-string (disassemble inner))))
       (assert-true (string-contains? out "add1"))
       (assert-true (string-contains? out "(assign")))))
+
+;;; ─────────────────────────────────────────────────────────────────────────
+;;; §13.5 (partial): regression coverage for common idioms through the
+;;; bottom-up pipeline. Kept small so CI cost stays low.
+;;; ─────────────────────────────────────────────────────────────────────────
+
+(test "fib(10) via mc-compile-to-code-object: self-recursion" (lambda ()
+  (assert-equal 55 (execute-code-object
+                    (mc-compile-to-code-object
+                     '(letrec ((fib (lambda (n)
+                                      (if (< n 2) n
+                                          (+ (fib (- n 1)) (fib (- n 2)))))))
+                        (fib 10)))))))
+
+(test "mutual recursion: even? / odd?" (lambda ()
+  (assert-equal #t (execute-code-object
+                    (mc-compile-to-code-object
+                     '(letrec ((e? (lambda (n) (if (= n 0) #t (o? (- n 1)))))
+                               (o? (lambda (n) (if (= n 0) #f (e? (- n 1))))))
+                        (e? 20)))))))
+
+(test "higher-order: map over a small list" (lambda ()
+  (assert-equal '(2 4 6 8) (execute-code-object
+                            (mc-compile-to-code-object
+                             '(map (lambda (x) (* x 2)) '(1 2 3 4)))))))
+
+(test "deep let* chaining (20 bindings)" (lambda ()
+  (assert-equal 210 (execute-code-object
+                     (mc-compile-to-code-object
+                      '(let* ((a 1) (b (+ a 1)) (c (+ b 1)) (d (+ c 1))
+                              (e (+ d 1)) (f (+ e 1)) (g (+ f 1))
+                              (h (+ g 1)) (i (+ h 1)) (j (+ i 1))
+                              (k (+ j 1)) (l (+ k 1)) (m (+ l 1))
+                              (n (+ m 1)) (o (+ n 1)) (p (+ o 1))
+                              (q (+ p 1)) (r (+ q 1)) (s (+ r 1))
+                              (t (+ s 1)))
+                         (+ a b c d e f g h i j k l m n o p q r s t)))))))
+
+(test "internal define (body starts with defines)" (lambda ()
+  (assert-equal 42 (execute-code-object
+                    (mc-compile-to-code-object
+                     '((lambda ()
+                         (define x 7)
+                         (define y 6)
+                         (* x y))))))))
+
+(test "call/cc through code-object: escape from loop" (lambda ()
+  ;; Simple escape: call/cc returns immediately when the cont is invoked.
+  (assert-equal 'escaped
+                (execute-code-object
+                 (mc-compile-to-code-object
+                  '(call/cc (lambda (k) (k 'escaped) 'unreached)))))))
+
+(test "variadic arguments (. rest)" (lambda ()
+  (assert-equal '(a b c)
+                (execute-code-object
+                 (mc-compile-to-code-object
+                  '((lambda args args) 'a 'b 'c))))))
+
+(test "parity: same expression via mc-compile-and-go and mc-compile-to-code-object"
+  (lambda ()
+    ;; Any pure, side-effect-free expression should give the same answer.
+    (let ((expr '(+ (* 3 4) (- 10 5))))
+      (assert-equal (eval expr)
+                    (execute-code-object (mc-compile-to-code-object expr))))))
