@@ -264,3 +264,16 @@ make-compiled-procedure instruction inside CO, or #f if none."
          (inner (find-child-code-object outer)))
     (assert-true inner)
     (assert-equal #f (code-object-name inner)))))
+
+;;; ─────────────────────────────────────────────────────────────────────────
+;;; §6.4: execute-from-pc accepts code-objects and (code-obj . pc) pairs
+;;; in addition to the legacy (space-id . pc) shape.
+;;; ─────────────────────────────────────────────────────────────────────────
+
+(test "execute-from-pc accepts bare code-object (pc 0 implied)" (lambda ()
+  (let ((co (mc-compile-to-code-object '(+ 2 3))))
+    (assert-equal 5 (execute-from-pc co)))))
+
+(test "execute-from-pc accepts (code-obj . 0) pair" (lambda ()
+  (let ((co (mc-compile-to-code-object '(* 6 7))))
+    (assert-equal 42 (execute-from-pc (cons co 0))))))

@@ -48,7 +48,8 @@
 - [ ] 6.1 Update `execute-instructions` in `src/runtime.lisp` to track current code-object (renaming the `space-id` local to `code-obj`), `instrs`, `ltab` as before but sourced from the code object.
 - [ ] 6.2 Update `switch-space` → `switch-code-object`. Target is a code-object value, not a symbol. Remove the `get-space` hash lookup — set `instrs`/`ltab` directly from code-object accessors.
 - [ ] 6.3 Update the `goto (reg ...)` dispatch case: `(eq? (car addr) space-id)` becomes `(eq? (car addr) current-code-obj)`. The `addr` shape changes from `(space-id . local-pc)` to `(code-obj . local-pc)`.
-- [ ] 6.4 Update `execute-from-pc` to accept either a (code-obj . local-pc) pair or a bare code-obj (implying local-pc = 0).
+- [x] 6.4 Update `execute-from-pc` to accept either a (code-obj . local-pc) pair or a bare code-obj (implying local-pc = 0).
+      *CL primitive now dispatches on `(code-object-p start)` (bare) and `(consp start) && (code-object-p (car start))` (pair) before falling through to the legacy qualified-address path. Tests cover both shapes.*
 - [ ] 6.5 Replace `*compiled-zone-functions*` hash lookups with direct `code-object-native-fn` field reads.
 - [ ] 6.6 Parallel WASM executor changes in `wasm/runtime.wat`: `$current-space-id` → `$current-code-obj` (struct pointer). `$switch-space` → `$switch-code-obj`. Remove the `get-space` equivalent.
 

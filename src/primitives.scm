@@ -289,9 +289,18 @@
 (define-host-primitive (execute-from-pc . args)
   :cl `(let ((start-pc (cl:car ,args))
              (env (cl:if (cl:cdr ,args) (cl:cadr ,args) *global-env*)))
-         (execute-instructions (qualified-space-id start-pc)
-                               (qualified-local-pc start-pc)
-                               env)))
+         (cl:cond
+          ;; Bare code-object → run from its pc 0
+          ((code-object-p start-pc)
+           (execute-instructions start-pc 0 env))
+          ;; (code-obj . pc) pair
+          ((cl:and (cl:consp start-pc) (code-object-p (cl:car start-pc)))
+           (execute-instructions (cl:car start-pc) (cl:cdr start-pc) env))
+          ;; Legacy (space-id . pc) pair or bare integer
+          (cl:t
+           (execute-instructions (qualified-space-id start-pc)
+                                 (qualified-local-pc start-pc)
+                                 env)))))
 
 (define-host-primitive (get-macro name)
   :cl `(cl:or (cl:gethash ,name *compile-time-macros*) *scheme-false*))

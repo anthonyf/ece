@@ -373,7 +373,7 @@
   (let ((co (cl:car args)) (env (cl:if (cl:cdr args) (cl:cadr args) *global-env*))) (execute-instructions co 0 env)))
 
 (defun ece-execute-from-pc (&rest args)
-  (let ((start-pc (cl:car args)) (env (cl:if (cl:cdr args) (cl:cadr args) *global-env*))) (execute-instructions (qualified-space-id start-pc) (qualified-local-pc start-pc) env)))
+  (let ((start-pc (cl:car args)) (env (cl:if (cl:cdr args) (cl:cadr args) *global-env*))) (cl:cond ((code-object-p start-pc) (execute-instructions start-pc 0 env)) ((cl:and (cl:consp start-pc) (code-object-p (cl:car start-pc))) (execute-instructions (cl:car start-pc) (cl:cdr start-pc) env)) (cl:t (execute-instructions (qualified-space-id start-pc) (qualified-local-pc start-pc) env)))))
 
 (defun ece-exit (&rest args)
   (let ((code (cl:cond ((cl:null args) 0) ((cl:integerp (cl:car args)) (cl:car args)) ((scheme-false-p (cl:car args)) 1) ((cl:eq (cl:car args) cl:t) 0) (cl:t 0)))) (sb-ext:exit :code code)))
