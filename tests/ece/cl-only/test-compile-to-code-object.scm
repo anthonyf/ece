@@ -72,3 +72,40 @@
   (let* ((co (%make-code-object))
          (result (assemble-into-code-object co '((halt)))))
     (assert-equal #t (eq? co result)))))
+
+;;; ─────────────────────────────────────────────────────────────────────────
+;;; End-to-end execution via execute-code-object (§6 on CL, coexistence phase).
+;;; ─────────────────────────────────────────────────────────────────────────
+
+(test "execute-code-object runs a self-evaluating expression" (lambda ()
+  (assert-equal 42 (execute-code-object (mc-compile-to-code-object 42)))))
+
+(test "execute-code-object runs primitive arithmetic" (lambda ()
+  (assert-equal 3 (execute-code-object (mc-compile-to-code-object '(+ 1 2))))
+  (assert-equal 42 (execute-code-object (mc-compile-to-code-object '(* 6 7))))))
+
+(test "execute-code-object runs nested arithmetic" (lambda ()
+  (assert-equal 10 (execute-code-object
+                    (mc-compile-to-code-object '(+ (* 2 3) (- 6 2)))))))
+
+(test "execute-code-object runs if/then/else" (lambda ()
+  (assert-equal 'yes (execute-code-object
+                      (mc-compile-to-code-object '(if (> 3 1) 'yes 'no))))
+  (assert-equal 'no (execute-code-object
+                     (mc-compile-to-code-object '(if (> 1 3) 'yes 'no))))))
+
+(test "execute-code-object runs a lambda call" (lambda ()
+  (assert-equal 5 (execute-code-object
+                   (mc-compile-to-code-object '((lambda (x) (+ x 1)) 4))))))
+
+(test "execute-code-object runs let forms" (lambda ()
+  (assert-equal 7 (execute-code-object
+                   (mc-compile-to-code-object '(let ((x 3) (y 4)) (+ x y)))))))
+
+(test "execute-code-object runs recursive call via letrec" (lambda ()
+  ;; Factorial of 5 via letrec — exercises closure + recursion + tail calls.
+  (assert-equal 120 (execute-code-object
+                     (mc-compile-to-code-object
+                      '(letrec ((fact (lambda (n)
+                                        (if (= n 0) 1 (* n (fact (- n 1)))))))
+                         (fact 5)))))))

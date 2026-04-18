@@ -360,3 +360,4 @@
 (253 %code-object-set-name!           2  core   "Set the name metadata field of a code object")
 (254 %code-object-set-arity!          2  core   "Set the arity metadata field of a code object")
 (255 %code-object-set-source-loc!     2  core   "Set the source-loc metadata field of a code object")
+(256 execute-code-object             -1  core   "Execute a code object from pc 0 (optional env); returns val")

@@ -366,6 +366,9 @@
 (defun ece-exact->inexact (x)
   (cl:coerce x 'cl:single-float))
 
+(defun ece-execute-code-object (&rest args)
+  (let ((co (cl:car args)) (env (cl:if (cl:cdr args) (cl:cadr args) *global-env*))) (execute-instructions co 0 env)))
+
 (defun ece-execute-from-pc (&rest args)
   (let ((start-pc (cl:car args)) (env (cl:if (cl:cdr args) (cl:cadr args) *global-env*))) (execute-instructions (qualified-space-id start-pc) (qualified-local-pc start-pc) env)))
 

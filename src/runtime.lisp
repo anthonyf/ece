@@ -1221,12 +1221,20 @@ target space.")
                              &key initial-proc initial-argl initial-continue
                                initial-stack)
   "Execute assembled instructions starting in INITIAL-SPACE-ID at INITIAL-PC.
+INITIAL-SPACE-ID is either a symbol (classic space) or a code-object
+(per-procedure identity, §6 coexistence).
 Single-loop executor: cross-space jumps update local space-id/instrs/ltab
 variables inline — no throw/catch, no dispatcher, no allocation per transition."
   (let* ((space-id initial-space-id)
-         (cs (get-space space-id))
-         (instrs (compilation-space-resolved-instructions cs))
-         (ltab (compilation-space-label-table cs))
+         (initial-from-co (code-object-p initial-space-id))
+         (instrs (if initial-from-co
+                     (code-object-resolved-instructions initial-space-id)
+                     (compilation-space-resolved-instructions
+                      (get-space initial-space-id))))
+         (ltab (if initial-from-co
+                   (code-object-labels initial-space-id)
+                   (compilation-space-label-table
+                    (get-space initial-space-id))))
          (*executing-space-id* space-id)
          (pc initial-pc)
          (flag nil)
@@ -1264,13 +1272,24 @@ variables inline — no throw/catch, no dispatcher, no allocation per transition
                ;; Normalize integer 0 to bootstrap for old image compat
                (if (eql sid 0) '|bootstrap| sid))
              (switch-space (target-space-id)
+               ;; target-space-id can be a symbol (classic space identity) or
+               ;; a code-object (per-procedure identity, §6 coexistence).
+               ;; Both paths update the three executor-local fields
+               ;; (instrs, ltab, len) so the dispatch loop doesn't care.
                (let ((normalized (norm-space target-space-id)))
                  (setf space-id normalized)
-                 (let ((target-cs (get-space normalized)))
-                   (setf instrs (compilation-space-resolved-instructions target-cs))
-                   (setf ltab (compilation-space-label-table target-cs))
-                   (setf len (length instrs))
-                   (setf *executing-space-id* normalized))
+                 (cond
+                   ((code-object-p normalized)
+                    (setf instrs (code-object-resolved-instructions normalized))
+                    (setf ltab (code-object-labels normalized))
+                    (setf len (length instrs))
+                    (setf *executing-space-id* normalized))
+                   (t
+                    (let ((target-cs (get-space normalized)))
+                      (setf instrs (compilation-space-resolved-instructions target-cs))
+                      (setf ltab (compilation-space-label-table target-cs))
+                      (setf len (length instrs))
+                      (setf *executing-space-id* normalized))))
                  ;; Mark "we just entered a (potentially compiled) space".
                  ;; The actual hash lookup + dispatch happens in loop-start
                  ;; AFTER pc has been updated by the caller (the goto

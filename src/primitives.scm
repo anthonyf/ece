@@ -638,6 +638,11 @@
 (define-host-primitive (%code-object-set-source-loc! co loc)
   :cl `(cl:progn (cl:setf (code-object-source-loc ,co) ,loc) cl:nil))
 
+(define-host-primitive (execute-code-object . args)
+  :cl `(let ((co (cl:car ,args))
+             (env (cl:if (cl:cdr ,args) (cl:cadr ,args) *global-env*)))
+         (execute-instructions co 0 env)))
+
 ;;; ─────────────────────────────────────────────────────────────────────────
 ;;; Serialization (id 136)
 ;;; ─────────────────────────────────────────────────────────────────────────

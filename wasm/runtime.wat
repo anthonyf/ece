@@ -5623,6 +5623,12 @@
           (call $arg2 (local.get $args)))
         (return (global.get $void))))
 
+    ;; 256 = execute-code-object(co, [env]) — CL-only in §6 coexistence.
+    ;; On WASM, executing a code-object requires the executor switch that
+    ;; lands in §6.6. For now, calling this on WASM returns void.
+    (if (i32.eq (local.get $id) (i32.const 256))
+      (then (return (global.get $void))))
+
     ;; Unknown primitive — return void
     (global.get $void)
   )
