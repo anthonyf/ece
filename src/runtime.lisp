@@ -868,11 +868,17 @@ bootstrap/primitives-auto.lisp from a template in src/primitives.scm."
   (cadr param))
 
 (defun procedure-name (proc)
-  "Look up a compiled procedure's name from *procedure-name-table*."
+  "Look up a compiled procedure's name. Code-object closures store the
+name on the code-object itself (§4.3); legacy closures use the
+*procedure-name-table* side table keyed on (space-id . pc) or bare pc."
   (let ((entry (compiled-procedure-entry proc)))
-    (or (gethash entry *procedure-name-table*)
-        (when (consp entry)
-          (gethash (cdr entry) *procedure-name-table*)))))
+    (cond
+      ((code-object-p entry) (code-object-name entry))
+      ((and (consp entry) (code-object-p (car entry)))
+       (code-object-name (car entry)))
+      (t (or (gethash entry *procedure-name-table*)
+             (when (consp entry)
+               (gethash (cdr entry) *procedure-name-table*)))))))
 
 ;;; --- Type introspection primitives (ECE-facing) ---
 ;;; Return Scheme booleans. Exposed as ECE primitives.
@@ -974,9 +980,9 @@ bootstrap/primitives-auto.lisp from a template in src/primitives.scm."
 (defun make-compiled-procedure (entry env)
   (list '|compiled-procedure|
         (cond ((consp entry) entry)
-              ;; A bare code-object entry means "code-object at pc 0" —
-              ;; the shape produced by bottom-up lambda compilation.
-              ((code-object-p entry) (cons entry 0))
+              ;; §7.1: a bare code-object entry IS the closure's entry —
+              ;; the body starts at its pc 0 implicitly. No cons wrapper.
+              ((code-object-p entry) entry)
               (t (cons *executing-space-id* entry)))
         env))
 
@@ -989,17 +995,22 @@ bootstrap/primitives-auto.lisp from a template in src/primitives.scm."
   (consp addr))
 
 (defun qualified-space-id (addr)
-  "Extract space-id (symbol) from a qualified address.
-Bare integers and integer 0 in qualified addresses return '|bootstrap|
-for backward compat with old images."
-  (if (consp addr)
-      (let ((sid (car addr)))
-        (if (eql sid 0) '|bootstrap| sid))
-      '|bootstrap|))
+  "Extract space-id (symbol or code-object) from a qualified address.
+A bare code-object is itself the identity (§7.1/§7.2). Bare integers and
+integer 0 in qualified addresses return '|bootstrap| for backward compat
+with old images."
+  (cond ((code-object-p addr) addr)
+        ((consp addr)
+         (let ((sid (car addr)))
+           (if (eql sid 0) '|bootstrap| sid)))
+        (t '|bootstrap|)))
 
 (defun qualified-local-pc (addr)
-  "Extract local-pc from a qualified address. Bare integers return themselves."
-  (if (consp addr) (cdr addr) addr))
+  "Extract local-pc from a qualified address. A bare code-object is pc 0.
+Bare integers return themselves."
+  (cond ((code-object-p addr) 0)
+        ((consp addr) (cdr addr))
+        (t addr)))
 
 (defun make-qualified-address (space-id local-pc)
   "Create a space-qualified address."
@@ -1420,6 +1431,13 @@ variables inline — no throw/catch, no dispatcher, no allocation per transition
                     (|label| (setf pc (resolve-label (cadr dest))))
                     (|reg| (let ((addr (get-reg (cadr dest))))
                              (cond
+                               ;; §7.1/§7.2: bare code-object is an entry
+                               ;; at its pc 0. Switch if it's not the
+                               ;; currently-executing code-object.
+                               ((code-object-p addr)
+                                (unless (eq addr space-id)
+                                  (switch-space addr))
+                                (setf pc 0))
                                ;; Cross-space qualified address
                                ((and (consp addr) (not (eq (norm-space (car addr)) space-id)))
                                 (switch-space (car addr))
@@ -1684,8 +1702,10 @@ Sets continue to a past-end address so (goto (reg continue)) exits cleanly."
   (let* ((entry (compiled-procedure-entry compiled-proc))
          (space-id (qualified-space-id entry))
          (local-pc (qualified-local-pc entry))
-         (cs (get-space space-id))
-         (return-pc (fill-pointer (compilation-space-resolved-instructions cs))))
+         (return-pc (if (code-object-p space-id)
+                        (length (code-object-resolved-instructions space-id))
+                        (fill-pointer (compilation-space-resolved-instructions
+                                       (get-space space-id))))))
     (execute-instructions space-id local-pc *global-env*
                           :initial-proc compiled-proc
                           :initial-argl args

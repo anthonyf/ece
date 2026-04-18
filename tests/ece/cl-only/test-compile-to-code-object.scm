@@ -289,3 +289,24 @@ make-compiled-procedure instruction inside CO, or #f if none."
     (assert-equal #f (code-object-native-fn co))
     ;; Still executable via bytecode path.
     (assert-equal 3 (execute-code-object co)))))
+
+;;; ─────────────────────────────────────────────────────────────────────────
+;;; §7.1/§7.2: code-object-based closures store the code-object directly
+;;; in the entry slot (no `(code-obj . 0)` wrapper). compiled-procedure-entry
+;;; returns the code-object itself.
+;;; ─────────────────────────────────────────────────────────────────────────
+
+(test "closure entry for a bottom-up lambda is a bare code-object" (lambda ()
+  ;; Build a closure via (lambda ...) → compile → execute → closure value
+  ;; ends up in val. We can't capture that easily, but we can directly
+  ;; invoke the returned closure and check its entry.
+  (let* ((co (mc-compile-to-code-object '(lambda (x) (+ x 1))))
+         (proc (execute-code-object co))
+         (entry (compiled-procedure-entry proc)))
+    (assert-equal #t (code-object? entry)))))
+
+(test "bottom-up closure invocation works end-to-end" (lambda ()
+  ;; The closure stores a bare code-obj; call it and check the body runs.
+  (let* ((co (mc-compile-to-code-object '(lambda (x) (* x x))))
+         (f (execute-code-object co)))
+    (assert-equal 25 (f 5)))))

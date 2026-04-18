@@ -56,8 +56,10 @@
 
 ## 7. Closure shape and continuation shape
 
-- [ ] 7.1 Update `%make-compiled-procedure` to accept `(code-obj env)` and produce `(compiled-procedure code-obj env)`.
-- [ ] 7.2 Update `compiled-procedure-entry` to return the code object (its current callers expect a `(sid . pc)` pair; audit and update).
+- [x] 7.1 Update `%make-compiled-procedure` to accept `(code-obj env)` and produce `(compiled-procedure code-obj env)`.
+      *`make-compiled-procedure` now stores a bare code-object in the entry slot (no `(code-obj . 0)` wrapper). goto-reg dispatch gained a code-object branch that switches and sets `pc = 0`. qualified-space-id/qualified-local-pc recognise bare code-objects so the error path and execute-compiled-call still work.*
+- [x] 7.2 Update `compiled-procedure-entry` to return the code object (its current callers expect a `(sid . pc)` pair; audit and update).
+      *`compiled-procedure-entry` is unchanged — it returns whatever `make-compiled-procedure` stored. Callers audited: `procedure-name` now reads `code-object-name` directly for code-object closures; `execute-compiled-call` computes the return-pc from `code-object-resolved-instructions` when the entry is a code-object; the error-path already flows through the qualified-* helpers.*
 - [ ] 7.3 Update `%make-continuation` and the continuation dispatch path: saved `continue` becomes `(code-obj . local-pc)`.
 - [ ] 7.4 Update the format machinery (`format-ece-proc`, disassemble header, error printers) to read names/source from the code object rather than the `*procedure-name-table*` side table.
 
