@@ -25,12 +25,12 @@
       *Implemented as a parallel `mc-compile-to-code-object` function (pure; returns a code-object). `mc-compile-and-go` unchanged during coexistence — the "shim" relationship collapses into a single call once the executor can run code-objects directly (§6).*
 - [x] 4.2 Update lambda compilation: compile the inner body first, assemble it into its own code object, then emit the outer's `make-compiled-procedure` instruction referencing the inner code object as a constant operand. Verify with a trace that inner code objects are constructed before their outer references them.
       *Gated behind `*emit-code-object-lambdas*` parameter — bound `#t` by `mc-compile-to-code-object`, default `#f` for the bootstrap/`compile-file` path. The executor's `switch-space` handles code-object identity; `make-compiled-procedure` treats a code-object entry as `(cons entry 0)`. Tests cover nested lambdas (outer body holds child code-object), higher-order closures, and end-to-end execution.*
-- [ ] 4.3 Update the `procedure-name` pseudo-instruction to attach the name to the code object currently being assembled, not to a side table.
-      *Deferred — assembler presently drops `procedure-name` pseudo-instructions in the code-object path. Wiring them onto the inner code-object's name field is the next natural step.*
-- [ ] 4.4 Update the `procedure-params` pseudo-instruction similarly (code-object metadata, not a side table).
-      *Deferred alongside §4.3.*
-- [ ] 4.5 Update `compile-define` paths (both CL compiler and MC compiler) to pass the name through to the inner compile call so the generated code object has its name field set from the start.
-      *Deferred — needs §4.2 first.*
+- [x] 4.3 Update the `procedure-name` pseudo-instruction to attach the name to the code object currently being assembled, not to a side table.
+      *Implemented in `mc-compile-define`: in the bottom-up path the compiler holds the inner code-object value directly, so we skip the pseudo-instruction entirely and call `%code-object-set-name!` on the inner code-object at compile time. The label-based path keeps the pseudo-instruction + side-table flow.*
+- [x] 4.4 Update the `procedure-params` pseudo-instruction similarly (code-object metadata, not a side table).
+      *Same pattern as §4.3: `%code-object-set-arity!` writes the `(param-names . rest-flag)` pair directly to the inner code-object. Adds `code-object-arity` accessor primitive (id 257).*
+- [x] 4.5 Update `compile-define` paths (both CL compiler and MC compiler) to pass the name through to the inner compile call so the generated code object has its name field set from the start.
+      *Name threading happens in `mc-compile-define` as part of §4.3 — by the time `mc-compile-to-code-object` returns, the inner code-object already has its `name` field populated. Anonymous lambdas leave `name` as `#f`.*
 
 ## 5. Assembler: pure, per-code-object
 

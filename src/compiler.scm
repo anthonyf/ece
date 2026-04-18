@@ -506,6 +506,25 @@
                   (mc-find-entry-label (cdr instruction-list))))
             (mc-find-entry-label (cdr instruction-list))))))
 
+(define (mc-find-entry-code-object instruction-list)
+  "Find the inner code-object constant from a compiled lambda's instruction
+list (bottom-up emission only). Mirrors mc-find-entry-label but looks for a
+(const <code-object>) operand instead of a (label ...) one."
+  (if (null? instruction-list)
+      #f
+      (let ((instr (car instruction-list)))
+        (if (and (pair? instr)
+                 (eq? (car instr) 'assign)
+                 (pair? (caddr instr))
+                 (eq? (car (caddr instr)) 'op)
+                 (eq? (cadr (caddr instr)) 'make-compiled-procedure))
+            (let ((const-arg (car (cdr (cddr instr)))))
+              (if (and (pair? const-arg) (eq? (car const-arg) 'const)
+                       (code-object? (cadr const-arg)))
+                  (cadr const-arg)
+                  (mc-find-entry-code-object (cdr instruction-list))))
+            (mc-find-entry-code-object (cdr instruction-list))))))
+
 (define (extract-lambda-params formals)
   (cond
    ((null? formals) (cons '() 0))
@@ -542,19 +561,26 @@
                                        (list (list 'perform '(op define-variable!)
                                                    (list 'const variable) '(reg val) '(reg env))
                                              (list 'assign target '(reg val)))))))
-         (entry-label (if (and (pair? value-expr) (eq? (car value-expr) 'lambda))
-                          (mc-find-entry-label (mc-instructions value-code))
-                          #f)))
+         (is-lambda (and (pair? value-expr) (eq? (car value-expr) 'lambda)))
+         (entry-label (if is-lambda (mc-find-entry-label (mc-instructions value-code)) #f))
+         (entry-co (if is-lambda (mc-find-entry-code-object (mc-instructions value-code)) #f)))
+    ;; §4.5: thread the name/arity onto the inner code-object at compile time
+    ;; in the bottom-up path. No pseudo-instruction needed — we hold the
+    ;; code-object value in hand.
+    (when entry-co
+      (%code-object-set-name! entry-co variable)
+      (%code-object-set-arity! entry-co (extract-lambda-params (cadr value-expr))))
     (end-with-linkage linkage
-                      (if entry-label
-                          (let ((params-info (extract-lambda-params (cadr value-expr))))
-                            (append-instruction-sequences
-                             define-code
-                             (make-instruction-sequence
-                              '() '()
-                              (list (list 'procedure-name entry-label variable)
-                                    (list 'procedure-params entry-label params-info)))))
-                          define-code))))
+                      (cond
+                       (entry-label
+                        (let ((params-info (extract-lambda-params (cadr value-expr))))
+                          (append-instruction-sequences
+                           define-code
+                           (make-instruction-sequence
+                            '() '()
+                            (list (list 'procedure-name entry-label variable)
+                                  (list 'procedure-params entry-label params-info))))))
+                       (else define-code)))))
 
 (define (mc-compile-callcc expr target linkage)
   (let ((receiver-code (mc-compile (cadr expr) 'proc 'next)))

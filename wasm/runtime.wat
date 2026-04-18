@@ -5629,6 +5629,17 @@
     (if (i32.eq (local.get $id) (i32.const 256))
       (then (return (global.get $void))))
 
+    ;; 257 = code-object-arity(co)
+    (if (i32.eq (local.get $id) (i32.const 257))
+      (then
+        (local.set $co-for-labels
+          (ref.cast (ref $code-object) (call $arg1 (local.get $args))))
+        (local.set $lbl-result (struct.get $code-object $arity
+                                 (ref.as_non_null (local.get $co-for-labels))))
+        (return (if (result (ref null eq)) (ref.is_null (local.get $lbl-result))
+          (then (global.get $false))
+          (else (local.get $lbl-result))))))
+
     ;; Unknown primitive — return void
     (global.get $void)
   )

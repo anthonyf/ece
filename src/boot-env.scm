@@ -287,6 +287,7 @@
 (%register-primitive! '%code-object-set-arity! 254)
 (%register-primitive! '%code-object-set-source-loc! 255)
 (%register-primitive! 'execute-code-object 256)
+(%register-primitive! 'code-object-arity 257)
 
 ;;; ═══════════════════════════════════════════════════════════════════
 ;;; 2. Initialize assembler symbol table

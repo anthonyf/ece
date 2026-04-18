@@ -297,6 +297,9 @@
 (defun ece-close-output-port (port)
   (cl:progn (cl:close (ece-port-stream port)) cl:nil))
 
+(defun ece-code-object-arity (co)
+  (cl:or (code-object-arity co) *scheme-false*))
+
 (defun ece-code-object-instructions (co)
   (code-object-source-instructions co))
 

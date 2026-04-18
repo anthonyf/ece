@@ -643,6 +643,9 @@
              (env (cl:if (cl:cdr ,args) (cl:cadr ,args) *global-env*)))
          (execute-instructions co 0 env)))
 
+(define-host-primitive (code-object-arity co)
+  :cl `(cl:or (code-object-arity ,co) *scheme-false*))
+
 ;;; ─────────────────────────────────────────────────────────────────────────
 ;;; Serialization (id 136)
 ;;; ─────────────────────────────────────────────────────────────────────────

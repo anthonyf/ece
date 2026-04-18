@@ -207,3 +207,60 @@
   (assert-equal 25 (execute-code-object
                     (mc-compile-to-code-object
                      '(((lambda (x) (lambda (y) (* x y))) 5) 5))))))
+
+;;; ─────────────────────────────────────────────────────────────────────────
+;;; §4.3/§4.4/§4.5: procedure name & arity flow onto the inner code-object
+;;; at compile time in the bottom-up path. No pseudo-instruction needed —
+;;; the compiler holds the code-object value in hand.
+;;; ─────────────────────────────────────────────────────────────────────────
+
+(define (find-child-code-object co)
+  "Return the first code-object referenced as a (const ...) operand of a
+make-compiled-procedure instruction inside CO, or #f if none."
+  (let ((instrs (code-object-instructions co))
+        (len (code-object-length co))
+        (found #f))
+    (let loop ((i 0))
+      (when (< i len)
+        (let ((instr (vector-ref instrs i)))
+          (when (and (pair? instr)
+                     (eq? (car instr) 'assign)
+                     (pair? (caddr instr))
+                     (eq? (car (caddr instr)) 'op)
+                     (eq? (cadr (caddr instr)) 'make-compiled-procedure))
+            (let ((operand (cadddr instr)))
+              (when (and (pair? operand)
+                         (eq? (car operand) 'const)
+                         (code-object? (cadr operand))
+                         (not found))
+                (set! found (cadr operand))))))
+        (loop (+ i 1))))
+    found))
+
+(test "define threads procedure name onto the inner code-object" (lambda ()
+  (let* ((outer (mc-compile-to-code-object '(define (add1 x) (+ x 1))))
+         (inner (find-child-code-object outer)))
+    (assert-true inner)
+    (assert-equal 'add1 (code-object-name inner)))))
+
+(test "define threads arity info onto the inner code-object" (lambda ()
+  (let* ((outer (mc-compile-to-code-object '(define (add1 x) (+ x 1))))
+         (inner (find-child-code-object outer))
+         (arity (code-object-arity inner)))
+    ;; extract-lambda-params returns (param-names . rest-flag)
+    (assert-true (pair? arity))
+    (assert-equal '("x") (car arity))
+    (assert-equal 0 (cdr arity)))))
+
+(test "variadic define: arity records rest flag" (lambda ()
+  (let* ((outer (mc-compile-to-code-object '(define (f . args) args)))
+         (inner (find-child-code-object outer))
+         (arity (code-object-arity inner)))
+    (assert-true (pair? arity))
+    (assert-equal 1 (cdr arity)))))
+
+(test "anonymous lambda: no name threaded" (lambda ()
+  (let* ((outer (mc-compile-to-code-object '(lambda (x) x)))
+         (inner (find-child-code-object outer)))
+    (assert-true inner)
+    (assert-equal #f (code-object-name inner)))))
