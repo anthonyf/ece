@@ -610,6 +610,34 @@
 (define-host-primitive (code-object-source-loc co)
   :cl `(cl:or (code-object-source-loc ,co) *scheme-false*))
 
+;;; Constructors / mutators (ids 250-255) — used by the compiler when
+;;; building a code-object bottom-up. Metadata setters follow the
+;;; `set-<slot>!` convention; accessors stay read-only above.
+
+(define-host-primitive (%make-code-object)
+  :cl `(make-code-object))
+
+(define-host-primitive (%code-object-push-instruction! co source-instr)
+  :cl `(cl:progn
+        (cl:vector-push-extend ,source-instr (code-object-source-instructions ,co))
+        (cl:vector-push-extend (resolve-operations ,source-instr)
+                               (code-object-resolved-instructions ,co))
+        cl:nil))
+
+(define-host-primitive (%code-object-set-label! co label local-pc)
+  :cl `(cl:progn
+        (cl:setf (cl:gethash ,label (code-object-labels ,co)) ,local-pc)
+        cl:nil))
+
+(define-host-primitive (%code-object-set-name! co name)
+  :cl `(cl:progn (cl:setf (code-object-name ,co) ,name) cl:nil))
+
+(define-host-primitive (%code-object-set-arity! co arity)
+  :cl `(cl:progn (cl:setf (code-object-arity ,co) ,arity) cl:nil))
+
+(define-host-primitive (%code-object-set-source-loc! co loc)
+  :cl `(cl:progn (cl:setf (code-object-source-loc ,co) ,loc) cl:nil))
+
 ;;; ─────────────────────────────────────────────────────────────────────────
 ;;; Serialization (id 136)
 ;;; ─────────────────────────────────────────────────────────────────────────

@@ -5558,6 +5558,71 @@
           (then (global.get $false))
           (else (local.get $lbl-result))))))
 
+    ;; 250 = %make-code-object() — return a fresh empty code object
+    (if (i32.eq (local.get $id) (i32.const 250))
+      (then (return (struct.new $code-object
+        (array.new_default $instr-vec (i32.const 32))
+        (i32.const 0)
+        (ref.null eq)
+        (ref.null eq)
+        (ref.null eq)
+        (ref.null eq)
+        (ref.null eq)))))
+
+    ;; 251 = %code-object-push-instruction!(co, source-instr)
+    ;; Stub on WASM — the compiler running under WASM still targets the
+    ;; space-based path during the coexistence phase. Real instruction
+    ;; storage arrives with the executor switch (§6).
+    (if (i32.eq (local.get $id) (i32.const 251))
+      (then (return (global.get $void))))
+
+    ;; 252 = %code-object-set-label!(co, label-sym, local-pc)
+    (if (i32.eq (local.get $id) (i32.const 252))
+      (then
+        (local.set $co-for-labels
+          (ref.cast (ref $code-object) (call $arg1 (local.get $args))))
+        ;; Ensure labels hash-table exists
+        (if (ref.is_null (struct.get $code-object $labels
+                           (ref.as_non_null (local.get $co-for-labels))))
+          (then
+            (struct.set $code-object $labels
+              (ref.as_non_null (local.get $co-for-labels))
+              (struct.new $hash-table
+                (array.new_default $hash-keys (i32.const 16))
+                (array.new_default $hash-vals (i32.const 16))
+                (i32.const 0)))))
+        (call $hash-set-impl
+          (ref.cast (ref $hash-table)
+            (struct.get $code-object $labels
+              (ref.as_non_null (local.get $co-for-labels))))
+          (call $arg2 (local.get $args))
+          (call $arg3 (local.get $args)))
+        (return (global.get $void))))
+
+    ;; 253 = %code-object-set-name!(co, name)
+    (if (i32.eq (local.get $id) (i32.const 253))
+      (then
+        (struct.set $code-object $name
+          (ref.cast (ref $code-object) (call $arg1 (local.get $args)))
+          (call $arg2 (local.get $args)))
+        (return (global.get $void))))
+
+    ;; 254 = %code-object-set-arity!(co, arity)
+    (if (i32.eq (local.get $id) (i32.const 254))
+      (then
+        (struct.set $code-object $arity
+          (ref.cast (ref $code-object) (call $arg1 (local.get $args)))
+          (call $arg2 (local.get $args)))
+        (return (global.get $void))))
+
+    ;; 255 = %code-object-set-source-loc!(co, loc)
+    (if (i32.eq (local.get $id) (i32.const 255))
+      (then
+        (struct.set $code-object $source-loc
+          (ref.cast (ref $code-object) (call $arg1 (local.get $args)))
+          (call $arg2 (local.get $args)))
+        (return (global.get $void))))
+
     ;; Unknown primitive — return void
     (global.get $void)
   )

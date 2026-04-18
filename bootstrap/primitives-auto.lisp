@@ -15,6 +15,21 @@
 (defun ece-%chmod (path mode)
   (let* ((pkg (cl:find-package "SB-POSIX")) (chmod-fn (cl:and pkg (cl:find-symbol "CHMOD" pkg)))) (cl:when (cl:and chmod-fn (cl:fboundp chmod-fn)) (cl:funcall chmod-fn path mode)) cl:nil))
 
+(defun ece-%code-object-push-instruction! (co source-instr)
+  (cl:progn (cl:vector-push-extend source-instr (code-object-source-instructions co)) (cl:vector-push-extend (resolve-operations source-instr) (code-object-resolved-instructions co)) cl:nil))
+
+(defun ece-%code-object-set-arity! (co arity)
+  (cl:progn (cl:setf (code-object-arity co) arity) cl:nil))
+
+(defun ece-%code-object-set-label! (co label local-pc)
+  (cl:progn (cl:setf (cl:gethash label (code-object-labels co)) local-pc) cl:nil))
+
+(defun ece-%code-object-set-name! (co name)
+  (cl:progn (cl:setf (code-object-name co) name) cl:nil))
+
+(defun ece-%code-object-set-source-loc! (co loc)
+  (cl:progn (cl:setf (code-object-source-loc co) loc) cl:nil))
+
 (defun ece-%create-repl-space! (name size)
   (cl:locally (cl:declare (cl:ignore name size)) cl:nil))
 
@@ -110,6 +125,9 @@
 
 (defun ece-%macro-table-entries ()
   (let ((entries '())) (cl:maphash (cl:lambda (name proc) (cl:push (cl:cons name proc) entries)) *compile-time-macros*) entries))
+
+(defun ece-%make-code-object ()
+  (make-code-object))
 
 (defun ece-%make-compiled-procedure (entry env)
   (cl:list '|compiled-procedure| entry env))

@@ -16700,7 +16700,7 @@
           (5374 (cl:go pc-5374))
           (5375 (cl:go pc-5375))
           (cl:t (cl:go chunk-exit))))
-       ((cl:< pc 5538)
+       ((cl:< pc 5632)
         (cl:case pc
           (5376 (cl:go pc-5376))
           (5377 (cl:go pc-5377))
@@ -16864,6 +16864,147 @@
           (5535 (cl:go pc-5535))
           (5536 (cl:go pc-5536))
           (5537 (cl:go pc-5537))
+          (5538 (cl:go pc-5538))
+          (5539 (cl:go pc-5539))
+          (5540 (cl:go pc-5540))
+          (5541 (cl:go pc-5541))
+          (5542 (cl:go pc-5542))
+          (5543 (cl:go pc-5543))
+          (5544 (cl:go pc-5544))
+          (5545 (cl:go pc-5545))
+          (5546 (cl:go pc-5546))
+          (5547 (cl:go pc-5547))
+          (5548 (cl:go pc-5548))
+          (5549 (cl:go pc-5549))
+          (5550 (cl:go pc-5550))
+          (5551 (cl:go pc-5551))
+          (5552 (cl:go pc-5552))
+          (5553 (cl:go pc-5553))
+          (5554 (cl:go pc-5554))
+          (5555 (cl:go pc-5555))
+          (5556 (cl:go pc-5556))
+          (5557 (cl:go pc-5557))
+          (5558 (cl:go pc-5558))
+          (5559 (cl:go pc-5559))
+          (5560 (cl:go pc-5560))
+          (5561 (cl:go pc-5561))
+          (5562 (cl:go pc-5562))
+          (5563 (cl:go pc-5563))
+          (5564 (cl:go pc-5564))
+          (5565 (cl:go pc-5565))
+          (5566 (cl:go pc-5566))
+          (5567 (cl:go pc-5567))
+          (5568 (cl:go pc-5568))
+          (5569 (cl:go pc-5569))
+          (5570 (cl:go pc-5570))
+          (5571 (cl:go pc-5571))
+          (5572 (cl:go pc-5572))
+          (5573 (cl:go pc-5573))
+          (5574 (cl:go pc-5574))
+          (5575 (cl:go pc-5575))
+          (5576 (cl:go pc-5576))
+          (5577 (cl:go pc-5577))
+          (5578 (cl:go pc-5578))
+          (5579 (cl:go pc-5579))
+          (5580 (cl:go pc-5580))
+          (5581 (cl:go pc-5581))
+          (5582 (cl:go pc-5582))
+          (5583 (cl:go pc-5583))
+          (5584 (cl:go pc-5584))
+          (5585 (cl:go pc-5585))
+          (5586 (cl:go pc-5586))
+          (5587 (cl:go pc-5587))
+          (5588 (cl:go pc-5588))
+          (5589 (cl:go pc-5589))
+          (5590 (cl:go pc-5590))
+          (5591 (cl:go pc-5591))
+          (5592 (cl:go pc-5592))
+          (5593 (cl:go pc-5593))
+          (5594 (cl:go pc-5594))
+          (5595 (cl:go pc-5595))
+          (5596 (cl:go pc-5596))
+          (5597 (cl:go pc-5597))
+          (5598 (cl:go pc-5598))
+          (5599 (cl:go pc-5599))
+          (5600 (cl:go pc-5600))
+          (5601 (cl:go pc-5601))
+          (5602 (cl:go pc-5602))
+          (5603 (cl:go pc-5603))
+          (5604 (cl:go pc-5604))
+          (5605 (cl:go pc-5605))
+          (5606 (cl:go pc-5606))
+          (5607 (cl:go pc-5607))
+          (5608 (cl:go pc-5608))
+          (5609 (cl:go pc-5609))
+          (5610 (cl:go pc-5610))
+          (5611 (cl:go pc-5611))
+          (5612 (cl:go pc-5612))
+          (5613 (cl:go pc-5613))
+          (5614 (cl:go pc-5614))
+          (5615 (cl:go pc-5615))
+          (5616 (cl:go pc-5616))
+          (5617 (cl:go pc-5617))
+          (5618 (cl:go pc-5618))
+          (5619 (cl:go pc-5619))
+          (5620 (cl:go pc-5620))
+          (5621 (cl:go pc-5621))
+          (5622 (cl:go pc-5622))
+          (5623 (cl:go pc-5623))
+          (5624 (cl:go pc-5624))
+          (5625 (cl:go pc-5625))
+          (5626 (cl:go pc-5626))
+          (5627 (cl:go pc-5627))
+          (5628 (cl:go pc-5628))
+          (5629 (cl:go pc-5629))
+          (5630 (cl:go pc-5630))
+          (5631 (cl:go pc-5631))
+          (cl:t (cl:go chunk-exit))))
+       ((cl:< pc 5676)
+        (cl:case pc
+          (5632 (cl:go pc-5632))
+          (5633 (cl:go pc-5633))
+          (5634 (cl:go pc-5634))
+          (5635 (cl:go pc-5635))
+          (5636 (cl:go pc-5636))
+          (5637 (cl:go pc-5637))
+          (5638 (cl:go pc-5638))
+          (5639 (cl:go pc-5639))
+          (5640 (cl:go pc-5640))
+          (5641 (cl:go pc-5641))
+          (5642 (cl:go pc-5642))
+          (5643 (cl:go pc-5643))
+          (5644 (cl:go pc-5644))
+          (5645 (cl:go pc-5645))
+          (5646 (cl:go pc-5646))
+          (5647 (cl:go pc-5647))
+          (5648 (cl:go pc-5648))
+          (5649 (cl:go pc-5649))
+          (5650 (cl:go pc-5650))
+          (5651 (cl:go pc-5651))
+          (5652 (cl:go pc-5652))
+          (5653 (cl:go pc-5653))
+          (5654 (cl:go pc-5654))
+          (5655 (cl:go pc-5655))
+          (5656 (cl:go pc-5656))
+          (5657 (cl:go pc-5657))
+          (5658 (cl:go pc-5658))
+          (5659 (cl:go pc-5659))
+          (5660 (cl:go pc-5660))
+          (5661 (cl:go pc-5661))
+          (5662 (cl:go pc-5662))
+          (5663 (cl:go pc-5663))
+          (5664 (cl:go pc-5664))
+          (5665 (cl:go pc-5665))
+          (5666 (cl:go pc-5666))
+          (5667 (cl:go pc-5667))
+          (5668 (cl:go pc-5668))
+          (5669 (cl:go pc-5669))
+          (5670 (cl:go pc-5670))
+          (5671 (cl:go pc-5671))
+          (5672 (cl:go pc-5672))
+          (5673 (cl:go pc-5673))
+          (5674 (cl:go pc-5674))
+          (5675 (cl:go pc-5675))
           (cl:t (cl:go chunk-exit))))
        (cl:t (cl:go chunk-exit)))
      pc-4096
@@ -17743,391 +17884,391 @@
        (cl:setf env (cl:funcall (get-operation '|lookup-variable-value|) '|*global-env*| env))
        (cl:setf pc 4416)
      pc-4416
-       (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%init-asm-syms| env))
+       (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%register-primitive!| env))
        (cl:setf pc 4417)
      pc-4417
-       (cl:setf val 45)
+       (cl:setf val 250)
        (cl:setf pc 4418)
      pc-4418
        (cl:setf argl (cl:funcall (get-operation '|list|) val))
        (cl:setf pc 4419)
      pc-4419
-       (cl:setf flag (cl:funcall (get-operation '|primitive-procedure?|) proc))
+       (cl:setf val '|%make-code-object|)
        (cl:setf pc 4420)
      pc-4420
-       (cl:when flag (cl:setf pc 4435) (cl:go pc-4435))
+       (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
+       (cl:setf pc 4421)
      pc-4421
-       (cl:setf flag (cl:funcall (get-operation '|continuation?|) proc))
+       (cl:setf flag (cl:funcall (get-operation '|primitive-procedure?|) proc))
        (cl:setf pc 4422)
      pc-4422
-       (cl:when flag (cl:setf pc 4428) (cl:go pc-4428))
+       (cl:when flag (cl:setf pc 4437) (cl:go pc-4437))
      pc-4423
-       (cl:setf flag (cl:funcall (get-operation '|parameter?|) proc))
+       (cl:setf flag (cl:funcall (get-operation '|continuation?|) proc))
        (cl:setf pc 4424)
      pc-4424
-       (cl:when flag (cl:setf pc 4433) (cl:go pc-4433))
+       (cl:when flag (cl:setf pc 4430) (cl:go pc-4430))
      pc-4425
-       (cl:setf continue (cl:cons '|boot-env| 4436))
+       (cl:setf flag (cl:funcall (get-operation '|parameter?|) proc))
        (cl:setf pc 4426)
      pc-4426
-       (cl:setf val (cl:funcall (get-operation '|compiled-procedure-entry|) proc))
-       (cl:setf pc 4427)
+       (cl:when flag (cl:setf pc 4435) (cl:go pc-4435))
      pc-4427
-       (cl:setf bail cl:t) (cl:go chunk-exit)
+       (cl:setf continue (cl:cons '|boot-env| 4438))
+       (cl:setf pc 4428)
      pc-4428
-       (cl:setf val (cl:funcall (get-operation '|car|) argl))
+       (cl:setf val (cl:funcall (get-operation '|compiled-procedure-entry|) proc))
        (cl:setf pc 4429)
      pc-4429
-       (cl:funcall (get-operation '|do-continuation-winds|) proc)
-       (cl:setf pc 4430)
+       (cl:setf bail cl:t) (cl:go chunk-exit)
      pc-4430
-       (cl:setf stack (cl:funcall (get-operation '|continuation-stack|) proc))
+       (cl:setf val (cl:funcall (get-operation '|car|) argl))
        (cl:setf pc 4431)
      pc-4431
-       (cl:setf continue (cl:funcall (get-operation '|continuation-conts|) proc))
+       (cl:funcall (get-operation '|do-continuation-winds|) proc)
        (cl:setf pc 4432)
      pc-4432
-       (cl:setf bail cl:t) (cl:go chunk-exit)
+       (cl:setf stack (cl:funcall (get-operation '|continuation-stack|) proc))
+       (cl:setf pc 4433)
      pc-4433
-       (cl:setf val (cl:funcall (get-operation '|apply-parameter|) proc argl))
+       (cl:setf continue (cl:funcall (get-operation '|continuation-conts|) proc))
        (cl:setf pc 4434)
      pc-4434
-       (cl:setf pc 4436) (cl:go pc-4436)
+       (cl:setf bail cl:t) (cl:go chunk-exit)
      pc-4435
-       (cl:setf val (apply-primitive-procedure proc argl))
+       (cl:setf val (cl:funcall (get-operation '|apply-parameter|) proc argl))
        (cl:setf pc 4436)
      pc-4436
-       (cl:setf env (cl:funcall (get-operation '|lookup-variable-value|) '|*global-env*| env))
-       (cl:setf pc 4437)
+       (cl:setf pc 4438) (cl:go pc-4438)
      pc-4437
-       (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%store-asm-sym| env))
+       (cl:setf val (apply-primitive-procedure proc argl))
        (cl:setf pc 4438)
      pc-4438
-       (cl:setf val '|assign|)
+       (cl:setf env (cl:funcall (get-operation '|lookup-variable-value|) '|*global-env*| env))
        (cl:setf pc 4439)
      pc-4439
-       (cl:setf argl (cl:funcall (get-operation '|list|) val))
+       (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%register-primitive!| env))
        (cl:setf pc 4440)
      pc-4440
-       (cl:setf val 0)
+       (cl:setf val 251)
        (cl:setf pc 4441)
      pc-4441
-       (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
+       (cl:setf argl (cl:funcall (get-operation '|list|) val))
        (cl:setf pc 4442)
      pc-4442
-       (cl:setf flag (cl:funcall (get-operation '|primitive-procedure?|) proc))
+       (cl:setf val '|%code-object-push-instruction!|)
        (cl:setf pc 4443)
      pc-4443
-       (cl:when flag (cl:setf pc 4458) (cl:go pc-4458))
+       (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
+       (cl:setf pc 4444)
      pc-4444
-       (cl:setf flag (cl:funcall (get-operation '|continuation?|) proc))
+       (cl:setf flag (cl:funcall (get-operation '|primitive-procedure?|) proc))
        (cl:setf pc 4445)
      pc-4445
-       (cl:when flag (cl:setf pc 4451) (cl:go pc-4451))
+       (cl:when flag (cl:setf pc 4460) (cl:go pc-4460))
      pc-4446
-       (cl:setf flag (cl:funcall (get-operation '|parameter?|) proc))
+       (cl:setf flag (cl:funcall (get-operation '|continuation?|) proc))
        (cl:setf pc 4447)
      pc-4447
-       (cl:when flag (cl:setf pc 4456) (cl:go pc-4456))
+       (cl:when flag (cl:setf pc 4453) (cl:go pc-4453))
      pc-4448
-       (cl:setf continue (cl:cons '|boot-env| 4459))
+       (cl:setf flag (cl:funcall (get-operation '|parameter?|) proc))
        (cl:setf pc 4449)
      pc-4449
-       (cl:setf val (cl:funcall (get-operation '|compiled-procedure-entry|) proc))
-       (cl:setf pc 4450)
+       (cl:when flag (cl:setf pc 4458) (cl:go pc-4458))
      pc-4450
-       (cl:setf bail cl:t) (cl:go chunk-exit)
+       (cl:setf continue (cl:cons '|boot-env| 4461))
+       (cl:setf pc 4451)
      pc-4451
-       (cl:setf val (cl:funcall (get-operation '|car|) argl))
+       (cl:setf val (cl:funcall (get-operation '|compiled-procedure-entry|) proc))
        (cl:setf pc 4452)
      pc-4452
-       (cl:funcall (get-operation '|do-continuation-winds|) proc)
-       (cl:setf pc 4453)
+       (cl:setf bail cl:t) (cl:go chunk-exit)
      pc-4453
-       (cl:setf stack (cl:funcall (get-operation '|continuation-stack|) proc))
+       (cl:setf val (cl:funcall (get-operation '|car|) argl))
        (cl:setf pc 4454)
      pc-4454
-       (cl:setf continue (cl:funcall (get-operation '|continuation-conts|) proc))
+       (cl:funcall (get-operation '|do-continuation-winds|) proc)
        (cl:setf pc 4455)
      pc-4455
-       (cl:setf bail cl:t) (cl:go chunk-exit)
+       (cl:setf stack (cl:funcall (get-operation '|continuation-stack|) proc))
+       (cl:setf pc 4456)
      pc-4456
-       (cl:setf val (cl:funcall (get-operation '|apply-parameter|) proc argl))
+       (cl:setf continue (cl:funcall (get-operation '|continuation-conts|) proc))
        (cl:setf pc 4457)
      pc-4457
-       (cl:setf pc 4459) (cl:go pc-4459)
+       (cl:setf bail cl:t) (cl:go chunk-exit)
      pc-4458
-       (cl:setf val (apply-primitive-procedure proc argl))
+       (cl:setf val (cl:funcall (get-operation '|apply-parameter|) proc argl))
        (cl:setf pc 4459)
      pc-4459
-       (cl:setf env (cl:funcall (get-operation '|lookup-variable-value|) '|*global-env*| env))
-       (cl:setf pc 4460)
+       (cl:setf pc 4461) (cl:go pc-4461)
      pc-4460
-       (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%store-asm-sym| env))
+       (cl:setf val (apply-primitive-procedure proc argl))
        (cl:setf pc 4461)
      pc-4461
-       (cl:setf val '|test|)
+       (cl:setf env (cl:funcall (get-operation '|lookup-variable-value|) '|*global-env*| env))
        (cl:setf pc 4462)
      pc-4462
-       (cl:setf argl (cl:funcall (get-operation '|list|) val))
+       (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%register-primitive!| env))
        (cl:setf pc 4463)
      pc-4463
-       (cl:setf val 1)
+       (cl:setf val 252)
        (cl:setf pc 4464)
      pc-4464
-       (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
+       (cl:setf argl (cl:funcall (get-operation '|list|) val))
        (cl:setf pc 4465)
      pc-4465
-       (cl:setf flag (cl:funcall (get-operation '|primitive-procedure?|) proc))
+       (cl:setf val '|%code-object-set-label!|)
        (cl:setf pc 4466)
      pc-4466
-       (cl:when flag (cl:setf pc 4481) (cl:go pc-4481))
+       (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
+       (cl:setf pc 4467)
      pc-4467
-       (cl:setf flag (cl:funcall (get-operation '|continuation?|) proc))
+       (cl:setf flag (cl:funcall (get-operation '|primitive-procedure?|) proc))
        (cl:setf pc 4468)
      pc-4468
-       (cl:when flag (cl:setf pc 4474) (cl:go pc-4474))
+       (cl:when flag (cl:setf pc 4483) (cl:go pc-4483))
      pc-4469
-       (cl:setf flag (cl:funcall (get-operation '|parameter?|) proc))
+       (cl:setf flag (cl:funcall (get-operation '|continuation?|) proc))
        (cl:setf pc 4470)
      pc-4470
-       (cl:when flag (cl:setf pc 4479) (cl:go pc-4479))
+       (cl:when flag (cl:setf pc 4476) (cl:go pc-4476))
      pc-4471
-       (cl:setf continue (cl:cons '|boot-env| 4482))
+       (cl:setf flag (cl:funcall (get-operation '|parameter?|) proc))
        (cl:setf pc 4472)
      pc-4472
-       (cl:setf val (cl:funcall (get-operation '|compiled-procedure-entry|) proc))
-       (cl:setf pc 4473)
+       (cl:when flag (cl:setf pc 4481) (cl:go pc-4481))
      pc-4473
-       (cl:setf bail cl:t) (cl:go chunk-exit)
+       (cl:setf continue (cl:cons '|boot-env| 4484))
+       (cl:setf pc 4474)
      pc-4474
-       (cl:setf val (cl:funcall (get-operation '|car|) argl))
+       (cl:setf val (cl:funcall (get-operation '|compiled-procedure-entry|) proc))
        (cl:setf pc 4475)
      pc-4475
-       (cl:funcall (get-operation '|do-continuation-winds|) proc)
-       (cl:setf pc 4476)
+       (cl:setf bail cl:t) (cl:go chunk-exit)
      pc-4476
-       (cl:setf stack (cl:funcall (get-operation '|continuation-stack|) proc))
+       (cl:setf val (cl:funcall (get-operation '|car|) argl))
        (cl:setf pc 4477)
      pc-4477
-       (cl:setf continue (cl:funcall (get-operation '|continuation-conts|) proc))
+       (cl:funcall (get-operation '|do-continuation-winds|) proc)
        (cl:setf pc 4478)
      pc-4478
-       (cl:setf bail cl:t) (cl:go chunk-exit)
+       (cl:setf stack (cl:funcall (get-operation '|continuation-stack|) proc))
+       (cl:setf pc 4479)
      pc-4479
-       (cl:setf val (cl:funcall (get-operation '|apply-parameter|) proc argl))
+       (cl:setf continue (cl:funcall (get-operation '|continuation-conts|) proc))
        (cl:setf pc 4480)
      pc-4480
-       (cl:setf pc 4482) (cl:go pc-4482)
+       (cl:setf bail cl:t) (cl:go chunk-exit)
      pc-4481
-       (cl:setf val (apply-primitive-procedure proc argl))
+       (cl:setf val (cl:funcall (get-operation '|apply-parameter|) proc argl))
        (cl:setf pc 4482)
      pc-4482
-       (cl:setf env (cl:funcall (get-operation '|lookup-variable-value|) '|*global-env*| env))
-       (cl:setf pc 4483)
+       (cl:setf pc 4484) (cl:go pc-4484)
      pc-4483
-       (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%store-asm-sym| env))
+       (cl:setf val (apply-primitive-procedure proc argl))
        (cl:setf pc 4484)
      pc-4484
-       (cl:setf val '|branch|)
+       (cl:setf env (cl:funcall (get-operation '|lookup-variable-value|) '|*global-env*| env))
        (cl:setf pc 4485)
      pc-4485
-       (cl:setf argl (cl:funcall (get-operation '|list|) val))
+       (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%register-primitive!| env))
        (cl:setf pc 4486)
      pc-4486
-       (cl:setf val 2)
+       (cl:setf val 253)
        (cl:setf pc 4487)
      pc-4487
-       (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
+       (cl:setf argl (cl:funcall (get-operation '|list|) val))
        (cl:setf pc 4488)
      pc-4488
-       (cl:setf flag (cl:funcall (get-operation '|primitive-procedure?|) proc))
+       (cl:setf val '|%code-object-set-name!|)
        (cl:setf pc 4489)
      pc-4489
-       (cl:when flag (cl:setf pc 4504) (cl:go pc-4504))
+       (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
+       (cl:setf pc 4490)
      pc-4490
-       (cl:setf flag (cl:funcall (get-operation '|continuation?|) proc))
+       (cl:setf flag (cl:funcall (get-operation '|primitive-procedure?|) proc))
        (cl:setf pc 4491)
      pc-4491
-       (cl:when flag (cl:setf pc 4497) (cl:go pc-4497))
+       (cl:when flag (cl:setf pc 4506) (cl:go pc-4506))
      pc-4492
-       (cl:setf flag (cl:funcall (get-operation '|parameter?|) proc))
+       (cl:setf flag (cl:funcall (get-operation '|continuation?|) proc))
        (cl:setf pc 4493)
      pc-4493
-       (cl:when flag (cl:setf pc 4502) (cl:go pc-4502))
+       (cl:when flag (cl:setf pc 4499) (cl:go pc-4499))
      pc-4494
-       (cl:setf continue (cl:cons '|boot-env| 4505))
+       (cl:setf flag (cl:funcall (get-operation '|parameter?|) proc))
        (cl:setf pc 4495)
      pc-4495
-       (cl:setf val (cl:funcall (get-operation '|compiled-procedure-entry|) proc))
-       (cl:setf pc 4496)
+       (cl:when flag (cl:setf pc 4504) (cl:go pc-4504))
      pc-4496
-       (cl:setf bail cl:t) (cl:go chunk-exit)
+       (cl:setf continue (cl:cons '|boot-env| 4507))
+       (cl:setf pc 4497)
      pc-4497
-       (cl:setf val (cl:funcall (get-operation '|car|) argl))
+       (cl:setf val (cl:funcall (get-operation '|compiled-procedure-entry|) proc))
        (cl:setf pc 4498)
      pc-4498
-       (cl:funcall (get-operation '|do-continuation-winds|) proc)
-       (cl:setf pc 4499)
+       (cl:setf bail cl:t) (cl:go chunk-exit)
      pc-4499
-       (cl:setf stack (cl:funcall (get-operation '|continuation-stack|) proc))
+       (cl:setf val (cl:funcall (get-operation '|car|) argl))
        (cl:setf pc 4500)
      pc-4500
-       (cl:setf continue (cl:funcall (get-operation '|continuation-conts|) proc))
+       (cl:funcall (get-operation '|do-continuation-winds|) proc)
        (cl:setf pc 4501)
      pc-4501
-       (cl:setf bail cl:t) (cl:go chunk-exit)
+       (cl:setf stack (cl:funcall (get-operation '|continuation-stack|) proc))
+       (cl:setf pc 4502)
      pc-4502
-       (cl:setf val (cl:funcall (get-operation '|apply-parameter|) proc argl))
+       (cl:setf continue (cl:funcall (get-operation '|continuation-conts|) proc))
        (cl:setf pc 4503)
      pc-4503
-       (cl:setf pc 4505) (cl:go pc-4505)
+       (cl:setf bail cl:t) (cl:go chunk-exit)
      pc-4504
-       (cl:setf val (apply-primitive-procedure proc argl))
+       (cl:setf val (cl:funcall (get-operation '|apply-parameter|) proc argl))
        (cl:setf pc 4505)
      pc-4505
-       (cl:setf env (cl:funcall (get-operation '|lookup-variable-value|) '|*global-env*| env))
-       (cl:setf pc 4506)
+       (cl:setf pc 4507) (cl:go pc-4507)
      pc-4506
-       (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%store-asm-sym| env))
+       (cl:setf val (apply-primitive-procedure proc argl))
        (cl:setf pc 4507)
      pc-4507
-       (cl:setf val '|goto|)
+       (cl:setf env (cl:funcall (get-operation '|lookup-variable-value|) '|*global-env*| env))
        (cl:setf pc 4508)
      pc-4508
-       (cl:setf argl (cl:funcall (get-operation '|list|) val))
+       (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%register-primitive!| env))
        (cl:setf pc 4509)
      pc-4509
-       (cl:setf val 3)
+       (cl:setf val 254)
        (cl:setf pc 4510)
      pc-4510
-       (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
+       (cl:setf argl (cl:funcall (get-operation '|list|) val))
        (cl:setf pc 4511)
      pc-4511
-       (cl:setf flag (cl:funcall (get-operation '|primitive-procedure?|) proc))
+       (cl:setf val '|%code-object-set-arity!|)
        (cl:setf pc 4512)
      pc-4512
-       (cl:when flag (cl:setf pc 4527) (cl:go pc-4527))
+       (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
+       (cl:setf pc 4513)
      pc-4513
-       (cl:setf flag (cl:funcall (get-operation '|continuation?|) proc))
+       (cl:setf flag (cl:funcall (get-operation '|primitive-procedure?|) proc))
        (cl:setf pc 4514)
      pc-4514
-       (cl:when flag (cl:setf pc 4520) (cl:go pc-4520))
+       (cl:when flag (cl:setf pc 4529) (cl:go pc-4529))
      pc-4515
-       (cl:setf flag (cl:funcall (get-operation '|parameter?|) proc))
+       (cl:setf flag (cl:funcall (get-operation '|continuation?|) proc))
        (cl:setf pc 4516)
      pc-4516
-       (cl:when flag (cl:setf pc 4525) (cl:go pc-4525))
+       (cl:when flag (cl:setf pc 4522) (cl:go pc-4522))
      pc-4517
-       (cl:setf continue (cl:cons '|boot-env| 4528))
+       (cl:setf flag (cl:funcall (get-operation '|parameter?|) proc))
        (cl:setf pc 4518)
      pc-4518
-       (cl:setf val (cl:funcall (get-operation '|compiled-procedure-entry|) proc))
-       (cl:setf pc 4519)
+       (cl:when flag (cl:setf pc 4527) (cl:go pc-4527))
      pc-4519
-       (cl:setf bail cl:t) (cl:go chunk-exit)
+       (cl:setf continue (cl:cons '|boot-env| 4530))
+       (cl:setf pc 4520)
      pc-4520
-       (cl:setf val (cl:funcall (get-operation '|car|) argl))
+       (cl:setf val (cl:funcall (get-operation '|compiled-procedure-entry|) proc))
        (cl:setf pc 4521)
      pc-4521
-       (cl:funcall (get-operation '|do-continuation-winds|) proc)
-       (cl:setf pc 4522)
+       (cl:setf bail cl:t) (cl:go chunk-exit)
      pc-4522
-       (cl:setf stack (cl:funcall (get-operation '|continuation-stack|) proc))
+       (cl:setf val (cl:funcall (get-operation '|car|) argl))
        (cl:setf pc 4523)
      pc-4523
-       (cl:setf continue (cl:funcall (get-operation '|continuation-conts|) proc))
+       (cl:funcall (get-operation '|do-continuation-winds|) proc)
        (cl:setf pc 4524)
      pc-4524
-       (cl:setf bail cl:t) (cl:go chunk-exit)
+       (cl:setf stack (cl:funcall (get-operation '|continuation-stack|) proc))
+       (cl:setf pc 4525)
      pc-4525
-       (cl:setf val (cl:funcall (get-operation '|apply-parameter|) proc argl))
+       (cl:setf continue (cl:funcall (get-operation '|continuation-conts|) proc))
        (cl:setf pc 4526)
      pc-4526
-       (cl:setf pc 4528) (cl:go pc-4528)
+       (cl:setf bail cl:t) (cl:go chunk-exit)
      pc-4527
-       (cl:setf val (apply-primitive-procedure proc argl))
+       (cl:setf val (cl:funcall (get-operation '|apply-parameter|) proc argl))
        (cl:setf pc 4528)
      pc-4528
-       (cl:setf env (cl:funcall (get-operation '|lookup-variable-value|) '|*global-env*| env))
-       (cl:setf pc 4529)
+       (cl:setf pc 4530) (cl:go pc-4530)
      pc-4529
-       (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%store-asm-sym| env))
+       (cl:setf val (apply-primitive-procedure proc argl))
        (cl:setf pc 4530)
      pc-4530
-       (cl:setf val '|save|)
+       (cl:setf env (cl:funcall (get-operation '|lookup-variable-value|) '|*global-env*| env))
        (cl:setf pc 4531)
      pc-4531
-       (cl:setf argl (cl:funcall (get-operation '|list|) val))
+       (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%register-primitive!| env))
        (cl:setf pc 4532)
      pc-4532
-       (cl:setf val 4)
+       (cl:setf val 255)
        (cl:setf pc 4533)
      pc-4533
-       (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
+       (cl:setf argl (cl:funcall (get-operation '|list|) val))
        (cl:setf pc 4534)
      pc-4534
-       (cl:setf flag (cl:funcall (get-operation '|primitive-procedure?|) proc))
+       (cl:setf val '|%code-object-set-source-loc!|)
        (cl:setf pc 4535)
      pc-4535
-       (cl:when flag (cl:setf pc 4550) (cl:go pc-4550))
+       (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
+       (cl:setf pc 4536)
      pc-4536
-       (cl:setf flag (cl:funcall (get-operation '|continuation?|) proc))
+       (cl:setf flag (cl:funcall (get-operation '|primitive-procedure?|) proc))
        (cl:setf pc 4537)
      pc-4537
-       (cl:when flag (cl:setf pc 4543) (cl:go pc-4543))
+       (cl:when flag (cl:setf pc 4552) (cl:go pc-4552))
      pc-4538
-       (cl:setf flag (cl:funcall (get-operation '|parameter?|) proc))
+       (cl:setf flag (cl:funcall (get-operation '|continuation?|) proc))
        (cl:setf pc 4539)
      pc-4539
-       (cl:when flag (cl:setf pc 4548) (cl:go pc-4548))
+       (cl:when flag (cl:setf pc 4545) (cl:go pc-4545))
      pc-4540
-       (cl:setf continue (cl:cons '|boot-env| 4551))
+       (cl:setf flag (cl:funcall (get-operation '|parameter?|) proc))
        (cl:setf pc 4541)
      pc-4541
-       (cl:setf val (cl:funcall (get-operation '|compiled-procedure-entry|) proc))
-       (cl:setf pc 4542)
+       (cl:when flag (cl:setf pc 4550) (cl:go pc-4550))
      pc-4542
-       (cl:setf bail cl:t) (cl:go chunk-exit)
+       (cl:setf continue (cl:cons '|boot-env| 4553))
+       (cl:setf pc 4543)
      pc-4543
-       (cl:setf val (cl:funcall (get-operation '|car|) argl))
+       (cl:setf val (cl:funcall (get-operation '|compiled-procedure-entry|) proc))
        (cl:setf pc 4544)
      pc-4544
-       (cl:funcall (get-operation '|do-continuation-winds|) proc)
-       (cl:setf pc 4545)
+       (cl:setf bail cl:t) (cl:go chunk-exit)
      pc-4545
-       (cl:setf stack (cl:funcall (get-operation '|continuation-stack|) proc))
+       (cl:setf val (cl:funcall (get-operation '|car|) argl))
        (cl:setf pc 4546)
      pc-4546
-       (cl:setf continue (cl:funcall (get-operation '|continuation-conts|) proc))
+       (cl:funcall (get-operation '|do-continuation-winds|) proc)
        (cl:setf pc 4547)
      pc-4547
-       (cl:setf bail cl:t) (cl:go chunk-exit)
+       (cl:setf stack (cl:funcall (get-operation '|continuation-stack|) proc))
+       (cl:setf pc 4548)
      pc-4548
-       (cl:setf val (cl:funcall (get-operation '|apply-parameter|) proc argl))
+       (cl:setf continue (cl:funcall (get-operation '|continuation-conts|) proc))
        (cl:setf pc 4549)
      pc-4549
-       (cl:setf pc 4551) (cl:go pc-4551)
+       (cl:setf bail cl:t) (cl:go chunk-exit)
      pc-4550
-       (cl:setf val (apply-primitive-procedure proc argl))
+       (cl:setf val (cl:funcall (get-operation '|apply-parameter|) proc argl))
        (cl:setf pc 4551)
      pc-4551
-       (cl:setf env (cl:funcall (get-operation '|lookup-variable-value|) '|*global-env*| env))
-       (cl:setf pc 4552)
+       (cl:setf pc 4553) (cl:go pc-4553)
      pc-4552
-       (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%store-asm-sym| env))
+       (cl:setf val (apply-primitive-procedure proc argl))
        (cl:setf pc 4553)
      pc-4553
-       (cl:setf val '|restore|)
+       (cl:setf env (cl:funcall (get-operation '|lookup-variable-value|) '|*global-env*| env))
        (cl:setf pc 4554)
      pc-4554
-       (cl:setf argl (cl:funcall (get-operation '|list|) val))
+       (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%init-asm-syms| env))
        (cl:setf pc 4555)
      pc-4555
-       (cl:setf val 5)
+       (cl:setf val 45)
        (cl:setf pc 4556)
      pc-4556
-       (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
+       (cl:setf argl (cl:funcall (get-operation '|list|) val))
        (cl:setf pc 4557)
      pc-4557
        (cl:setf flag (cl:funcall (get-operation '|primitive-procedure?|) proc))
@@ -18181,13 +18322,13 @@
        (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%store-asm-sym| env))
        (cl:setf pc 4576)
      pc-4576
-       (cl:setf val '|perform|)
+       (cl:setf val '|assign|)
        (cl:setf pc 4577)
      pc-4577
        (cl:setf argl (cl:funcall (get-operation '|list|) val))
        (cl:setf pc 4578)
      pc-4578
-       (cl:setf val 6)
+       (cl:setf val 0)
        (cl:setf pc 4579)
      pc-4579
        (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
@@ -18244,13 +18385,13 @@
        (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%store-asm-sym| env))
        (cl:setf pc 4599)
      pc-4599
-       (cl:setf val '|val|)
+       (cl:setf val '|test|)
        (cl:setf pc 4600)
      pc-4600
        (cl:setf argl (cl:funcall (get-operation '|list|) val))
        (cl:setf pc 4601)
      pc-4601
-       (cl:setf val 7)
+       (cl:setf val 1)
        (cl:setf pc 4602)
      pc-4602
        (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
@@ -18307,13 +18448,13 @@
        (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%store-asm-sym| env))
        (cl:setf pc 4622)
      pc-4622
-       (cl:setf val '|env|)
+       (cl:setf val '|branch|)
        (cl:setf pc 4623)
      pc-4623
        (cl:setf argl (cl:funcall (get-operation '|list|) val))
        (cl:setf pc 4624)
      pc-4624
-       (cl:setf val 8)
+       (cl:setf val 2)
        (cl:setf pc 4625)
      pc-4625
        (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
@@ -18370,13 +18511,13 @@
        (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%store-asm-sym| env))
        (cl:setf pc 4645)
      pc-4645
-       (cl:setf val '|proc|)
+       (cl:setf val '|goto|)
        (cl:setf pc 4646)
      pc-4646
        (cl:setf argl (cl:funcall (get-operation '|list|) val))
        (cl:setf pc 4647)
      pc-4647
-       (cl:setf val 9)
+       (cl:setf val 3)
        (cl:setf pc 4648)
      pc-4648
        (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
@@ -18433,13 +18574,13 @@
        (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%store-asm-sym| env))
        (cl:setf pc 4668)
      pc-4668
-       (cl:setf val '|argl|)
+       (cl:setf val '|save|)
        (cl:setf pc 4669)
      pc-4669
        (cl:setf argl (cl:funcall (get-operation '|list|) val))
        (cl:setf pc 4670)
      pc-4670
-       (cl:setf val 10)
+       (cl:setf val 4)
        (cl:setf pc 4671)
      pc-4671
        (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
@@ -18496,13 +18637,13 @@
        (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%store-asm-sym| env))
        (cl:setf pc 4691)
      pc-4691
-       (cl:setf val '|continue|)
+       (cl:setf val '|restore|)
        (cl:setf pc 4692)
      pc-4692
        (cl:setf argl (cl:funcall (get-operation '|list|) val))
        (cl:setf pc 4693)
      pc-4693
-       (cl:setf val 11)
+       (cl:setf val 5)
        (cl:setf pc 4694)
      pc-4694
        (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
@@ -18559,13 +18700,13 @@
        (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%store-asm-sym| env))
        (cl:setf pc 4714)
      pc-4714
-       (cl:setf val '|stack|)
+       (cl:setf val '|perform|)
        (cl:setf pc 4715)
      pc-4715
        (cl:setf argl (cl:funcall (get-operation '|list|) val))
        (cl:setf pc 4716)
      pc-4716
-       (cl:setf val 12)
+       (cl:setf val 6)
        (cl:setf pc 4717)
      pc-4717
        (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
@@ -18622,13 +18763,13 @@
        (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%store-asm-sym| env))
        (cl:setf pc 4737)
      pc-4737
-       (cl:setf val '|const|)
+       (cl:setf val '|val|)
        (cl:setf pc 4738)
      pc-4738
        (cl:setf argl (cl:funcall (get-operation '|list|) val))
        (cl:setf pc 4739)
      pc-4739
-       (cl:setf val 13)
+       (cl:setf val 7)
        (cl:setf pc 4740)
      pc-4740
        (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
@@ -18685,13 +18826,13 @@
        (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%store-asm-sym| env))
        (cl:setf pc 4760)
      pc-4760
-       (cl:setf val '|reg|)
+       (cl:setf val '|env|)
        (cl:setf pc 4761)
      pc-4761
        (cl:setf argl (cl:funcall (get-operation '|list|) val))
        (cl:setf pc 4762)
      pc-4762
-       (cl:setf val 14)
+       (cl:setf val 8)
        (cl:setf pc 4763)
      pc-4763
        (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
@@ -18748,13 +18889,13 @@
        (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%store-asm-sym| env))
        (cl:setf pc 4783)
      pc-4783
-       (cl:setf val '|label|)
+       (cl:setf val '|proc|)
        (cl:setf pc 4784)
      pc-4784
        (cl:setf argl (cl:funcall (get-operation '|list|) val))
        (cl:setf pc 4785)
      pc-4785
-       (cl:setf val 15)
+       (cl:setf val 9)
        (cl:setf pc 4786)
      pc-4786
        (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
@@ -18811,13 +18952,13 @@
        (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%store-asm-sym| env))
        (cl:setf pc 4806)
      pc-4806
-       (cl:setf val '|op|)
+       (cl:setf val '|argl|)
        (cl:setf pc 4807)
      pc-4807
        (cl:setf argl (cl:funcall (get-operation '|list|) val))
        (cl:setf pc 4808)
      pc-4808
-       (cl:setf val 16)
+       (cl:setf val 10)
        (cl:setf pc 4809)
      pc-4809
        (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
@@ -18874,13 +19015,13 @@
        (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%store-asm-sym| env))
        (cl:setf pc 4829)
      pc-4829
-       (cl:setf val '|lookup-variable-value|)
+       (cl:setf val '|continue|)
        (cl:setf pc 4830)
      pc-4830
        (cl:setf argl (cl:funcall (get-operation '|list|) val))
        (cl:setf pc 4831)
      pc-4831
-       (cl:setf val 17)
+       (cl:setf val 11)
        (cl:setf pc 4832)
      pc-4832
        (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
@@ -18937,13 +19078,13 @@
        (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%store-asm-sym| env))
        (cl:setf pc 4852)
      pc-4852
-       (cl:setf val '|lookup-global-variable|)
+       (cl:setf val '|stack|)
        (cl:setf pc 4853)
      pc-4853
        (cl:setf argl (cl:funcall (get-operation '|list|) val))
        (cl:setf pc 4854)
      pc-4854
-       (cl:setf val 18)
+       (cl:setf val 12)
        (cl:setf pc 4855)
      pc-4855
        (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
@@ -19000,13 +19141,13 @@
        (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%store-asm-sym| env))
        (cl:setf pc 4875)
      pc-4875
-       (cl:setf val '|set-variable-value!|)
+       (cl:setf val '|const|)
        (cl:setf pc 4876)
      pc-4876
        (cl:setf argl (cl:funcall (get-operation '|list|) val))
        (cl:setf pc 4877)
      pc-4877
-       (cl:setf val 19)
+       (cl:setf val 13)
        (cl:setf pc 4878)
      pc-4878
        (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
@@ -19063,13 +19204,13 @@
        (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%store-asm-sym| env))
        (cl:setf pc 4898)
      pc-4898
-       (cl:setf val '|define-variable!|)
+       (cl:setf val '|reg|)
        (cl:setf pc 4899)
      pc-4899
        (cl:setf argl (cl:funcall (get-operation '|list|) val))
        (cl:setf pc 4900)
      pc-4900
-       (cl:setf val 20)
+       (cl:setf val 14)
        (cl:setf pc 4901)
      pc-4901
        (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
@@ -19126,13 +19267,13 @@
        (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%store-asm-sym| env))
        (cl:setf pc 4921)
      pc-4921
-       (cl:setf val '|extend-environment|)
+       (cl:setf val '|label|)
        (cl:setf pc 4922)
      pc-4922
        (cl:setf argl (cl:funcall (get-operation '|list|) val))
        (cl:setf pc 4923)
      pc-4923
-       (cl:setf val 21)
+       (cl:setf val 15)
        (cl:setf pc 4924)
      pc-4924
        (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
@@ -19189,13 +19330,13 @@
        (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%store-asm-sym| env))
        (cl:setf pc 4944)
      pc-4944
-       (cl:setf val '|lexical-ref|)
+       (cl:setf val '|op|)
        (cl:setf pc 4945)
      pc-4945
        (cl:setf argl (cl:funcall (get-operation '|list|) val))
        (cl:setf pc 4946)
      pc-4946
-       (cl:setf val 22)
+       (cl:setf val 16)
        (cl:setf pc 4947)
      pc-4947
        (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
@@ -19252,13 +19393,13 @@
        (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%store-asm-sym| env))
        (cl:setf pc 4967)
      pc-4967
-       (cl:setf val '|lexical-set!|)
+       (cl:setf val '|lookup-variable-value|)
        (cl:setf pc 4968)
      pc-4968
        (cl:setf argl (cl:funcall (get-operation '|list|) val))
        (cl:setf pc 4969)
      pc-4969
-       (cl:setf val 23)
+       (cl:setf val 17)
        (cl:setf pc 4970)
      pc-4970
        (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
@@ -19315,13 +19456,13 @@
        (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%store-asm-sym| env))
        (cl:setf pc 4990)
      pc-4990
-       (cl:setf val '|make-compiled-procedure|)
+       (cl:setf val '|lookup-global-variable|)
        (cl:setf pc 4991)
      pc-4991
        (cl:setf argl (cl:funcall (get-operation '|list|) val))
        (cl:setf pc 4992)
      pc-4992
-       (cl:setf val 24)
+       (cl:setf val 18)
        (cl:setf pc 4993)
      pc-4993
        (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
@@ -19378,13 +19519,13 @@
        (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%store-asm-sym| env))
        (cl:setf pc 5013)
      pc-5013
-       (cl:setf val '|compiled-procedure-entry|)
+       (cl:setf val '|set-variable-value!|)
        (cl:setf pc 5014)
      pc-5014
        (cl:setf argl (cl:funcall (get-operation '|list|) val))
        (cl:setf pc 5015)
      pc-5015
-       (cl:setf val 25)
+       (cl:setf val 19)
        (cl:setf pc 5016)
      pc-5016
        (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
@@ -19441,13 +19582,13 @@
        (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%store-asm-sym| env))
        (cl:setf pc 5036)
      pc-5036
-       (cl:setf val '|compiled-procedure-env|)
+       (cl:setf val '|define-variable!|)
        (cl:setf pc 5037)
      pc-5037
        (cl:setf argl (cl:funcall (get-operation '|list|) val))
        (cl:setf pc 5038)
      pc-5038
-       (cl:setf val 26)
+       (cl:setf val 20)
        (cl:setf pc 5039)
      pc-5039
        (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
@@ -19504,13 +19645,13 @@
        (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%store-asm-sym| env))
        (cl:setf pc 5059)
      pc-5059
-       (cl:setf val '|primitive-procedure?|)
+       (cl:setf val '|extend-environment|)
        (cl:setf pc 5060)
      pc-5060
        (cl:setf argl (cl:funcall (get-operation '|list|) val))
        (cl:setf pc 5061)
      pc-5061
-       (cl:setf val 27)
+       (cl:setf val 21)
        (cl:setf pc 5062)
      pc-5062
        (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
@@ -19567,13 +19708,13 @@
        (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%store-asm-sym| env))
        (cl:setf pc 5082)
      pc-5082
-       (cl:setf val '|continuation?|)
+       (cl:setf val '|lexical-ref|)
        (cl:setf pc 5083)
      pc-5083
        (cl:setf argl (cl:funcall (get-operation '|list|) val))
        (cl:setf pc 5084)
      pc-5084
-       (cl:setf val 28)
+       (cl:setf val 22)
        (cl:setf pc 5085)
      pc-5085
        (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
@@ -19630,13 +19771,13 @@
        (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%store-asm-sym| env))
        (cl:setf pc 5105)
      pc-5105
-       (cl:setf val '|parameter?|)
+       (cl:setf val '|lexical-set!|)
        (cl:setf pc 5106)
      pc-5106
        (cl:setf argl (cl:funcall (get-operation '|list|) val))
        (cl:setf pc 5107)
      pc-5107
-       (cl:setf val 29)
+       (cl:setf val 23)
        (cl:setf pc 5108)
      pc-5108
        (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
@@ -19693,13 +19834,13 @@
        (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%store-asm-sym| env))
        (cl:setf pc 5128)
      pc-5128
-       (cl:setf val '|apply-primitive-procedure|)
+       (cl:setf val '|make-compiled-procedure|)
        (cl:setf pc 5129)
      pc-5129
        (cl:setf argl (cl:funcall (get-operation '|list|) val))
        (cl:setf pc 5130)
      pc-5130
-       (cl:setf val 30)
+       (cl:setf val 24)
        (cl:setf pc 5131)
      pc-5131
        (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
@@ -19756,13 +19897,13 @@
        (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%store-asm-sym| env))
        (cl:setf pc 5151)
      pc-5151
-       (cl:setf val '|apply-parameter|)
+       (cl:setf val '|compiled-procedure-entry|)
        (cl:setf pc 5152)
      pc-5152
        (cl:setf argl (cl:funcall (get-operation '|list|) val))
        (cl:setf pc 5153)
      pc-5153
-       (cl:setf val 31)
+       (cl:setf val 25)
        (cl:setf pc 5154)
      pc-5154
        (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
@@ -19819,13 +19960,13 @@
        (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%store-asm-sym| env))
        (cl:setf pc 5174)
      pc-5174
-       (cl:setf val '|parameter-ref|)
+       (cl:setf val '|compiled-procedure-env|)
        (cl:setf pc 5175)
      pc-5175
        (cl:setf argl (cl:funcall (get-operation '|list|) val))
        (cl:setf pc 5176)
      pc-5176
-       (cl:setf val 32)
+       (cl:setf val 26)
        (cl:setf pc 5177)
      pc-5177
        (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
@@ -19882,13 +20023,13 @@
        (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%store-asm-sym| env))
        (cl:setf pc 5197)
      pc-5197
-       (cl:setf val '|parameter-set!|)
+       (cl:setf val '|primitive-procedure?|)
        (cl:setf pc 5198)
      pc-5198
        (cl:setf argl (cl:funcall (get-operation '|list|) val))
        (cl:setf pc 5199)
      pc-5199
-       (cl:setf val 33)
+       (cl:setf val 27)
        (cl:setf pc 5200)
      pc-5200
        (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
@@ -19945,13 +20086,13 @@
        (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%store-asm-sym| env))
        (cl:setf pc 5220)
      pc-5220
-       (cl:setf val '|parameter-raw-set!|)
+       (cl:setf val '|continuation?|)
        (cl:setf pc 5221)
      pc-5221
        (cl:setf argl (cl:funcall (get-operation '|list|) val))
        (cl:setf pc 5222)
      pc-5222
-       (cl:setf val 34)
+       (cl:setf val 28)
        (cl:setf pc 5223)
      pc-5223
        (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
@@ -20008,13 +20149,13 @@
        (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%store-asm-sym| env))
        (cl:setf pc 5243)
      pc-5243
-       (cl:setf val '|capture-continuation|)
+       (cl:setf val '|parameter?|)
        (cl:setf pc 5244)
      pc-5244
        (cl:setf argl (cl:funcall (get-operation '|list|) val))
        (cl:setf pc 5245)
      pc-5245
-       (cl:setf val 35)
+       (cl:setf val 29)
        (cl:setf pc 5246)
      pc-5246
        (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
@@ -20071,13 +20212,13 @@
        (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%store-asm-sym| env))
        (cl:setf pc 5266)
      pc-5266
-       (cl:setf val '|do-continuation-winds|)
+       (cl:setf val '|apply-primitive-procedure|)
        (cl:setf pc 5267)
      pc-5267
        (cl:setf argl (cl:funcall (get-operation '|list|) val))
        (cl:setf pc 5268)
      pc-5268
-       (cl:setf val 36)
+       (cl:setf val 30)
        (cl:setf pc 5269)
      pc-5269
        (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
@@ -20134,13 +20275,13 @@
        (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%store-asm-sym| env))
        (cl:setf pc 5289)
      pc-5289
-       (cl:setf val '|continuation-stack|)
+       (cl:setf val '|apply-parameter|)
        (cl:setf pc 5290)
      pc-5290
        (cl:setf argl (cl:funcall (get-operation '|list|) val))
        (cl:setf pc 5291)
      pc-5291
-       (cl:setf val 37)
+       (cl:setf val 31)
        (cl:setf pc 5292)
      pc-5292
        (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
@@ -20197,13 +20338,13 @@
        (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%store-asm-sym| env))
        (cl:setf pc 5312)
      pc-5312
-       (cl:setf val '|continuation-conts|)
+       (cl:setf val '|parameter-ref|)
        (cl:setf pc 5313)
      pc-5313
        (cl:setf argl (cl:funcall (get-operation '|list|) val))
        (cl:setf pc 5314)
      pc-5314
-       (cl:setf val 38)
+       (cl:setf val 32)
        (cl:setf pc 5315)
      pc-5315
        (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
@@ -20260,13 +20401,13 @@
        (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%store-asm-sym| env))
        (cl:setf pc 5335)
      pc-5335
-       (cl:setf val '|false?|)
+       (cl:setf val '|parameter-set!|)
        (cl:setf pc 5336)
      pc-5336
        (cl:setf argl (cl:funcall (get-operation '|list|) val))
        (cl:setf pc 5337)
      pc-5337
-       (cl:setf val 39)
+       (cl:setf val 33)
        (cl:setf pc 5338)
      pc-5338
        (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
@@ -20323,13 +20464,13 @@
        (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%store-asm-sym| env))
        (cl:setf pc 5358)
      pc-5358
-       (cl:setf val '|list|)
+       (cl:setf val '|parameter-raw-set!|)
        (cl:setf pc 5359)
      pc-5359
        (cl:setf argl (cl:funcall (get-operation '|list|) val))
        (cl:setf pc 5360)
      pc-5360
-       (cl:setf val 40)
+       (cl:setf val 34)
        (cl:setf pc 5361)
      pc-5361
        (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
@@ -20386,13 +20527,13 @@
        (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%store-asm-sym| env))
        (cl:setf pc 5381)
      pc-5381
-       (cl:setf val '|cons|)
+       (cl:setf val '|capture-continuation|)
        (cl:setf pc 5382)
      pc-5382
        (cl:setf argl (cl:funcall (get-operation '|list|) val))
        (cl:setf pc 5383)
      pc-5383
-       (cl:setf val 41)
+       (cl:setf val 35)
        (cl:setf pc 5384)
      pc-5384
        (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
@@ -20449,13 +20590,13 @@
        (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%store-asm-sym| env))
        (cl:setf pc 5404)
      pc-5404
-       (cl:setf val '|car|)
+       (cl:setf val '|do-continuation-winds|)
        (cl:setf pc 5405)
      pc-5405
        (cl:setf argl (cl:funcall (get-operation '|list|) val))
        (cl:setf pc 5406)
      pc-5406
-       (cl:setf val 42)
+       (cl:setf val 36)
        (cl:setf pc 5407)
      pc-5407
        (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
@@ -20512,13 +20653,13 @@
        (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%store-asm-sym| env))
        (cl:setf pc 5427)
      pc-5427
-       (cl:setf val '|cdr|)
+       (cl:setf val '|continuation-stack|)
        (cl:setf pc 5428)
      pc-5428
        (cl:setf argl (cl:funcall (get-operation '|list|) val))
        (cl:setf pc 5429)
      pc-5429
-       (cl:setf val 43)
+       (cl:setf val 37)
        (cl:setf pc 5430)
      pc-5430
        (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
@@ -20575,13 +20716,13 @@
        (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%store-asm-sym| env))
        (cl:setf pc 5450)
      pc-5450
-       (cl:setf val '|halt|)
+       (cl:setf val '|continuation-conts|)
        (cl:setf pc 5451)
      pc-5451
        (cl:setf argl (cl:funcall (get-operation '|list|) val))
        (cl:setf pc 5452)
      pc-5452
-       (cl:setf val 44)
+       (cl:setf val 38)
        (cl:setf pc 5453)
      pc-5453
        (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
@@ -20635,16 +20776,16 @@
        (cl:setf env (cl:funcall (get-operation '|lookup-variable-value|) '|*global-env*| env))
        (cl:setf pc 5472)
      pc-5472
-       (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%set-continuation-syms!| env))
+       (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%store-asm-sym| env))
        (cl:setf pc 5473)
      pc-5473
-       (cl:setf val '|*winding-stack*|)
+       (cl:setf val '|false?|)
        (cl:setf pc 5474)
      pc-5474
        (cl:setf argl (cl:funcall (get-operation '|list|) val))
        (cl:setf pc 5475)
      pc-5475
-       (cl:setf val '|do-winds!|)
+       (cl:setf val 39)
        (cl:setf pc 5476)
      pc-5476
        (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
@@ -20698,122 +20839,500 @@
        (cl:setf env (cl:funcall (get-operation '|lookup-variable-value|) '|*global-env*| env))
        (cl:setf pc 5495)
      pc-5495
-       (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%set-error-sym!| env))
+       (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%store-asm-sym| env))
        (cl:setf pc 5496)
      pc-5496
-       (cl:setf val '|error|)
+       (cl:setf val '|list|)
        (cl:setf pc 5497)
      pc-5497
        (cl:setf argl (cl:funcall (get-operation '|list|) val))
        (cl:setf pc 5498)
      pc-5498
-       (cl:setf flag (cl:funcall (get-operation '|primitive-procedure?|) proc))
+       (cl:setf val 40)
        (cl:setf pc 5499)
      pc-5499
-       (cl:when flag (cl:setf pc 5514) (cl:go pc-5514))
+       (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
+       (cl:setf pc 5500)
      pc-5500
-       (cl:setf flag (cl:funcall (get-operation '|continuation?|) proc))
+       (cl:setf flag (cl:funcall (get-operation '|primitive-procedure?|) proc))
        (cl:setf pc 5501)
      pc-5501
-       (cl:when flag (cl:setf pc 5507) (cl:go pc-5507))
+       (cl:when flag (cl:setf pc 5516) (cl:go pc-5516))
      pc-5502
-       (cl:setf flag (cl:funcall (get-operation '|parameter?|) proc))
+       (cl:setf flag (cl:funcall (get-operation '|continuation?|) proc))
        (cl:setf pc 5503)
      pc-5503
-       (cl:when flag (cl:setf pc 5512) (cl:go pc-5512))
+       (cl:when flag (cl:setf pc 5509) (cl:go pc-5509))
      pc-5504
-       (cl:setf continue (cl:cons '|boot-env| 5515))
+       (cl:setf flag (cl:funcall (get-operation '|parameter?|) proc))
        (cl:setf pc 5505)
      pc-5505
-       (cl:setf val (cl:funcall (get-operation '|compiled-procedure-entry|) proc))
-       (cl:setf pc 5506)
+       (cl:when flag (cl:setf pc 5514) (cl:go pc-5514))
      pc-5506
-       (cl:setf bail cl:t) (cl:go chunk-exit)
+       (cl:setf continue (cl:cons '|boot-env| 5517))
+       (cl:setf pc 5507)
      pc-5507
-       (cl:setf val (cl:funcall (get-operation '|car|) argl))
+       (cl:setf val (cl:funcall (get-operation '|compiled-procedure-entry|) proc))
        (cl:setf pc 5508)
      pc-5508
-       (cl:funcall (get-operation '|do-continuation-winds|) proc)
-       (cl:setf pc 5509)
+       (cl:setf bail cl:t) (cl:go chunk-exit)
      pc-5509
-       (cl:setf stack (cl:funcall (get-operation '|continuation-stack|) proc))
+       (cl:setf val (cl:funcall (get-operation '|car|) argl))
        (cl:setf pc 5510)
      pc-5510
-       (cl:setf continue (cl:funcall (get-operation '|continuation-conts|) proc))
+       (cl:funcall (get-operation '|do-continuation-winds|) proc)
        (cl:setf pc 5511)
      pc-5511
-       (cl:setf bail cl:t) (cl:go chunk-exit)
+       (cl:setf stack (cl:funcall (get-operation '|continuation-stack|) proc))
+       (cl:setf pc 5512)
      pc-5512
-       (cl:setf val (cl:funcall (get-operation '|apply-parameter|) proc argl))
+       (cl:setf continue (cl:funcall (get-operation '|continuation-conts|) proc))
        (cl:setf pc 5513)
      pc-5513
-       (cl:setf pc 5515) (cl:go pc-5515)
+       (cl:setf bail cl:t) (cl:go chunk-exit)
      pc-5514
-       (cl:setf val (apply-primitive-procedure proc argl))
+       (cl:setf val (cl:funcall (get-operation '|apply-parameter|) proc argl))
        (cl:setf pc 5515)
      pc-5515
-       (cl:setf env (cl:funcall (get-operation '|lookup-variable-value|) '|*global-env*| env))
-       (cl:setf pc 5516)
+       (cl:setf pc 5517) (cl:go pc-5517)
      pc-5516
-       (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%create-repl-space!| env))
+       (cl:setf val (apply-primitive-procedure proc argl))
        (cl:setf pc 5517)
      pc-5517
-       (cl:setf val 524288)
+       (cl:setf env (cl:funcall (get-operation '|lookup-variable-value|) '|*global-env*| env))
        (cl:setf pc 5518)
      pc-5518
-       (cl:setf argl (cl:funcall (get-operation '|list|) val))
+       (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%store-asm-sym| env))
        (cl:setf pc 5519)
      pc-5519
-       (cl:setf val '|repl|)
+       (cl:setf val '|cons|)
        (cl:setf pc 5520)
      pc-5520
-       (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
+       (cl:setf argl (cl:funcall (get-operation '|list|) val))
        (cl:setf pc 5521)
      pc-5521
-       (cl:setf flag (cl:funcall (get-operation '|primitive-procedure?|) proc))
+       (cl:setf val 41)
        (cl:setf pc 5522)
      pc-5522
-       (cl:when flag (cl:setf pc 5537) (cl:go pc-5537))
+       (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
+       (cl:setf pc 5523)
      pc-5523
-       (cl:setf flag (cl:funcall (get-operation '|continuation?|) proc))
+       (cl:setf flag (cl:funcall (get-operation '|primitive-procedure?|) proc))
        (cl:setf pc 5524)
      pc-5524
-       (cl:when flag (cl:setf pc 5530) (cl:go pc-5530))
+       (cl:when flag (cl:setf pc 5539) (cl:go pc-5539))
      pc-5525
-       (cl:setf flag (cl:funcall (get-operation '|parameter?|) proc))
+       (cl:setf flag (cl:funcall (get-operation '|continuation?|) proc))
        (cl:setf pc 5526)
      pc-5526
-       (cl:when flag (cl:setf pc 5535) (cl:go pc-5535))
+       (cl:when flag (cl:setf pc 5532) (cl:go pc-5532))
      pc-5527
-       (cl:setf continue (cl:cons '|boot-env| 5538))
+       (cl:setf flag (cl:funcall (get-operation '|parameter?|) proc))
        (cl:setf pc 5528)
      pc-5528
-       (cl:setf val (cl:funcall (get-operation '|compiled-procedure-entry|) proc))
-       (cl:setf pc 5529)
+       (cl:when flag (cl:setf pc 5537) (cl:go pc-5537))
      pc-5529
-       (cl:setf bail cl:t) (cl:go chunk-exit)
+       (cl:setf continue (cl:cons '|boot-env| 5540))
+       (cl:setf pc 5530)
      pc-5530
-       (cl:setf val (cl:funcall (get-operation '|car|) argl))
+       (cl:setf val (cl:funcall (get-operation '|compiled-procedure-entry|) proc))
        (cl:setf pc 5531)
      pc-5531
-       (cl:funcall (get-operation '|do-continuation-winds|) proc)
-       (cl:setf pc 5532)
+       (cl:setf bail cl:t) (cl:go chunk-exit)
      pc-5532
-       (cl:setf stack (cl:funcall (get-operation '|continuation-stack|) proc))
+       (cl:setf val (cl:funcall (get-operation '|car|) argl))
        (cl:setf pc 5533)
      pc-5533
-       (cl:setf continue (cl:funcall (get-operation '|continuation-conts|) proc))
+       (cl:funcall (get-operation '|do-continuation-winds|) proc)
        (cl:setf pc 5534)
      pc-5534
-       (cl:setf bail cl:t) (cl:go chunk-exit)
+       (cl:setf stack (cl:funcall (get-operation '|continuation-stack|) proc))
+       (cl:setf pc 5535)
      pc-5535
-       (cl:setf val (cl:funcall (get-operation '|apply-parameter|) proc argl))
+       (cl:setf continue (cl:funcall (get-operation '|continuation-conts|) proc))
        (cl:setf pc 5536)
      pc-5536
-       (cl:setf pc 5538) (cl:go chunk-exit)
+       (cl:setf bail cl:t) (cl:go chunk-exit)
      pc-5537
-       (cl:setf val (apply-primitive-procedure proc argl))
+       (cl:setf val (cl:funcall (get-operation '|apply-parameter|) proc argl))
        (cl:setf pc 5538)
+     pc-5538
+       (cl:setf pc 5540) (cl:go pc-5540)
+     pc-5539
+       (cl:setf val (apply-primitive-procedure proc argl))
+       (cl:setf pc 5540)
+     pc-5540
+       (cl:setf env (cl:funcall (get-operation '|lookup-variable-value|) '|*global-env*| env))
+       (cl:setf pc 5541)
+     pc-5541
+       (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%store-asm-sym| env))
+       (cl:setf pc 5542)
+     pc-5542
+       (cl:setf val '|car|)
+       (cl:setf pc 5543)
+     pc-5543
+       (cl:setf argl (cl:funcall (get-operation '|list|) val))
+       (cl:setf pc 5544)
+     pc-5544
+       (cl:setf val 42)
+       (cl:setf pc 5545)
+     pc-5545
+       (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
+       (cl:setf pc 5546)
+     pc-5546
+       (cl:setf flag (cl:funcall (get-operation '|primitive-procedure?|) proc))
+       (cl:setf pc 5547)
+     pc-5547
+       (cl:when flag (cl:setf pc 5562) (cl:go pc-5562))
+     pc-5548
+       (cl:setf flag (cl:funcall (get-operation '|continuation?|) proc))
+       (cl:setf pc 5549)
+     pc-5549
+       (cl:when flag (cl:setf pc 5555) (cl:go pc-5555))
+     pc-5550
+       (cl:setf flag (cl:funcall (get-operation '|parameter?|) proc))
+       (cl:setf pc 5551)
+     pc-5551
+       (cl:when flag (cl:setf pc 5560) (cl:go pc-5560))
+     pc-5552
+       (cl:setf continue (cl:cons '|boot-env| 5563))
+       (cl:setf pc 5553)
+     pc-5553
+       (cl:setf val (cl:funcall (get-operation '|compiled-procedure-entry|) proc))
+       (cl:setf pc 5554)
+     pc-5554
+       (cl:setf bail cl:t) (cl:go chunk-exit)
+     pc-5555
+       (cl:setf val (cl:funcall (get-operation '|car|) argl))
+       (cl:setf pc 5556)
+     pc-5556
+       (cl:funcall (get-operation '|do-continuation-winds|) proc)
+       (cl:setf pc 5557)
+     pc-5557
+       (cl:setf stack (cl:funcall (get-operation '|continuation-stack|) proc))
+       (cl:setf pc 5558)
+     pc-5558
+       (cl:setf continue (cl:funcall (get-operation '|continuation-conts|) proc))
+       (cl:setf pc 5559)
+     pc-5559
+       (cl:setf bail cl:t) (cl:go chunk-exit)
+     pc-5560
+       (cl:setf val (cl:funcall (get-operation '|apply-parameter|) proc argl))
+       (cl:setf pc 5561)
+     pc-5561
+       (cl:setf pc 5563) (cl:go pc-5563)
+     pc-5562
+       (cl:setf val (apply-primitive-procedure proc argl))
+       (cl:setf pc 5563)
+     pc-5563
+       (cl:setf env (cl:funcall (get-operation '|lookup-variable-value|) '|*global-env*| env))
+       (cl:setf pc 5564)
+     pc-5564
+       (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%store-asm-sym| env))
+       (cl:setf pc 5565)
+     pc-5565
+       (cl:setf val '|cdr|)
+       (cl:setf pc 5566)
+     pc-5566
+       (cl:setf argl (cl:funcall (get-operation '|list|) val))
+       (cl:setf pc 5567)
+     pc-5567
+       (cl:setf val 43)
+       (cl:setf pc 5568)
+     pc-5568
+       (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
+       (cl:setf pc 5569)
+     pc-5569
+       (cl:setf flag (cl:funcall (get-operation '|primitive-procedure?|) proc))
+       (cl:setf pc 5570)
+     pc-5570
+       (cl:when flag (cl:setf pc 5585) (cl:go pc-5585))
+     pc-5571
+       (cl:setf flag (cl:funcall (get-operation '|continuation?|) proc))
+       (cl:setf pc 5572)
+     pc-5572
+       (cl:when flag (cl:setf pc 5578) (cl:go pc-5578))
+     pc-5573
+       (cl:setf flag (cl:funcall (get-operation '|parameter?|) proc))
+       (cl:setf pc 5574)
+     pc-5574
+       (cl:when flag (cl:setf pc 5583) (cl:go pc-5583))
+     pc-5575
+       (cl:setf continue (cl:cons '|boot-env| 5586))
+       (cl:setf pc 5576)
+     pc-5576
+       (cl:setf val (cl:funcall (get-operation '|compiled-procedure-entry|) proc))
+       (cl:setf pc 5577)
+     pc-5577
+       (cl:setf bail cl:t) (cl:go chunk-exit)
+     pc-5578
+       (cl:setf val (cl:funcall (get-operation '|car|) argl))
+       (cl:setf pc 5579)
+     pc-5579
+       (cl:funcall (get-operation '|do-continuation-winds|) proc)
+       (cl:setf pc 5580)
+     pc-5580
+       (cl:setf stack (cl:funcall (get-operation '|continuation-stack|) proc))
+       (cl:setf pc 5581)
+     pc-5581
+       (cl:setf continue (cl:funcall (get-operation '|continuation-conts|) proc))
+       (cl:setf pc 5582)
+     pc-5582
+       (cl:setf bail cl:t) (cl:go chunk-exit)
+     pc-5583
+       (cl:setf val (cl:funcall (get-operation '|apply-parameter|) proc argl))
+       (cl:setf pc 5584)
+     pc-5584
+       (cl:setf pc 5586) (cl:go pc-5586)
+     pc-5585
+       (cl:setf val (apply-primitive-procedure proc argl))
+       (cl:setf pc 5586)
+     pc-5586
+       (cl:setf env (cl:funcall (get-operation '|lookup-variable-value|) '|*global-env*| env))
+       (cl:setf pc 5587)
+     pc-5587
+       (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%store-asm-sym| env))
+       (cl:setf pc 5588)
+     pc-5588
+       (cl:setf val '|halt|)
+       (cl:setf pc 5589)
+     pc-5589
+       (cl:setf argl (cl:funcall (get-operation '|list|) val))
+       (cl:setf pc 5590)
+     pc-5590
+       (cl:setf val 44)
+       (cl:setf pc 5591)
+     pc-5591
+       (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
+       (cl:setf pc 5592)
+     pc-5592
+       (cl:setf flag (cl:funcall (get-operation '|primitive-procedure?|) proc))
+       (cl:setf pc 5593)
+     pc-5593
+       (cl:when flag (cl:setf pc 5608) (cl:go pc-5608))
+     pc-5594
+       (cl:setf flag (cl:funcall (get-operation '|continuation?|) proc))
+       (cl:setf pc 5595)
+     pc-5595
+       (cl:when flag (cl:setf pc 5601) (cl:go pc-5601))
+     pc-5596
+       (cl:setf flag (cl:funcall (get-operation '|parameter?|) proc))
+       (cl:setf pc 5597)
+     pc-5597
+       (cl:when flag (cl:setf pc 5606) (cl:go pc-5606))
+     pc-5598
+       (cl:setf continue (cl:cons '|boot-env| 5609))
+       (cl:setf pc 5599)
+     pc-5599
+       (cl:setf val (cl:funcall (get-operation '|compiled-procedure-entry|) proc))
+       (cl:setf pc 5600)
+     pc-5600
+       (cl:setf bail cl:t) (cl:go chunk-exit)
+     pc-5601
+       (cl:setf val (cl:funcall (get-operation '|car|) argl))
+       (cl:setf pc 5602)
+     pc-5602
+       (cl:funcall (get-operation '|do-continuation-winds|) proc)
+       (cl:setf pc 5603)
+     pc-5603
+       (cl:setf stack (cl:funcall (get-operation '|continuation-stack|) proc))
+       (cl:setf pc 5604)
+     pc-5604
+       (cl:setf continue (cl:funcall (get-operation '|continuation-conts|) proc))
+       (cl:setf pc 5605)
+     pc-5605
+       (cl:setf bail cl:t) (cl:go chunk-exit)
+     pc-5606
+       (cl:setf val (cl:funcall (get-operation '|apply-parameter|) proc argl))
+       (cl:setf pc 5607)
+     pc-5607
+       (cl:setf pc 5609) (cl:go pc-5609)
+     pc-5608
+       (cl:setf val (apply-primitive-procedure proc argl))
+       (cl:setf pc 5609)
+     pc-5609
+       (cl:setf env (cl:funcall (get-operation '|lookup-variable-value|) '|*global-env*| env))
+       (cl:setf pc 5610)
+     pc-5610
+       (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%set-continuation-syms!| env))
+       (cl:setf pc 5611)
+     pc-5611
+       (cl:setf val '|*winding-stack*|)
+       (cl:setf pc 5612)
+     pc-5612
+       (cl:setf argl (cl:funcall (get-operation '|list|) val))
+       (cl:setf pc 5613)
+     pc-5613
+       (cl:setf val '|do-winds!|)
+       (cl:setf pc 5614)
+     pc-5614
+       (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
+       (cl:setf pc 5615)
+     pc-5615
+       (cl:setf flag (cl:funcall (get-operation '|primitive-procedure?|) proc))
+       (cl:setf pc 5616)
+     pc-5616
+       (cl:when flag (cl:setf pc 5631) (cl:go pc-5631))
+     pc-5617
+       (cl:setf flag (cl:funcall (get-operation '|continuation?|) proc))
+       (cl:setf pc 5618)
+     pc-5618
+       (cl:when flag (cl:setf pc 5624) (cl:go pc-5624))
+     pc-5619
+       (cl:setf flag (cl:funcall (get-operation '|parameter?|) proc))
+       (cl:setf pc 5620)
+     pc-5620
+       (cl:when flag (cl:setf pc 5629) (cl:go pc-5629))
+     pc-5621
+       (cl:setf continue (cl:cons '|boot-env| 5632))
+       (cl:setf pc 5622)
+     pc-5622
+       (cl:setf val (cl:funcall (get-operation '|compiled-procedure-entry|) proc))
+       (cl:setf pc 5623)
+     pc-5623
+       (cl:setf bail cl:t) (cl:go chunk-exit)
+     pc-5624
+       (cl:setf val (cl:funcall (get-operation '|car|) argl))
+       (cl:setf pc 5625)
+     pc-5625
+       (cl:funcall (get-operation '|do-continuation-winds|) proc)
+       (cl:setf pc 5626)
+     pc-5626
+       (cl:setf stack (cl:funcall (get-operation '|continuation-stack|) proc))
+       (cl:setf pc 5627)
+     pc-5627
+       (cl:setf continue (cl:funcall (get-operation '|continuation-conts|) proc))
+       (cl:setf pc 5628)
+     pc-5628
+       (cl:setf bail cl:t) (cl:go chunk-exit)
+     pc-5629
+       (cl:setf val (cl:funcall (get-operation '|apply-parameter|) proc argl))
+       (cl:setf pc 5630)
+     pc-5630
+       (cl:setf pc 5632) (cl:go pc-5632)
+     pc-5631
+       (cl:setf val (apply-primitive-procedure proc argl))
+       (cl:setf pc 5632)
+     pc-5632
+       (cl:setf env (cl:funcall (get-operation '|lookup-variable-value|) '|*global-env*| env))
+       (cl:setf pc 5633)
+     pc-5633
+       (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%set-error-sym!| env))
+       (cl:setf pc 5634)
+     pc-5634
+       (cl:setf val '|error|)
+       (cl:setf pc 5635)
+     pc-5635
+       (cl:setf argl (cl:funcall (get-operation '|list|) val))
+       (cl:setf pc 5636)
+     pc-5636
+       (cl:setf flag (cl:funcall (get-operation '|primitive-procedure?|) proc))
+       (cl:setf pc 5637)
+     pc-5637
+       (cl:when flag (cl:setf pc 5652) (cl:go pc-5652))
+     pc-5638
+       (cl:setf flag (cl:funcall (get-operation '|continuation?|) proc))
+       (cl:setf pc 5639)
+     pc-5639
+       (cl:when flag (cl:setf pc 5645) (cl:go pc-5645))
+     pc-5640
+       (cl:setf flag (cl:funcall (get-operation '|parameter?|) proc))
+       (cl:setf pc 5641)
+     pc-5641
+       (cl:when flag (cl:setf pc 5650) (cl:go pc-5650))
+     pc-5642
+       (cl:setf continue (cl:cons '|boot-env| 5653))
+       (cl:setf pc 5643)
+     pc-5643
+       (cl:setf val (cl:funcall (get-operation '|compiled-procedure-entry|) proc))
+       (cl:setf pc 5644)
+     pc-5644
+       (cl:setf bail cl:t) (cl:go chunk-exit)
+     pc-5645
+       (cl:setf val (cl:funcall (get-operation '|car|) argl))
+       (cl:setf pc 5646)
+     pc-5646
+       (cl:funcall (get-operation '|do-continuation-winds|) proc)
+       (cl:setf pc 5647)
+     pc-5647
+       (cl:setf stack (cl:funcall (get-operation '|continuation-stack|) proc))
+       (cl:setf pc 5648)
+     pc-5648
+       (cl:setf continue (cl:funcall (get-operation '|continuation-conts|) proc))
+       (cl:setf pc 5649)
+     pc-5649
+       (cl:setf bail cl:t) (cl:go chunk-exit)
+     pc-5650
+       (cl:setf val (cl:funcall (get-operation '|apply-parameter|) proc argl))
+       (cl:setf pc 5651)
+     pc-5651
+       (cl:setf pc 5653) (cl:go pc-5653)
+     pc-5652
+       (cl:setf val (apply-primitive-procedure proc argl))
+       (cl:setf pc 5653)
+     pc-5653
+       (cl:setf env (cl:funcall (get-operation '|lookup-variable-value|) '|*global-env*| env))
+       (cl:setf pc 5654)
+     pc-5654
+       (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%create-repl-space!| env))
+       (cl:setf pc 5655)
+     pc-5655
+       (cl:setf val 524288)
+       (cl:setf pc 5656)
+     pc-5656
+       (cl:setf argl (cl:funcall (get-operation '|list|) val))
+       (cl:setf pc 5657)
+     pc-5657
+       (cl:setf val '|repl|)
+       (cl:setf pc 5658)
+     pc-5658
+       (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
+       (cl:setf pc 5659)
+     pc-5659
+       (cl:setf flag (cl:funcall (get-operation '|primitive-procedure?|) proc))
+       (cl:setf pc 5660)
+     pc-5660
+       (cl:when flag (cl:setf pc 5675) (cl:go pc-5675))
+     pc-5661
+       (cl:setf flag (cl:funcall (get-operation '|continuation?|) proc))
+       (cl:setf pc 5662)
+     pc-5662
+       (cl:when flag (cl:setf pc 5668) (cl:go pc-5668))
+     pc-5663
+       (cl:setf flag (cl:funcall (get-operation '|parameter?|) proc))
+       (cl:setf pc 5664)
+     pc-5664
+       (cl:when flag (cl:setf pc 5673) (cl:go pc-5673))
+     pc-5665
+       (cl:setf continue (cl:cons '|boot-env| 5676))
+       (cl:setf pc 5666)
+     pc-5666
+       (cl:setf val (cl:funcall (get-operation '|compiled-procedure-entry|) proc))
+       (cl:setf pc 5667)
+     pc-5667
+       (cl:setf bail cl:t) (cl:go chunk-exit)
+     pc-5668
+       (cl:setf val (cl:funcall (get-operation '|car|) argl))
+       (cl:setf pc 5669)
+     pc-5669
+       (cl:funcall (get-operation '|do-continuation-winds|) proc)
+       (cl:setf pc 5670)
+     pc-5670
+       (cl:setf stack (cl:funcall (get-operation '|continuation-stack|) proc))
+       (cl:setf pc 5671)
+     pc-5671
+       (cl:setf continue (cl:funcall (get-operation '|continuation-conts|) proc))
+       (cl:setf pc 5672)
+     pc-5672
+       (cl:setf bail cl:t) (cl:go chunk-exit)
+     pc-5673
+       (cl:setf val (cl:funcall (get-operation '|apply-parameter|) proc argl))
+       (cl:setf pc 5674)
+     pc-5674
+       (cl:setf pc 5676) (cl:go chunk-exit)
+     pc-5675
+       (cl:setf val (apply-primitive-procedure proc argl))
+       (cl:setf pc 5676)
      chunk-exit)
     (cl:values pc val env proc argl continue stack bail)))
 
@@ -20827,13 +21346,13 @@
            (stack initial-stack)
            (bail cl:nil))
     (cl:loop
-      (cl:when (cl:or (cl:>= pc 5538) (cl:< pc 0))
+      (cl:when (cl:or (cl:>= pc 5676) (cl:< pc 0))
         (cl:return (cl:values pc val env proc argl continue stack)))
       (cl:cond
         ((cl:< pc 4096)
          (cl:multiple-value-setq (pc val env proc argl continue stack bail)
            (zone-boot-env-chunk-0 pc val env proc argl continue stack)))
-        ((cl:< pc 5538)
+        ((cl:< pc 5676)
          (cl:multiple-value-setq (pc val env proc argl continue stack bail)
            (zone-boot-env-chunk-1 pc val env proc argl continue stack)))
         (cl:t (cl:return (cl:values pc val env proc argl continue stack))))

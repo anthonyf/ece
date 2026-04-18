@@ -280,6 +280,12 @@
 (%register-primitive! 'code-object-name 247)
 (%register-primitive! 'code-object-native-fn 248)
 (%register-primitive! 'code-object-source-loc 249)
+(%register-primitive! '%make-code-object 250)
+(%register-primitive! '%code-object-push-instruction! 251)
+(%register-primitive! '%code-object-set-label! 252)
+(%register-primitive! '%code-object-set-name! 253)
+(%register-primitive! '%code-object-set-arity! 254)
+(%register-primitive! '%code-object-set-source-loc! 255)
 
 ;;; ═══════════════════════════════════════════════════════════════════
 ;;; 2. Initialize assembler symbol table
