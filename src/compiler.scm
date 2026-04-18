@@ -749,6 +749,16 @@
 
 ;;; Integration: compile-and-go via metacircular compiler
 
+;; Pure compile entry point. Returns a fresh code-object containing the
+;; assembled instructions for `expr` followed by a trailing (halt) so the
+;; executor terminates cleanly. Does not mutate any space. Executes nothing.
+(define (mc-compile-to-code-object expr)
+  (assemble-into-code-object
+   (%make-code-object)
+   (append (strip-source-locations
+            (mc-instructions (mc-compile expr 'val 'next)))
+           '((halt)))))
+
 (define (mc-compile-and-go expr . env-args)
   ;; Inline mc-compile + mc-instructions into assemble-into-global so the
   ;; instruction sequence is a temporary, not captured in a let binding.

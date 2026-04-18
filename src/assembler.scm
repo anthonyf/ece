@@ -52,6 +52,28 @@
               result)
             (loop (mc-compile-and-go expr)))))))
 
+;; Pure assembler — writes into a code-object, no shared state. Returns the
+;; same code-object it was handed for chaining. Parallel to assemble-into-global
+;; during the coexistence phase.
+(define (assemble-into-code-object co instruction-list)
+  (for-each
+   (lambda (item)
+     (cond
+      ;; Labels are symbols — register at the current local PC.
+      ((symbol? item)
+       (%code-object-set-label! co item (code-object-length co)))
+      ;; Pseudo-instructions whose effects still flow through the side tables
+      ;; during coexistence (wired onto the code-object in §4.3/§4.4).
+      ((and (pair? item) (eq? (car item) 'procedure-name)) #f)
+      ((and (pair? item) (eq? (car item) 'procedure-params)) #f)
+      ;; Source-location markers are stripped by the compiler before we see them.
+      ((and (pair? item) (eq? (car item) 'source-location)) #f)
+      ;; Regular instruction — push to the code-object's vectors.
+      (else
+       (%code-object-push-instruction! co item))))
+   instruction-list)
+  co)
+
 ;; Switchover: rebind assemble-into-global to the ECE implementation.
 ;; mc-compile-and-go calls assemble-into-global, so this makes it use
 ;; the ECE assembler for all subsequent compilations.

@@ -1059,7 +1059,7 @@
           (1022 (cl:go pc-1022))
           (1023 (cl:go pc-1023))
           (cl:t (cl:go zone-exit))))
-       ((cl:< pc 1185)
+       ((cl:< pc 1280)
         (cl:case pc
           (1024 (cl:go pc-1024))
           (1025 (cl:go pc-1025))
@@ -1222,6 +1222,384 @@
           (1182 (cl:go pc-1182))
           (1183 (cl:go pc-1183))
           (1184 (cl:go pc-1184))
+          (1185 (cl:go pc-1185))
+          (1186 (cl:go pc-1186))
+          (1187 (cl:go pc-1187))
+          (1188 (cl:go pc-1188))
+          (1189 (cl:go pc-1189))
+          (1190 (cl:go pc-1190))
+          (1191 (cl:go pc-1191))
+          (1192 (cl:go pc-1192))
+          (1193 (cl:go pc-1193))
+          (1194 (cl:go pc-1194))
+          (1195 (cl:go pc-1195))
+          (1196 (cl:go pc-1196))
+          (1197 (cl:go pc-1197))
+          (1198 (cl:go pc-1198))
+          (1199 (cl:go pc-1199))
+          (1200 (cl:go pc-1200))
+          (1201 (cl:go pc-1201))
+          (1202 (cl:go pc-1202))
+          (1203 (cl:go pc-1203))
+          (1204 (cl:go pc-1204))
+          (1205 (cl:go pc-1205))
+          (1206 (cl:go pc-1206))
+          (1207 (cl:go pc-1207))
+          (1208 (cl:go pc-1208))
+          (1209 (cl:go pc-1209))
+          (1210 (cl:go pc-1210))
+          (1211 (cl:go pc-1211))
+          (1212 (cl:go pc-1212))
+          (1213 (cl:go pc-1213))
+          (1214 (cl:go pc-1214))
+          (1215 (cl:go pc-1215))
+          (1216 (cl:go pc-1216))
+          (1217 (cl:go pc-1217))
+          (1218 (cl:go pc-1218))
+          (1219 (cl:go pc-1219))
+          (1220 (cl:go pc-1220))
+          (1221 (cl:go pc-1221))
+          (1222 (cl:go pc-1222))
+          (1223 (cl:go pc-1223))
+          (1224 (cl:go pc-1224))
+          (1225 (cl:go pc-1225))
+          (1226 (cl:go pc-1226))
+          (1227 (cl:go pc-1227))
+          (1228 (cl:go pc-1228))
+          (1229 (cl:go pc-1229))
+          (1230 (cl:go pc-1230))
+          (1231 (cl:go pc-1231))
+          (1232 (cl:go pc-1232))
+          (1233 (cl:go pc-1233))
+          (1234 (cl:go pc-1234))
+          (1235 (cl:go pc-1235))
+          (1236 (cl:go pc-1236))
+          (1237 (cl:go pc-1237))
+          (1238 (cl:go pc-1238))
+          (1239 (cl:go pc-1239))
+          (1240 (cl:go pc-1240))
+          (1241 (cl:go pc-1241))
+          (1242 (cl:go pc-1242))
+          (1243 (cl:go pc-1243))
+          (1244 (cl:go pc-1244))
+          (1245 (cl:go pc-1245))
+          (1246 (cl:go pc-1246))
+          (1247 (cl:go pc-1247))
+          (1248 (cl:go pc-1248))
+          (1249 (cl:go pc-1249))
+          (1250 (cl:go pc-1250))
+          (1251 (cl:go pc-1251))
+          (1252 (cl:go pc-1252))
+          (1253 (cl:go pc-1253))
+          (1254 (cl:go pc-1254))
+          (1255 (cl:go pc-1255))
+          (1256 (cl:go pc-1256))
+          (1257 (cl:go pc-1257))
+          (1258 (cl:go pc-1258))
+          (1259 (cl:go pc-1259))
+          (1260 (cl:go pc-1260))
+          (1261 (cl:go pc-1261))
+          (1262 (cl:go pc-1262))
+          (1263 (cl:go pc-1263))
+          (1264 (cl:go pc-1264))
+          (1265 (cl:go pc-1265))
+          (1266 (cl:go pc-1266))
+          (1267 (cl:go pc-1267))
+          (1268 (cl:go pc-1268))
+          (1269 (cl:go pc-1269))
+          (1270 (cl:go pc-1270))
+          (1271 (cl:go pc-1271))
+          (1272 (cl:go pc-1272))
+          (1273 (cl:go pc-1273))
+          (1274 (cl:go pc-1274))
+          (1275 (cl:go pc-1275))
+          (1276 (cl:go pc-1276))
+          (1277 (cl:go pc-1277))
+          (1278 (cl:go pc-1278))
+          (1279 (cl:go pc-1279))
+          (cl:t (cl:go zone-exit))))
+       ((cl:< pc 1536)
+        (cl:case pc
+          (1280 (cl:go pc-1280))
+          (1281 (cl:go pc-1281))
+          (1282 (cl:go pc-1282))
+          (1283 (cl:go pc-1283))
+          (1284 (cl:go pc-1284))
+          (1285 (cl:go pc-1285))
+          (1286 (cl:go pc-1286))
+          (1287 (cl:go pc-1287))
+          (1288 (cl:go pc-1288))
+          (1289 (cl:go pc-1289))
+          (1290 (cl:go pc-1290))
+          (1291 (cl:go pc-1291))
+          (1292 (cl:go pc-1292))
+          (1293 (cl:go pc-1293))
+          (1294 (cl:go pc-1294))
+          (1295 (cl:go pc-1295))
+          (1296 (cl:go pc-1296))
+          (1297 (cl:go pc-1297))
+          (1298 (cl:go pc-1298))
+          (1299 (cl:go pc-1299))
+          (1300 (cl:go pc-1300))
+          (1301 (cl:go pc-1301))
+          (1302 (cl:go pc-1302))
+          (1303 (cl:go pc-1303))
+          (1304 (cl:go pc-1304))
+          (1305 (cl:go pc-1305))
+          (1306 (cl:go pc-1306))
+          (1307 (cl:go pc-1307))
+          (1308 (cl:go pc-1308))
+          (1309 (cl:go pc-1309))
+          (1310 (cl:go pc-1310))
+          (1311 (cl:go pc-1311))
+          (1312 (cl:go pc-1312))
+          (1313 (cl:go pc-1313))
+          (1314 (cl:go pc-1314))
+          (1315 (cl:go pc-1315))
+          (1316 (cl:go pc-1316))
+          (1317 (cl:go pc-1317))
+          (1318 (cl:go pc-1318))
+          (1319 (cl:go pc-1319))
+          (1320 (cl:go pc-1320))
+          (1321 (cl:go pc-1321))
+          (1322 (cl:go pc-1322))
+          (1323 (cl:go pc-1323))
+          (1324 (cl:go pc-1324))
+          (1325 (cl:go pc-1325))
+          (1326 (cl:go pc-1326))
+          (1327 (cl:go pc-1327))
+          (1328 (cl:go pc-1328))
+          (1329 (cl:go pc-1329))
+          (1330 (cl:go pc-1330))
+          (1331 (cl:go pc-1331))
+          (1332 (cl:go pc-1332))
+          (1333 (cl:go pc-1333))
+          (1334 (cl:go pc-1334))
+          (1335 (cl:go pc-1335))
+          (1336 (cl:go pc-1336))
+          (1337 (cl:go pc-1337))
+          (1338 (cl:go pc-1338))
+          (1339 (cl:go pc-1339))
+          (1340 (cl:go pc-1340))
+          (1341 (cl:go pc-1341))
+          (1342 (cl:go pc-1342))
+          (1343 (cl:go pc-1343))
+          (1344 (cl:go pc-1344))
+          (1345 (cl:go pc-1345))
+          (1346 (cl:go pc-1346))
+          (1347 (cl:go pc-1347))
+          (1348 (cl:go pc-1348))
+          (1349 (cl:go pc-1349))
+          (1350 (cl:go pc-1350))
+          (1351 (cl:go pc-1351))
+          (1352 (cl:go pc-1352))
+          (1353 (cl:go pc-1353))
+          (1354 (cl:go pc-1354))
+          (1355 (cl:go pc-1355))
+          (1356 (cl:go pc-1356))
+          (1357 (cl:go pc-1357))
+          (1358 (cl:go pc-1358))
+          (1359 (cl:go pc-1359))
+          (1360 (cl:go pc-1360))
+          (1361 (cl:go pc-1361))
+          (1362 (cl:go pc-1362))
+          (1363 (cl:go pc-1363))
+          (1364 (cl:go pc-1364))
+          (1365 (cl:go pc-1365))
+          (1366 (cl:go pc-1366))
+          (1367 (cl:go pc-1367))
+          (1368 (cl:go pc-1368))
+          (1369 (cl:go pc-1369))
+          (1370 (cl:go pc-1370))
+          (1371 (cl:go pc-1371))
+          (1372 (cl:go pc-1372))
+          (1373 (cl:go pc-1373))
+          (1374 (cl:go pc-1374))
+          (1375 (cl:go pc-1375))
+          (1376 (cl:go pc-1376))
+          (1377 (cl:go pc-1377))
+          (1378 (cl:go pc-1378))
+          (1379 (cl:go pc-1379))
+          (1380 (cl:go pc-1380))
+          (1381 (cl:go pc-1381))
+          (1382 (cl:go pc-1382))
+          (1383 (cl:go pc-1383))
+          (1384 (cl:go pc-1384))
+          (1385 (cl:go pc-1385))
+          (1386 (cl:go pc-1386))
+          (1387 (cl:go pc-1387))
+          (1388 (cl:go pc-1388))
+          (1389 (cl:go pc-1389))
+          (1390 (cl:go pc-1390))
+          (1391 (cl:go pc-1391))
+          (1392 (cl:go pc-1392))
+          (1393 (cl:go pc-1393))
+          (1394 (cl:go pc-1394))
+          (1395 (cl:go pc-1395))
+          (1396 (cl:go pc-1396))
+          (1397 (cl:go pc-1397))
+          (1398 (cl:go pc-1398))
+          (1399 (cl:go pc-1399))
+          (1400 (cl:go pc-1400))
+          (1401 (cl:go pc-1401))
+          (1402 (cl:go pc-1402))
+          (1403 (cl:go pc-1403))
+          (1404 (cl:go pc-1404))
+          (1405 (cl:go pc-1405))
+          (1406 (cl:go pc-1406))
+          (1407 (cl:go pc-1407))
+          (1408 (cl:go pc-1408))
+          (1409 (cl:go pc-1409))
+          (1410 (cl:go pc-1410))
+          (1411 (cl:go pc-1411))
+          (1412 (cl:go pc-1412))
+          (1413 (cl:go pc-1413))
+          (1414 (cl:go pc-1414))
+          (1415 (cl:go pc-1415))
+          (1416 (cl:go pc-1416))
+          (1417 (cl:go pc-1417))
+          (1418 (cl:go pc-1418))
+          (1419 (cl:go pc-1419))
+          (1420 (cl:go pc-1420))
+          (1421 (cl:go pc-1421))
+          (1422 (cl:go pc-1422))
+          (1423 (cl:go pc-1423))
+          (1424 (cl:go pc-1424))
+          (1425 (cl:go pc-1425))
+          (1426 (cl:go pc-1426))
+          (1427 (cl:go pc-1427))
+          (1428 (cl:go pc-1428))
+          (1429 (cl:go pc-1429))
+          (1430 (cl:go pc-1430))
+          (1431 (cl:go pc-1431))
+          (1432 (cl:go pc-1432))
+          (1433 (cl:go pc-1433))
+          (1434 (cl:go pc-1434))
+          (1435 (cl:go pc-1435))
+          (1436 (cl:go pc-1436))
+          (1437 (cl:go pc-1437))
+          (1438 (cl:go pc-1438))
+          (1439 (cl:go pc-1439))
+          (1440 (cl:go pc-1440))
+          (1441 (cl:go pc-1441))
+          (1442 (cl:go pc-1442))
+          (1443 (cl:go pc-1443))
+          (1444 (cl:go pc-1444))
+          (1445 (cl:go pc-1445))
+          (1446 (cl:go pc-1446))
+          (1447 (cl:go pc-1447))
+          (1448 (cl:go pc-1448))
+          (1449 (cl:go pc-1449))
+          (1450 (cl:go pc-1450))
+          (1451 (cl:go pc-1451))
+          (1452 (cl:go pc-1452))
+          (1453 (cl:go pc-1453))
+          (1454 (cl:go pc-1454))
+          (1455 (cl:go pc-1455))
+          (1456 (cl:go pc-1456))
+          (1457 (cl:go pc-1457))
+          (1458 (cl:go pc-1458))
+          (1459 (cl:go pc-1459))
+          (1460 (cl:go pc-1460))
+          (1461 (cl:go pc-1461))
+          (1462 (cl:go pc-1462))
+          (1463 (cl:go pc-1463))
+          (1464 (cl:go pc-1464))
+          (1465 (cl:go pc-1465))
+          (1466 (cl:go pc-1466))
+          (1467 (cl:go pc-1467))
+          (1468 (cl:go pc-1468))
+          (1469 (cl:go pc-1469))
+          (1470 (cl:go pc-1470))
+          (1471 (cl:go pc-1471))
+          (1472 (cl:go pc-1472))
+          (1473 (cl:go pc-1473))
+          (1474 (cl:go pc-1474))
+          (1475 (cl:go pc-1475))
+          (1476 (cl:go pc-1476))
+          (1477 (cl:go pc-1477))
+          (1478 (cl:go pc-1478))
+          (1479 (cl:go pc-1479))
+          (1480 (cl:go pc-1480))
+          (1481 (cl:go pc-1481))
+          (1482 (cl:go pc-1482))
+          (1483 (cl:go pc-1483))
+          (1484 (cl:go pc-1484))
+          (1485 (cl:go pc-1485))
+          (1486 (cl:go pc-1486))
+          (1487 (cl:go pc-1487))
+          (1488 (cl:go pc-1488))
+          (1489 (cl:go pc-1489))
+          (1490 (cl:go pc-1490))
+          (1491 (cl:go pc-1491))
+          (1492 (cl:go pc-1492))
+          (1493 (cl:go pc-1493))
+          (1494 (cl:go pc-1494))
+          (1495 (cl:go pc-1495))
+          (1496 (cl:go pc-1496))
+          (1497 (cl:go pc-1497))
+          (1498 (cl:go pc-1498))
+          (1499 (cl:go pc-1499))
+          (1500 (cl:go pc-1500))
+          (1501 (cl:go pc-1501))
+          (1502 (cl:go pc-1502))
+          (1503 (cl:go pc-1503))
+          (1504 (cl:go pc-1504))
+          (1505 (cl:go pc-1505))
+          (1506 (cl:go pc-1506))
+          (1507 (cl:go pc-1507))
+          (1508 (cl:go pc-1508))
+          (1509 (cl:go pc-1509))
+          (1510 (cl:go pc-1510))
+          (1511 (cl:go pc-1511))
+          (1512 (cl:go pc-1512))
+          (1513 (cl:go pc-1513))
+          (1514 (cl:go pc-1514))
+          (1515 (cl:go pc-1515))
+          (1516 (cl:go pc-1516))
+          (1517 (cl:go pc-1517))
+          (1518 (cl:go pc-1518))
+          (1519 (cl:go pc-1519))
+          (1520 (cl:go pc-1520))
+          (1521 (cl:go pc-1521))
+          (1522 (cl:go pc-1522))
+          (1523 (cl:go pc-1523))
+          (1524 (cl:go pc-1524))
+          (1525 (cl:go pc-1525))
+          (1526 (cl:go pc-1526))
+          (1527 (cl:go pc-1527))
+          (1528 (cl:go pc-1528))
+          (1529 (cl:go pc-1529))
+          (1530 (cl:go pc-1530))
+          (1531 (cl:go pc-1531))
+          (1532 (cl:go pc-1532))
+          (1533 (cl:go pc-1533))
+          (1534 (cl:go pc-1534))
+          (1535 (cl:go pc-1535))
+          (cl:t (cl:go zone-exit))))
+       ((cl:< pc 1557)
+        (cl:case pc
+          (1536 (cl:go pc-1536))
+          (1537 (cl:go pc-1537))
+          (1538 (cl:go pc-1538))
+          (1539 (cl:go pc-1539))
+          (1540 (cl:go pc-1540))
+          (1541 (cl:go pc-1541))
+          (1542 (cl:go pc-1542))
+          (1543 (cl:go pc-1543))
+          (1544 (cl:go pc-1544))
+          (1545 (cl:go pc-1545))
+          (1546 (cl:go pc-1546))
+          (1547 (cl:go pc-1547))
+          (1548 (cl:go pc-1548))
+          (1549 (cl:go pc-1549))
+          (1550 (cl:go pc-1550))
+          (1551 (cl:go pc-1551))
+          (1552 (cl:go pc-1552))
+          (1553 (cl:go pc-1553))
+          (1554 (cl:go pc-1554))
+          (1555 (cl:go pc-1555))
+          (1556 (cl:go pc-1556))
           (cl:t (cl:go zone-exit))))
        (cl:t (cl:go zone-exit)))
      pc-0
@@ -4434,14 +4812,1028 @@
        (cl:setf env (cl:funcall (get-operation '|lookup-variable-value|) '|*global-env*| env))
        (cl:setf pc 1182)
      pc-1182
-       (cl:setf val (cl:funcall (get-operation '|lookup-variable-value|) '|ece-assemble-into-global| env))
+       (cl:setf val (cl:funcall (get-operation '|make-compiled-procedure|) 1184 env))
        (cl:setf pc 1183)
      pc-1183
-       (cl:funcall (get-operation '|define-variable!|) '|assemble-into-global| val env)
-       (cl:setf pc 1184)
+       (cl:setf pc 1551) (cl:go pc-1551)
      pc-1184
-       (cl:setf val val)
+       (cl:setf env (cl:funcall (get-operation '|compiled-procedure-env|) proc))
        (cl:setf pc 1185)
+     pc-1185
+       (cl:setf env (cl:funcall (get-operation '|extend-environment|) '(|co| |instruction-list|) argl env 0))
+       (cl:setf pc 1186)
+     pc-1186
+       (cl:push continue stack)
+       (cl:setf pc 1187)
+     pc-1187
+       (cl:push env stack)
+       (cl:setf pc 1188)
+     pc-1188
+       (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|for-each| env))
+       (cl:setf pc 1189)
+     pc-1189
+       (cl:setf val (cl:funcall (get-operation '|lexical-ref|) 0 1 env))
+       (cl:setf pc 1190)
+     pc-1190
+       (cl:setf argl (cl:funcall (get-operation '|list|) val))
+       (cl:setf pc 1191)
+     pc-1191
+       (cl:setf val (cl:funcall (get-operation '|make-compiled-procedure|) 1193 env))
+       (cl:setf pc 1192)
+     pc-1192
+       (cl:setf pc 1529) (cl:go pc-1529)
+     pc-1193
+       (cl:setf env (cl:funcall (get-operation '|compiled-procedure-env|) proc))
+       (cl:setf pc 1194)
+     pc-1194
+       (cl:setf env (cl:funcall (get-operation '|extend-environment|) '(|item|) argl env 0))
+       (cl:setf pc 1195)
+     pc-1195
+       (cl:push continue stack)
+       (cl:setf pc 1196)
+     pc-1196
+       (cl:push env stack)
+       (cl:setf pc 1197)
+     pc-1197
+       (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|symbol?| env))
+       (cl:setf pc 1198)
+     pc-1198
+       (cl:setf val (cl:funcall (get-operation '|lexical-ref|) 0 0 env))
+       (cl:setf pc 1199)
+     pc-1199
+       (cl:setf argl (cl:funcall (get-operation '|list|) val))
+       (cl:setf pc 1200)
+     pc-1200
+       (cl:setf flag (cl:funcall (get-operation '|primitive-procedure?|) proc))
+       (cl:setf pc 1201)
+     pc-1201
+       (cl:when flag (cl:setf pc 1216) (cl:go pc-1216))
+     pc-1202
+       (cl:setf flag (cl:funcall (get-operation '|continuation?|) proc))
+       (cl:setf pc 1203)
+     pc-1203
+       (cl:when flag (cl:setf pc 1209) (cl:go pc-1209))
+     pc-1204
+       (cl:setf flag (cl:funcall (get-operation '|parameter?|) proc))
+       (cl:setf pc 1205)
+     pc-1205
+       (cl:when flag (cl:setf pc 1214) (cl:go pc-1214))
+     pc-1206
+       (cl:setf continue (cl:cons '|assembler| 1217))
+       (cl:setf pc 1207)
+     pc-1207
+       (cl:setf val (cl:funcall (get-operation '|compiled-procedure-entry|) proc))
+       (cl:setf pc 1208)
+     pc-1208
+       (cl:go zone-exit)
+     pc-1209
+       (cl:setf val (cl:funcall (get-operation '|car|) argl))
+       (cl:setf pc 1210)
+     pc-1210
+       (cl:funcall (get-operation '|do-continuation-winds|) proc)
+       (cl:setf pc 1211)
+     pc-1211
+       (cl:setf stack (cl:funcall (get-operation '|continuation-stack|) proc))
+       (cl:setf pc 1212)
+     pc-1212
+       (cl:setf continue (cl:funcall (get-operation '|continuation-conts|) proc))
+       (cl:setf pc 1213)
+     pc-1213
+       (cl:go zone-exit)
+     pc-1214
+       (cl:setf val (cl:funcall (get-operation '|apply-parameter|) proc argl))
+       (cl:setf pc 1215)
+     pc-1215
+       (cl:setf pc 1217) (cl:go pc-1217)
+     pc-1216
+       (cl:setf val (apply-primitive-procedure proc argl))
+       (cl:setf pc 1217)
+     pc-1217
+       (cl:setf env (cl:pop stack))
+       (cl:setf pc 1218)
+     pc-1218
+       (cl:setf continue (cl:pop stack))
+       (cl:setf pc 1219)
+     pc-1219
+       (cl:setf flag (cl:funcall (get-operation '|false?|) val))
+       (cl:setf pc 1220)
+     pc-1220
+       (cl:when flag (cl:setf pc 1270) (cl:go pc-1270))
+     pc-1221
+       (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%code-object-set-label!| env))
+       (cl:setf pc 1222)
+     pc-1222
+       (cl:push continue stack)
+       (cl:setf pc 1223)
+     pc-1223
+       (cl:push proc stack)
+       (cl:setf pc 1224)
+     pc-1224
+       (cl:push env stack)
+       (cl:setf pc 1225)
+     pc-1225
+       (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|code-object-length| env))
+       (cl:setf pc 1226)
+     pc-1226
+       (cl:setf val (cl:funcall (get-operation '|lexical-ref|) 1 0 env))
+       (cl:setf pc 1227)
+     pc-1227
+       (cl:setf argl (cl:funcall (get-operation '|list|) val))
+       (cl:setf pc 1228)
+     pc-1228
+       (cl:setf flag (cl:funcall (get-operation '|primitive-procedure?|) proc))
+       (cl:setf pc 1229)
+     pc-1229
+       (cl:when flag (cl:setf pc 1244) (cl:go pc-1244))
+     pc-1230
+       (cl:setf flag (cl:funcall (get-operation '|continuation?|) proc))
+       (cl:setf pc 1231)
+     pc-1231
+       (cl:when flag (cl:setf pc 1237) (cl:go pc-1237))
+     pc-1232
+       (cl:setf flag (cl:funcall (get-operation '|parameter?|) proc))
+       (cl:setf pc 1233)
+     pc-1233
+       (cl:when flag (cl:setf pc 1242) (cl:go pc-1242))
+     pc-1234
+       (cl:setf continue (cl:cons '|assembler| 1245))
+       (cl:setf pc 1235)
+     pc-1235
+       (cl:setf val (cl:funcall (get-operation '|compiled-procedure-entry|) proc))
+       (cl:setf pc 1236)
+     pc-1236
+       (cl:go zone-exit)
+     pc-1237
+       (cl:setf val (cl:funcall (get-operation '|car|) argl))
+       (cl:setf pc 1238)
+     pc-1238
+       (cl:funcall (get-operation '|do-continuation-winds|) proc)
+       (cl:setf pc 1239)
+     pc-1239
+       (cl:setf stack (cl:funcall (get-operation '|continuation-stack|) proc))
+       (cl:setf pc 1240)
+     pc-1240
+       (cl:setf continue (cl:funcall (get-operation '|continuation-conts|) proc))
+       (cl:setf pc 1241)
+     pc-1241
+       (cl:go zone-exit)
+     pc-1242
+       (cl:setf val (cl:funcall (get-operation '|apply-parameter|) proc argl))
+       (cl:setf pc 1243)
+     pc-1243
+       (cl:setf pc 1245) (cl:go pc-1245)
+     pc-1244
+       (cl:setf val (apply-primitive-procedure proc argl))
+       (cl:setf pc 1245)
+     pc-1245
+       (cl:setf argl (cl:funcall (get-operation '|list|) val))
+       (cl:setf pc 1246)
+     pc-1246
+       (cl:setf env (cl:pop stack))
+       (cl:setf pc 1247)
+     pc-1247
+       (cl:setf val (cl:funcall (get-operation '|lexical-ref|) 0 0 env))
+       (cl:setf pc 1248)
+     pc-1248
+       (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
+       (cl:setf pc 1249)
+     pc-1249
+       (cl:setf val (cl:funcall (get-operation '|lexical-ref|) 1 0 env))
+       (cl:setf pc 1250)
+     pc-1250
+       (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
+       (cl:setf pc 1251)
+     pc-1251
+       (cl:setf proc (cl:pop stack))
+       (cl:setf pc 1252)
+     pc-1252
+       (cl:setf continue (cl:pop stack))
+       (cl:setf pc 1253)
+     pc-1253
+       (cl:setf flag (cl:funcall (get-operation '|primitive-procedure?|) proc))
+       (cl:setf pc 1254)
+     pc-1254
+       (cl:when flag (cl:setf pc 1268) (cl:go pc-1268))
+     pc-1255
+       (cl:setf flag (cl:funcall (get-operation '|continuation?|) proc))
+       (cl:setf pc 1256)
+     pc-1256
+       (cl:when flag (cl:setf pc 1261) (cl:go pc-1261))
+     pc-1257
+       (cl:setf flag (cl:funcall (get-operation '|parameter?|) proc))
+       (cl:setf pc 1258)
+     pc-1258
+       (cl:when flag (cl:setf pc 1266) (cl:go pc-1266))
+     pc-1259
+       (cl:setf val (cl:funcall (get-operation '|compiled-procedure-entry|) proc))
+       (cl:setf pc 1260)
+     pc-1260
+       (cl:go zone-exit)
+     pc-1261
+       (cl:setf val (cl:funcall (get-operation '|car|) argl))
+       (cl:setf pc 1262)
+     pc-1262
+       (cl:funcall (get-operation '|do-continuation-winds|) proc)
+       (cl:setf pc 1263)
+     pc-1263
+       (cl:setf stack (cl:funcall (get-operation '|continuation-stack|) proc))
+       (cl:setf pc 1264)
+     pc-1264
+       (cl:setf continue (cl:funcall (get-operation '|continuation-conts|) proc))
+       (cl:setf pc 1265)
+     pc-1265
+       (cl:go zone-exit)
+     pc-1266
+       (cl:setf val (cl:funcall (get-operation '|apply-parameter|) proc argl))
+       (cl:setf pc 1267)
+     pc-1267
+       (cl:go zone-exit)
+     pc-1268
+       (cl:setf val (apply-primitive-procedure proc argl))
+       (cl:setf pc 1269)
+     pc-1269
+       (cl:go zone-exit)
+     pc-1270
+       (cl:push continue stack)
+       (cl:setf pc 1271)
+     pc-1271
+       (cl:push env stack)
+       (cl:setf pc 1272)
+     pc-1272
+       (cl:push env stack)
+       (cl:setf pc 1273)
+     pc-1273
+       (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|pair?| env))
+       (cl:setf pc 1274)
+     pc-1274
+       (cl:setf val (cl:funcall (get-operation '|lexical-ref|) 0 0 env))
+       (cl:setf pc 1275)
+     pc-1275
+       (cl:setf argl (cl:funcall (get-operation '|list|) val))
+       (cl:setf pc 1276)
+     pc-1276
+       (cl:setf flag (cl:funcall (get-operation '|primitive-procedure?|) proc))
+       (cl:setf pc 1277)
+     pc-1277
+       (cl:when flag (cl:setf pc 1292) (cl:go pc-1292))
+     pc-1278
+       (cl:setf flag (cl:funcall (get-operation '|continuation?|) proc))
+       (cl:setf pc 1279)
+     pc-1279
+       (cl:when flag (cl:setf pc 1285) (cl:go pc-1285))
+     pc-1280
+       (cl:setf flag (cl:funcall (get-operation '|parameter?|) proc))
+       (cl:setf pc 1281)
+     pc-1281
+       (cl:when flag (cl:setf pc 1290) (cl:go pc-1290))
+     pc-1282
+       (cl:setf continue (cl:cons '|assembler| 1293))
+       (cl:setf pc 1283)
+     pc-1283
+       (cl:setf val (cl:funcall (get-operation '|compiled-procedure-entry|) proc))
+       (cl:setf pc 1284)
+     pc-1284
+       (cl:go zone-exit)
+     pc-1285
+       (cl:setf val (cl:funcall (get-operation '|car|) argl))
+       (cl:setf pc 1286)
+     pc-1286
+       (cl:funcall (get-operation '|do-continuation-winds|) proc)
+       (cl:setf pc 1287)
+     pc-1287
+       (cl:setf stack (cl:funcall (get-operation '|continuation-stack|) proc))
+       (cl:setf pc 1288)
+     pc-1288
+       (cl:setf continue (cl:funcall (get-operation '|continuation-conts|) proc))
+       (cl:setf pc 1289)
+     pc-1289
+       (cl:go zone-exit)
+     pc-1290
+       (cl:setf val (cl:funcall (get-operation '|apply-parameter|) proc argl))
+       (cl:setf pc 1291)
+     pc-1291
+       (cl:setf pc 1293) (cl:go pc-1293)
+     pc-1292
+       (cl:setf val (apply-primitive-procedure proc argl))
+       (cl:setf pc 1293)
+     pc-1293
+       (cl:setf env (cl:pop stack))
+       (cl:setf pc 1294)
+     pc-1294
+       (cl:setf flag (cl:funcall (get-operation '|false?|) val))
+       (cl:setf pc 1295)
+     pc-1295
+       (cl:when flag (cl:setf pc 1342) (cl:go pc-1342))
+     pc-1296
+       (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|eq?| env))
+       (cl:setf pc 1297)
+     pc-1297
+       (cl:push proc stack)
+       (cl:setf pc 1298)
+     pc-1298
+       (cl:setf val '|procedure-name|)
+       (cl:setf pc 1299)
+     pc-1299
+       (cl:setf argl (cl:funcall (get-operation '|list|) val))
+       (cl:setf pc 1300)
+     pc-1300
+       (cl:push argl stack)
+       (cl:setf pc 1301)
+     pc-1301
+       (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|car| env))
+       (cl:setf pc 1302)
+     pc-1302
+       (cl:setf val (cl:funcall (get-operation '|lexical-ref|) 0 0 env))
+       (cl:setf pc 1303)
+     pc-1303
+       (cl:setf argl (cl:funcall (get-operation '|list|) val))
+       (cl:setf pc 1304)
+     pc-1304
+       (cl:setf flag (cl:funcall (get-operation '|primitive-procedure?|) proc))
+       (cl:setf pc 1305)
+     pc-1305
+       (cl:when flag (cl:setf pc 1320) (cl:go pc-1320))
+     pc-1306
+       (cl:setf flag (cl:funcall (get-operation '|continuation?|) proc))
+       (cl:setf pc 1307)
+     pc-1307
+       (cl:when flag (cl:setf pc 1313) (cl:go pc-1313))
+     pc-1308
+       (cl:setf flag (cl:funcall (get-operation '|parameter?|) proc))
+       (cl:setf pc 1309)
+     pc-1309
+       (cl:when flag (cl:setf pc 1318) (cl:go pc-1318))
+     pc-1310
+       (cl:setf continue (cl:cons '|assembler| 1321))
+       (cl:setf pc 1311)
+     pc-1311
+       (cl:setf val (cl:funcall (get-operation '|compiled-procedure-entry|) proc))
+       (cl:setf pc 1312)
+     pc-1312
+       (cl:go zone-exit)
+     pc-1313
+       (cl:setf val (cl:funcall (get-operation '|car|) argl))
+       (cl:setf pc 1314)
+     pc-1314
+       (cl:funcall (get-operation '|do-continuation-winds|) proc)
+       (cl:setf pc 1315)
+     pc-1315
+       (cl:setf stack (cl:funcall (get-operation '|continuation-stack|) proc))
+       (cl:setf pc 1316)
+     pc-1316
+       (cl:setf continue (cl:funcall (get-operation '|continuation-conts|) proc))
+       (cl:setf pc 1317)
+     pc-1317
+       (cl:go zone-exit)
+     pc-1318
+       (cl:setf val (cl:funcall (get-operation '|apply-parameter|) proc argl))
+       (cl:setf pc 1319)
+     pc-1319
+       (cl:setf pc 1321) (cl:go pc-1321)
+     pc-1320
+       (cl:setf val (apply-primitive-procedure proc argl))
+       (cl:setf pc 1321)
+     pc-1321
+       (cl:setf argl (cl:pop stack))
+       (cl:setf pc 1322)
+     pc-1322
+       (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
+       (cl:setf pc 1323)
+     pc-1323
+       (cl:setf proc (cl:pop stack))
+       (cl:setf pc 1324)
+     pc-1324
+       (cl:setf flag (cl:funcall (get-operation '|primitive-procedure?|) proc))
+       (cl:setf pc 1325)
+     pc-1325
+       (cl:when flag (cl:setf pc 1340) (cl:go pc-1340))
+     pc-1326
+       (cl:setf flag (cl:funcall (get-operation '|continuation?|) proc))
+       (cl:setf pc 1327)
+     pc-1327
+       (cl:when flag (cl:setf pc 1333) (cl:go pc-1333))
+     pc-1328
+       (cl:setf flag (cl:funcall (get-operation '|parameter?|) proc))
+       (cl:setf pc 1329)
+     pc-1329
+       (cl:when flag (cl:setf pc 1338) (cl:go pc-1338))
+     pc-1330
+       (cl:setf continue (cl:cons '|assembler| 1343))
+       (cl:setf pc 1331)
+     pc-1331
+       (cl:setf val (cl:funcall (get-operation '|compiled-procedure-entry|) proc))
+       (cl:setf pc 1332)
+     pc-1332
+       (cl:go zone-exit)
+     pc-1333
+       (cl:setf val (cl:funcall (get-operation '|car|) argl))
+       (cl:setf pc 1334)
+     pc-1334
+       (cl:funcall (get-operation '|do-continuation-winds|) proc)
+       (cl:setf pc 1335)
+     pc-1335
+       (cl:setf stack (cl:funcall (get-operation '|continuation-stack|) proc))
+       (cl:setf pc 1336)
+     pc-1336
+       (cl:setf continue (cl:funcall (get-operation '|continuation-conts|) proc))
+       (cl:setf pc 1337)
+     pc-1337
+       (cl:go zone-exit)
+     pc-1338
+       (cl:setf val (cl:funcall (get-operation '|apply-parameter|) proc argl))
+       (cl:setf pc 1339)
+     pc-1339
+       (cl:setf pc 1343) (cl:go pc-1343)
+     pc-1340
+       (cl:setf val (apply-primitive-procedure proc argl))
+       (cl:setf pc 1341)
+     pc-1341
+       (cl:setf pc 1343) (cl:go pc-1343)
+     pc-1342
+       (cl:setf val ece::*scheme-false*)
+       (cl:setf pc 1343)
+     pc-1343
+       (cl:setf env (cl:pop stack))
+       (cl:setf pc 1344)
+     pc-1344
+       (cl:setf continue (cl:pop stack))
+       (cl:setf pc 1345)
+     pc-1345
+       (cl:setf flag (cl:funcall (get-operation '|false?|) val))
+       (cl:setf pc 1346)
+     pc-1346
+       (cl:when flag (cl:setf pc 1349) (cl:go pc-1349))
+     pc-1347
+       (cl:setf val ece::*scheme-false*)
+       (cl:setf pc 1348)
+     pc-1348
+       (cl:go zone-exit)
+     pc-1349
+       (cl:push continue stack)
+       (cl:setf pc 1350)
+     pc-1350
+       (cl:push env stack)
+       (cl:setf pc 1351)
+     pc-1351
+       (cl:push env stack)
+       (cl:setf pc 1352)
+     pc-1352
+       (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|pair?| env))
+       (cl:setf pc 1353)
+     pc-1353
+       (cl:setf val (cl:funcall (get-operation '|lexical-ref|) 0 0 env))
+       (cl:setf pc 1354)
+     pc-1354
+       (cl:setf argl (cl:funcall (get-operation '|list|) val))
+       (cl:setf pc 1355)
+     pc-1355
+       (cl:setf flag (cl:funcall (get-operation '|primitive-procedure?|) proc))
+       (cl:setf pc 1356)
+     pc-1356
+       (cl:when flag (cl:setf pc 1371) (cl:go pc-1371))
+     pc-1357
+       (cl:setf flag (cl:funcall (get-operation '|continuation?|) proc))
+       (cl:setf pc 1358)
+     pc-1358
+       (cl:when flag (cl:setf pc 1364) (cl:go pc-1364))
+     pc-1359
+       (cl:setf flag (cl:funcall (get-operation '|parameter?|) proc))
+       (cl:setf pc 1360)
+     pc-1360
+       (cl:when flag (cl:setf pc 1369) (cl:go pc-1369))
+     pc-1361
+       (cl:setf continue (cl:cons '|assembler| 1372))
+       (cl:setf pc 1362)
+     pc-1362
+       (cl:setf val (cl:funcall (get-operation '|compiled-procedure-entry|) proc))
+       (cl:setf pc 1363)
+     pc-1363
+       (cl:go zone-exit)
+     pc-1364
+       (cl:setf val (cl:funcall (get-operation '|car|) argl))
+       (cl:setf pc 1365)
+     pc-1365
+       (cl:funcall (get-operation '|do-continuation-winds|) proc)
+       (cl:setf pc 1366)
+     pc-1366
+       (cl:setf stack (cl:funcall (get-operation '|continuation-stack|) proc))
+       (cl:setf pc 1367)
+     pc-1367
+       (cl:setf continue (cl:funcall (get-operation '|continuation-conts|) proc))
+       (cl:setf pc 1368)
+     pc-1368
+       (cl:go zone-exit)
+     pc-1369
+       (cl:setf val (cl:funcall (get-operation '|apply-parameter|) proc argl))
+       (cl:setf pc 1370)
+     pc-1370
+       (cl:setf pc 1372) (cl:go pc-1372)
+     pc-1371
+       (cl:setf val (apply-primitive-procedure proc argl))
+       (cl:setf pc 1372)
+     pc-1372
+       (cl:setf env (cl:pop stack))
+       (cl:setf pc 1373)
+     pc-1373
+       (cl:setf flag (cl:funcall (get-operation '|false?|) val))
+       (cl:setf pc 1374)
+     pc-1374
+       (cl:when flag (cl:setf pc 1421) (cl:go pc-1421))
+     pc-1375
+       (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|eq?| env))
+       (cl:setf pc 1376)
+     pc-1376
+       (cl:push proc stack)
+       (cl:setf pc 1377)
+     pc-1377
+       (cl:setf val '|procedure-params|)
+       (cl:setf pc 1378)
+     pc-1378
+       (cl:setf argl (cl:funcall (get-operation '|list|) val))
+       (cl:setf pc 1379)
+     pc-1379
+       (cl:push argl stack)
+       (cl:setf pc 1380)
+     pc-1380
+       (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|car| env))
+       (cl:setf pc 1381)
+     pc-1381
+       (cl:setf val (cl:funcall (get-operation '|lexical-ref|) 0 0 env))
+       (cl:setf pc 1382)
+     pc-1382
+       (cl:setf argl (cl:funcall (get-operation '|list|) val))
+       (cl:setf pc 1383)
+     pc-1383
+       (cl:setf flag (cl:funcall (get-operation '|primitive-procedure?|) proc))
+       (cl:setf pc 1384)
+     pc-1384
+       (cl:when flag (cl:setf pc 1399) (cl:go pc-1399))
+     pc-1385
+       (cl:setf flag (cl:funcall (get-operation '|continuation?|) proc))
+       (cl:setf pc 1386)
+     pc-1386
+       (cl:when flag (cl:setf pc 1392) (cl:go pc-1392))
+     pc-1387
+       (cl:setf flag (cl:funcall (get-operation '|parameter?|) proc))
+       (cl:setf pc 1388)
+     pc-1388
+       (cl:when flag (cl:setf pc 1397) (cl:go pc-1397))
+     pc-1389
+       (cl:setf continue (cl:cons '|assembler| 1400))
+       (cl:setf pc 1390)
+     pc-1390
+       (cl:setf val (cl:funcall (get-operation '|compiled-procedure-entry|) proc))
+       (cl:setf pc 1391)
+     pc-1391
+       (cl:go zone-exit)
+     pc-1392
+       (cl:setf val (cl:funcall (get-operation '|car|) argl))
+       (cl:setf pc 1393)
+     pc-1393
+       (cl:funcall (get-operation '|do-continuation-winds|) proc)
+       (cl:setf pc 1394)
+     pc-1394
+       (cl:setf stack (cl:funcall (get-operation '|continuation-stack|) proc))
+       (cl:setf pc 1395)
+     pc-1395
+       (cl:setf continue (cl:funcall (get-operation '|continuation-conts|) proc))
+       (cl:setf pc 1396)
+     pc-1396
+       (cl:go zone-exit)
+     pc-1397
+       (cl:setf val (cl:funcall (get-operation '|apply-parameter|) proc argl))
+       (cl:setf pc 1398)
+     pc-1398
+       (cl:setf pc 1400) (cl:go pc-1400)
+     pc-1399
+       (cl:setf val (apply-primitive-procedure proc argl))
+       (cl:setf pc 1400)
+     pc-1400
+       (cl:setf argl (cl:pop stack))
+       (cl:setf pc 1401)
+     pc-1401
+       (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
+       (cl:setf pc 1402)
+     pc-1402
+       (cl:setf proc (cl:pop stack))
+       (cl:setf pc 1403)
+     pc-1403
+       (cl:setf flag (cl:funcall (get-operation '|primitive-procedure?|) proc))
+       (cl:setf pc 1404)
+     pc-1404
+       (cl:when flag (cl:setf pc 1419) (cl:go pc-1419))
+     pc-1405
+       (cl:setf flag (cl:funcall (get-operation '|continuation?|) proc))
+       (cl:setf pc 1406)
+     pc-1406
+       (cl:when flag (cl:setf pc 1412) (cl:go pc-1412))
+     pc-1407
+       (cl:setf flag (cl:funcall (get-operation '|parameter?|) proc))
+       (cl:setf pc 1408)
+     pc-1408
+       (cl:when flag (cl:setf pc 1417) (cl:go pc-1417))
+     pc-1409
+       (cl:setf continue (cl:cons '|assembler| 1422))
+       (cl:setf pc 1410)
+     pc-1410
+       (cl:setf val (cl:funcall (get-operation '|compiled-procedure-entry|) proc))
+       (cl:setf pc 1411)
+     pc-1411
+       (cl:go zone-exit)
+     pc-1412
+       (cl:setf val (cl:funcall (get-operation '|car|) argl))
+       (cl:setf pc 1413)
+     pc-1413
+       (cl:funcall (get-operation '|do-continuation-winds|) proc)
+       (cl:setf pc 1414)
+     pc-1414
+       (cl:setf stack (cl:funcall (get-operation '|continuation-stack|) proc))
+       (cl:setf pc 1415)
+     pc-1415
+       (cl:setf continue (cl:funcall (get-operation '|continuation-conts|) proc))
+       (cl:setf pc 1416)
+     pc-1416
+       (cl:go zone-exit)
+     pc-1417
+       (cl:setf val (cl:funcall (get-operation '|apply-parameter|) proc argl))
+       (cl:setf pc 1418)
+     pc-1418
+       (cl:setf pc 1422) (cl:go pc-1422)
+     pc-1419
+       (cl:setf val (apply-primitive-procedure proc argl))
+       (cl:setf pc 1420)
+     pc-1420
+       (cl:setf pc 1422) (cl:go pc-1422)
+     pc-1421
+       (cl:setf val ece::*scheme-false*)
+       (cl:setf pc 1422)
+     pc-1422
+       (cl:setf env (cl:pop stack))
+       (cl:setf pc 1423)
+     pc-1423
+       (cl:setf continue (cl:pop stack))
+       (cl:setf pc 1424)
+     pc-1424
+       (cl:setf flag (cl:funcall (get-operation '|false?|) val))
+       (cl:setf pc 1425)
+     pc-1425
+       (cl:when flag (cl:setf pc 1428) (cl:go pc-1428))
+     pc-1426
+       (cl:setf val ece::*scheme-false*)
+       (cl:setf pc 1427)
+     pc-1427
+       (cl:go zone-exit)
+     pc-1428
+       (cl:push continue stack)
+       (cl:setf pc 1429)
+     pc-1429
+       (cl:push env stack)
+       (cl:setf pc 1430)
+     pc-1430
+       (cl:push env stack)
+       (cl:setf pc 1431)
+     pc-1431
+       (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|pair?| env))
+       (cl:setf pc 1432)
+     pc-1432
+       (cl:setf val (cl:funcall (get-operation '|lexical-ref|) 0 0 env))
+       (cl:setf pc 1433)
+     pc-1433
+       (cl:setf argl (cl:funcall (get-operation '|list|) val))
+       (cl:setf pc 1434)
+     pc-1434
+       (cl:setf flag (cl:funcall (get-operation '|primitive-procedure?|) proc))
+       (cl:setf pc 1435)
+     pc-1435
+       (cl:when flag (cl:setf pc 1450) (cl:go pc-1450))
+     pc-1436
+       (cl:setf flag (cl:funcall (get-operation '|continuation?|) proc))
+       (cl:setf pc 1437)
+     pc-1437
+       (cl:when flag (cl:setf pc 1443) (cl:go pc-1443))
+     pc-1438
+       (cl:setf flag (cl:funcall (get-operation '|parameter?|) proc))
+       (cl:setf pc 1439)
+     pc-1439
+       (cl:when flag (cl:setf pc 1448) (cl:go pc-1448))
+     pc-1440
+       (cl:setf continue (cl:cons '|assembler| 1451))
+       (cl:setf pc 1441)
+     pc-1441
+       (cl:setf val (cl:funcall (get-operation '|compiled-procedure-entry|) proc))
+       (cl:setf pc 1442)
+     pc-1442
+       (cl:go zone-exit)
+     pc-1443
+       (cl:setf val (cl:funcall (get-operation '|car|) argl))
+       (cl:setf pc 1444)
+     pc-1444
+       (cl:funcall (get-operation '|do-continuation-winds|) proc)
+       (cl:setf pc 1445)
+     pc-1445
+       (cl:setf stack (cl:funcall (get-operation '|continuation-stack|) proc))
+       (cl:setf pc 1446)
+     pc-1446
+       (cl:setf continue (cl:funcall (get-operation '|continuation-conts|) proc))
+       (cl:setf pc 1447)
+     pc-1447
+       (cl:go zone-exit)
+     pc-1448
+       (cl:setf val (cl:funcall (get-operation '|apply-parameter|) proc argl))
+       (cl:setf pc 1449)
+     pc-1449
+       (cl:setf pc 1451) (cl:go pc-1451)
+     pc-1450
+       (cl:setf val (apply-primitive-procedure proc argl))
+       (cl:setf pc 1451)
+     pc-1451
+       (cl:setf env (cl:pop stack))
+       (cl:setf pc 1452)
+     pc-1452
+       (cl:setf flag (cl:funcall (get-operation '|false?|) val))
+       (cl:setf pc 1453)
+     pc-1453
+       (cl:when flag (cl:setf pc 1500) (cl:go pc-1500))
+     pc-1454
+       (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|eq?| env))
+       (cl:setf pc 1455)
+     pc-1455
+       (cl:push proc stack)
+       (cl:setf pc 1456)
+     pc-1456
+       (cl:setf val '|source-location|)
+       (cl:setf pc 1457)
+     pc-1457
+       (cl:setf argl (cl:funcall (get-operation '|list|) val))
+       (cl:setf pc 1458)
+     pc-1458
+       (cl:push argl stack)
+       (cl:setf pc 1459)
+     pc-1459
+       (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|car| env))
+       (cl:setf pc 1460)
+     pc-1460
+       (cl:setf val (cl:funcall (get-operation '|lexical-ref|) 0 0 env))
+       (cl:setf pc 1461)
+     pc-1461
+       (cl:setf argl (cl:funcall (get-operation '|list|) val))
+       (cl:setf pc 1462)
+     pc-1462
+       (cl:setf flag (cl:funcall (get-operation '|primitive-procedure?|) proc))
+       (cl:setf pc 1463)
+     pc-1463
+       (cl:when flag (cl:setf pc 1478) (cl:go pc-1478))
+     pc-1464
+       (cl:setf flag (cl:funcall (get-operation '|continuation?|) proc))
+       (cl:setf pc 1465)
+     pc-1465
+       (cl:when flag (cl:setf pc 1471) (cl:go pc-1471))
+     pc-1466
+       (cl:setf flag (cl:funcall (get-operation '|parameter?|) proc))
+       (cl:setf pc 1467)
+     pc-1467
+       (cl:when flag (cl:setf pc 1476) (cl:go pc-1476))
+     pc-1468
+       (cl:setf continue (cl:cons '|assembler| 1479))
+       (cl:setf pc 1469)
+     pc-1469
+       (cl:setf val (cl:funcall (get-operation '|compiled-procedure-entry|) proc))
+       (cl:setf pc 1470)
+     pc-1470
+       (cl:go zone-exit)
+     pc-1471
+       (cl:setf val (cl:funcall (get-operation '|car|) argl))
+       (cl:setf pc 1472)
+     pc-1472
+       (cl:funcall (get-operation '|do-continuation-winds|) proc)
+       (cl:setf pc 1473)
+     pc-1473
+       (cl:setf stack (cl:funcall (get-operation '|continuation-stack|) proc))
+       (cl:setf pc 1474)
+     pc-1474
+       (cl:setf continue (cl:funcall (get-operation '|continuation-conts|) proc))
+       (cl:setf pc 1475)
+     pc-1475
+       (cl:go zone-exit)
+     pc-1476
+       (cl:setf val (cl:funcall (get-operation '|apply-parameter|) proc argl))
+       (cl:setf pc 1477)
+     pc-1477
+       (cl:setf pc 1479) (cl:go pc-1479)
+     pc-1478
+       (cl:setf val (apply-primitive-procedure proc argl))
+       (cl:setf pc 1479)
+     pc-1479
+       (cl:setf argl (cl:pop stack))
+       (cl:setf pc 1480)
+     pc-1480
+       (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
+       (cl:setf pc 1481)
+     pc-1481
+       (cl:setf proc (cl:pop stack))
+       (cl:setf pc 1482)
+     pc-1482
+       (cl:setf flag (cl:funcall (get-operation '|primitive-procedure?|) proc))
+       (cl:setf pc 1483)
+     pc-1483
+       (cl:when flag (cl:setf pc 1498) (cl:go pc-1498))
+     pc-1484
+       (cl:setf flag (cl:funcall (get-operation '|continuation?|) proc))
+       (cl:setf pc 1485)
+     pc-1485
+       (cl:when flag (cl:setf pc 1491) (cl:go pc-1491))
+     pc-1486
+       (cl:setf flag (cl:funcall (get-operation '|parameter?|) proc))
+       (cl:setf pc 1487)
+     pc-1487
+       (cl:when flag (cl:setf pc 1496) (cl:go pc-1496))
+     pc-1488
+       (cl:setf continue (cl:cons '|assembler| 1501))
+       (cl:setf pc 1489)
+     pc-1489
+       (cl:setf val (cl:funcall (get-operation '|compiled-procedure-entry|) proc))
+       (cl:setf pc 1490)
+     pc-1490
+       (cl:go zone-exit)
+     pc-1491
+       (cl:setf val (cl:funcall (get-operation '|car|) argl))
+       (cl:setf pc 1492)
+     pc-1492
+       (cl:funcall (get-operation '|do-continuation-winds|) proc)
+       (cl:setf pc 1493)
+     pc-1493
+       (cl:setf stack (cl:funcall (get-operation '|continuation-stack|) proc))
+       (cl:setf pc 1494)
+     pc-1494
+       (cl:setf continue (cl:funcall (get-operation '|continuation-conts|) proc))
+       (cl:setf pc 1495)
+     pc-1495
+       (cl:go zone-exit)
+     pc-1496
+       (cl:setf val (cl:funcall (get-operation '|apply-parameter|) proc argl))
+       (cl:setf pc 1497)
+     pc-1497
+       (cl:setf pc 1501) (cl:go pc-1501)
+     pc-1498
+       (cl:setf val (apply-primitive-procedure proc argl))
+       (cl:setf pc 1499)
+     pc-1499
+       (cl:setf pc 1501) (cl:go pc-1501)
+     pc-1500
+       (cl:setf val ece::*scheme-false*)
+       (cl:setf pc 1501)
+     pc-1501
+       (cl:setf env (cl:pop stack))
+       (cl:setf pc 1502)
+     pc-1502
+       (cl:setf continue (cl:pop stack))
+       (cl:setf pc 1503)
+     pc-1503
+       (cl:setf flag (cl:funcall (get-operation '|false?|) val))
+       (cl:setf pc 1504)
+     pc-1504
+       (cl:when flag (cl:setf pc 1507) (cl:go pc-1507))
+     pc-1505
+       (cl:setf val ece::*scheme-false*)
+       (cl:setf pc 1506)
+     pc-1506
+       (cl:go zone-exit)
+     pc-1507
+       (cl:setf proc (cl:funcall (get-operation '|lookup-variable-value|) '|%code-object-push-instruction!| env))
+       (cl:setf pc 1508)
+     pc-1508
+       (cl:setf val (cl:funcall (get-operation '|lexical-ref|) 0 0 env))
+       (cl:setf pc 1509)
+     pc-1509
+       (cl:setf argl (cl:funcall (get-operation '|list|) val))
+       (cl:setf pc 1510)
+     pc-1510
+       (cl:setf val (cl:funcall (get-operation '|lexical-ref|) 1 0 env))
+       (cl:setf pc 1511)
+     pc-1511
+       (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
+       (cl:setf pc 1512)
+     pc-1512
+       (cl:setf flag (cl:funcall (get-operation '|primitive-procedure?|) proc))
+       (cl:setf pc 1513)
+     pc-1513
+       (cl:when flag (cl:setf pc 1527) (cl:go pc-1527))
+     pc-1514
+       (cl:setf flag (cl:funcall (get-operation '|continuation?|) proc))
+       (cl:setf pc 1515)
+     pc-1515
+       (cl:when flag (cl:setf pc 1520) (cl:go pc-1520))
+     pc-1516
+       (cl:setf flag (cl:funcall (get-operation '|parameter?|) proc))
+       (cl:setf pc 1517)
+     pc-1517
+       (cl:when flag (cl:setf pc 1525) (cl:go pc-1525))
+     pc-1518
+       (cl:setf val (cl:funcall (get-operation '|compiled-procedure-entry|) proc))
+       (cl:setf pc 1519)
+     pc-1519
+       (cl:go zone-exit)
+     pc-1520
+       (cl:setf val (cl:funcall (get-operation '|car|) argl))
+       (cl:setf pc 1521)
+     pc-1521
+       (cl:funcall (get-operation '|do-continuation-winds|) proc)
+       (cl:setf pc 1522)
+     pc-1522
+       (cl:setf stack (cl:funcall (get-operation '|continuation-stack|) proc))
+       (cl:setf pc 1523)
+     pc-1523
+       (cl:setf continue (cl:funcall (get-operation '|continuation-conts|) proc))
+       (cl:setf pc 1524)
+     pc-1524
+       (cl:go zone-exit)
+     pc-1525
+       (cl:setf val (cl:funcall (get-operation '|apply-parameter|) proc argl))
+       (cl:setf pc 1526)
+     pc-1526
+       (cl:go zone-exit)
+     pc-1527
+       (cl:setf val (apply-primitive-procedure proc argl))
+       (cl:setf pc 1528)
+     pc-1528
+       (cl:go zone-exit)
+     pc-1529
+       (cl:setf argl (cl:funcall (get-operation '|cons|) val argl))
+       (cl:setf pc 1530)
+     pc-1530
+       (cl:setf flag (cl:funcall (get-operation '|primitive-procedure?|) proc))
+       (cl:setf pc 1531)
+     pc-1531
+       (cl:when flag (cl:setf pc 1546) (cl:go pc-1546))
+     pc-1532
+       (cl:setf flag (cl:funcall (get-operation '|continuation?|) proc))
+       (cl:setf pc 1533)
+     pc-1533
+       (cl:when flag (cl:setf pc 1539) (cl:go pc-1539))
+     pc-1534
+       (cl:setf flag (cl:funcall (get-operation '|parameter?|) proc))
+       (cl:setf pc 1535)
+     pc-1535
+       (cl:when flag (cl:setf pc 1544) (cl:go pc-1544))
+     pc-1536
+       (cl:setf continue (cl:cons '|assembler| 1547))
+       (cl:setf pc 1537)
+     pc-1537
+       (cl:setf val (cl:funcall (get-operation '|compiled-procedure-entry|) proc))
+       (cl:setf pc 1538)
+     pc-1538
+       (cl:go zone-exit)
+     pc-1539
+       (cl:setf val (cl:funcall (get-operation '|car|) argl))
+       (cl:setf pc 1540)
+     pc-1540
+       (cl:funcall (get-operation '|do-continuation-winds|) proc)
+       (cl:setf pc 1541)
+     pc-1541
+       (cl:setf stack (cl:funcall (get-operation '|continuation-stack|) proc))
+       (cl:setf pc 1542)
+     pc-1542
+       (cl:setf continue (cl:funcall (get-operation '|continuation-conts|) proc))
+       (cl:setf pc 1543)
+     pc-1543
+       (cl:go zone-exit)
+     pc-1544
+       (cl:setf val (cl:funcall (get-operation '|apply-parameter|) proc argl))
+       (cl:setf pc 1545)
+     pc-1545
+       (cl:setf pc 1547) (cl:go pc-1547)
+     pc-1546
+       (cl:setf val (apply-primitive-procedure proc argl))
+       (cl:setf pc 1547)
+     pc-1547
+       (cl:setf env (cl:pop stack))
+       (cl:setf pc 1548)
+     pc-1548
+       (cl:setf continue (cl:pop stack))
+       (cl:setf pc 1549)
+     pc-1549
+       (cl:setf val (cl:funcall (get-operation '|lexical-ref|) 0 0 env))
+       (cl:setf pc 1550)
+     pc-1550
+       (cl:go zone-exit)
+     pc-1551
+       (cl:funcall (get-operation '|define-variable!|) '|assemble-into-code-object| val env)
+       (cl:setf pc 1552)
+     pc-1552
+       (cl:setf val val)
+       (cl:setf pc 1553)
+     pc-1553
+       (cl:setf env (cl:funcall (get-operation '|lookup-variable-value|) '|*global-env*| env))
+       (cl:setf pc 1554)
+     pc-1554
+       (cl:setf val (cl:funcall (get-operation '|lookup-variable-value|) '|ece-assemble-into-global| env))
+       (cl:setf pc 1555)
+     pc-1555
+       (cl:funcall (get-operation '|define-variable!|) '|assemble-into-global| val env)
+       (cl:setf pc 1556)
+     pc-1556
+       (cl:setf val val)
+       (cl:setf pc 1557)
      zone-exit)
     (cl:values pc val env proc argl continue stack)))
 
