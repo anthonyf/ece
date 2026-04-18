@@ -239,6 +239,10 @@ $(BOOTSTRAP_DIR)/bootstrap.ecec: $(BOOTSTRAP_SRCS) $(BOOTSTRAP_DIR)/primitives-a
 	  --eval '(evaluate (list (quote eval) (list (quote read) (list (quote open-input-string) "(compile-system (quote (\"src/boot-env.scm\" \"src/prelude.scm\" \"src/compiler.scm\" \"src/reader.scm\" \"src/assembler.scm\" \"src/compilation-unit.scm\" \"src/syntax-rules.scm\" \"src/browser-lib.scm\" \"src/disassemble.scm\")) \"bootstrap/bootstrap.ecec\")"))))' \
 	  --quit
 	@echo "Bootstrap bundle regenerated: $(BOOTSTRAP_DIR)/bootstrap.ecec"
+	@# Zones compiled against the old bootstrap.ecec have PC layouts that
+	@# don't match the new one. Delete them so the zone target starts clean
+	@# and subsequent sbcl invocations fall back to pure bytecode dispatch.
+	@rm -f $(BOOTSTRAP_DIR)/*-zone.lisp .fasl-cache/bootstrap/*-zone.fasl 2>/dev/null || true
 
 # Auto-generated CL primitive defuns. Source of truth: src/primitives.scm.
 # The codegen tool (src/codegen-cl.scm) is itself an ECE program that runs

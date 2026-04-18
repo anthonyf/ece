@@ -3835,7 +3835,7 @@
        (cl:setf env (cl:funcall (get-operation '|compiled-procedure-env|) proc))
        (cl:setf pc 820)
      pc-820
-       (cl:setf env (cl:funcall (get-operation '|extend-environment|) '(|g177|) argl env 0))
+       (cl:setf env (cl:funcall (get-operation '|extend-environment|) '(|g187|) argl env 0))
        (cl:setf pc 821)
      pc-821
        (cl:setf val (cl:funcall (get-operation '|lexical-ref|) 0 0 env))

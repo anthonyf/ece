@@ -973,8 +973,11 @@ bootstrap/primitives-auto.lisp from a template in src/primitives.scm."
 
 (defun make-compiled-procedure (entry env)
   (list '|compiled-procedure|
-        (if (consp entry) entry
-            (cons *executing-space-id* entry))
+        (cond ((consp entry) entry)
+              ;; A bare code-object entry means "code-object at pc 0" —
+              ;; the shape produced by bottom-up lambda compilation.
+              ((code-object-p entry) (cons entry 0))
+              (t (cons *executing-space-id* entry)))
         env))
 
 ;;; Space-qualified address helpers

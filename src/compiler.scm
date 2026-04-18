@@ -282,7 +282,17 @@
                     (list 'const extra-slots))))
        (mc-compile-sequence body 'val 'return)))))
 
+;; Parameter: #f = label-based lambda emission (bootstrap- and .ecec-safe);
+;; #t = code-object-based (bottom-up, RAM-only until §8 serialization).
+;; Default #f so compile-file stays safe; mc-compile-to-code-object binds it.
+(define *emit-code-object-lambdas* (make-parameter #f))
+
 (define (mc-compile-lambda expr target linkage)
+  (if (*emit-code-object-lambdas*)
+      (mc-compile-lambda-as-code-object expr target linkage)
+      (mc-compile-lambda-as-label expr target linkage)))
+
+(define (mc-compile-lambda-as-label expr target linkage)
   (let ((proc-entry (mc-make-label 'entry))
         (after-lambda (mc-make-label 'after-lambda)))
     (let ((lambda-linkage (if (eq? linkage 'next) after-lambda linkage)))
@@ -298,6 +308,43 @@
                                            (list 'label proc-entry) '(reg env)))))
             body-code)
            after-lambda))))))
+
+;; Bottom-up lambda: the body gets its own code-object; the outer references
+;; it as a (const <code-object>) operand of make-compiled-procedure.
+(define (mc-compile-lambda-as-code-object expr target linkage)
+  (let ((after-lambda (mc-make-label 'after-lambda)))
+    (let ((lambda-linkage (if (eq? linkage 'next) after-lambda linkage)))
+      (let* ((params (cadr expr))
+             (body (cddr expr))
+             (body-seq (mc-compile-lambda-body-standalone params body))
+             (body-instrs (strip-source-locations (mc-instructions body-seq)))
+             (inner-co (%make-code-object)))
+        (assemble-into-code-object inner-co body-instrs)
+        (append-instruction-sequences
+         (end-with-linkage lambda-linkage
+                           (make-instruction-sequence
+                            '(env) (list target)
+                            (list (list 'assign target '(op make-compiled-procedure)
+                                        (list 'const inner-co) '(reg env)))))
+         after-lambda)))))
+
+;; Lambda body without a leading proc-entry label — for assembly into a
+;; standalone code-object (body starts at the code-object's PC 0).
+(define (mc-compile-lambda-body-standalone params body)
+  (let* ((param-names (mc-flatten-params params))
+         (define-names (mc-extract-define-names body))
+         (frame (append param-names define-names))
+         (extra-slots (length define-names)))
+    (parameterize ((*mc-compile-lexical-env*
+                    (cons frame (*mc-compile-lexical-env*))))
+      (append-instruction-sequences
+       (make-instruction-sequence
+        '(env proc argl) '(env)
+        (list '(assign env (op compiled-procedure-env) (reg proc))
+              (list 'assign 'env '(op extend-environment)
+                    (list 'const params) '(reg argl) '(reg env)
+                    (list 'const extra-slots))))
+       (mc-compile-sequence body 'val 'return)))))
 
 (define *mc-all-regs* '(env proc val argl continue))
 
@@ -753,11 +800,12 @@
 ;; assembled instructions for `expr` followed by a trailing (halt) so the
 ;; executor terminates cleanly. Does not mutate any space. Executes nothing.
 (define (mc-compile-to-code-object expr)
-  (assemble-into-code-object
-   (%make-code-object)
-   (append (strip-source-locations
-            (mc-instructions (mc-compile expr 'val 'next)))
-           '((halt)))))
+  (parameterize ((*emit-code-object-lambdas* #t))
+    (assemble-into-code-object
+     (%make-code-object)
+     (append (strip-source-locations
+              (mc-instructions (mc-compile expr 'val 'next)))
+             '((halt))))))
 
 (define (mc-compile-and-go expr . env-args)
   ;; Inline mc-compile + mc-instructions into assemble-into-global so the
