@@ -45,9 +45,12 @@
 
 ## 6. Executor: dispatch on code object
 
-- [ ] 6.1 Update `execute-instructions` in `src/runtime.lisp` to track current code-object (renaming the `space-id` local to `code-obj`), `instrs`, `ltab` as before but sourced from the code object.
+- [x] 6.1 Update `execute-instructions` in `src/runtime.lisp` to track current code-object (renaming the `space-id` local to `code-obj`), `instrs`, `ltab` as before but sourced from the code object.
+      *`space-id` local now holds either a symbol or a code-object; `switch-space` and initialization branch on `code-object-p` to source `instrs`/`ltab` from struct fields or from the space registry. The local rename to `code-obj` waits on §6.2 cleanup.*
 - [ ] 6.2 Update `switch-space` → `switch-code-object`. Target is a code-object value, not a symbol. Remove the `get-space` hash lookup — set `instrs`/`ltab` directly from code-object accessors.
-- [ ] 6.3 Update the `goto (reg ...)` dispatch case: `(eq? (car addr) space-id)` becomes `(eq? (car addr) current-code-obj)`. The `addr` shape changes from `(space-id . local-pc)` to `(code-obj . local-pc)`.
+      *Deferred. During coexistence, `switch-space` accepts both symbols and code-objects (§6.1). Renaming + removing the `get-space` branch makes sense only after §11 retires symbol-keyed spaces.*
+- [x] 6.3 Update the `goto (reg ...)` dispatch case: `(eq? (car addr) space-id)` becomes `(eq? (car addr) current-code-obj)`. The `addr` shape changes from `(space-id . local-pc)` to `(code-obj . local-pc)`.
+      *The existing comparison `(eq (norm-space (car addr)) space-id)` already uses object identity, so it works for both symbols and code-objects. Added a bare-code-object branch as part of §7.1.*
 - [x] 6.4 Update `execute-from-pc` to accept either a (code-obj . local-pc) pair or a bare code-obj (implying local-pc = 0).
       *CL primitive now dispatches on `(code-object-p start)` (bare) and `(consp start) && (code-object-p (car start))` (pair) before falling through to the legacy qualified-address path. Tests cover both shapes.*
 - [x] 6.5 Replace `*compiled-zone-functions*` hash lookups with direct `code-object-native-fn` field reads.
