@@ -109,3 +109,101 @@
                       '(letrec ((fact (lambda (n)
                                         (if (= n 0) 1 (* n (fact (- n 1)))))))
                          (fact 5)))))))
+
+;;; ─────────────────────────────────────────────────────────────────────────
+;;; §4.2: bottom-up lambda emission — make-compiled-procedure references
+;;; the inner body as a (const <code-object>) operand, not a (label ...).
+;;; ─────────────────────────────────────────────────────────────────────────
+
+(test "lambda compile emits (const <code-object>) in bottom-up mode" (lambda ()
+  (let* ((co (mc-compile-to-code-object '(lambda (x) (+ x 1))))
+         (instrs (code-object-instructions co))
+         (len (code-object-length co))
+         (found #f))
+    (let loop ((i 0))
+      (when (< i len)
+        (let ((instr (vector-ref instrs i)))
+          (when (and (pair? instr)
+                     (eq? (car instr) 'assign)
+                     (pair? (caddr instr))
+                     (eq? (car (caddr instr)) 'op)
+                     (eq? (cadr (caddr instr)) 'make-compiled-procedure))
+            ;; Inspect the operand after the op — should be (const <code-obj>).
+            (let ((entry-operand (cadddr instr)))
+              (when (and (pair? entry-operand)
+                         (eq? (car entry-operand) 'const)
+                         (code-object? (cadr entry-operand)))
+                (set! found #t)))))
+        (loop (+ i 1))))
+    (assert-equal #t found))))
+
+(test "label-based mode still emits (label ...) entry" (lambda ()
+  ;; The default mc-compile-and-go path uses the label shape so bootstrap
+  ;; and compile-file can serialize to .ecec. Exercised implicitly by the
+  ;; whole test suite; here we assert the operand shape explicitly.
+  (let* ((seq (mc-compile '(lambda (x) x) 'val 'next))
+         (instrs (mc-instructions seq))
+         (found #f))
+    (for-each (lambda (instr)
+                (when (and (pair? instr)
+                           (eq? (car instr) 'assign)
+                           (pair? (caddr instr))
+                           (eq? (car (caddr instr)) 'op)
+                           (eq? (cadr (caddr instr)) 'make-compiled-procedure))
+                  (let ((entry-operand (cadddr instr)))
+                    (when (and (pair? entry-operand)
+                               (eq? (car entry-operand) 'label))
+                      (set! found #t)))))
+              instrs)
+    (assert-equal #t found))))
+
+(test "bottom-up lambda: nested lambdas each get their own code-object" (lambda ()
+  ;; (lambda (x) (lambda (y) (+ x y))) — inner code-obj references outer env.
+  (let* ((co (mc-compile-to-code-object '(lambda (x) (lambda (y) (+ x y)))))
+         (outer-instrs (code-object-instructions co))
+         (outer-len (code-object-length co))
+         (outer-co #f))
+    ;; Find the outer make-compiled-procedure's code-object constant.
+    (let loop ((i 0))
+      (when (< i outer-len)
+        (let ((instr (vector-ref outer-instrs i)))
+          (when (and (pair? instr)
+                     (eq? (car instr) 'assign)
+                     (pair? (caddr instr))
+                     (eq? (car (caddr instr)) 'op)
+                     (eq? (cadr (caddr instr)) 'make-compiled-procedure))
+            (let ((entry-operand (cadddr instr)))
+              (when (and (pair? entry-operand)
+                         (eq? (car entry-operand) 'const)
+                         (code-object? (cadr entry-operand)))
+                (set! outer-co (cadr entry-operand)))))
+          (loop (+ i 1)))))
+    ;; The outer code-object body should itself contain a nested make-compiled-procedure
+    ;; whose entry is ANOTHER code-object.
+    (assert-true outer-co)
+    (let* ((inner-instrs (code-object-instructions outer-co))
+           (inner-len (code-object-length outer-co))
+           (inner-found #f))
+      (let loop ((i 0))
+        (when (< i inner-len)
+          (let ((instr (vector-ref inner-instrs i)))
+            (when (and (pair? instr)
+                       (eq? (car instr) 'assign)
+                       (pair? (caddr instr))
+                       (eq? (car (caddr instr)) 'op)
+                       (eq? (cadr (caddr instr)) 'make-compiled-procedure))
+              (let ((entry-operand (cadddr instr)))
+                (when (and (pair? entry-operand)
+                           (eq? (car entry-operand) 'const)
+                           (code-object? (cadr entry-operand)))
+                  (set! inner-found #t)))))
+          (loop (+ i 1))))
+      (assert-equal #t inner-found)))))
+
+(test "bottom-up lambda: higher-order returns work end-to-end" (lambda ()
+  (assert-equal 7 (execute-code-object
+                   (mc-compile-to-code-object
+                    '((lambda (x) ((lambda (y) (+ x y)) 3)) 4))))
+  (assert-equal 25 (execute-code-object
+                    (mc-compile-to-code-object
+                     '(((lambda (x) (lambda (y) (* x y))) 5) 5))))))
