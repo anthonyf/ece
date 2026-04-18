@@ -21,11 +21,16 @@
 
 ## 4. Compiler: emit code objects bottom-up
 
-- [ ] 4.1 Change the top-level compile entry point (`mc-compile-and-go` or equivalent) to return a code object instead of mutating the current space. Keep the old entry point callable during coexistence with a shim that wraps the new one.
+- [x] 4.1 Change the top-level compile entry point (`mc-compile-and-go` or equivalent) to return a code object instead of mutating the current space. Keep the old entry point callable during coexistence with a shim that wraps the new one.
+      *Implemented as a parallel `mc-compile-to-code-object` function (pure; returns a code-object). `mc-compile-and-go` unchanged during coexistence — the "shim" relationship collapses into a single call once the executor can run code-objects directly (§6).*
 - [ ] 4.2 Update lambda compilation: compile the inner body first, assemble it into its own code object, then emit the outer's `make-compiled-procedure` instruction referencing the inner code object as a constant operand. Verify with a trace that inner code objects are constructed before their outer references them.
+      *Deferred — requires `(const <code-object>)` operand support in the executor and the `(compiled-procedure code-obj env)` closure shape. Folds naturally into §6/§7.*
 - [ ] 4.3 Update the `procedure-name` pseudo-instruction to attach the name to the code object currently being assembled, not to a side table.
+      *Deferred — "code object currently being assembled" presumes per-lambda code-objects (§4.2). Until then the side-table path remains.*
 - [ ] 4.4 Update the `procedure-params` pseudo-instruction similarly (code-object metadata, not a side table).
+      *Deferred alongside §4.3.*
 - [ ] 4.5 Update `compile-define` paths (both CL compiler and MC compiler) to pass the name through to the inner compile call so the generated code object has its name field set from the start.
+      *Deferred — needs §4.2 first.*
 
 ## 5. Assembler: pure, per-code-object
 
