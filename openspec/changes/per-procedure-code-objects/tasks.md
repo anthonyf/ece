@@ -60,8 +60,10 @@
       *`make-compiled-procedure` now stores a bare code-object in the entry slot (no `(code-obj . 0)` wrapper). goto-reg dispatch gained a code-object branch that switches and sets `pc = 0`. qualified-space-id/qualified-local-pc recognise bare code-objects so the error path and execute-compiled-call still work.*
 - [x] 7.2 Update `compiled-procedure-entry` to return the code object (its current callers expect a `(sid . pc)` pair; audit and update).
       *`compiled-procedure-entry` is unchanged — it returns whatever `make-compiled-procedure` stored. Callers audited: `procedure-name` now reads `code-object-name` directly for code-object closures; `execute-compiled-call` computes the return-pc from `code-object-resolved-instructions` when the entry is a code-object; the error-path already flows through the qualified-* helpers.*
-- [ ] 7.3 Update `%make-continuation` and the continuation dispatch path: saved `continue` becomes `(code-obj . local-pc)`.
-- [ ] 7.4 Update the format machinery (`format-ece-proc`, disassemble header, error printers) to read names/source from the code object rather than the `*procedure-name-table*` side table.
+- [x] 7.3 Update `%make-continuation` and the continuation dispatch path: saved `continue` becomes `(code-obj . local-pc)`.
+      *Falls out of the executor/goto changes: the `(assign continue (label X))` handler already wraps with `space-id`, so when space-id is a code-object, continue stores `(code-obj . pc)`. The goto-reg cons-dispatch handles that shape unchanged.*
+- [x] 7.4 Update the format machinery (`format-ece-proc`, disassemble header, error printers) to read names/source from the code object rather than the `*procedure-name-table*` side table.
+      *`procedure-name` now reads `code-object-name` for code-object closures (§7.1). `format-ece-proc` reads `code-object-source-loc` for bare and paired code-object entries; legacy (symbol . pc) entries still flow through `resolve-ece-source-location`.*
 
 ## 8. .ecec archive format
 

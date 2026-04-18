@@ -301,8 +301,14 @@ Includes source location if available."
     ((compiled-procedure-p proc)
      (let* ((entry (compiled-procedure-entry proc))
             (name (procedure-name proc))
-            (loc (when (consp entry)
-                   (resolve-ece-source-location (car entry) (cdr entry)))))
+            (loc (cond
+                   ;; §7.4: bare code-object entry — read source-loc from struct
+                   ((code-object-p entry)
+                    (code-object-source-loc entry))
+                   ((and (consp entry) (code-object-p (car entry)))
+                    (code-object-source-loc (car entry)))
+                   ((consp entry)
+                    (resolve-ece-source-location (car entry) (cdr entry))))))
        (cond
          ((and name loc)
           (format nil "~A (~A:~D:~D)" name (car loc) (cadr loc) (caddr loc)))
