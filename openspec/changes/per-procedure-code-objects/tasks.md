@@ -34,10 +34,14 @@
 
 ## 5. Assembler: pure, per-code-object
 
-- [ ] 5.1 Rewrite `assemble` in `src/assembler.scm` as a pure function: `(assemble instruction-list) → code-object`. Build a fresh code object, walk the instruction list, push instructions into the code object's vectors, register labels in the code object's label table.
+- [x] 5.1 Rewrite `assemble` in `src/assembler.scm` as a pure function: `(assemble instruction-list) → code-object`. Build a fresh code object, walk the instruction list, push instructions into the code object's vectors, register labels in the code object's label table.
+      *Implemented as `assemble-into-code-object co instrs` in src/assembler.scm (paired with §4.1). The `co` parameter makes allocation explicit; callers pass `(%make-code-object)` for a fresh object. Pure in the sense that it mutates only the passed-in object, not shared state.*
 - [ ] 5.2 Retire `assemble-into-global` as the public entry point. Keep it as a thin shim during coexistence, but not beyond the final commit of this change.
-- [ ] 5.3 Retire operation resolution from its current "append to global resolved-instructions" shape; the code object now carries its own resolved-instructions vector.
-- [ ] 5.4 Add unit tests (under `tests/ece/common/`) for `assemble`: idempotence, fresh-object-per-call, label-table correctness, procedure-name field attachment.
+      *Deferred — cleanup happens after §6 executor switch.*
+- [x] 5.3 Retire operation resolution from its current "append to global resolved-instructions" shape; the code object now carries its own resolved-instructions vector.
+      *`%code-object-push-instruction!` resolves operations per-code-object; `resolve-operations` applies to each instruction as it's pushed. The old `%space-*` path keeps its own resolution until §6 lands.*
+- [x] 5.4 Add unit tests (under `tests/ece/common/`) for `assemble`: idempotence, fresh-object-per-call, label-table correctness, procedure-name field attachment.
+      *Common-runtime tests for the mutator primitives live in `tests/ece/common/test-code-object-primitives.scm`; CL-specific compile+assemble tests (fresh-object-per-call, idempotence, label-table correctness, no-mutation) live in `tests/ece/cl-only/test-compile-to-code-object.scm`. Procedure-name attachment waits on §4.3.*
 
 ## 6. Executor: dispatch on code object
 

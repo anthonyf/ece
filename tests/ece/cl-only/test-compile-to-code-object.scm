@@ -55,3 +55,20 @@
     (mc-compile-to-code-object '(+ 1 2))
     (let ((after (%space-instruction-length sid)))
       (assert-equal before after)))))
+
+(test "idempotence: same expr yields same shape" (lambda ()
+  ;; Labels gensym globally, so instruction lists aren't equal? across
+  ;; runs. The structural contract: distinct objects, same instruction
+  ;; count, same number of labels.
+  (let* ((expr '(if (> x 0) (+ x 1) (- x 1)))
+         (a (mc-compile-to-code-object expr))
+         (b (mc-compile-to-code-object expr)))
+    (assert-equal #f (eq? a b))
+    (assert-equal (code-object-length a) (code-object-length b))
+    (assert-equal (length (code-object-label-entries a))
+                  (length (code-object-label-entries b))))))
+
+(test "assemble-into-code-object returns the object it was given" (lambda ()
+  (let* ((co (%make-code-object))
+         (result (assemble-into-code-object co '((halt)))))
+    (assert-equal #t (eq? co result)))))
