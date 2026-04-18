@@ -279,6 +279,33 @@
 (defun ece-close-output-port (port)
   (cl:progn (cl:close (ece-port-stream port)) cl:nil))
 
+(defun ece-code-object-instructions (co)
+  (code-object-source-instructions co))
+
+(defun ece-code-object-label-entries (co)
+  (let ((entries '())) (cl:maphash (cl:lambda (label pc) (cl:push (cl:cons label pc) entries)) (code-object-labels co)) entries))
+
+(defun ece-code-object-label-ref (co label)
+  (cl:gethash label (code-object-labels co)))
+
+(defun ece-code-object-length (co)
+  (cl:fill-pointer (code-object-source-instructions co)))
+
+(defun ece-code-object-name (co)
+  (cl:or (code-object-name co) *scheme-false*))
+
+(defun ece-code-object-native-fn (co)
+  (cl:or (code-object-native-fn co) *scheme-false*))
+
+(defun ece-code-object-resolved-instructions (co)
+  (code-object-resolved-instructions co))
+
+(defun ece-code-object-source-loc (co)
+  (cl:or (code-object-source-loc co) *scheme-false*))
+
+(defun ece-code-object? (x)
+  (scheme-bool (code-object-p x)))
+
 (defun ece-command-line ()
   (cl:coerce sb-ext:*posix-argv* 'cl:list))
 

@@ -575,6 +575,42 @@
          entries))
 
 ;;; ─────────────────────────────────────────────────────────────────────────
+;;; Code objects (ids 241-249)
+;;; ─────────────────────────────────────────────────────────────────────────
+;;; Accessors on the per-procedure compilation unit. Mirrors the %space-*
+;;; primitives but keyed on a code-object value instead of a space-id symbol.
+
+(define-host-primitive (code-object? x)
+  :cl `(scheme-bool (code-object-p ,x)))
+
+(define-host-primitive (code-object-instructions co)
+  :cl `(code-object-source-instructions ,co))
+
+(define-host-primitive (code-object-resolved-instructions co)
+  :cl `(code-object-resolved-instructions ,co))
+
+(define-host-primitive (code-object-length co)
+  :cl `(cl:fill-pointer (code-object-source-instructions ,co)))
+
+(define-host-primitive (code-object-label-entries co)
+  :cl `(let ((entries (quote ())))
+         (cl:maphash (cl:lambda (label pc) (cl:push (cl:cons label pc) entries))
+                     (code-object-labels ,co))
+         entries))
+
+(define-host-primitive (code-object-label-ref co label)
+  :cl `(cl:gethash ,label (code-object-labels ,co)))
+
+(define-host-primitive (code-object-name co)
+  :cl `(cl:or (code-object-name ,co) *scheme-false*))
+
+(define-host-primitive (code-object-native-fn co)
+  :cl `(cl:or (code-object-native-fn ,co) *scheme-false*))
+
+(define-host-primitive (code-object-source-loc co)
+  :cl `(cl:or (code-object-source-loc ,co) *scheme-false*))
+
+;;; ─────────────────────────────────────────────────────────────────────────
 ;;; Serialization (id 136)
 ;;; ─────────────────────────────────────────────────────────────────────────
 

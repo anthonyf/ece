@@ -175,6 +175,16 @@
            #:%label-table-ref
            #:%procedure-name-set!
            #:%procedure-name-ref
+           #:code-object
+           #:code-object-p
+           #:make-code-object
+           #:code-object-source-instructions
+           #:code-object-resolved-instructions
+           #:code-object-labels
+           #:code-object-name
+           #:code-object-arity
+           #:code-object-source-loc
+           #:code-object-native-fn
            #:disassemble
            #:extend-environment
            #:ece-runtime-error
@@ -1442,6 +1452,34 @@ Populated at assembly time from procedure-params pseudo-instructions.")
   (label-table (make-hash-table :test 'eq)
                :type hash-table)
   (compiled-fn nil))
+
+;;; ============================================================
+;;; Code Objects (per-procedure compilation unit)
+;;; ============================================================
+;;; A code-object is the per-procedure output of the compiler: the
+;;; source and resolved instruction vectors for one procedure body,
+;;; its own label table, and metadata. Entry/continuation addresses
+;;; become (code-object . local-pc) pairs. Coexists with
+;;; compilation-space during the migration.
+
+(defstruct code-object
+  "A code object — the compilation unit for a single procedure or top-level form."
+  (source-instructions (make-array 32 :adjustable t :fill-pointer 0)
+                       :type vector)
+  (resolved-instructions (make-array 32 :adjustable t :fill-pointer 0)
+                         :type vector)
+  (labels (make-hash-table :test 'eq)
+    :type hash-table)
+  (name nil)
+  (arity nil)
+  (source-loc nil)
+  (native-fn nil))
+
+(defmethod print-object ((obj code-object) stream)
+  (print-unreadable-object (obj stream :type nil :identity t)
+    (format stream "code-object ~A len=~D"
+            (or (code-object-name obj) "<anon>")
+            (length (code-object-source-instructions obj)))))
 
 (defvar *space-registry* (make-hash-table :test 'eq)
   "Hash table of space records, keyed by symbol.")

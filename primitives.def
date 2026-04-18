@@ -340,3 +340,17 @@
 (238 %procedure-params-set! 2  cl     "Store parameter metadata for a compiled procedure entry")
 (239 %procedure-params      1  cl     "Look up parameter metadata for a callable value")
 (240 %procedure-name-ref    1  core   "Look up registered name for a compiled procedure entry")
+
+;;; ═══════════════════════════════════════════════════════════════════════
+;;; CODE-OBJECT PRIMITIVES (241-249) — per-procedure compilation unit
+;;; ═══════════════════════════════════════════════════════════════════════
+
+(241 code-object?                     1  core   "Test if value is a code object")
+(242 code-object-instructions         1  core   "Source instruction vector of a code object")
+(243 code-object-resolved-instructions 1 core   "Resolved (op-fn-bound) instruction vector of a code object")
+(244 code-object-length               1  core   "Number of instructions in a code object")
+(245 code-object-label-entries        1  core   "Label table of a code object as alist of (label . pc)")
+(246 code-object-label-ref            2  core   "Look up a label's pc in a code object (#f if missing)")
+(247 code-object-name                 1  core   "Name metadata of a code object (or #f)")
+(248 code-object-native-fn            1  core   "Native-fn slot of a code object (or #f)")
+(249 code-object-source-loc           1  core   "Source-loc metadata of a code object (or #f)")

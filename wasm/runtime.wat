@@ -1439,6 +1439,21 @@
     (field $len (mut i32))              ;; used length (may be less than array length)
     (field $labels (mut (ref null eq))))) ;; label symbol → fixnum PC (hash-table or null)
 
+  ;; --- Code object (per-procedure compilation unit) ---
+  ;; Mirrors the CL `code-object` defstruct. Coexists with compilation-space
+  ;; during the migration to per-procedure code objects. Instruction storage
+  ;; uses the already-resolved $instr struct (WASM instructions carry their
+  ;; op-id directly), so source-instructions and resolved-instructions map
+  ;; to the same $instrs field.
+  (type $code-object (struct
+    (field $instrs (mut (ref $instr-vec)))
+    (field $len    (mut i32))
+    (field $labels (mut (ref null eq)))     ;; hash-table or null
+    (field $name       (mut (ref null eq))) ;; symbol or null
+    (field $arity      (mut (ref null eq))) ;; fixnum or null
+    (field $source-loc (mut (ref null eq))) ;; list or null
+    (field $native-fn  (mut (ref null eq))))) ;; procedure or null
+
   ;; --- Space registry (array of spaces, indexed by symbol ID) ---
   (type $space-array (array (mut (ref null $comp-space))))
   (global $spaces (mut (ref null $space-array))
@@ -4001,6 +4016,14 @@
     (local $cur (ref null eq))
     (local $key (ref null eq))
     (local $result (ref null eq))
+    ;; --- Code-object primitive locals (ids 241-249) ---
+    (local $co-for-labels (ref null $code-object))
+    (local $lbl-ht (ref null $hash-table))
+    (local $lbl-keys (ref null $hash-keys))
+    (local $lbl-vals (ref null $hash-vals))
+    (local $lbl-count i32)
+    (local $lbl-i i32)
+    (local $lbl-result (ref null eq))
     (local.set $id (call $primitive-id (local.get $prim)))
     ;; Debug: store prim ID for crash diagnosis
     (global.set $dbg-opcode (i32.add (local.get $id) (i32.const 1000)))
@@ -5424,6 +5447,116 @@
           (struct.get $symbol $id
             (ref.cast (ref $symbol) (call $arg1 (local.get $args)))))
         (return (global.get $void))))
+
+    ;; --- Code-object primitives (IDs 241-249) ---
+    ;; Per-procedure compilation unit accessors. Coexist with %space-* during
+    ;; the migration. ECE never sees $code-object values until the compiler
+    ;; and executor switch over; these accessors are here for parity and for
+    ;; WAT-side code that will construct code objects during §4–§6.
+
+    ;; 241 = code-object?(x)
+    (if (i32.eq (local.get $id) (i32.const 241))
+      (then (return (if (result (ref null eq))
+        (ref.test (ref $code-object) (call $arg1 (local.get $args)))
+        (then (global.get $true)) (else (global.get $false))))))
+
+    ;; 242 = code-object-instructions(co) — stub (instr-vec is not an ECE-visible ref eq)
+    (if (i32.eq (local.get $id) (i32.const 242))
+      (then (return (global.get $void))))
+
+    ;; 243 = code-object-resolved-instructions(co) — stub (same as 242 on WASM)
+    (if (i32.eq (local.get $id) (i32.const 243))
+      (then (return (global.get $void))))
+
+    ;; 244 = code-object-length(co)
+    (if (i32.eq (local.get $id) (i32.const 244))
+      (then (return (call $make-fixnum
+        (struct.get $code-object $len
+          (ref.cast (ref $code-object) (call $arg1 (local.get $args))))))))
+
+    ;; 245 = code-object-label-entries(co) — alist of (label-sym . pc-fixnum)
+    (if (i32.eq (local.get $id) (i32.const 245))
+      (then
+        (local.set $co-for-labels
+          (ref.cast (ref $code-object) (call $arg1 (local.get $args))))
+        (if (ref.is_null (struct.get $code-object $labels
+                           (ref.as_non_null (local.get $co-for-labels))))
+          (then (return (global.get $nil))))
+        (local.set $lbl-ht
+          (ref.cast (ref $hash-table)
+            (struct.get $code-object $labels
+              (ref.as_non_null (local.get $co-for-labels)))))
+        (local.set $lbl-keys (struct.get $hash-table $keys
+                              (ref.as_non_null (local.get $lbl-ht))))
+        (local.set $lbl-vals (struct.get $hash-table $vals
+                              (ref.as_non_null (local.get $lbl-ht))))
+        (local.set $lbl-count (struct.get $hash-table $count
+                                (ref.as_non_null (local.get $lbl-ht))))
+        (local.set $lbl-result (global.get $nil))
+        (local.set $lbl-i (i32.sub (local.get $lbl-count) (i32.const 1)))
+        (block $lblbuild (loop $lblscan
+          (br_if $lblbuild (i32.lt_s (local.get $lbl-i) (i32.const 0)))
+          (local.set $lbl-result (call $cons
+            (call $cons
+              (array.get $hash-keys
+                (ref.as_non_null (local.get $lbl-keys)) (local.get $lbl-i))
+              (array.get $hash-vals
+                (ref.as_non_null (local.get $lbl-vals)) (local.get $lbl-i)))
+            (local.get $lbl-result)))
+          (local.set $lbl-i (i32.sub (local.get $lbl-i) (i32.const 1)))
+          (br $lblscan)))
+        (return (local.get $lbl-result))))
+
+    ;; 246 = code-object-label-ref(co, label-sym) — pc-fixnum or #f
+    (if (i32.eq (local.get $id) (i32.const 246))
+      (then
+        (local.set $co-for-labels
+          (ref.cast (ref $code-object) (call $arg1 (local.get $args))))
+        (if (ref.is_null (struct.get $code-object $labels
+                           (ref.as_non_null (local.get $co-for-labels))))
+          (then (return (global.get $false))))
+        (local.set $lbl-result
+          (call $hash-ref-impl
+            (ref.cast (ref $hash-table)
+              (struct.get $code-object $labels
+                (ref.as_non_null (local.get $co-for-labels))))
+            (call $arg2 (local.get $args))))
+        (return (if (result (ref null eq)) (ref.is_null (local.get $lbl-result))
+          (then (global.get $false))
+          (else (local.get $lbl-result))))))
+
+    ;; 247 = code-object-name(co)
+    (if (i32.eq (local.get $id) (i32.const 247))
+      (then
+        (local.set $co-for-labels
+          (ref.cast (ref $code-object) (call $arg1 (local.get $args))))
+        (local.set $lbl-result (struct.get $code-object $name
+                                 (ref.as_non_null (local.get $co-for-labels))))
+        (return (if (result (ref null eq)) (ref.is_null (local.get $lbl-result))
+          (then (global.get $false))
+          (else (local.get $lbl-result))))))
+
+    ;; 248 = code-object-native-fn(co)
+    (if (i32.eq (local.get $id) (i32.const 248))
+      (then
+        (local.set $co-for-labels
+          (ref.cast (ref $code-object) (call $arg1 (local.get $args))))
+        (local.set $lbl-result (struct.get $code-object $native-fn
+                                 (ref.as_non_null (local.get $co-for-labels))))
+        (return (if (result (ref null eq)) (ref.is_null (local.get $lbl-result))
+          (then (global.get $false))
+          (else (local.get $lbl-result))))))
+
+    ;; 249 = code-object-source-loc(co)
+    (if (i32.eq (local.get $id) (i32.const 249))
+      (then
+        (local.set $co-for-labels
+          (ref.cast (ref $code-object) (call $arg1 (local.get $args))))
+        (local.set $lbl-result (struct.get $code-object $source-loc
+                                 (ref.as_non_null (local.get $co-for-labels))))
+        (return (if (result (ref null eq)) (ref.is_null (local.get $lbl-result))
+          (then (global.get $false))
+          (else (local.get $lbl-result))))))
 
     ;; Unknown primitive — return void
     (global.get $void)

@@ -270,6 +270,17 @@
 (%register-primitive! '%procedure-params 239)
 (%register-primitive! '%procedure-name-ref 240)
 
+;; --- Code objects ---
+(%register-primitive! 'code-object? 241)
+(%register-primitive! 'code-object-instructions 242)
+(%register-primitive! 'code-object-resolved-instructions 243)
+(%register-primitive! 'code-object-length 244)
+(%register-primitive! 'code-object-label-entries 245)
+(%register-primitive! 'code-object-label-ref 246)
+(%register-primitive! 'code-object-name 247)
+(%register-primitive! 'code-object-native-fn 248)
+(%register-primitive! 'code-object-source-loc 249)
+
 ;;; ═══════════════════════════════════════════════════════════════════
 ;;; 2. Initialize assembler symbol table
 ;;; ═══════════════════════════════════════════════════════════════════

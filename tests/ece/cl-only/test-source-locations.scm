@@ -108,16 +108,16 @@
 (test "compile-file produces ecec with source-map in header"
   (lambda ()
     ;; Write a small test file
-    (let ((out (open-output-file "/tmp/test-srcmap.scm")))
+    (let ((out (open-output-file "/tmp/claude/test-srcmap.scm")))
       (display "(define (add1 x) (+ x 1))" out)
       (newline out)
       (display "(define (double y) (* y 2))" out)
       (newline out)
       (close-output-port out))
     ;; Compile it
-    (compile-file "/tmp/test-srcmap.scm")
+    (compile-file "/tmp/claude/test-srcmap.scm")
     ;; Read back the header
-    (let ((port (open-input-file "/tmp/test-srcmap.ecec")))
+    (let ((port (open-input-file "/tmp/claude/test-srcmap.ecec")))
       (let ((header (read port)))
         (close-input-port port)
         ;; Check source-map field exists
@@ -130,7 +130,7 @@
 
 (test "source-map entries sorted by PC"
   (lambda ()
-    (let ((port (open-input-file "/tmp/test-srcmap.ecec")))
+    (let ((port (open-input-file "/tmp/claude/test-srcmap.ecec")))
       (let ((header (read port)))
         (close-input-port port)
         (let* ((sm (assoc 'source-map (cdr header)))
@@ -147,7 +147,7 @@
 
 (test "load-compiled registers source-map"
   (lambda ()
-    (load-compiled "/tmp/test-srcmap.ecec")
+    (load-compiled "/tmp/claude/test-srcmap.ecec")
     (let ((space-map (hash-ref *source-maps* 'test-srcmap #f)))
       (assert-true space-map))))
 
@@ -157,14 +157,14 @@
 (test "error on unbound variable includes file:line"
   (lambda ()
     ;; Write a file that references an unbound variable
-    (let ((out (open-output-file "/tmp/test-srcerr.scm")))
+    (let ((out (open-output-file "/tmp/claude/test-srcerr.scm")))
       (display "(define (trigger-error)" out)
       (newline out)
       (display "  undefined-var)" out)
       (newline out)
       (close-output-port out))
-    (compile-file "/tmp/test-srcerr.scm")
-    (load-compiled "/tmp/test-srcerr.ecec")
+    (compile-file "/tmp/claude/test-srcerr.scm")
+    (load-compiled "/tmp/claude/test-srcerr.ecec")
     ;; Call trigger-error and catch the error
     (guard (e (#t
                (let ((msg (if (error-object? e) (error-object-message e) (write-to-string e))))
@@ -206,12 +206,12 @@
 
 ;; Helper: compile a string to .ecec, return the source-map entries
 (define (compile-string-get-srcmap name code)
-  (let ((filename (string-append "/tmp/test-macro-" name ".scm")))
+  (let ((filename (string-append "/tmp/claude/test-macro-" name ".scm")))
     (let ((out (open-output-file filename)))
       (display code out)
       (close-output-port out))
     (compile-file filename)
-    (load-compiled (string-append "/tmp/test-macro-" name ".ecec"))
+    (load-compiled (string-append "/tmp/claude/test-macro-" name ".ecec"))
     (hash-ref *source-maps* (string->symbol (string-append "test-macro-" name)) #f)))
 
 ;; Helper: check that at least one source-map entry points to the given line
