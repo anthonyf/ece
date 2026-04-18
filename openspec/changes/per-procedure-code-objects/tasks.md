@@ -56,6 +56,7 @@
 - [x] 6.5 Replace `*compiled-zone-functions*` hash lookups with direct `code-object-native-fn` field reads.
       *`maybe-dispatch-compiled-zone` now reads `code-object-native-fn` directly when space-id is a code-object, and falls back to the hash lookup for legacy symbol-keyed spaces. Code-object native-fn defaults to #f so dispatch falls through to bytecode — populating the slot stays a future compile-to-host proposal.*
 - [ ] 6.6 Parallel WASM executor changes in `wasm/runtime.wat`: `$current-space-id` → `$current-code-obj` (struct pointer). `$switch-space` → `$switch-code-obj`. Remove the `get-space` equivalent.
+      *In progress. Pass 1 done: `$compiled-proc` gained a `$code-obj` field (ref null eq), and `%make-compiled-procedure` stores a bare code-object there when invoked with §7.1 shape. Pass 2 pending: (a) teach `$execute` to read `$instrs`/`$labels` from a code-object when `$code-obj` is non-null (parallel state: add `$current-code-obj` local alongside existing `$space-id` i32), (b) update `goto (reg ...)` dispatch to handle bare code-object and (code-obj . pc), (c) unstub `%code-object-push-instruction!` by writing a parallel parser that resolves labels against the code-object's own labels hash instead of a space (analog of `$ece-instr-to-wasm-instr` + `$build-operand-list` taking code-object context). Coexistence strategy (Recommended answers): keep space-based boot path intact; all changes are opt-in from ECE via `mc-compile-to-code-object` + `execute-code-object` (ids 256+).*
 
 ## 7. Closure shape and continuation shape
 
