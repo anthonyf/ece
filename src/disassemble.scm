@@ -178,16 +178,54 @@
          (newline)))
      pcs)))
 
+;; §10: code-object disassembler — trivial iteration, no reachability walk
+;; needed because the code-object's instructions ARE the procedure's body.
+(define (dis/disassemble-code-object co)
+  (let* ((len (code-object-length co))
+         (instrs (code-object-instructions co))
+         (label-entries (code-object-label-entries co))
+         (name (or (code-object-name co) '<anonymous>))
+         (width (dis/max-width (if (= len 0) '(0) (list (- len 1))))))
+    (display "; ")
+    (display name)
+    (display "  (code-object, ")
+    (display len)
+    (display " instructions)")
+    (newline)
+    (let loop ((pc 0))
+      (when (< pc len)
+        ;; Inline labels at this pc
+        (for-each (lambda (entry)
+                    (when (= (cdr entry) pc)
+                      (display (car entry))
+                      (display ":")
+                      (newline)))
+                  label-entries)
+        (display " ")
+        (display (dis/pad-left (number->string pc) width))
+        (display ":  ")
+        (display (write-to-string-flat (vector-ref instrs pc)))
+        (newline)
+        (loop (+ pc 1))))))
+
 (define (dis/disassemble-compiled proc)
-  (let* ((entry (compiled-procedure-entry proc))
-         (space-id (car entry))
-         (pc (cdr entry))
-         (name (dis/header-name entry))
-         (reached (dis/reached-pcs space-id pc))
-         (labels-at (dis/labels-at space-id reached))
-         (unreached (dis/unreached-labels-in-span space-id reached)))
-    (dis/print-header name space-id pc unreached)
-    (dis/print-instructions space-id reached labels-at)))
+  (let ((entry (compiled-procedure-entry proc)))
+    (cond
+     ;; §7.1 shape: bare code-object entry.
+     ((code-object? entry) (dis/disassemble-code-object entry))
+     ;; Transitional (code-obj . pc) shape.
+     ((and (pair? entry) (code-object? (car entry)))
+      (dis/disassemble-code-object (car entry)))
+     ;; Legacy (space-id . pc) — reachability walk.
+     (else
+      (let* ((space-id (car entry))
+             (pc (cdr entry))
+             (name (dis/header-name entry))
+             (reached (dis/reached-pcs space-id pc))
+             (labels-at (dis/labels-at space-id reached))
+             (unreached (dis/unreached-labels-in-span space-id reached)))
+        (dis/print-header name space-id pc unreached)
+        (dis/print-instructions space-id reached labels-at))))))
 
 (define (dis/report-non-compiled val name)
   (let ((show (or name (write-to-string-flat val))))
@@ -226,6 +264,8 @@
    ((not (dis/supported?))
     (display "; disassemble: not supported on this runtime (requires CL host)")
     (newline))
+   ;; §10: accept code-objects directly.
+   ((code-object? x) (dis/disassemble-code-object x))
    ((compiled-procedure? x) (dis/disassemble-compiled x))
    ((symbol? x)
     (let ((lookup (dis/lookup-global x)))

@@ -82,10 +82,14 @@
 
 ## 10. disassemble: simplify
 
-- [ ] 10.1 Rewrite `src/disassemble.scm` to accept code objects directly in addition to compiled procedures and symbols.
+- [x] 10.1 Rewrite `src/disassemble.scm` to accept code objects directly in addition to compiled procedures and symbols.
+      *`disassemble` now dispatches on `(code-object? x)` first; `dis/disassemble-compiled` detects code-object entries (bare or paired) and routes them to the new `dis/disassemble-code-object` helper.*
 - [ ] 10.2 Remove the reachability walk entirely. `dis/reached-pcs`, `dis/labels-at`, `dis/unreached-labels-in-span`, `dis/successors`, `dis/branch-target-pc` all retire or simplify.
-- [ ] 10.3 New implementation: iterate `0..(code-object-length obj) - 1`, emit inline labels from `(code-object-label-entries obj)`, emit one instruction line per PC. Branch/goto annotations read targets from the code object's own label table.
-- [ ] 10.4 Update `tests/ece/cl-only/test-disassemble.scm` to cover the new "disassemble a code object directly" path. Remove (or mark deferred) the "unreached labels in span" test if it's no longer reachable.
+      *Kept during coexistence — still needed for legacy `(space-id . pc)` closures. Retirement waits on §11 (old primitives) after all closures migrate to code-objects.*
+- [x] 10.3 New implementation: iterate `0..(code-object-length obj) - 1`, emit inline labels from `(code-object-label-entries obj)`, emit one instruction line per PC. Branch/goto annotations read targets from the code object's own label table.
+      *Implemented as `dis/disassemble-code-object` (~25 lines). Branch/goto annotations aren't highlighted yet — future refinement.*
+- [x] 10.4 Update `tests/ece/cl-only/test-disassemble.scm` to cover the new "disassemble a code object directly" path. Remove (or mark deferred) the "unreached labels in span" test if it's no longer reachable.
+      *Tests added in `test-compile-to-code-object.scm` (kept with the rest of the code-object scenarios): disassemble on a pure code-object, and on the inner code-object of a defined procedure. All existing disassemble tests still pass (legacy space path).*
 - [ ] 10.5 Manually verify that `disassemble` output for `square` is qualitatively similar (header + instructions + branch annotations) but noticeably smaller (reachability-walk padding retires).
 
 ## 11. Retire old primitives and dead code

@@ -310,3 +310,25 @@ make-compiled-procedure instruction inside CO, or #f if none."
   (let* ((co (mc-compile-to-code-object '(lambda (x) (* x x))))
          (f (execute-code-object co)))
     (assert-equal 25 (f 5)))))
+
+;;; ─────────────────────────────────────────────────────────────────────────
+;;; §10: disassemble accepts a code-object directly, using the
+;;; straightforward iterate-0..length path (no reachability walk).
+;;; ─────────────────────────────────────────────────────────────────────────
+
+(test "disassemble on a code-object prints the body" (lambda ()
+  (let* ((co (mc-compile-to-code-object '(+ 1 2)))
+         (out (with-output-to-string (disassemble co))))
+    (assert-true (string-contains? out "code-object"))
+    (assert-true (string-contains? out "(assign"))
+    ;; Must end in a halt for top-level compile output.
+    (assert-true (string-contains? out "(halt)")))))
+
+(test "disassemble on a code-object-backed closure prints the inner body"
+  (lambda ()
+    (let* ((co (mc-compile-to-code-object '(define (add1 x) (+ x 1))))
+           (_ (execute-code-object co))
+           (inner (find-child-code-object co))
+           (out (with-output-to-string (disassemble inner))))
+      (assert-true (string-contains? out "add1"))
+      (assert-true (string-contains? out "(assign")))))
