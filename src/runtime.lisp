@@ -2063,27 +2063,34 @@ the downcased (source-map filename (pc line col) ...) cdr."
 so load-ecec-file can read both old and new serialization formats.")
 
 (defun load-ecec-section (stream &key skip)
-  "Load one ecec section from STREAM. Dispatches on the first form:
-  - (ecec-header ...) → legacy space-based section, reads a second form
-    with the compiled instructions and executes against a new space.
-  - (ecec-archive ...) → archive format, builds code-objects via
-    parse-archive-sexp and invokes the init.
-Dispatch inspects only the head symbol's name; each handler owns its
-own downcasing and canonicalization. Returns T while the stream has
-more sections (including skipped ones), NIL on EOF."
+  "Load one ecec archive section from STREAM. Expects (ecec-archive ...).
+SKIP is retained for Makefile API compat (skips sections whose archive
+|file| field matches) but is rarely used. Returns T while the stream
+has more sections (including skipped ones), NIL on EOF. Legacy
+(ecec-header ...) files were retired in §9.3 — if one is encountered,
+signals an error pointing at `make bootstrap` for regeneration."
   ;; Bind *package* to :ece so cl:read interns symbols in the ECE package,
   ;; regardless of caller context (e.g., CL-USER from run.lisp).
   (let* ((*package* (find-package :ece))
          (*readtable* *ecec-readtable*)
          (raw-head (cl:read stream nil :eof)))
     (when (eq raw-head :eof) (return-from load-ecec-section nil))
-    (cond
-      ((and (consp raw-head)
-            (symbolp (car raw-head))
-            (string-equal (symbol-name (car raw-head)) "ecec-archive"))
-       (load-ecec-archive-section raw-head))
-      (t
-       (load-ecec-legacy-section raw-head stream :skip skip)))
+    (unless (and (consp raw-head)
+                 (symbolp (car raw-head))
+                 (string-equal (symbol-name (car raw-head)) "ecec-archive"))
+      (error 'ece-runtime-error
+             :procedure nil :arguments nil :environment *global-env*
+             :instruction nil :backtrace nil
+             :original-error
+             (make-condition 'simple-error
+                             :format-control "load-ecec-section: expected (ecec-archive ...), got ~A. Run `make bootstrap` to regenerate."
+                             :format-arguments (list (if (consp raw-head) (car raw-head) raw-head)))))
+    (when skip
+      (let* ((archive (downcase-ece-symbols raw-head))
+             (file (archive-plist-get (cdr archive) '|file|)))
+        (when (and file (member file skip :test #'string=))
+          (return-from load-ecec-section t))))
+    (load-ecec-archive-section raw-head)
     t))
 
 (defun load-ecec-archive-section (raw-archive)
@@ -2172,29 +2179,6 @@ stale/regen-pending zone file."
            (zone-fn (gethash (cons file-stem co-key) *archive-zone-fns*)))
       (when zone-fn
         (setf (code-object-native-fn co) zone-fn)))))
-
-(defun load-ecec-legacy-section (raw-header stream &key skip)
-  "Legacy-format dispatch: RAW-HEADER is the head form as read by CL:READ.
-This handler downcases the header and the instruction form itself, then
-executes against a fresh space. Retires once old-format .ecec files
-disappear (§9.3)."
-  (let* ((header (downcase-ece-symbols raw-header))
-         (space-sym (cadr (assoc '|space| (cdr header))))
-         (space-name (symbol-name space-sym)))
-    (when (and skip (member space-name skip :test #'string=))
-      (cl:read stream)  ; read and discard instruction forms
-      (return-from load-ecec-legacy-section nil))
-    (let ((source-map-raw (cdr (assoc '|source-map| (cdr header))))
-          (sid (create-space space-name)))
-      ;; Register source-map if present
-      (when source-map-raw
-        (register-ecec-source-map space-sym source-map-raw))
-      (let ((*current-space-id* sid))
-        (let* ((instrs (cl:read stream))
-               (fixed (downcase-ece-symbols
-                       (canonicalize-ecec-constants instrs)))
-               (start-pc (assemble-into-space sid fixed)))
-          (execute-instructions sid start-pc *global-env*))))))
 
 (defun load-ecec-file (pathname &key skip)
   "Load a .ecec file: read sections, create named spaces, assemble and execute.
