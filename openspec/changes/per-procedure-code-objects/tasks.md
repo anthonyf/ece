@@ -87,6 +87,7 @@
 
 - [x] 9.1 With code-object primitives present but `.ecec` still in old format, build: `make clean-fasl && make bootstrap`. Confirm the old format still loads via compatibility shim.
 - [ ] 9.2 Switch `compile-system` output to the new archive format. Re-bootstrap; now `.ecec` files are new-format.
+      *Phase A (Apr 19 2026): CL-side archive parser + dual-format load-ecec-section landed (Tasks A2/A3). compile-system switch proper is Phase D.*
 - [ ] 9.3 Remove the old-format compatibility shim from the loader. Re-bootstrap. Confirm the whole bootstrap loads exclusively via the new format.
 - [ ] 9.4 Remove the space-struct-based primitive stubs (`%space-*` that retire) and their registrations in `boot-env.scm`. Re-bootstrap. Confirm everything still loads.
 
