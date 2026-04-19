@@ -2030,36 +2030,43 @@ so load-ecec-file can read both old and new serialization formats.")
     with the compiled instructions and executes against a new space.
   - (ecec-archive ...) → archive format, builds code-objects via
     parse-archive-sexp and invokes the init.
-Returns T if a section was loaded, NIL on EOF."
+Dispatch inspects only the head symbol's name; each handler owns its
+own downcasing and canonicalization. Returns T while the stream has
+more sections (including skipped ones), NIL on EOF."
   ;; Bind *package* to :ece so cl:read interns symbols in the ECE package,
   ;; regardless of caller context (e.g., CL-USER from run.lisp).
   (let* ((*package* (find-package :ece))
          (*readtable* *ecec-readtable*)
          (raw-head (cl:read stream nil :eof)))
     (when (eq raw-head :eof) (return-from load-ecec-section nil))
-    (let ((head (downcase-ece-symbols raw-head)))
-      (cond
-        ((and (consp head) (eq (car head) '|ecec-archive|))
-         (load-ecec-archive-section head))
-        (t
-         (load-ecec-legacy-section head stream :skip skip))))
+    (cond
+      ((and (consp raw-head)
+            (symbolp (car raw-head))
+            (string-equal (symbol-name (car raw-head)) "ecec-archive"))
+       (load-ecec-archive-section raw-head))
+      (t
+       (load-ecec-legacy-section raw-head stream :skip skip)))
     t))
 
-(defun load-ecec-archive-section (archive)
+(defun load-ecec-archive-section (raw-archive)
   "Archive-format dispatch: parse the archive, execute the init code-object.
-Nested code-objects become globally reachable through whatever top-level
-bindings the init sets up; no separate registry is needed."
-  (let* ((canonicalized (downcase-ece-symbols
-                         (canonicalize-ecec-constants archive)))
-         (cos (parse-archive-sexp canonicalized))
+RAW-ARCHIVE is the form as produced by CL:READ — this handler owns its
+own downcasing + constant canonicalization so the dispatcher never walks
+the tree. Nested code-objects become globally reachable through whatever
+top-level bindings the init sets up; no separate registry is needed."
+  (let* ((archive (downcase-ece-symbols
+                   (canonicalize-ecec-constants raw-archive)))
+         (cos (parse-archive-sexp archive))
          (init (aref cos 0)))
     (execute-instructions init 0 *global-env*)))
 
-(defun load-ecec-legacy-section (header stream &key skip)
-  "Legacy-format dispatch: HEADER is already read. Read instructions as a
-second form and execute against a fresh space. Retires once old-format
-.ecec files disappear (§9.3)."
-  (let* ((space-sym (cadr (assoc '|space| (cdr header))))
+(defun load-ecec-legacy-section (raw-header stream &key skip)
+  "Legacy-format dispatch: RAW-HEADER is the head form as read by CL:READ.
+This handler downcases the header and the instruction form itself, then
+executes against a fresh space. Retires once old-format .ecec files
+disappear (§9.3)."
+  (let* ((header (downcase-ece-symbols raw-header))
+         (space-sym (cadr (assoc '|space| (cdr header))))
          (space-name (symbol-name space-sym)))
     (when (and skip (member space-name skip :test #'string=))
       (cl:read stream)  ; read and discard instruction forms
