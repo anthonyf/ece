@@ -38,7 +38,9 @@
 (test "codegen: emitted zone registers under *archive-zone-fns*" (lambda ()
   (define co (mc-compile-to-code-object '(+ 1 2)))
   (define tmp-path "/tmp/claude/test-zone-register.lisp")
-  (generate-zone-cl-for-code-object! co "test-register" tmp-path "fixture" 'boom)
+  ;; co-key is an archive-index integer — matches what the archive loader
+  ;; computes via archive-co-key (runtime.lisp).
+  (generate-zone-cl-for-code-object! co "test-register" tmp-path "fixture" 7)
   ;; Confirm the file contains an *archive-zone-fns* setf form.
   (define in (open-input-file tmp-path))
   (let loop ((saw-register #f))

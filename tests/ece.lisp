@@ -3378,17 +3378,27 @@ compiled) pair so the caller can assert equality."
 ;;; load-bearing parity test we have for Stage 1.
 
 (defun ensure-assembler-zone-registered ()
-  "Make sure the assembler space has a compiled-zone function registered.
-Returns the space-id symbol. The boot-time loader (load-compiled-zones in
-runtime.lisp) usually does this automatically; if not — for example after
-a test cleared the registry — we re-register from the already-loaded
-zone-assembler defun."
-  (let ((space-id (intern "assembler" :ece))
-        (zone-fn (find-symbol "ZONE-ASSEMBLER" :ece)))
-    (when (and zone-fn (fboundp zone-fn))
-      (setf (gethash space-id ece::*compiled-zone-functions*)
-            (symbol-function zone-fn)))
-    space-id))
+  "Make sure every assembler code-object has its native-fn slot wired up
+so execute-instructions dispatches through the compiled path. Returns
+the assembler file-stem symbol for compatibility with call sites that
+bind `space-id`.
+
+Post-Phase-D: zones are per-code-object, keyed by (file-stem . index) in
+*archive-zone-fns*, and the archive loader attaches native-fn at boot
+via attach-archive-native-fns. This helper re-runs that attachment for
+any assembler code-object in *archive-code-objects* whose native-fn was
+cleared (e.g., by a test that mutated the slot). It has no work to do
+during a clean run, which is by design."
+  (let ((file-stem (intern "assembler" :ece)))
+    (maphash (lambda (key co)
+               (when (and (consp key) (eq (car key) file-stem))
+                 (let* ((co-key (cdr key))
+                        (zone-fn (gethash (cons file-stem co-key)
+                                          ece::*archive-zone-fns*)))
+                   (when (and zone-fn (null (ece::code-object-native-fn co)))
+                     (setf (ece::code-object-native-fn co) zone-fn)))))
+             ece::*archive-code-objects*)
+    file-stem))
 
 (deftest test-real-space-parity-arithmetic
     (testing "(+ 1 2 3) returns 6 with the assembler compiled zone registered"
@@ -3433,51 +3443,92 @@ zone-assembler defun."
                           "dynamic-wind runs before/body/after in order"))
                  (ensure-assembler-zone-registered)))))
 
+(defun build-archive-zone-fn-inverse ()
+  "Invert *archive-zone-fns* to a (make-hash-table :test 'eq) keyed on the
+function value, mapping back to the original (file-stem . co-key) cons.
+Used by test-shipped-zone-files-load-and-register to look up each zone
+defun's archive key in O(1) instead of O(N) per lookup (N ~= 1000)."
+  (let ((inv (make-hash-table :test 'eq)))
+    (maphash (lambda (key fn)
+               (setf (gethash fn inv) key))
+             ece::*archive-zone-fns*)
+    inv))
+
 (deftest test-shipped-zone-files-load-and-register
-    (testing "every bootstrap/*-zone.lisp file installs an fbound zone-NAME function"
+    (testing "every bootstrap/*-zone.lisp file installs an fbound zone-NAME function registered in *archive-zone-fns*"
              (let* ((bootstrap-dir
                      (asdf:system-relative-pathname :ece "bootstrap/"))
                     (pattern (merge-pathnames "*-zone.lisp" bootstrap-dir))
-                    (files (directory pattern)))
+                    (files (directory pattern))
+                    ;; Build fn→key inverse once — with ~1000 zone files,
+                    ;; a per-file maphash scan would be O(N^2).
+                    (fn-to-key (build-archive-zone-fn-inverse)))
                (ok (>= (length files) 1)
                    "at least one bootstrap/*-zone.lisp file ships with the build")
                (dolist (file files)
-                 ;; The codegen prepends "zone-" to the space name passed in,
-                 ;; so when the Makefile invokes generate-zone-cl! with
-                 ;; "assembler" the resulting function is `zone-assembler` —
-                 ;; we strip `-zone` from the file basename to recover the
-                 ;; space name, then look up `zone-NAME` in :ece.
+                 ;; Post-Phase-D naming: filenames look like
+                 ;; <file-stem>-<co-name?>-<index>-zone.lisp, and the emitted
+                 ;; defun is named `zone-<file-stem>-<co-name?>-<index>`.
+                 ;; The file registers under (file-stem . index) in
+                 ;; *archive-zone-fns* (NOT *compiled-zone-functions* — that
+                 ;; registry is reserved for the legacy space-keyed path).
+                 ;; Since file-stem may itself contain hyphens (boot-env,
+                 ;; browser-lib, compilation-unit), we can't cleanly split
+                 ;; the filename into (file-stem . index) — instead we
+                 ;; derive the defun from the filename stem and confirm the
+                 ;; registered function is (eq) to it.
                  (let* ((base (pathname-name file))
-                        (space-name (subseq base 0 (- (length base)
-                                                      (length "-zone")))))
+                        (zone-stem (subseq base 0 (- (length base)
+                                                     (length "-zone")))))
                    (let ((sym (find-symbol (concatenate 'string
                                                         "ZONE-"
-                                                        (string-upcase space-name))
+                                                        (string-upcase zone-stem))
                                            :ece)))
                      (ok (and sym (fboundp sym))
                          (format nil "~A defines fbound ~A" file sym))
-                     (let* ((space-id (intern space-name :ece))
-                            (registered (gethash space-id ece::*compiled-zone-functions*)))
-                       (ok registered
-                           (format nil "~A registered in *compiled-zone-functions*" space-name))
-                       (ok (eq registered (and sym (symbol-function sym)))
-                           "registered function matches the defun"))))))))
+                     (when (and sym (fboundp sym))
+                       (let ((key (gethash (symbol-function sym) fn-to-key)))
+                         (ok key
+                             (format nil "~A registered in *archive-zone-fns*"
+                                     zone-stem))
+                         (when key
+                           (ok (and (consp key)
+                                    (symbolp (car key))
+                                    (integerp (cdr key)))
+                               (format nil
+                                       "~A key has (file-stem-symbol . index-integer) shape"
+                                       zone-stem)))))))))))
 
 (deftest test-shipped-zone-files-determinism
-    (testing "regenerating the assembler zone file twice produces byte-identical output"
+    (testing "regenerating a code-object zone file twice produces byte-identical output"
              (load-codegen-cl-inline)
              (let ((path-a (uiop:with-temporary-file (:pathname p :type "lisp" :keep t)
                              (namestring p)))
                    (path-b (uiop:with-temporary-file (:pathname p :type "lisp" :keep t)
                              (namestring p))))
                (unwind-protect
-                    (progn
-                      (run-zone-codegen "assembler" path-a)
-                      (run-zone-codegen "assembler" path-b)
+                    (flet ((emit-probe (path)
+                             ;; Reset the global label counter so both runs
+                             ;; see identical label names (L1, L2, ...).
+                             ;; mc-compile-to-code-object mutates it.
+                             (ece::set-variable-value!
+                              (intern "mc-label-counter" :ece)
+                              0
+                              ece:*global-env*)
+                             (ece::evaluate
+                              (list (intern "generate-zone-cl-for-code-object!" :ece)
+                                    (list (intern "mc-compile-to-code-object" :ece)
+                                          (list 'quote '(+ 1 2)))
+                                    "determinism-probe" path "fixture" 0))))
+                      ;; Post-Phase-D codegen is per-code-object, not per-space.
+                      ;; Compile a small expression to a code-object, then emit
+                      ;; a zone file for it twice and compare bytes.
+                      (emit-probe path-a)
+                      (emit-probe path-b)
                       (let ((bytes-a (alexandria:read-file-into-byte-vector path-a))
                             (bytes-b (alexandria:read-file-into-byte-vector path-b)))
                         (ok (equalp bytes-a bytes-b)
-                            "two runs against the assembler space produce identical bytes")))
+                            "two runs against the same expression produce identical bytes")))
                  (ignore-errors (delete-file path-a))
                  (ignore-errors (delete-file path-b))))))
 

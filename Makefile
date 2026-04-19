@@ -223,8 +223,14 @@ repl: share/ece/ece-main.ecec
 run-lisp:
 	qlot exec sbcl --dynamic-space-size 4096 --disable-debugger --eval '(asdf:load-system :ece)' $(ARGS)
 
-ZONE_SENTINEL := $(BOOTSTRAP_DIR)/assembler-zone.lisp
-ZONE_FILES := $(BOOTSTRAP_DIR)/boot-env-zone.lisp $(BOOTSTRAP_DIR)/compilation-unit-zone.lisp $(BOOTSTRAP_DIR)/reader-zone.lisp $(BOOTSTRAP_DIR)/syntax-rules-zone.lisp $(BOOTSTRAP_DIR)/compiler-zone.lisp $(BOOTSTRAP_DIR)/prelude-zone.lisp
+# Per-code-object codegen produces ~1000 zone files named
+# <file-stem>-<index>-zone.lisp (with an optional -NAME- prefix for named
+# code-objects). The first assembler code-object is always index 0, so
+# assembler-0-zone.lisp is a stable sentinel the recipe always creates.
+# Enumerating every zone file as a make target does not scale — the
+# gitignore pattern /bootstrap/*-zone.lisp handles the directory globally,
+# and a single sentinel is enough for make's dependency graph.
+ZONE_SENTINEL := $(BOOTSTRAP_DIR)/assembler-0-zone.lisp
 
 bootstrap: $(BOOTSTRAP_DIR)/primitives-auto.lisp $(BOOTSTRAP_DIR)/bootstrap.ecec $(ZONE_SENTINEL)
 
@@ -258,12 +264,12 @@ $(BOOTSTRAP_DIR)/primitives-auto.lisp: primitives.def src/primitives.scm src/cod
 	  --quit
 	@echo "Generated $(BOOTSTRAP_DIR)/primitives-auto.lisp"
 
-# Stage 1: archive-driven per-code-object compiled-zone generation. Reads
-# the archive at $(BOOTSTRAP_DIR)/bootstrap.ecec and emits one zone .lisp
-# per code-object contained in it. Sentinel target assembler-zone.lisp
-# stands for all zone files; the other zone file targets declare the
-# sentinel as a prerequisite so Make knows they exist but doesn't re-run
-# the recipe.
+# Archive-driven per-code-object compiled-zone generation. Reads the
+# archive at $(BOOTSTRAP_DIR)/bootstrap.ecec and emits one zone .lisp per
+# code-object contained in it (~1000 files). The sentinel
+# assembler-0-zone.lisp stands in for the whole set: index 0 of the
+# assembler section is always emitted when the recipe runs, so its mtime
+# is a reliable signal that regeneration has happened.
 $(ZONE_SENTINEL): primitives.def src/primitives.scm src/codegen-cl.scm src/codegen-cl-inline.scm $(BOOTSTRAP_SRCS) $(BOOTSTRAP_DIR)/bootstrap.ecec
 	@mkdir -p $(BOOTSTRAP_DIR)
 	@echo "Regenerating all compiled zones in $(BOOTSTRAP_DIR)/..."
@@ -275,8 +281,6 @@ $(ZONE_SENTINEL): primitives.def src/primitives.scm src/codegen-cl.scm src/codeg
 	  --eval '(ece:evaluate (list (intern "generate-all-zones-from-archive!" :ece) "$(BOOTSTRAP_DIR)/bootstrap.ecec" "$(BOOTSTRAP_DIR)"))' \
 	  --quit
 	@echo "Generated all compiled zones"
-
-$(ZONE_FILES): $(ZONE_SENTINEL)
 
 sandbox: ece
 	@mkdir -p .tmp/sandbox-build sandbox

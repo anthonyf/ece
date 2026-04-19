@@ -129,8 +129,8 @@ space has no instructions registered."
 the function name suffix. OUTPUT-PATH is the destination .lisp file.
 FILE-STEM is the archive's base name (no extension) as a string — emitted
 into the self-registration form and used for inner-co constant lookups.
-CO-KEY is the CO's name symbol if it has one, or its zero-based archive
-index as an integer — used as the second half of the registry key.
+CO-KEY is the zero-based archive index as an integer — used as the
+second half of the (FILE-STEM . CO-KEY) registry key.
 
 If *emit-co-index-map* is already bound (caller is the archive-driven
 generate-all-zones-from-archive!), we reuse it so anonymous lambdas
@@ -319,9 +319,10 @@ entry to that space."
 (define (emit-zone-registration-for-co out name-str file-stem co-key)
   "Archive path: register under *archive-zone-fns* keyed on
 (file-stem . co-key). FILE-STEM is a string (the archive's base name).
-CO-KEY is either a symbol (the co's name) or an integer (archive
-index) — emitted literally so the key round-trips through cl:read back
-into the same EQUAL hash key the archive loader constructs."
+CO-KEY is an archive index integer (see co-key-for-archive-entry) —
+emitted literally so the key round-trips through cl:read back into the
+same EQUAL hash key the archive loader constructs in
+runtime.lisp:archive-co-key."
   (write-string ";;; Self-registration: install zone-" out)
   (write-string name-str out)
   (write-string " under (file-stem . co-key) so the" out) (newline out)
@@ -329,11 +330,7 @@ into the same EQUAL hash key the archive loader constructs."
   (write-string "(cl:setf (cl:gethash (cl:cons " out)
   (emit-file-stem-symbol out file-stem)
   (write-char #\space out)
-  (cond
-   ((symbol? co-key)
-    (write-cl-quoted-ece-symbol out co-key))
-   (else
-    (write-string (number->string co-key) out)))
+  (write-string (number->string co-key) out)
   (write-string ") *archive-zone-fns*)" out) (newline out)
   (write-string "         (cl:function zone-" out)
   (write-string name-str out)
@@ -1303,9 +1300,11 @@ and `/` so SBCL's pathname parser accepts the result."
 
 (define (build-archive-co-index-map cos n)
   "Return a hash-table mapping each code-object in COS (vector of length N)
-to its zero-based archive index. Used by emit-inner-co-lookup as a
-fallback key for anonymous lambdas — named lambdas use their name symbol
-directly and don't hit this map."
+to its zero-based archive index. emit-inner-co-lookup consults this map
+for every code-object operand (named or anonymous) — keys are always
+archive indices, so all same-named code-objects resolve to distinct
+entries. Must be seeded before emitting a zone file so (const <co>)
+operands can be rewritten to (archive-co-lookup STEM INDEX)."
   (let ((h (%make-hash-table)))
     (let loop ((i 0))
       (when (< i n)
@@ -1313,16 +1312,14 @@ directly and don't hit this map."
         (loop (+ i 1))))
     h))
 
-(define (co-key-for-archive-entry co index)
-  "Derive the registry key for CO at archive INDEX. Always uses the
+(define (co-key-for-archive-entry index)
+  "Derive the registry key for an archive entry at INDEX. Always uses the
 archive index — names are not unique within an archive (prelude has
 7 distinct `iter` code-objects inside reverse, length, map, for-each,
 min/max, range). If we keyed on name, the archive loader would silently
 overwrite earlier registrations and all same-named code-objects would
 share a single zone fn. Must match the key the archive loader derives
-(runtime.lisp: archive-co-key). CO is unused but kept for symmetry with
-the runtime side."
-  co  ; unused
+(runtime.lisp: archive-co-key)."
   index)
 
 (define (archive-file-stem archive)
@@ -1361,7 +1358,7 @@ Threads *emit-co-index-map* so emit-inner-co-lookup can resolve (const
         (when (< i n)
           (let* ((co (vector-ref cos i))
                  (zone-name (zone-name-for-code-object file-stem i co))
-                 (co-key (co-key-for-archive-entry co i))
+                 (co-key (co-key-for-archive-entry i))
                  (output-path (string-append output-dir "/" zone-name "-zone.lisp")))
             (display (string-append "Generating " output-path
                                     " (" (number->string (code-object-length co))

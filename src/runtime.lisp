@@ -2141,8 +2141,9 @@ silently overwrite earlier entries, and all same-named code-objects
 would share a single zone fn — catastrophic for correctness.
 
 Must match the key the codegen emits in src/codegen-cl-inline.scm
-co-key-for-archive-entry. CO is unused but kept for symmetry with the
-codegen side."
+co-key-for-archive-entry. CO is unused but kept here because
+attach-archive-native-fns / register-archive-code-objects already have
+the CO in hand and passing it matches the helper's positional shape."
   (declare (ignore co))
   index)
 
