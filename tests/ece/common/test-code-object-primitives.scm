@@ -61,3 +61,24 @@
         (b (%make-code-object)))
     (assert-equal #f (eq? a b))
     (assert-equal #t (eq? a a)))))
+
+;;; §6.6 end-to-end: both runtimes compile and execute a code-object.
+;;; The compile step uses mc-compile-to-code-object (bottom-up shape);
+;;; the execute step uses execute-code-object.
+
+(test "mc-compile-to-code-object + execute-code-object: literal" (lambda ()
+  (assert-equal 42 (execute-code-object (mc-compile-to-code-object 42)))))
+
+(test "mc-compile-to-code-object + execute-code-object: primitive op" (lambda ()
+  (assert-equal 7 (execute-code-object (mc-compile-to-code-object '(+ 3 4))))))
+
+(test "mc-compile-to-code-object + execute-code-object: quoted symbol" (lambda ()
+  (assert-equal 'hello (execute-code-object (mc-compile-to-code-object ''hello)))))
+
+(test "mc-compile-to-code-object + execute-code-object: if/else (TRUE)" (lambda ()
+  (assert-equal 'big (execute-code-object
+                      (mc-compile-to-code-object '(if (> 5 3) 'big 'small))))))
+
+(test "mc-compile-to-code-object + execute-code-object: lambda call" (lambda ()
+  (assert-equal 25 (execute-code-object
+                    (mc-compile-to-code-object '((lambda (x) (* x x)) 5))))))

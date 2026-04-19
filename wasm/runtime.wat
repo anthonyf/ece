@@ -2181,11 +2181,17 @@
   ;; --- Execute instructions ---
   ;; The core interpreter loop. Takes a space and start PC,
   ;; returns the value in the val register when PC reaches end.
+  ;; §6.6: $init-code-obj — when non-null, the executor starts inside a
+  ;; code-object (reading $instrs/$labels/$len from it). $init-space-id
+  ;; and $init-pc are ignored in that case. When null, the legacy space
+  ;; path applies.
   (func $execute (export "execute")
                  (param $init-space-id i32) (param $init-pc i32)
                  (param $init-env (ref null eq))
+                 (param $init-code-obj (ref null eq))
                  (result (ref null eq))
     (local $space-id i32)
+    (local $current-code-obj (ref null eq))
     (local $pc i32)
     (local $val (ref null eq))
     (local $env (ref null eq))
@@ -2194,8 +2200,9 @@
     (local $cont (ref null eq))   ;; continue register
     (local $stack (ref null eq))
     (local $flag i32)
-    (local $space (ref $comp-space))
-    (local $instrs (ref $instr-vec))
+    ;; §6.6: $space is null when running in code-object mode.
+    (local $space (ref null $comp-space))
+    (local $instrs (ref null $instr-vec))
     (local $len i32)
     (local $instr (ref $instr))
     (local $opcode i32)
@@ -2210,6 +2217,7 @@
 
     ;; Initialize
     (local.set $space-id (local.get $init-space-id))
+    (local.set $current-code-obj (local.get $init-code-obj))
     (local.set $pc (local.get $init-pc))
     (local.set $env (local.get $init-env))
     (local.set $stack (global.get $nil))
@@ -2222,14 +2230,23 @@
       (then
         (local.set $proc (global.get $execute-proc))
         (global.set $execute-proc (ref.null eq))
-        ;; Set continue to a "return" sentinel: (space-id . len)
-        ;; When the function does (goto (reg continue)), pc will be >= len,
-        ;; causing $execute to exit and return $val.
-        (local.set $cont
-          (call $cons
-            (call $make-fixnum (local.get $init-space-id))
-            (call $make-fixnum (struct.get $comp-space $len
-              (call $get-space (local.get $init-space-id))))))))
+        ;; Set continue to a "return" sentinel. When the function does
+        ;; (goto (reg continue)), pc will be >= len, causing $execute to
+        ;; exit and return $val. For space mode: (space-id . len); for
+        ;; code-object mode: (code-obj . len).
+        (if (ref.is_null (local.get $current-code-obj))
+          (then
+            (local.set $cont
+              (call $cons
+                (call $make-fixnum (local.get $init-space-id))
+                (call $make-fixnum (struct.get $comp-space $len
+                  (call $get-space (local.get $init-space-id)))))))
+          (else
+            (local.set $cont
+              (call $cons
+                (local.get $current-code-obj)
+                (call $make-fixnum (struct.get $code-object $len
+                  (ref.cast (ref $code-object) (local.get $current-code-obj))))))))))
     ;; Check for pending val/stack (set by call_continuation)
     (if (i32.eqz (ref.is_null (global.get $execute-val)))
       (then
@@ -2239,9 +2256,17 @@
       (then
         (local.set $stack (global.get $execute-stack))
         (global.set $execute-stack (ref.null eq))))
-    (local.set $space (call $get-space (local.get $space-id)))
-    (local.set $instrs (struct.get $comp-space $instrs (local.get $space)))
-    (local.set $len (struct.get $comp-space $len (local.get $space)))
+    ;; §6.6: init instrs/len from either the code-object or the space.
+    (if (ref.is_null (local.get $current-code-obj))
+      (then
+        (local.set $space (call $get-space (local.get $space-id)))
+        (local.set $instrs (struct.get $comp-space $instrs (local.get $space)))
+        (local.set $len (struct.get $comp-space $len (local.get $space))))
+      (else
+        (local.set $instrs (struct.get $code-object $instrs
+          (ref.cast (ref $code-object) (local.get $current-code-obj))))
+        (local.set $len (struct.get $code-object $len
+          (ref.cast (ref $code-object) (local.get $current-code-obj))))))
 
     ;; Main dispatch loop
     (block $loop-end
@@ -2290,13 +2315,22 @@
             ;; assign from label (src-type 2)
             (if (i32.eq (local.get $src-type) (i32.const 2))
               (then
-                ;; For continue register, store space-qualified address
+                ;; For continue register, store an identity-qualified address:
+                ;; (current-code-obj . pc) in code-object mode, (space-id . pc)
+                ;; otherwise. §6.6.
                 (if (i32.eq (local.get $target) (i32.const 4))
                   (then
-                    (local.set $op-result
-                      (call $cons
-                        (call $make-fixnum (local.get $space-id))
-                        (call $make-fixnum (struct.get $instr $c (local.get $instr))))))
+                    (if (ref.is_null (local.get $current-code-obj))
+                      (then
+                        (local.set $op-result
+                          (call $cons
+                            (call $make-fixnum (local.get $space-id))
+                            (call $make-fixnum (struct.get $instr $c (local.get $instr))))))
+                      (else
+                        (local.set $op-result
+                          (call $cons
+                            (local.get $current-code-obj)
+                            (call $make-fixnum (struct.get $instr $c (local.get $instr))))))))
                   (else
                     (local.set $op-result
                       (call $make-fixnum (struct.get $instr $c (local.get $instr))))))))
@@ -2432,10 +2466,42 @@
               (call $get-reg (struct.get $instr $c (local.get $instr))
                 (local.get $val) (local.get $env) (local.get $proc)
                 (local.get $argl) (local.get $cont) (local.get $stack)))
-            ;; Space-qualified address is a pair (space-id . pc)
+            ;; §7.1: bare code-object → pc 0 of that code-object
+            (if (ref.test (ref $code-object) (local.get $addr))
+              (then
+                (if (i32.eqz (ref.eq (local.get $addr) (local.get $current-code-obj)))
+                  (then
+                    (local.set $current-code-obj (local.get $addr))
+                    (local.set $instrs (struct.get $code-object $instrs
+                      (ref.cast (ref $code-object) (local.get $addr))))
+                    (local.set $len (struct.get $code-object $len
+                      (ref.cast (ref $code-object) (local.get $addr))))))
+                (local.set $pc (i32.const 0))
+                (br $loop-start)))
+            ;; Space-qualified address is a pair (space-id . pc) OR (code-obj . pc)
             (if (ref.test (ref $pair) (local.get $addr))
               (then
                 (local.set $addr-pair (ref.cast (ref $pair) (local.get $addr)))
+                ;; (code-obj . pc) pair?
+                (if (ref.test (ref $code-object) (call $car (local.get $addr-pair)))
+                  (then
+                    (if (i32.eqz (ref.eq
+                          (call $car (local.get $addr-pair))
+                          (local.get $current-code-obj)))
+                      (then
+                        (local.set $current-code-obj
+                          (call $car (local.get $addr-pair)))
+                        (local.set $instrs (struct.get $code-object $instrs
+                          (ref.cast (ref $code-object)
+                            (call $car (local.get $addr-pair)))))
+                        (local.set $len (struct.get $code-object $len
+                          (ref.cast (ref $code-object)
+                            (call $car (local.get $addr-pair)))))))
+                    (local.set $pc
+                      (call $fixnum-value
+                        (ref.cast (ref i31) (call $cdr (local.get $addr-pair)))))
+                    (br $loop-start)))
+                ;; Legacy (space-id . pc) pair
                 (local.set $dest-space
                   (call $fixnum-value
                     (ref.cast (ref i31) (call $car (local.get $addr-pair)))))
@@ -2445,10 +2511,13 @@
                 ;; Cross-space jump?
                 (if (i32.ne (local.get $dest-space) (local.get $space-id))
                   (then
+                    (local.set $current-code-obj (ref.null eq))
                     (local.set $space-id (local.get $dest-space))
                     (local.set $space (call $get-space (local.get $space-id)))
-                    (local.set $instrs (struct.get $comp-space $instrs (local.get $space)))
-                    (local.set $len (struct.get $comp-space $len (local.get $space)))))
+                    (local.set $instrs (struct.get $comp-space $instrs
+                      (ref.as_non_null (local.get $space))))
+                    (local.set $len (struct.get $comp-space $len
+                      (ref.as_non_null (local.get $space))))))
                 (local.set $pc (local.get $dest-pc))
                 (br $loop-start))
               (else
@@ -2703,23 +2772,35 @@
               (call $fixnum-value (ref.cast (ref i31)
                 (call $xcdr (local.get $a))))
               (local.get $b)))
-          ;; Fallback: bare fixnum PC (same space)
+          ;; Fallback: bare fixnum PC or §7.1 bare code-object
           (else
-            (call $make-compiled-proc
-              (local.get $space-id)
-              (if (result i32) (ref.test (ref i31) (local.get $a))
-                (then (call $fixnum-value (ref.cast (ref i31) (local.get $a))))
-                (else (i32.const 0)))
-              (local.get $b)))))
+            (if (result (ref null eq)) (ref.test (ref $code-object) (local.get $a))
+              (then
+                (struct.new $compiled-proc
+                  (i32.const 0) (i32.const 0)
+                  (local.get $b)
+                  (local.get $a)))
+              (else (call $make-compiled-proc
+                (local.get $space-id)
+                (if (result i32) (ref.test (ref i31) (local.get $a))
+                  (then (call $fixnum-value (ref.cast (ref i31) (local.get $a))))
+                  (else (i32.const 0)))
+                (local.get $b)))))))
 
-    ;; 8 = compiled-procedure-entry(proc) → space-qualified pair
+    ;; 8 = compiled-procedure-entry(proc) → code-object (§7.1) or (space-id . pc).
     (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 8))
       (then
-        (call $cons
-          (call $make-fixnum
-            (call $compiled-proc-space (ref.cast (ref $compiled-proc) (local.get $a))))
-          (call $make-fixnum
-            (call $compiled-proc-pc (ref.cast (ref $compiled-proc) (local.get $a))))))
+        (if (result (ref null eq))
+          (i32.eqz (ref.is_null
+            (struct.get $compiled-proc $code-obj
+              (ref.cast (ref $compiled-proc) (local.get $a)))))
+          (then (struct.get $compiled-proc $code-obj
+                  (ref.cast (ref $compiled-proc) (local.get $a))))
+          (else (call $cons
+                  (call $make-fixnum
+                    (call $compiled-proc-space (ref.cast (ref $compiled-proc) (local.get $a))))
+                  (call $make-fixnum
+                    (call $compiled-proc-pc (ref.cast (ref $compiled-proc) (local.get $a))))))))
 
     ;; 9 = compiled-procedure-env(proc)
     (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 9))
@@ -2835,7 +2916,8 @@
         (drop (call $execute
           (call $compiled-proc-space (ref.cast (ref $compiled-proc) (local.get $c)))
           (call $compiled-proc-pc (ref.cast (ref $compiled-proc) (local.get $c)))
-          (call $compiled-proc-env (ref.cast (ref $compiled-proc) (local.get $c)))))
+          (call $compiled-proc-env (ref.cast (ref $compiled-proc) (local.get $c)))
+          (ref.null eq)))
         (global.get $void))
 
     ;; 20 = continuation-stack(cont)
@@ -4697,13 +4779,21 @@
         ;; Finalize any pending instructions before execution
         (if (i32.eqz (ref.is_null (global.get $pending-instrs)))
           (then (call $finalize-pending-instrs)))
-        ;; arg1 = qualified address pair (space-id . pc)
+        (if (i32.eqz (ref.is_null (global.get $co-pending-instrs)))
+          (then (call $finalize-co-pending-instrs)))
+        ;; arg1 = qualified address pair (space-id . pc) or bare code-object (§6.4)
+        (if (ref.test (ref $code-object) (call $arg1 (local.get $args)))
+          (then (return (call $execute
+            (i32.const 0) (i32.const 0)
+            (global.get $global-env)
+            (call $arg1 (local.get $args))))))
         (return (call $execute
           (call $fixnum-value (ref.cast (ref i31)
             (call $xcar (call $arg1 (local.get $args)))))
           (call $fixnum-value (ref.cast (ref i31)
             (call $xcdr (call $arg1 (local.get $args)))))
-          (global.get $global-env)))))
+          (global.get $global-env)
+          (ref.null eq)))))
 
     ;; 89 = apply-compiled-procedure (proc, args)
     (if (i32.eq (local.get $id) (i32.const 89))
@@ -4711,13 +4801,24 @@
         ;; Set pending proc and argl so $execute initializes registers
         (global.set $execute-proc (call $arg1 (local.get $args)))
         (global.set $execute-argl (call $arg2 (local.get $args)))
+        ;; §7.1 shape: if the closure has a $code-obj, dispatch via that.
+        (if (i32.eqz (ref.is_null
+                       (struct.get $compiled-proc $code-obj
+                         (ref.cast (ref $compiled-proc) (call $arg1 (local.get $args))))))
+          (then (return (call $execute
+            (i32.const 0) (i32.const 0)
+            (call $compiled-proc-env
+              (ref.cast (ref $compiled-proc) (call $arg1 (local.get $args))))
+            (struct.get $compiled-proc $code-obj
+              (ref.cast (ref $compiled-proc) (call $arg1 (local.get $args))))))))
         (return (call $execute
           (call $compiled-proc-space
             (ref.cast (ref $compiled-proc) (call $arg1 (local.get $args))))
           (call $compiled-proc-pc
             (ref.cast (ref $compiled-proc) (call $arg1 (local.get $args))))
           (call $compiled-proc-env
-            (ref.cast (ref $compiled-proc) (call $arg1 (local.get $args))))))))
+            (ref.cast (ref $compiled-proc) (call $arg1 (local.get $args))))
+          (ref.null eq)))))
 
     ;; 90 = try-eval (expr) — evaluate with error trapping
     ;; On WASM, errors propagate as traps — JS catches them.
@@ -5155,9 +5256,14 @@
                   (call $is-continuation (local.get $result)))
           (then (global.get $true)) (else (global.get $false))))))
 
-    ;; 158 = compiled-procedure-entry(proc) → (space-id . pc) pair
+    ;; 158 = compiled-procedure-entry(proc) → code-object (§7.1) or (space-id . pc).
     (if (i32.eq (local.get $id) (i32.const 158))
       (then
+        (if (i32.eqz (ref.is_null
+                       (struct.get $compiled-proc $code-obj
+                         (ref.cast (ref $compiled-proc) (call $arg1 (local.get $args))))))
+          (then (return (struct.get $compiled-proc $code-obj
+                          (ref.cast (ref $compiled-proc) (call $arg1 (local.get $args)))))))
         (return (call $cons
           (call $make-fixnum (call $compiled-proc-space
             (ref.cast (ref $compiled-proc) (call $arg1 (local.get $args)))))
@@ -5732,11 +5838,17 @@
           (call $arg2 (local.get $args)))
         (return (global.get $void))))
 
-    ;; 256 = execute-code-object(co, [env]) — CL-only in §6 coexistence.
-    ;; On WASM, executing a code-object requires the executor switch that
-    ;; lands in §6.6. For now, calling this on WASM returns void.
+    ;; 256 = execute-code-object(co, [env]) — §6.6 runs it on WASM too.
     (if (i32.eq (local.get $id) (i32.const 256))
-      (then (return (global.get $void))))
+      (then
+        (if (i32.eqz (ref.is_null (global.get $pending-instrs)))
+          (then (call $finalize-pending-instrs)))
+        (if (i32.eqz (ref.is_null (global.get $co-pending-instrs)))
+          (then (call $finalize-co-pending-instrs)))
+        (return (call $execute
+          (i32.const 0) (i32.const 0)
+          (global.get $global-env)
+          (call $arg1 (local.get $args))))))
 
     ;; 257 = code-object-arity(co)
     (if (i32.eq (local.get $id) (i32.const 257))
@@ -6978,6 +7090,8 @@
         (call $compiled-proc-pc
           (ref.cast (ref $compiled-proc) (call $deref-handle (local.get $proc-handle))))
         (call $compiled-proc-env
+          (ref.cast (ref $compiled-proc) (call $deref-handle (local.get $proc-handle))))
+        (struct.get $compiled-proc $code-obj
           (ref.cast (ref $compiled-proc) (call $deref-handle (local.get $proc-handle)))))))
 
   ;; Resume a captured continuation with a value (returns handle)
@@ -7018,7 +7132,9 @@
             (drop (call $execute
               (call $compiled-proc-space (ref.cast (ref $compiled-proc) (local.get $do-winds-fn)))
               (call $compiled-proc-pc (ref.cast (ref $compiled-proc) (local.get $do-winds-fn)))
-              (call $compiled-proc-env (ref.cast (ref $compiled-proc) (local.get $do-winds-fn)))))))))
+              (call $compiled-proc-env (ref.cast (ref $compiled-proc) (local.get $do-winds-fn)))
+              (struct.get $compiled-proc $code-obj
+                (ref.cast (ref $compiled-proc) (local.get $do-winds-fn)))))))))
     ;; conts = saved continue register = (space-id . pc)
     (local.set $conts (ref.cast (ref $pair)
       (struct.get $continuation $conts (local.get $cont))))
@@ -7030,7 +7146,7 @@
     (global.set $execute-val (call $deref-handle (local.get $val-handle)))
     (global.set $execute-stack (struct.get $continuation $stack (local.get $cont)))
     (call $alloc-handle
-      (call $execute (local.get $space-id) (local.get $pc) (global.get $global-env))))
+      (call $execute (local.get $space-id) (local.get $pc) (global.get $global-env) (ref.null eq))))
 
   ;; Debug: inspect instruction at (space-id, pc)
   (func (export "dbg_instr") (param $space-id i32) (param $pc i32) (param $field i32) (result i32)
@@ -7299,7 +7415,8 @@
         (param $env-handle i32) (result i32)
     (call $alloc-handle
       (call $execute (local.get $space-id) (local.get $pc)
-        (call $deref-handle (local.get $env-handle))))
+        (call $deref-handle (local.get $env-handle))
+        (ref.null eq)))
   )
 
   ;; Module-init hook: populate the ASCII intern table before any code runs.
