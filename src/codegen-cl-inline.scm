@@ -47,6 +47,28 @@
        (< pc (chunk-ctx-end ctx))))
 
 ;;; ─────────────────────────────────────────────────────────────────────────
+;;; Source abstraction: accept either a space-id symbol OR a code-object.
+;;; Lets the same emitter walk bootstrap spaces (legacy) or archive code-
+;;; objects (post §9.2). Once the space path retires (§11), these collapse
+;;; to the code-object branch.
+;;; ─────────────────────────────────────────────────────────────────────────
+
+(define (cg/source-ref src pc)
+  (if (code-object? src)
+      (vector-ref (code-object-instructions src) pc)
+      (%space-source-ref src pc)))
+
+(define (cg/instruction-length src)
+  (if (code-object? src)
+      (code-object-length src)
+      (%space-instruction-length src)))
+
+(define (cg/label-entries src)
+  (if (code-object? src)
+      (code-object-label-entries src)
+      (%space-label-entries src)))
+
+;;; ─────────────────────────────────────────────────────────────────────────
 ;;; Top-level entry point
 ;;; ─────────────────────────────────────────────────────────────────────────
 
@@ -58,7 +80,7 @@ space has no instructions registered."
   (let ((space-id (if (symbol? space-name)
                       space-name
                       (string->symbol space-name))))
-    (let ((count (%space-instruction-length space-id)))
+    (let ((count (cg/instruction-length space-id)))
       (when (< count 0)
         (%raw-error
          (string-append "generate-zone-cl!: unknown space "
@@ -222,7 +244,7 @@ instruction bodies with chunk-aware control flow."
   (let ((chunk-ctx (list start end total-count)))
     (let loop ((pc start))
       (when (< pc end)
-        (let ((instr (%space-source-ref space-id pc)))
+        (let ((instr (cg/source-ref space-id pc)))
           (write-string "     pc-" out)
           (write-string (number->string pc) out)
           (newline out)
@@ -391,7 +413,7 @@ in the map get inlined; the rest fall back to apply-primitive-procedure."
         (static-proc-map (build-static-proc-map space-id count)))
     (let loop ((pc 0))
       (when (< pc count)
-        (let ((instr (%space-source-ref space-id pc)))
+        (let ((instr (cg/source-ref space-id pc)))
           (write-string "     pc-" out)
           (write-string (number->string pc) out)
           (newline out)
@@ -430,7 +452,7 @@ in the alist have an unknown proc."
         (let* (;; Entering a labeled instruction starts a new basic block:
                ;; we can no longer trust the previous proc value.
                (current-prim (if (hash-has-key? label-set pc) #f current-prim))
-               (instr (%space-source-ref space-id pc))
+               (instr (cg/source-ref space-id pc))
                (op (car instr))
                (next-prim
                 (cond
@@ -485,7 +507,7 @@ Hash-table lookup is O(1) per PC vs O(labels) for a list scan — critical
 for large spaces where the label count × instruction count product hits
 millions."
   (let ((ht (%make-hash-table)))
-    (let loop ((entries (%space-label-entries space-id)))
+    (let loop ((entries (cg/label-entries space-id)))
       (cond
        ((null? entries) ht)
        (else
@@ -518,7 +540,7 @@ still set pc so the dispatcher routes to the next chunk correctly."
 
 (define (build-pc-label-map space-id)
   "Return an alist of (label . pc) pairs for SPACE-ID's label table."
-  (%space-label-entries space-id))
+  (cg/label-entries space-id))
 
 (define (pc-for-label label label-map)
   "Resolve LABEL to its PC using LABEL-MAP. Errors if not found."
@@ -944,7 +966,7 @@ Signals an error if a bootstrap space name is unknown."
   (for-each
    (lambda (space-name)
      (let* ((space-id (string->symbol space-name))
-            (count (%space-instruction-length space-id)))
+            (count (cg/instruction-length space-id)))
        (cond
         ((< count 0)
          (%raw-error
