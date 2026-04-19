@@ -1608,6 +1608,44 @@ initial-argl initial-continue initial-stack) returning
 bootstrap/*-zone.lisp files at load time. Spaces without a registered
 entry fall through to the interpreted dispatch loop unchanged.")
 
+(defvar *archive-zone-fns* (make-hash-table :test #'equal)
+  "Registry mapping (file-stem . co-key) keys to compiled-zone CL
+functions for per-code-object zones. FILE-STEM is an ECE-package symbol
+derived from the archive's |file| field minus its extension. CO-KEY is
+either the code-object's name symbol or its zero-based index within the
+archive. Populated by per-code-object zone .lisp files at load time;
+archive loaders consult this to attach code-object-native-fn.
+
+Distinct from *compiled-zone-functions* (symbol-keyed on space-id, still
+used by the legacy space path during Phase C coexistence).")
+
+(defvar *archive-code-objects* (make-hash-table :test #'equal)
+  "Registry mapping (file-stem . co-key) keys to the live code-object
+struct materialized by the archive loader. Same keying convention as
+*archive-zone-fns*. Used by emitted zone code at execution time to
+resolve (const <code-object>) operands for inner-lambda references —
+the zone-file is emitted for one specific archive, so the file-stem is
+a constant in the emitted form and the co-key identifies the target.")
+
+(defun archive-co-lookup (file-stem co-key)
+  "Resolve a (file-stem . co-key) pair to the live code-object struct in
+*archive-code-objects*. Called from emitted zone code to dereference
+nested-lambda constants at zone-execution time. Signals ECE-runtime-error
+if the key is unregistered — that indicates either a stale zone file
+(archive re-generated but zone not regenerated) or a mis-threaded
+co-key at codegen time."
+  (or (gethash (cons file-stem co-key) *archive-code-objects*)
+      (error 'ece-runtime-error
+             :procedure nil
+             :arguments nil
+             :environment *global-env*
+             :instruction nil
+             :backtrace nil
+             :original-error
+             (make-condition 'simple-error
+                             :format-control "archive-co-lookup: no code-object registered for (~A . ~A). Zone file may be stale; run `make bootstrap`."
+                             :format-arguments (list file-stem co-key)))))
+
 
 (defun resolve-operations (instr)
   "Pre-resolve operation names to function pointers in an instruction."

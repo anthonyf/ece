@@ -72,6 +72,30 @@
 ;;; Top-level entry point
 ;;; ─────────────────────────────────────────────────────────────────────────
 
+;;; ─────────────────────────────────────────────────────────────────────────
+;;; Emission-context parameters (code-object zone path)
+;;; ─────────────────────────────────────────────────────────────────────────
+;;;
+;;; Threaded via `parameterize` from the code-object entry point so that
+;;; deeply-nested emitters (emit-const, emit-assign's label branch, etc.)
+;;; can reach the archive's file-stem and the per-archive code-object
+;;; index map without dragging them through every call signature.
+;;;
+;;; - *emit-file-stem* — string naming the archive file-stem (no extension).
+;;;   Emitted into generated CL forms as the first half of (file-stem . co-key)
+;;;   lookup keys. Zero value is #f — legacy space path leaves it unset.
+;;; - *emit-co-index-map* — a hash-table-or-#f mapping nested code-objects
+;;;   (eq-keyed) to their co-key (either the co's name symbol or its archive
+;;;   index as an integer). Populated once per archive by
+;;;   generate-all-zones-from-archive!; used by emit-const to find the key
+;;;   for a (const <inner-co>) operand.
+;;;
+;;; Legacy space path does not set these — its emit-const branch never
+;;; sees a code-object value (spaces don't have per-procedure identities).
+
+(define *emit-file-stem* (make-parameter #f))
+(define *emit-co-index-map* (make-parameter #f))
+
 (define (generate-zone-cl! space-name output-path)
   "Walk the compilation space named SPACE-NAME and write a CL source file
 containing one (defun zone-NAME ...) to OUTPUT-PATH. SPACE-NAME may be a
@@ -87,33 +111,84 @@ space has no instructions registered."
                         (if (symbol? space-name)
                             (symbol->string space-name)
                             space-name))))
-      (let ((out (open-output-file output-path)))
+      (let ((out (open-output-file output-path))
+            (reg-mode (list 'space space-id)))
         (emit-zone-header out space-name 'space)
         (if (needs-splitting? count)
-            (emit-zone-defun-split out space-name space-id count)
-            (emit-zone-defun out space-name space-id count))
+            (emit-zone-defun-split out space-name space-id count reg-mode)
+            (emit-zone-defun out space-name space-id count reg-mode))
         (close-output-port out)
         output-path))))
 
 ;;; Code-object-oriented entry point. Mirrors generate-zone-cl! but takes
 ;;; a code-object directly (no registry lookup). Used by Phase D's archive
 ;;; codegen driver.
-(define (generate-zone-cl-for-code-object! co zone-name output-path)
+(define (generate-zone-cl-for-code-object! co zone-name output-path
+                                           file-stem co-key)
   "Emit one (defun zone-NAME ...) for CO. ZONE-NAME is the string used as
 the function name suffix. OUTPUT-PATH is the destination .lisp file.
+FILE-STEM is the archive's base name (no extension) as a string — emitted
+into the self-registration form and used for inner-co constant lookups.
+CO-KEY is the CO's name symbol if it has one, or its zero-based archive
+index as an integer — used as the second half of the registry key.
+
+If *emit-co-index-map* is already bound (caller is the archive-driven
+generate-all-zones-from-archive!), we reuse it so anonymous lambdas
+resolve to the same key the archive loader expects. When called in
+isolation (tests, ad-hoc codegen), we seed an index map via a
+reachability walk from CO — keys then match a one-file archive where
+CO is entry 0.
+
 Returns OUTPUT-PATH."
   (let ((count (cg/instruction-length co)))
     (when (= count 0)
       (%raw-error
        (string-append "generate-zone-cl-for-code-object!: empty code-object "
                       zone-name)))
-    (let ((out (open-output-file output-path)))
-      (emit-zone-header out zone-name 'code-object)
-      (if (needs-splitting? count)
-          (emit-zone-defun-split out zone-name co count)
-          (emit-zone-defun out zone-name co count))
-      (close-output-port out)
-      output-path)))
+    (let ((local-index-map (or (*emit-co-index-map*)
+                               (build-reachable-co-index-map co))))
+      (parameterize ((*emit-file-stem* file-stem)
+                     (*emit-co-index-map* local-index-map))
+        (let ((out (open-output-file output-path))
+              (reg-mode (list 'co file-stem co-key)))
+          (emit-zone-header out zone-name 'code-object)
+          (if (needs-splitting? count)
+              (emit-zone-defun-split out zone-name co count reg-mode)
+              (emit-zone-defun out zone-name co count reg-mode))
+          (close-output-port out)
+          output-path)))))
+
+(define (build-reachable-co-index-map top-co)
+  "BFS over TOP-CO's instruction tree, returning a hash-table mapping each
+reachable code-object to a stable integer index. Discovery order gives
+the same index sequence as archive/collect-reachable would in
+src/compilation-unit.scm, so keys stay consistent between archive-level
+codegen and ad-hoc single-code-object codegen."
+  (let ((h (%make-hash-table))
+        (next-idx 0))
+    (define (assign co)
+      (when (not (hash-has-key? h co))
+        (hash-set! h co next-idx)
+        (set! next-idx (+ next-idx 1))
+        (let ((instrs (code-object-instructions co))
+              (len (code-object-length co)))
+          (let loop ((i 0))
+            (when (< i len)
+              (visit-tree (vector-ref instrs i))
+              (loop (+ i 1)))))))
+    (define (visit-tree tree)
+      (cond
+       ((null? tree) #f)
+       ((not (pair? tree)) #f)
+       ((and (eq? (car tree) 'const)
+             (pair? (cdr tree))
+             (code-object? (cadr tree)))
+        (assign (cadr tree)))
+       (else
+        (visit-tree (car tree))
+        (visit-tree (cdr tree)))))
+    (assign top-co)
+    h))
 
 ;;; ─────────────────────────────────────────────────────────────────────────
 ;;; File header
@@ -144,9 +219,9 @@ semantics comment differs."
     (write-string ";;;;" out) (newline out)
     (cond
      ((eq? mode 'code-object)
-      (write-string ";;;; The CL runtime loads this file at boot; the defun below will be" out) (newline out)
-      (write-string ";;;; registered in *archive-zone-fns* once Phase C lands the archive" out) (newline out)
-      (write-string ";;;; loader (see emit-zone-registration for the deferred placeholder)." out) (newline out))
+      (write-string ";;;; The CL runtime loads this file at boot and registers the defun" out) (newline out)
+      (write-string ";;;; below under (file-stem . co-key) in *archive-zone-fns*; archive" out) (newline out)
+      (write-string ";;;; loaders then attach it to the code-object's native-fn slot." out) (newline out))
      (else
       (write-string ";;;; The CL runtime loads this file at boot and registers the defun" out) (newline out)
       (write-string ";;;; below under its space symbol in *compiled-zone-functions*." out) (newline out)))
@@ -168,7 +243,7 @@ semantics comment differs."
 ;;; Main defun emitter
 ;;; ─────────────────────────────────────────────────────────────────────────
 
-(define (emit-zone-defun out space-name space-id count)
+(define (emit-zone-defun out space-name space-id count reg-mode)
   (let ((name-str (if (symbol? space-name)
                       (symbol->string space-name)
                       space-name)))
@@ -199,44 +274,87 @@ semantics comment differs."
     (write-string "    (cl:values pc val env proc argl continue stack)))" out)
     (newline out)
     (newline out)
-    (emit-zone-registration out name-str space-id)))
+    (emit-zone-registration out name-str reg-mode)))
 
-(define (emit-zone-registration out name-str space-id)
-  "Emit the load-time effect that registers this zone in
-*compiled-zone-functions*. Runs once per file load and is idempotent —
-re-loading the file just overwrites the entry with the same function.
+(define (emit-zone-registration out name-str reg-mode)
+  "Emit the load-time effect that registers this zone. REG-MODE selects
+the target registry:
+   (space SPACE-ID)          → *compiled-zone-functions* keyed on SPACE-ID
+   (co FILE-STEM CO-KEY)     → *archive-zone-fns* keyed on
+                                (cons FILE-STEM CO-KEY)
+Runs once per file load and is idempotent — re-loading the file just
+overwrites the entry with the same function."
+  (let ((mode (car reg-mode)))
+    (cond
+     ((eq? mode 'space)
+      (emit-zone-registration-for-space out name-str (cadr reg-mode)))
+     ((eq? mode 'co)
+      (emit-zone-registration-for-co out name-str
+                                     (cadr reg-mode)
+                                     (caddr reg-mode)))
+     (else
+      (%raw-error
+       (string-append "emit-zone-registration: unknown reg-mode "
+                      (symbol->string mode)))))))
 
-When SPACE-ID is a code-object (the archive path introduced in Phase B),
-we emit a placeholder comment instead — Phase C adds the archive-zone-fns
-registration form via emit-zone-registration-for-co. Emitting a space-
-keyed entry here would crash (code-objects have no symbol name)."
+(define (emit-zone-registration-for-space out name-str space-id)
+  "Legacy path: register under *compiled-zone-functions* keyed on the
+space-id symbol so execute-instructions dispatches to this zone on
+entry to that space."
+  (write-string ";;; Self-registration: install zone-" out)
+  (write-string name-str out)
+  (write-string " under the space symbol so" out) (newline out)
+  (write-string ";;; execute-instructions dispatches to it on entry to this space." out) (newline out)
+  (write-string "(cl:setf (cl:gethash " out)
+  (write-cl-quoted-ece-symbol out space-id)
+  (write-string " *compiled-zone-functions*)" out) (newline out)
+  (write-string "         (cl:function zone-" out)
+  (write-string name-str out)
+  (write-string "))" out) (newline out))
+
+(define (emit-zone-registration-for-co out name-str file-stem co-key)
+  "Archive path: register under *archive-zone-fns* keyed on
+(file-stem . co-key). FILE-STEM is a string (the archive's base name).
+CO-KEY is either a symbol (the co's name) or an integer (archive
+index) — emitted literally so the key round-trips through cl:read back
+into the same EQUAL hash key the archive loader constructs."
+  (write-string ";;; Self-registration: install zone-" out)
+  (write-string name-str out)
+  (write-string " under (file-stem . co-key) so the" out) (newline out)
+  (write-string ";;; archive loader can attach native-fn at load time." out) (newline out)
+  (write-string "(cl:setf (cl:gethash (cl:cons " out)
+  (emit-file-stem-symbol out file-stem)
+  (write-char #\space out)
   (cond
-   ((code-object? space-id)
-    (write-string ";;; Self-registration for code-object zone-" out)
-    (write-string name-str out)
-    (write-string " deferred —" out) (newline out)
-    (write-string ";;; Phase C will emit (cl:setf (cl:gethash ... *archive-zone-fns*) ...)." out)
-    (newline out))
+   ((symbol? co-key)
+    (write-cl-quoted-ece-symbol out co-key))
    (else
-    (write-string ";;; Self-registration: install zone-" out)
-    (write-string name-str out)
-    (write-string " under the space symbol so" out) (newline out)
-    (write-string ";;; execute-instructions dispatches to it on entry to this space." out) (newline out)
-    (write-string "(cl:setf (cl:gethash " out)
-    (write-cl-quoted-ece-symbol out space-id)
-    (write-string " *compiled-zone-functions*)" out) (newline out)
-    (write-string "         (cl:function zone-" out)
-    (write-string name-str out)
-    (write-string "))" out) (newline out))))
+    (write-string (number->string co-key) out)))
+  (write-string ") *archive-zone-fns*)" out) (newline out)
+  (write-string "         (cl:function zone-" out)
+  (write-string name-str out)
+  (write-string "))" out) (newline out))
+
+(define (emit-file-stem-symbol out file-stem)
+  "Emit FILE-STEM (a string) as a quoted case-preserved ECE-package
+symbol: `(cl:intern \"FILE-STEM\" :ece)` wrapped in cl:quote via a static
+`'|...|`. Using pipe syntax keeps the symbol lowercase-preserved
+(matching how the archive loader derives its key) without a runtime
+intern call."
+  (write-char #\' out)
+  (write-char #\| out)
+  (write-string file-stem out)
+  (write-char #\| out))
 
 ;;; ─────────────────────────────────────────────────────────────────────────
 ;;; Sub-function splitting (chunk emitters)
 ;;; ─────────────────────────────────────────────────────────────────────────
 
-(define (emit-zone-defun-split out space-name space-id count)
+(define (emit-zone-defun-split out space-name space-id count reg-mode)
   "Emit a split zone: ceil(count/chunk-size) chunk functions plus a
 dispatcher that routes PCs to the correct chunk. Used when a space's
-instruction count exceeds chunk-size."
+instruction count exceeds chunk-size. REG-MODE selects the registry
+(see emit-zone-registration)."
   (let ((name-str (if (symbol? space-name)
                       (symbol->string space-name)
                       space-name))
@@ -250,7 +368,7 @@ instruction count exceeds chunk-size."
           (loop (+ k 1) end))))
     (emit-zone-dispatcher out name-str count)
     (newline out)
-    (emit-zone-registration out name-str space-id)))
+    (emit-zone-registration out name-str reg-mode)))
 
 (define (emit-chunk-defun out name-str space-id total-count chunk-k start end label-map static-proc-map)
   "Emit one chunk function covering PCs [start, end). Each chunk has the
@@ -655,10 +773,13 @@ still set pc so the dispatcher routes to the next chunk correctly."
             (write-string "(cl:cons " out)
             (cond
              ((code-object? space-id)
-              ;; Code-object path (Phase B): Phase C wires the real self-
-              ;; reference; for now emit a symbolic placeholder that keeps
-              ;; the emitted CL parseable.
-              (write-string "'|#:code-object-self#|" out))
+              ;; Code-object path: at zone-fn execution time,
+              ;; *executing-space-id* is dynamically bound to the CO
+              ;; this zone was entered for. Reading it here produces the
+              ;; same (code-object . local-pc) shape the interpreter's
+              ;; eval-operand builds, so continuations captured in the
+              ;; zone are portable back to the interpreter.
+              (write-string "*executing-space-id*" out))
              (else
               (write-cl-quoted-ece-symbol out space-id)))
             (write-char #\space out)
@@ -844,10 +965,17 @@ escaping is delegated to write-cl-string in codegen-cl.scm so backslashes,
 double quotes, and other special characters round-trip cleanly.
 
 Bottom-up emission (mc-compile-lambda-as-code-object) places a nested
-code-object as the const arg to make-compiled-procedure. Phase B cannot
-yet resolve that const to a runtime value — Phase C wires it up via
-*archive-zone-fns* + load-time native-fn attachment. For now we emit a
-placeholder sentinel form that documents what Phase C will plug in."
+code-object as the const arg to make-compiled-procedure. For the archive
+path (code-object zone), we emit a runtime lookup into
+*archive-code-objects* so each call site dereferences the live code-
+object after the archive loader has populated the registry. The file-
+stem and co-key are known at codegen time (the zone file is emitted
+for one specific archive) and baked into the emitted form.
+
+If *emit-co-index-map* / *emit-file-stem* are unset (legacy space path),
+emitting a code-object constant is unsupported — it shouldn't happen,
+since spaces don't have per-procedure identities. We raise at codegen
+time rather than emit a form that would crash at runtime."
   (cond
    ((number? value) (write-string (number->string value) out))
    ((eq? value #t) (write-string "t" out))
@@ -857,21 +985,7 @@ placeholder sentinel form that documents what Phase C will plug in."
    ((symbol? value)
     (write-cl-quoted-ece-symbol out value))
    ((code-object? value)
-    ;; Value-context placeholder: emitted as a CL call-form so the reader
-    ;; parses it cleanly and Phase C can search for (code-object-placeholder
-    ;; ...) to rewrite it into the archive-driven native-fn attachment.
-    ;;
-    ;; NOTE: emit-quoted-datum below emits a PARALLEL sentinel
-    ;; (#:code-object-placeholder#) for nested code-objects that appear
-    ;; inside quoted-literal contexts — the two sentinels must stay in sync
-    ;; when Phase C lands the replacement logic.
-    (write-string "(code-object-placeholder " out)
-    (let ((name (code-object-name value)))
-      (cond
-       ((and name (symbol? name))
-        (write-cl-quoted-ece-symbol out name))
-       (else (write-string "cl:nil" out))))
-    (write-char #\) out))
+    (emit-inner-co-lookup out value))
    ((pair? value)
     (write-char #\' out)
     (emit-quoted-datum out value))
@@ -879,6 +993,41 @@ placeholder sentinel form that documents what Phase C will plug in."
     ;; Char and other atoms — fall through to write-cl-form which knows
     ;; how to emit them.
     (write-cl-form value out))))
+
+(define (emit-inner-co-lookup out co)
+  "Emit a CL form that at zone-execution time resolves CO via
+archive-co-lookup into the live code-object struct from
+*archive-code-objects*. CO is a code-object value baked into the
+instruction by bottom-up compilation; its archive identity (file-stem +
+co-key) is known at codegen time through *emit-file-stem* and
+*emit-co-index-map*.
+
+Key derivation matches the archive loader in runtime.lisp:
+  - If CO has a name (set by mc-compile-define), use the name symbol.
+  - Otherwise fall back to CO's zero-based archive index, looked up in
+    *emit-co-index-map*."
+  (let ((file-stem (*emit-file-stem*))
+        (index-map (*emit-co-index-map*)))
+    (when (not file-stem)
+      (%raw-error
+       "emit-inner-co-lookup: no *emit-file-stem* bound. Code-object constants are only valid in archive zones."))
+    (let* ((co-name (code-object-name co))
+           (co-key (cond
+                    ((and co-name (symbol? co-name)) co-name)
+                    (index-map (hash-ref index-map co #f))
+                    (else #f))))
+      (when (not co-key)
+        (%raw-error
+         "emit-inner-co-lookup: code-object has no name and no archive index is registered. Archive codegen must seed *emit-co-index-map* for anonymous lambdas."))
+      (write-string "(archive-co-lookup " out)
+      (emit-file-stem-symbol out file-stem)
+      (write-char #\space out)
+      (cond
+       ((symbol? co-key)
+        (write-cl-quoted-ece-symbol out co-key))
+       (else
+        (write-string (number->string co-key) out)))
+      (write-char #\) out))))
 
 (define (emit-quoted-datum out datum)
   "Emit DATUM in a quoted-data context — the leading quote has already
@@ -893,17 +1042,15 @@ proper backslash/quote escaping."
    ((eq? datum #t) (write-string "t" out))
    ((eq? datum #f) (write-string "ece::*scheme-false*" out))
    ((string? datum) (write-cl-string datum out))
-   ;; Nested code-object inside quoted data — Phase C wires the archive
-   ;; loader to resolve these; emit a placeholder sentinel for Phase B.
-   ;;
-   ;; NOTE: emit-const above emits a PARALLEL sentinel — the CL call-form
-   ;; (code-object-placeholder NAME-OR-nil) — for value-context code-objects.
-   ;; Here we're inside quoted data, so a call-form would be read as a
-   ;; literal list rather than a form to evaluate; we emit an uninterned
-   ;; keyword atom instead. Phase C's replacement logic must handle both
-   ;; sentinel shapes — keep them in sync.
+   ;; Nested code-object inside quoted data — unreachable in compiler
+   ;; output (quoted data from source never contains code-objects; nested
+   ;; lambdas always come through the value-context (const <co>) path).
+   ;; Emit an uninterned sentinel symbol so the reader still accepts the
+   ;; file; if this path ever fires at runtime, the value will be an
+   ;; opaque symbol and downstream code will fail loudly rather than
+   ;; silently misbehave.
    ((code-object? datum)
-    (write-string "#:code-object-placeholder#" out))
+    (write-string "#:code-object-in-quoted-data#" out))
    ((pair? datum)
     (write-char #\( out)
     (emit-quoted-datum out (car datum))
@@ -1079,6 +1226,26 @@ to FILE-STEM-INDEX."
      (else
       (string-append file-stem "-" (number->string index))))))
 
+(define (build-archive-co-index-map cos n)
+  "Return a hash-table mapping each code-object in COS (vector of length N)
+to its zero-based archive index. Used by emit-inner-co-lookup as a
+fallback key for anonymous lambdas — named lambdas use their name symbol
+directly and don't hit this map."
+  (let ((h (%make-hash-table)))
+    (let loop ((i 0))
+      (when (< i n)
+        (hash-set! h (vector-ref cos i) i)
+        (loop (+ i 1))))
+    h))
+
+(define (co-key-for-archive-entry co index)
+  "Derive the registry key for CO at archive INDEX. Named code-objects
+use their name symbol; anonymous ones fall back to the index. Must
+match the key the archive loader derives (runtime.lisp:
+load-ecec-archive-section)."
+  (let ((name (code-object-name co)))
+    (if (and name (symbol? name)) name index)))
+
 (define (generate-all-zones-from-archive! archive-path output-dir)
   "Read an archive file from ARCHIVE-PATH, iterate its code-objects, and
 emit one zone file per code-object under OUTPUT-DIR. Output filenames:
@@ -1086,26 +1253,35 @@ emit one zone file per code-object under OUTPUT-DIR. Output filenames:
 
 Signals an error if the archive has zero entries. Deterministic: entries
 are processed in archive order, which matches collect-reachable order
-(init first, then nested lambdas BFS)."
+(init first, then nested lambdas BFS).
+
+Threads *emit-co-index-map* through a parameterize so emit-inner-co-lookup
+can resolve (const <anonymous-co>) to the correct archive index — even
+when the anonymous co is nested inside a different zone's instruction
+body."
   (let* ((port (open-input-file archive-path))
          (archive (ece-scheme-read port))
          (_close (close-input-port port))
          (cos (archive-sexp->code-objects archive))
          (n (vector-length cos))
          (file-stem (filename-strip-extension
-                     (filename-basename archive-path) ".ecec")))
+                     (filename-basename archive-path) ".ecec"))
+         (index-map (build-archive-co-index-map cos n)))
     (when (= n 0)
       (%raw-error "generate-all-zones-from-archive!: archive has no code-objects"))
-    (let loop ((i 0))
-      (when (< i n)
-        (let* ((co (vector-ref cos i))
-               (zone-name (zone-name-for-code-object file-stem i co))
-               (output-path (string-append output-dir "/" zone-name "-zone.lisp")))
-          (display (string-append "Generating " output-path
-                                  " (" (number->string (code-object-length co))
-                                  " PCs)..."))
-          (newline)
-          (generate-zone-cl-for-code-object! co zone-name output-path)
-          (display (string-append "  Done: " output-path))
-          (newline))
-        (loop (+ i 1))))))
+    (parameterize ((*emit-co-index-map* index-map))
+      (let loop ((i 0))
+        (when (< i n)
+          (let* ((co (vector-ref cos i))
+                 (zone-name (zone-name-for-code-object file-stem i co))
+                 (co-key (co-key-for-archive-entry co i))
+                 (output-path (string-append output-dir "/" zone-name "-zone.lisp")))
+            (display (string-append "Generating " output-path
+                                    " (" (number->string (code-object-length co))
+                                    " PCs)..."))
+            (newline)
+            (generate-zone-cl-for-code-object! co zone-name output-path
+                                               file-stem co-key)
+            (display (string-append "  Done: " output-path))
+            (newline))
+          (loop (+ i 1)))))))
