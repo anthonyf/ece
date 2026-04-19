@@ -17,3 +17,14 @@
   ;; ECE-side to show round-trip parity with the archive sexp shape.
   (define loaded (load-archive tmp-path))
   (assert-equal 3 loaded)))
+
+(test "CL archive parser: define via load-bundle archives" (lambda ()
+  ;; Compile a define to an archive, load via load-bundle, verify binding.
+  (define co (mc-compile-to-code-object '(define *plan-a4-binding* 777)))
+  (define archive (code-object->archive-sexp co "scratch.scm"))
+  (define text (write-to-string-flat archive))
+  (define tmp-path "/tmp/claude/test-archive-define.ecec")
+  (define out (open-output-file tmp-path))
+  (display text out) (newline out) (close-output-port out)
+  (load-bundle tmp-path)
+  (assert-equal 777 *plan-a4-binding*)))
