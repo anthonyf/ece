@@ -268,25 +268,43 @@ SPACE-NAME is a symbol, SOURCE-MAP-FIELD is (filename (pc line col) ...)."
         #f)))
 
 (define (load-section-from-port port)
-  "Load one ecec section (header + instructions) from PORT.
-Creates a named space, registers source-map if present, and executes.
-Returns the result of executing the section, or eof if no more sections."
-  (let ((header (ece-scheme-read port)))
-    (if (eof? header)
-        header
-        (let* ((space-sym (cadr (assoc 'space (cdr header))))
-               (source-map-field (let ((sm (assoc 'source-map (cdr header))))
-                                   (if sm (cdr sm) #f)))
-               (prev-space (%current-space-id))
-               (new-space (%create-space (symbol->string space-sym)))
-               (instrs (ece-scheme-read port)))
-          ;; Register source-map if present in header
-          (when source-map-field
-            (register-source-map! space-sym source-map-field))
-          (%set-current-space-id! new-space)
-          (let ((result (execute (list 'compiled-unit instrs))))
-            (%set-current-space-id! prev-space)
-            result)))))
+  "Load one ecec section from PORT. Dispatches on the first form:
+  - (ecec-header ...) → legacy space-based section, reads a second form
+    with the compiled instructions and executes against a new space.
+  - (ecec-archive ...) → §8 archive format, rebuilds code-objects and
+    executes the init. Returns the init's result.
+Returns eof if no more sections."
+  (let ((head (ece-scheme-read port)))
+    (cond
+     ((eof? head) head)
+     ((and (pair? head) (eq? (car head) 'ecec-archive))
+      (load-archive-section-form head))
+     (else
+      (load-legacy-section-from-port head port)))))
+
+(define (load-legacy-section-from-port header port)
+  "Old-format path: HEADER is the already-read (ecec-header ...) form.
+Read the instruction stream, register source-map, execute against a
+fresh space. Compatibility shim retired in §9.3."
+  (let* ((space-sym (cadr (assoc 'space (cdr header))))
+         (source-map-field (let ((sm (assoc 'source-map (cdr header))))
+                             (if sm (cdr sm) #f)))
+         (prev-space (%current-space-id))
+         (new-space (%create-space (symbol->string space-sym)))
+         (instrs (ece-scheme-read port)))
+    (when source-map-field
+      (register-source-map! space-sym source-map-field))
+    (%set-current-space-id! new-space)
+    (let ((result (execute (list 'compiled-unit instrs))))
+      (%set-current-space-id! prev-space)
+      result)))
+
+(define (load-archive-section-form archive)
+  "Archive-format path: ARCHIVE is the parsed (ecec-archive ...) form.
+Rebuild code-objects and execute the init."
+  (let* ((cos (archive-sexp->code-objects archive))
+         (init (vector-ref cos 0)))
+    (execute-code-object init)))
 
 (define (load-compiled filename)
   "Load and execute compiled code from a .ecec file (first section only).
