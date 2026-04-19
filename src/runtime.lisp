@@ -2216,19 +2216,25 @@ Uses the CL reader (not the ECE reader) so this works at boot before the ECE rea
     (when (probe-file path)
       (load-ecec-file path :skip '("browser-lib")))))
 
-;;; Boot from .ecec files
-(boot-from-compiled)
-
 ;;; ─────────────────────────────────────────────────────────────────────────
 ;;; Compiled-zone loader (Stage 1)
 ;;; ─────────────────────────────────────────────────────────────────────────
 ;;;
-;;; After the bootstrap .ecec files have populated *space-registry* with
-;;; instruction vectors, scan bootstrap/ for any *-zone.lisp files and load
-;;; them. Each file's load-time effects register a zone-NAME function in
-;;; *compiled-zone-functions* under the corresponding space-id symbol; the
-;;; next call to execute-instructions on that space dispatches to the
-;;; compiled zone instead of the interpreter loop.
+;;; Scan bootstrap/ for any *-zone.lisp files and load them. Each file's
+;;; load-time effects register a zone-NAME function in one of two
+;;; registries:
+;;;   - *compiled-zone-functions* (legacy space path) — keyed on space-id
+;;;     symbol. Consulted by execute-instructions on space entry.
+;;;   - *archive-zone-fns* (§9.2 archive path) — keyed on
+;;;     (file-stem . co-key). Consulted by load-ecec-archive-section as it
+;;;     materializes each code-object, to attach native-fn in place.
+;;;
+;;; Load order: zones FIRST, then boot-from-compiled. This ordering lets
+;;; the archive loader (inside boot-from-compiled → load-ecec-file →
+;;; load-ecec-archive-section) populate code-object-native-fn immediately
+;;; as each archive section is read. Zone files are pure self-registration
+;;; (they only mutate the two hash tables above) and have no dependency
+;;; on any state established by boot-from-compiled, so this flip is safe.
 ;;;
 ;;; Files are sorted alphabetically for deterministic load order. Missing
 ;;; bootstrap/ directory is not an error — Stage 1 ships zero or more
@@ -2236,10 +2242,10 @@ Uses the CL reader (not the ECE reader) so this works at boot before the ECE rea
 
 (defun load-compiled-zones ()
   "Find and load every bootstrap/*-zone.lisp file. Each file is expected
-to define a zone-NAME function and register it in *compiled-zone-functions*.
-Uses compile-file to produce cached FASLs so subsequent loads skip
-compilation. Errors during load are propagated with a hint about
-regeneration."
+to define a zone-NAME function and register it in *compiled-zone-functions*
+(legacy space path) or *archive-zone-fns* (archive path). Uses compile-file
+to produce cached FASLs so subsequent loads skip compilation. Errors during
+load are propagated with a hint about regeneration."
   (let* ((bootstrap-dir (asdf:system-relative-pathname :ece "bootstrap/"))
          (pattern (merge-pathnames "*-zone.lisp" bootstrap-dir))
          (files (sort (directory pattern) #'string< :key #'namestring))
@@ -2260,6 +2266,11 @@ regeneration."
                  path e (file-namestring path)))))))
 
 (load-compiled-zones)
+
+;;; Boot from .ecec files. Runs AFTER load-compiled-zones so the archive
+;;; loader's attach-archive-native-fns call finds registrations in
+;;; *archive-zone-fns* for every code-object in bootstrap.ecec.
+(boot-from-compiled)
 
 ;;; Ensure all manifest primitives are in *global-env*. The image/ecec may
 ;;; predate new manifest entries; this top-up adds any missing bindings.
