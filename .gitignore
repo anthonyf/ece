@@ -2,6 +2,7 @@
 /.fasl-cache/
 /.tmp/
 /.qlot/
+/.worktrees/
 wasm/runtime.wasm
 sandbox/ece-runtime.js
 sandbox/ece-bootstrap.js
