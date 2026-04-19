@@ -1038,3 +1038,47 @@ Signals an error if a bootstrap space name is unknown."
            (display (string-append "  Done: " output-path))
            (newline))))))
    all-bootstrap-spaces))
+
+(define (zone-name-for-code-object file-stem index co)
+  "Compose a zone filename stem. Uses the code-object's name if set
+(for the init code-object of a source file, that's `%init`), falls back
+to FILE-STEM-INDEX."
+  (let ((name (code-object-name co)))
+    (cond
+     ((and name (symbol? name))
+      (string-append file-stem "-" (symbol->string name)))
+     ((and name (string? name))
+      (string-append file-stem "-" name))
+     (else
+      (string-append file-stem "-" (number->string index))))))
+
+(define (generate-all-zones-from-archive! archive-path output-dir)
+  "Read an archive file from ARCHIVE-PATH, iterate its code-objects, and
+emit one zone file per code-object under OUTPUT-DIR. Output filenames:
+`<archive-stem>-<co-name-or-index>-zone.lisp`.
+
+Signals an error if the archive has zero entries. Deterministic: entries
+are processed in archive order, which matches collect-reachable order
+(init first, then nested lambdas BFS)."
+  (let* ((port (open-input-file archive-path))
+         (archive (ece-scheme-read port))
+         (_close (close-input-port port))
+         (cos (archive-sexp->code-objects archive))
+         (n (vector-length cos))
+         (file-stem (filename-strip-extension
+                     (filename-basename archive-path) ".ecec")))
+    (when (= n 0)
+      (%raw-error "generate-all-zones-from-archive!: archive has no code-objects"))
+    (let loop ((i 0))
+      (when (< i n)
+        (let* ((co (vector-ref cos i))
+               (zone-name (zone-name-for-code-object file-stem i co))
+               (output-path (string-append output-dir "/" zone-name "-zone.lisp")))
+          (display (string-append "Generating " output-path
+                                  " (" (number->string (code-object-length co))
+                                  " PCs)..."))
+          (newline)
+          (generate-zone-cl-for-code-object! co zone-name output-path)
+          (display (string-append "  Done: " output-path))
+          (newline))
+        (loop (+ i 1))))))
