@@ -72,11 +72,16 @@
 
 ## 8. .ecec archive format
 
-- [ ] 8.1 Define the on-disk code-object archive format. Include: a format version tag, file name, and a sequence of code-object entries. Each entry carries its source-instructions, resolved-instructions (rebuilt at load time or serialized), labels, name, arity, source-loc.
-- [ ] 8.2 Update `compile-system` to produce code-object archives: compile each `.scm` source, collect all code objects, emit them in order with the archive wrapper.
-- [ ] 8.3 Update the `.ecec` reader (both CL and WASM) to parse the archive format, register code objects, and execute top-level init code in order.
-- [ ] 8.4 Add a format-version mismatch diagnostic: a pre-this-change `.ecec` attempt yields a clear error message citing the format version and recommending `make bootstrap`.
-- [ ] 8.5 Round-trip test: compile a `.scm`, write to `.ecec`, load from `.ecec`, execute, compare to direct-eval result.
+- [x] 8.1 Define the on-disk code-object archive format. Include: a format version tag, file name, and a sequence of code-object entries. Each entry carries its source-instructions, resolved-instructions (rebuilt at load time or serialized), labels, name, arity, source-loc.
+      *Shape: `(ecec-archive version 2 file "foo.scm" entries ((code-object name %init labels () instructions (...)) ...))`. Keyword-tagged plist layout. Nested code-objects hoisted to the archive level with `(co-ref N)` operands. resolved-instructions rebuilt at load via `resolve-operations` — NOT serialized (decouples format from op-id numbering).*
+- [x] 8.2 Update `compile-system` to produce code-object archives: compile each `.scm` source, collect all code objects, emit them in order with the archive wrapper.
+      *Added `compile-file-to-archive` + `compile-file-archive` in `src/compilation-unit.scm`. Existing `compile-file-to-port` / `compile-system` stay for the legacy format during coexistence. Switchover to archive format for bootstrap happens in §9.*
+- [x] 8.3 Update the `.ecec` reader (both CL and WASM) to parse the archive format, register code objects, and execute top-level init code in order.
+      *Added `load-archive` / `load-archive-from-port` / `archive-sexp->code-objects` in `src/compilation-unit.scm`. Pure-ECE implementation — works on both runtimes automatically.*
+- [x] 8.4 Add a format-version mismatch diagnostic: a pre-this-change `.ecec` attempt yields a clear error message citing the format version and recommending `make bootstrap`.
+      *`archive-sexp->code-objects` raises `"Unsupported .ecec archive version: <v>. Run \`make bootstrap\` to regenerate."` when version is missing or != 2. Test covers the raise path.*
+- [x] 8.5 Round-trip test: compile a `.scm`, write to `.ecec`, load from `.ecec`, execute, compare to direct-eval result.
+      *`tests/ece/cl-only/test-archive-format.scm` (7 tests, 11 assertions): literal, reachable-object ordering, co-ref hoisting, end-to-end serialization round-trip for literal/primitive-op/lambda-invocation, and version mismatch. All pass.*
 
 ## 9. Two-pass bootstrap
 

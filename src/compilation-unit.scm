@@ -307,3 +307,242 @@ Returns the result of the last section."
         (if (eof? result)
             (begin (close-input-port port) last-result)
             (loop result))))))
+
+;;; ─────────────────────────────────────────────────────────────────────────
+;;; §8: .ecec archive format (version 2)
+;;;
+;;; Shape:
+;;;   (ecec-archive
+;;;     :version 2
+;;;     :file "foo.scm"
+;;;     :entries ((code-object :name %init :instructions (...) ...)
+;;;               (code-object :name add1 :instructions (...) ...)
+;;;               ...))
+;;;
+;;; - Entry 0 is the file's init code-object (top-level forms, merged).
+;;; - Entries 1..N are nested lambdas hoisted to archive level.
+;;; - Inner references use (const (co-ref N)) — second pass at load time
+;;;   patches these to the actual code-object values.
+;;; - resolved-instructions rebuilt at load via resolve-operations.
+;;; ─────────────────────────────────────────────────────────────────────────
+
+(define (archive/plist-get plist key)
+  "Walk a keyword-tagged plist, return value after KEY or #f."
+  (cond
+   ((null? plist) #f)
+   ((null? (cdr plist)) #f)
+   ((eq? (car plist) key) (cadr plist))
+   (else (archive/plist-get (cddr plist) key))))
+
+(define (archive/rewrite-co-refs tree co-map)
+  "Walk TREE, replacing each `(const <code-object>)` with
+`(const (co-ref ID))` using ID from CO-MAP."
+  (cond
+   ((null? tree) '())
+   ((not (pair? tree)) tree)
+   ;; (const <code-object>) → (const (co-ref ID))
+   ((and (eq? (car tree) 'const)
+         (pair? (cdr tree))
+         (code-object? (cadr tree)))
+    (list 'const (list 'co-ref (hash-ref co-map (cadr tree) #f))))
+   (else
+    (cons (archive/rewrite-co-refs (car tree) co-map)
+          (archive/rewrite-co-refs (cdr tree) co-map)))))
+
+(define (archive/patch-co-refs tree cos-vec)
+  "Inverse of archive/rewrite-co-refs: replace `(const (co-ref N))` with
+`(const <code-object-at-N>)` using the loaded entries vector."
+  (cond
+   ((null? tree) '())
+   ((not (pair? tree)) tree)
+   ((and (eq? (car tree) 'const)
+         (pair? (cdr tree))
+         (pair? (cadr tree))
+         (eq? (car (cadr tree)) 'co-ref))
+    (list 'const (vector-ref cos-vec (cadr (cadr tree)))))
+   (else
+    (cons (archive/patch-co-refs (car tree) cos-vec)
+          (archive/patch-co-refs (cdr tree) cos-vec)))))
+
+(define (archive/collect-reachable top-co)
+  "BFS over TOP-CO's instruction tree, collecting all reachable code-objects
+in discovery order. TOP-CO is first. Each code-object appears exactly once."
+  (let ((seen (%make-hash-table))
+        (order '()))
+    (define (visit co)
+      (when (not (hash-has-key? seen co))
+        (hash-set! seen co #t)
+        (set! order (cons co order))
+        (let ((instrs (code-object-instructions co))
+              (len (code-object-length co)))
+          (let loop ((i 0))
+            (when (< i len)
+              (visit-tree (vector-ref instrs i))
+              (loop (+ i 1)))))))
+    (define (visit-tree tree)
+      (cond
+       ((null? tree) #f)
+       ((not (pair? tree)) #f)
+       ((and (eq? (car tree) 'const)
+             (pair? (cdr tree))
+             (code-object? (cadr tree)))
+        (visit (cadr tree)))
+       (else
+        (visit-tree (car tree))
+        (visit-tree (cdr tree)))))
+    (visit top-co)
+    (reverse order)))
+
+(define (archive/code-object->entry co co-map)
+  "Serialize CO to a (code-object :key val ...) entry form, rewriting
+nested code-object constants to (co-ref N) via CO-MAP."
+  (let* ((instrs (code-object-instructions co))
+         (len (code-object-length co))
+         (rewritten
+          (let loop ((i 0) (acc '()))
+            (if (>= i len) (reverse acc)
+                (loop (+ i 1)
+                      (cons (archive/rewrite-co-refs
+                             (vector-ref instrs i) co-map)
+                            acc))))))
+    (list 'code-object
+          'name (code-object-name co)
+          'arity (code-object-arity co)
+          'source-loc (code-object-source-loc co)
+          'labels (code-object-label-entries co)
+          'instructions rewritten)))
+
+(define (code-object->archive-sexp top-co filename)
+  "Build the full archive s-expression from TOP-CO (and all reachable
+code-objects) for FILENAME."
+  (let* ((all-cos (archive/collect-reachable top-co))
+         (co-map (%make-hash-table)))
+    (let loop ((cos all-cos) (idx 0))
+      (when (pair? cos)
+        (hash-set! co-map (car cos) idx)
+        (loop (cdr cos) (+ idx 1))))
+    (list 'ecec-archive
+          'version 2
+          'file filename
+          'entries
+          (let loop ((cos all-cos) (acc '()))
+            (if (null? cos) (reverse acc)
+                (loop (cdr cos)
+                      (cons (archive/code-object->entry (car cos) co-map) acc)))))))
+
+(define (archive-sexp->code-objects archive)
+  "Parse an archive s-expression (as read from disk). Returns the vector
+of code-objects. Entry 0 is the init code-object. Raises on version
+mismatch."
+  (let* ((version (archive/plist-get (cdr archive) 'version))
+         (entries (archive/plist-get (cdr archive) 'entries)))
+    (when (not (equal? version 2))
+      (error (string-append
+              "Unsupported .ecec archive version: "
+              (if version (write-to-string version) "missing")
+              ". Run `make bootstrap` to regenerate.")))
+    (let* ((n (length entries))
+           (cos (make-vector n))
+           (entries-vec (list->vector entries)))
+      ;; Pass 1: create code-objects + set metadata + set labels.
+      (let loop ((i 0))
+        (when (< i n)
+          (let* ((entry (vector-ref entries-vec i))
+                 (fields (cdr entry))
+                 (co (%make-code-object)))
+            (when (archive/plist-get fields 'name)
+              (%code-object-set-name! co (archive/plist-get fields 'name)))
+            (when (archive/plist-get fields 'arity)
+              (%code-object-set-arity! co (archive/plist-get fields 'arity)))
+            (when (archive/plist-get fields 'source-loc)
+              (%code-object-set-source-loc! co (archive/plist-get fields 'source-loc)))
+            (for-each (lambda (pair)
+                        (%code-object-set-label! co (car pair) (cdr pair)))
+                      (archive/plist-get fields 'labels))
+            (vector-set! cos i co))
+          (loop (+ i 1))))
+      ;; Pass 2: push instructions (with (co-ref N) patched to code-objects).
+      (let loop ((i 0))
+        (when (< i n)
+          (let* ((entry (vector-ref entries-vec i))
+                 (co (vector-ref cos i))
+                 (raw-instrs (archive/plist-get (cdr entry) 'instructions)))
+            (for-each (lambda (instr)
+                        (%code-object-push-instruction!
+                         co (archive/patch-co-refs instr cos)))
+                      raw-instrs))
+          (loop (+ i 1))))
+      cos)))
+
+(define (load-archive-from-port port)
+  "Read an archive from PORT, build all code-objects, execute the init
+(entry 0). Returns the init's result."
+  (let* ((archive (ece-scheme-read port))
+         (cos (archive-sexp->code-objects archive))
+         (init (vector-ref cos 0)))
+    (execute-code-object init)))
+
+(define (load-archive filename)
+  "Load and execute a code-object archive from FILENAME. Returns the
+result of the init code-object."
+  (let ((port (open-input-file filename)))
+    (let ((result (load-archive-from-port port)))
+      (close-input-port port)
+      result)))
+
+(define (compile-file-to-archive filename output-port)
+  "Compile all forms in FILENAME via mc-compile-to-code-object and
+write the resulting code-object archive to OUTPUT-PORT. Mirrors
+compile-file-to-port but produces the §8 archive format."
+  (let ((basename (filename-basename filename)))
+    (set! *source-locations* (%make-hash-table))
+    (set! *source-file-name* basename)
+    (let ((in (open-input-file filename)))
+      ;; Same define-macro handling as compile-file-to-port: run at compile
+      ;; time so later forms see the macro, then emit set-macro! for load.
+      (define (define-macro-to-set-macro expr)
+        (let* ((name (if (pair? (cadr expr)) (car (cadr expr)) (cadr expr)))
+               (params (if (pair? (cadr expr)) (cdr (cadr expr)) (list (cadr expr))))
+               (body (cddr expr)))
+          (list 'begin
+                (list 'set-macro! (list 'quote name)
+                      (cons 'lambda (cons params body)))
+                (list 'quote name))))
+      (define (maybe-expand-define-syntax expr)
+        (if (and (pair? expr) (eq? (car expr) 'define-syntax)
+                 (get-macro 'define-syntax))
+            (mc-expand-macro-at-compile-time
+             (get-macro 'define-syntax) (cdr expr))
+            expr))
+      (define (read-loop forms)
+        (let ((expr (maybe-expand-define-syntax (ece-scheme-read in))))
+          (if (eof? expr)
+              (begin (close-input-port in) (reverse forms))
+              (begin
+                (when (and (pair? expr) (eq? (car expr) 'define-macro))
+                  (mc-compile-and-go expr))
+                (read-loop
+                 (cons (if (and (pair? expr) (eq? (car expr) 'define-macro))
+                           (define-macro-to-set-macro expr)
+                           expr)
+                       forms))))))
+      (let* ((forms (read-loop '()))
+             ;; Wrap all forms in (begin ...) so mc-compile-to-code-object
+             ;; gets a single expression. define-variable! side effects
+             ;; sequence correctly inside begin.
+             (top-co (mc-compile-to-code-object (cons 'begin forms)))
+             (archive (code-object->archive-sexp top-co basename)))
+        (write-string-to-port (write-to-string-flat archive) output-port)
+        (write-char #\newline output-port)
+        (set! *source-locations* (%make-hash-table))
+        (set! *source-file-name* #f)
+        top-co))))
+
+(define (compile-file-archive filename)
+  "Compile FILENAME to a .ecec archive file. Returns the output filename."
+  (let* ((output-name
+          (string-append (filename-strip-extension filename ".scm") ".ecec"))
+         (out (open-output-file output-name)))
+    (compile-file-to-archive filename out)
+    (close-output-port out)
+    output-name))
