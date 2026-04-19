@@ -95,6 +95,26 @@ space has no instructions registered."
         (close-output-port out)
         output-path))))
 
+;;; Code-object-oriented entry point. Mirrors generate-zone-cl! but takes
+;;; a code-object directly (no registry lookup). Used by Phase D's archive
+;;; codegen driver.
+(define (generate-zone-cl-for-code-object! co zone-name output-path)
+  "Emit one (defun zone-NAME ...) for CO. ZONE-NAME is the string used as
+the function name suffix. OUTPUT-PATH is the destination .lisp file.
+Returns OUTPUT-PATH."
+  (let ((count (cg/instruction-length co)))
+    (when (= count 0)
+      (%raw-error
+       (string-append "generate-zone-cl-for-code-object!: empty code-object "
+                      zone-name)))
+    (let ((out (open-output-file output-path)))
+      (emit-zone-header out zone-name)
+      (if (needs-splitting? count)
+          (emit-zone-defun-split out zone-name co count)
+          (emit-zone-defun out zone-name co count))
+      (close-output-port out)
+      output-path)))
+
 ;;; ─────────────────────────────────────────────────────────────────────────
 ;;; File header
 ;;; ─────────────────────────────────────────────────────────────────────────
@@ -172,17 +192,30 @@ space has no instructions registered."
 (define (emit-zone-registration out name-str space-id)
   "Emit the load-time effect that registers this zone in
 *compiled-zone-functions*. Runs once per file load and is idempotent —
-re-loading the file just overwrites the entry with the same function."
-  (write-string ";;; Self-registration: install zone-" out)
-  (write-string name-str out)
-  (write-string " under the space symbol so" out) (newline out)
-  (write-string ";;; execute-instructions dispatches to it on entry to this space." out) (newline out)
-  (write-string "(cl:setf (cl:gethash " out)
-  (write-cl-quoted-ece-symbol out space-id)
-  (write-string " *compiled-zone-functions*)" out) (newline out)
-  (write-string "         (cl:function zone-" out)
-  (write-string name-str out)
-  (write-string "))" out) (newline out))
+re-loading the file just overwrites the entry with the same function.
+
+When SPACE-ID is a code-object (the archive path introduced in Phase B),
+we emit a placeholder comment instead — Phase C adds the archive-zone-fns
+registration form via emit-zone-registration-for-co. Emitting a space-
+keyed entry here would crash (code-objects have no symbol name)."
+  (cond
+   ((code-object? space-id)
+    (write-string ";;; Self-registration for code-object zone-" out)
+    (write-string name-str out)
+    (write-string " deferred —" out) (newline out)
+    (write-string ";;; Phase C will emit (cl:setf (cl:gethash ... *archive-zone-fns*) ...)." out)
+    (newline out))
+   (else
+    (write-string ";;; Self-registration: install zone-" out)
+    (write-string name-str out)
+    (write-string " under the space symbol so" out) (newline out)
+    (write-string ";;; execute-instructions dispatches to it on entry to this space." out) (newline out)
+    (write-string "(cl:setf (cl:gethash " out)
+    (write-cl-quoted-ece-symbol out space-id)
+    (write-string " *compiled-zone-functions*)" out) (newline out)
+    (write-string "         (cl:function zone-" out)
+    (write-string name-str out)
+    (write-string "))" out) (newline out))))
 
 ;;; ─────────────────────────────────────────────────────────────────────────
 ;;; Sub-function splitting (chunk emitters)
@@ -608,7 +641,14 @@ still set pc so the dispatcher routes to the next chunk correctly."
           (cond
            ((eq? target 'continue)
             (write-string "(cl:cons " out)
-            (write-cl-quoted-ece-symbol out space-id)
+            (cond
+             ((code-object? space-id)
+              ;; Code-object path (Phase B): Phase C wires the real self-
+              ;; reference; for now emit a symbolic placeholder that keeps
+              ;; the emitted CL parseable.
+              (write-string "'|#:code-object-self#|" out))
+             (else
+              (write-cl-quoted-ece-symbol out space-id)))
             (write-char #\space out)
             (write-string (number->string resolved-pc) out)
             (write-char #\) out))
@@ -789,7 +829,13 @@ PC. The runtime then qualifies the PC via *executing-space-id* if needed
 emit directly; symbols and lists are emitted as quoted data with all
 ECE symbols pipe-wrapped to preserve case across CL's reader. String
 escaping is delegated to write-cl-string in codegen-cl.scm so backslashes,
-double quotes, and other special characters round-trip cleanly."
+double quotes, and other special characters round-trip cleanly.
+
+Bottom-up emission (mc-compile-lambda-as-code-object) places a nested
+code-object as the const arg to make-compiled-procedure. Phase B cannot
+yet resolve that const to a runtime value — Phase C wires it up via
+*archive-zone-fns* + load-time native-fn attachment. For now we emit a
+placeholder sentinel form that documents what Phase C will plug in."
   (cond
    ((number? value) (write-string (number->string value) out))
    ((eq? value #t) (write-string "t" out))
@@ -798,6 +844,14 @@ double quotes, and other special characters round-trip cleanly."
    ((string? value) (write-cl-string value out))
    ((symbol? value)
     (write-cl-quoted-ece-symbol out value))
+   ((code-object? value)
+    (write-string "(code-object-placeholder " out)
+    (let ((name (code-object-name value)))
+      (cond
+       ((and name (symbol? name))
+        (write-cl-quoted-ece-symbol out name))
+       (else (write-string "cl:nil" out))))
+    (write-char #\) out))
    ((pair? value)
     (write-char #\' out)
     (emit-quoted-datum out value))
@@ -819,6 +873,10 @@ proper backslash/quote escaping."
    ((eq? datum #t) (write-string "t" out))
    ((eq? datum #f) (write-string "ece::*scheme-false*" out))
    ((string? datum) (write-cl-string datum out))
+   ;; Nested code-object inside quoted data — Phase C wires the archive
+   ;; loader to resolve these; emit a placeholder sentinel for Phase B.
+   ((code-object? datum)
+    (write-string "#:code-object-placeholder#" out))
    ((pair? datum)
     (write-char #\( out)
     (emit-quoted-datum out (car datum))
