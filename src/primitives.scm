@@ -1051,7 +1051,18 @@
   :cl `(cl:cond
         ((compiled-procedure-p ,proc)
          (cl:let* ((entry (cl:cadr ,proc))
-                   (params (cl:or (cl:gethash entry *procedure-params-table*)
+                   ;; Archive-loaded code-objects carry arity in the struct
+                   ;; itself (%code-object-set-arity! at compile time). Prefer
+                   ;; that; fall back to the side-table for legacy space-based
+                   ;; entries where the compiler emits procedure-params
+                   ;; pseudo-instructions that populate the hash.
+                   (co (cl:cond ((code-object-p entry) entry)
+                                ((cl:and (cl:consp entry) (code-object-p (cl:car entry)))
+                                 (cl:car entry))
+                                (cl:t cl:nil)))
+                   (co-arity (cl:when co (code-object-arity co)))
+                   (params (cl:or co-arity
+                                  (cl:gethash entry *procedure-params-table*)
                                   (cl:when (cl:consp entry)
                                            (cl:gethash (cl:cdr entry) *procedure-params-table*)))))
                   (cl:or params *scheme-false*)))

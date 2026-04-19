@@ -929,20 +929,39 @@ at runtime; for Stage 1 we emit the same lookup every call site."
 ;;; primitive tags (`|primitive|`, `|continuation|`, ...), and any other
 ;;; ECE symbol that needs to round-trip must go through this helper.
 
+(define (strip-outer-pipes name)
+  "If NAME starts and ends with `|`, strip them. Used to normalize
+symbols read from archive files: the ECE reader doesn't understand
+R6RS pipe-escape syntax, so `|:hash-table|` parses as a 13-char symbol
+whose NAME includes the pipes. Re-wrapping that with `write-char #\\|`
+would double-escape and confuse CL's reader into treating `:hash-table`
+as a package prefix. Strip first, then re-wrap, so the emitted bytes
+are `|:hash-table|` — a single escape that CL reads as the intended
+case-preserved symbol."
+  (let ((len (string-length name)))
+    (if (and (>= len 2)
+             (char=? (string-ref name 0) #\|)
+             (char=? (string-ref name (- len 1)) #\|))
+        (substring name 1 (- len 1))
+        name)))
+
 (define (write-cl-quoted-ece-symbol out sym)
   "Emit SYM as a quoted CL form `'|name|`, preserving lowercase via the
-pipe-escape syntax that CL's reader honors."
+pipe-escape syntax that CL's reader honors. Strips pre-existing pipes
+from SYM's name so archive-read symbols (which carry pipes in their
+name because the ECE reader doesn't strip them) don't double-escape."
   (write-char #\' out)
   (write-char #\| out)
-  (write-string (symbol->string sym) out)
+  (write-string (strip-outer-pipes (symbol->string sym)) out)
   (write-char #\| out))
 
 (define (write-cl-data-symbol out sym)
   "Emit SYM as a bare data symbol `|name|` (no leading quote), preserving
 lowercase. Use this inside already-quoted lists, where the leading quote
-is provided by the enclosing context."
+is provided by the enclosing context. Strips pre-existing pipes (see
+write-cl-quoted-ece-symbol)."
   (write-char #\| out)
-  (write-string (symbol->string sym) out)
+  (write-string (strip-outer-pipes (symbol->string sym)) out)
   (write-char #\| out))
 
 (define (emit-operand out operand label-map)
@@ -1221,16 +1240,52 @@ Signals an error if a bootstrap space name is unknown."
            (newline))))))
    all-bootstrap-spaces))
 
+(define (sanitize-char-for-filename c)
+  "Map one filesystem-unsafe character to an ASCII substitute. Scheme
+identifiers admit `? ! * / < > | :` which collide with pathname
+wildcards, shell globs, or path separators. Substitutes preserve
+readability (`list?` → `listQ`, `set!` → `setB`) and are injective
+per character."
+  (cond ((char=? c #\?) #\Q)
+        ((char=? c #\!) #\B)
+        ((char=? c #\*) #\S)
+        ((char=? c #\/) #\_)
+        ((char=? c #\<) #\L)
+        ((char=? c #\>) #\G)
+        ((char=? c #\|) #\P)
+        ((char=? c #\:) #\C)
+        (else c)))
+
+(define (sanitize-name-for-filename name-str)
+  "Map each character in NAME-STR through sanitize-char-for-filename,
+returning a filesystem-safe string. Deterministic per input; two
+distinct names can collide only when they differ solely in unsafe
+characters that map to the same substitute — rare in practice and
+no worse than identical names."
+  (let loop ((i 0) (acc '()))
+    (if (>= i (string-length name-str))
+        (apply string-append (reverse acc))
+        (loop (+ i 1)
+              (cons (string (sanitize-char-for-filename
+                             (string-ref name-str i)))
+                    acc)))))
+
 (define (zone-name-for-code-object file-stem index co)
   "Compose a zone filename stem. Uses the code-object's name if set
 (for the init code-object of a source file, that's `%init`), falls back
-to FILE-STEM-INDEX."
+to FILE-STEM-INDEX. Sanitizes Scheme-legal but filesystem-unsafe
+characters like `?`, `!`, and `/` so SBCL's pathname parser accepts
+the result. Index suffix is appended for anonymous code-objects, so
+collisions between sanitized names remain possible but only for
+identically-named code-objects — and those would collide regardless
+of sanitization."
   (let ((name (code-object-name co)))
     (cond
      ((and name (symbol? name))
-      (string-append file-stem "-" (symbol->string name)))
+      (string-append file-stem "-"
+                     (sanitize-name-for-filename (symbol->string name))))
      ((and name (string? name))
-      (string-append file-stem "-" name))
+      (string-append file-stem "-" (sanitize-name-for-filename name)))
      (else
       (string-append file-stem "-" (number->string index))))))
 
@@ -1254,29 +1309,37 @@ load-ecec-archive-section)."
   (let ((name (code-object-name co)))
     (if (and name (symbol? name)) name index)))
 
-(define (generate-all-zones-from-archive! archive-path output-dir)
-  "Read an archive file from ARCHIVE-PATH, iterate its code-objects, and
-emit one zone file per code-object under OUTPUT-DIR. Output filenames:
-`<archive-stem>-<co-name-or-index>-zone.lisp`.
+(define (archive-file-stem archive)
+  "Derive the file-stem symbol from ARCHIVE's |file| plist field (minus
+extension). Matches the key the CL archive loader uses to attach
+native-fn — see archive-file-stem-symbol in src/runtime.lisp."
+  (let ((file-str (archive/plist-get (cdr archive) 'file)))
+    (if (string? file-str)
+        (string->symbol (filename-strip-extension
+                         (filename-basename file-str) ".scm"))
+        (%raw-error
+         "archive-file-stem: archive has no |file| field"))))
 
-Signals an error if the archive has zero entries. Deterministic: entries
-are processed in archive order, which matches collect-reachable order
-(init first, then nested lambdas BFS).
+(define (generate-zones-for-archive-section! archive output-dir)
+  "Emit one zone file per code-object in ARCHIVE (a single parsed
+(ecec-archive ...) section) under OUTPUT-DIR. Used internally by
+generate-all-zones-from-archive! which loops over concatenated archive
+sections in a bundle.
 
-Threads *emit-co-index-map* through a parameterize so emit-inner-co-lookup
-can resolve (const <anonymous-co>) to the correct archive index — even
-when the anonymous co is nested inside a different zone's instruction
-body."
-  (let* ((port (open-input-file archive-path))
-         (archive (ece-scheme-read port))
-         (_close (close-input-port port))
-         (cos (archive-sexp->code-objects archive))
+File-stem comes from the archive's |file| field so the zone's registry
+key matches what the CL archive loader constructs at boot time. Output
+filenames are `<file-stem>-<co-name-or-index>-zone.lisp`.
+
+Threads *emit-co-index-map* so emit-inner-co-lookup can resolve (const
+<anonymous-co>) operands inside nested-lambda bodies."
+  (let* ((cos (archive-sexp->code-objects archive))
          (n (vector-length cos))
-         (file-stem (filename-strip-extension
-                     (filename-basename archive-path) ".ecec"))
+         (file-stem-sym (archive-file-stem archive))
+         (file-stem (symbol->string file-stem-sym))
          (index-map (build-archive-co-index-map cos n)))
     (when (= n 0)
-      (%raw-error "generate-all-zones-from-archive!: archive has no code-objects"))
+      (%raw-error
+       "generate-zones-for-archive-section!: archive has no code-objects"))
     (parameterize ((*emit-co-index-map* index-map))
       (let loop ((i 0))
         (when (< i n)
@@ -1293,3 +1356,27 @@ body."
             (display (string-append "  Done: " output-path))
             (newline))
           (loop (+ i 1)))))))
+
+(define (generate-all-zones-from-archive! archive-path output-dir)
+  "Read a bundle at ARCHIVE-PATH (a concatenation of (ecec-archive ...)
+sections, one per compiled source file), iterate each section's
+code-objects, and emit one zone file per code-object under OUTPUT-DIR.
+Output filenames: `<file-stem>-<co-name-or-index>-zone.lisp`, where
+FILE-STEM comes from each section's |file| field.
+
+Signals an error if a section has zero entries. Deterministic: sections
+are processed in bundle order; within each section entries are processed
+in archive order (init first, then nested lambdas BFS)."
+  (let ((port (open-input-file archive-path)))
+    (let loop ()
+      (let ((archive (ece-scheme-read port)))
+        (cond
+         ((eof? archive)
+          (close-input-port port))
+         ((and (pair? archive) (eq? (car archive) 'ecec-archive))
+          (generate-zones-for-archive-section! archive output-dir)
+          (loop))
+         (else
+          (close-input-port port)
+          (%raw-error
+           "generate-all-zones-from-archive!: expected (ecec-archive ...) section")))))))

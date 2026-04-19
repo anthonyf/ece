@@ -258,14 +258,23 @@ $(BOOTSTRAP_DIR)/primitives-auto.lisp: primitives.def src/primitives.scm src/cod
 	  --quit
 	@echo "Generated $(BOOTSTRAP_DIR)/primitives-auto.lisp"
 
-# Stage 1: batch compiled-zone generation. All bootstrap spaces are generated
-# in a single SBCL session via generate-all-zones!, avoiding N separate boots.
-# Depends on bootstrap.ecec because generate-zone-cl! reads each space's
-# instruction vector from the currently-loaded image.
-# Sentinel target: assembler-zone.lisp stands for all zone files.
-# generate-all-zones! produces all seven in one SBCL session.
-# The other zone files declare the sentinel as a prerequisite so Make
-# knows they exist but doesn't re-run the recipe.
+# Stage 1: archive-driven per-code-object compiled-zone generation. Reads
+# the archive at $(BOOTSTRAP_DIR)/bootstrap.ecec and emits one zone .lisp
+# per code-object contained in it. Sentinel target assembler-zone.lisp
+# stands for all zone files; the other zone file targets declare the
+# sentinel as a prerequisite so Make knows they exist but doesn't re-run
+# the recipe.
+#
+# NOTE (§9.2 Phase D): generate-all-zones-from-archive! is wired up and
+# produces one zone file per code-object, but the dispatcher-level
+# integration has a latent bug — loaded zones silently corrupt the val
+# register, causing (ece:evaluate <any>) to return nil instead of the
+# real result. The interpreter path (zones absent) works correctly on
+# the archive-format bootstrap. Until the zone-dispatch bug lands a
+# fix, this target is gated behind ECE_ZONES=1 so make bootstrap runs
+# faster and test-ece passes without native-fn acceleration. Set
+# ECE_ZONES=1 to regenerate zones and debug the dispatch issue.
+ifeq ($(ECE_ZONES),1)
 $(ZONE_SENTINEL): primitives.def src/primitives.scm src/codegen-cl.scm src/codegen-cl-inline.scm $(BOOTSTRAP_SRCS) $(BOOTSTRAP_DIR)/bootstrap.ecec
 	@mkdir -p $(BOOTSTRAP_DIR)
 	@echo "Regenerating all compiled zones in $(BOOTSTRAP_DIR)/..."
@@ -274,9 +283,18 @@ $(ZONE_SENTINEL): primitives.def src/primitives.scm src/codegen-cl.scm src/codeg
 	  --eval '(ece:evaluate (list (quote load) "src/codegen-cl.scm"))' \
 	  --eval '(ece:evaluate (list (quote load) "src/primitives.scm"))' \
 	  --eval '(ece:evaluate (list (quote load) "src/codegen-cl-inline.scm"))' \
-	  --eval '(ece:evaluate (list (intern "generate-all-zones!" :ece) "$(BOOTSTRAP_DIR)"))' \
+	  --eval '(ece:evaluate (list (intern "generate-all-zones-from-archive!" :ece) "$(BOOTSTRAP_DIR)/bootstrap.ecec" "$(BOOTSTRAP_DIR)"))' \
 	  --quit
 	@echo "Generated all compiled zones"
+else
+# Sentinel-only target when ECE_ZONES is unset (default). Nothing is
+# written; load-compiled-zones in src/runtime.lisp falls through to
+# interpreter dispatch when no bootstrap/*-zone.lisp files exist.
+# Declared .PHONY so make doesn't complain about the missing file.
+.PHONY: $(ZONE_SENTINEL)
+$(ZONE_SENTINEL):
+	@echo "Zone generation disabled (ECE_ZONES=1 to enable — see Makefile comment)"
+endif
 
 $(ZONE_FILES): $(ZONE_SENTINEL)
 

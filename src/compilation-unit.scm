@@ -232,13 +232,15 @@ Returns the output filename."
     output-name))
 
 (define (compile-system filenames output-path)
-  "Compile a list of .scm FILENAMES into a single multi-space .ecec bundle
-at OUTPUT-PATH. Each file is compiled to its own named space with its own
-source-map. Returns OUTPUT-PATH."
+  "Compile a list of .scm FILENAMES into a single .ecec archive bundle at
+OUTPUT-PATH. Each file is compiled to a code-object archive (§8 format);
+the bundle is the concatenation of those archives. Loaders iterate
+sections via load-section-from-port, dispatching on each section's head
+symbol (ecec-archive). Returns OUTPUT-PATH."
   (let ((out (open-output-file output-path)))
     (let loop ((files filenames))
       (when (pair? files)
-        (compile-file-to-port (car files) out)
+        (compile-file-to-archive (car files) out)
         (loop (cdr files))))
     (close-output-port out)
     output-path))

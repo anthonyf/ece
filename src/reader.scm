@@ -84,6 +84,21 @@
         (set! buf (string-append buf (string ch)))
         (loop))))))
 
+;;; NOTE: Intentionally no R6RS-style `|foo|` pipe-escape handler here.
+;;; The codegen-cl infrastructure (src/codegen-cl.scm) relies on `|foo|`
+;;; in primitive source templates parsing as a symbol whose NAME literally
+;;; includes the surrounding pipes. That way, templates like
+;;; `'|continuation|` emit `'|continuation|` verbatim into generated CL,
+;;; where CL's upcase reader sees the pipes as escapes and preserves the
+;;; lowercase name. Adding pipe stripping here would silently break every
+;;; primitive template that depends on this round-trip.
+;;;
+;;; Consequence: archive files (.ecec) contain pipe-escaped symbols like
+;;; `|:hash-table|` whose semantics only the CL reader understands. Boot
+;;; uses CL's reader; post-boot archive reads (e.g., from
+;;; generate-all-zones-from-archive!) must either use CL's reader or a
+;;; dedicated archive parser that understands this convention.
+
 ;;; Signal a reader error for a stray backslash inside a bare symbol token.
 ;;; Includes source location when *source-file-name* is set. COL is the
 ;;; 0-indexed column of the offending backslash (caller supplies it because
