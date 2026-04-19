@@ -88,7 +88,7 @@ space has no instructions registered."
                             (symbol->string space-name)
                             space-name))))
       (let ((out (open-output-file output-path)))
-        (emit-zone-header out space-name)
+        (emit-zone-header out space-name 'space)
         (if (needs-splitting? count)
             (emit-zone-defun-split out space-name space-id count)
             (emit-zone-defun out space-name space-id count))
@@ -108,7 +108,7 @@ Returns OUTPUT-PATH."
        (string-append "generate-zone-cl-for-code-object!: empty code-object "
                       zone-name)))
     (let ((out (open-output-file output-path)))
-      (emit-zone-header out zone-name)
+      (emit-zone-header out zone-name 'code-object)
       (if (needs-splitting? count)
           (emit-zone-defun-split out zone-name co count)
           (emit-zone-defun out zone-name co count))
@@ -119,7 +119,13 @@ Returns OUTPUT-PATH."
 ;;; File header
 ;;; ─────────────────────────────────────────────────────────────────────────
 
-(define (emit-zone-header out space-name)
+(define (emit-zone-header out space-name mode)
+  "Emit the file-level banner for a zone .lisp file. MODE is either 'space
+(legacy bootstrap space path — registers into *compiled-zone-functions*)
+or 'code-object (archive path from Phase B — Phase C will register into
+*archive-zone-fns*). The shared preamble (AUTOMATICALLY GENERATED header,
+(in-package :ece)) is identical for both modes; only the registration-
+semantics comment differs."
   (let ((name-str (if (symbol? space-name)
                       (symbol->string space-name)
                       space-name)))
@@ -136,8 +142,14 @@ Returns OUTPUT-PATH."
     (write-string name-str out)
     (write-string "-zone.lisp" out) (newline out)
     (write-string ";;;;" out) (newline out)
-    (write-string ";;;; The CL runtime loads this file at boot and registers the defun" out) (newline out)
-    (write-string ";;;; below under its space symbol in *compiled-zone-functions*." out) (newline out)
+    (cond
+     ((eq? mode 'code-object)
+      (write-string ";;;; The CL runtime loads this file at boot; the defun below will be" out) (newline out)
+      (write-string ";;;; registered in *archive-zone-fns* once Phase C lands the archive" out) (newline out)
+      (write-string ";;;; loader (see emit-zone-registration for the deferred placeholder)." out) (newline out))
+     (else
+      (write-string ";;;; The CL runtime loads this file at boot and registers the defun" out) (newline out)
+      (write-string ";;;; below under its space symbol in *compiled-zone-functions*." out) (newline out)))
     (newline out)
     (write-string "(in-package :ece)" out) (newline out)
     (newline out)))
@@ -845,6 +857,14 @@ placeholder sentinel form that documents what Phase C will plug in."
    ((symbol? value)
     (write-cl-quoted-ece-symbol out value))
    ((code-object? value)
+    ;; Value-context placeholder: emitted as a CL call-form so the reader
+    ;; parses it cleanly and Phase C can search for (code-object-placeholder
+    ;; ...) to rewrite it into the archive-driven native-fn attachment.
+    ;;
+    ;; NOTE: emit-quoted-datum below emits a PARALLEL sentinel
+    ;; (#:code-object-placeholder#) for nested code-objects that appear
+    ;; inside quoted-literal contexts — the two sentinels must stay in sync
+    ;; when Phase C lands the replacement logic.
     (write-string "(code-object-placeholder " out)
     (let ((name (code-object-name value)))
       (cond
@@ -875,6 +895,13 @@ proper backslash/quote escaping."
    ((string? datum) (write-cl-string datum out))
    ;; Nested code-object inside quoted data — Phase C wires the archive
    ;; loader to resolve these; emit a placeholder sentinel for Phase B.
+   ;;
+   ;; NOTE: emit-const above emits a PARALLEL sentinel — the CL call-form
+   ;; (code-object-placeholder NAME-OR-nil) — for value-context code-objects.
+   ;; Here we're inside quoted data, so a call-form would be read as a
+   ;; literal list rather than a form to evaluate; we emit an uninterned
+   ;; keyword atom instead. Phase C's replacement logic must handle both
+   ;; sentinel shapes — keep them in sync.
    ((code-object? datum)
     (write-string "#:code-object-placeholder#" out))
    ((pair? datum)
