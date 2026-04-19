@@ -393,8 +393,13 @@ Returns the result of the last section."
           (archive/patch-co-refs (cdr tree) cos-vec)))))
 
 (define (archive/collect-reachable top-co)
-  "BFS over TOP-CO's instruction tree, collecting all reachable code-objects
-in discovery order. TOP-CO is first. Each code-object appears exactly once."
+  "Depth-first walk over TOP-CO's instruction tree, collecting all reachable
+code-objects in DFS pre-order. `visit` recurses into each nested
+code-object the moment it is first seen — that is DFS, not BFS. TOP-CO
+is first. Each code-object appears exactly once. Discovery order is
+identical to build-reachable-co-index-map in src/codegen-cl-inline.scm;
+the two walks must stay in lockstep so archive-level codegen and ad-hoc
+single-code-object codegen produce matching indices."
   (let ((seen (%make-hash-table))
         (order '()))
     (define (visit co)

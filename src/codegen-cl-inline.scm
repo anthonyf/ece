@@ -159,11 +159,15 @@ Returns OUTPUT-PATH."
           output-path)))))
 
 (define (build-reachable-co-index-map top-co)
-  "BFS over TOP-CO's instruction tree, returning a hash-table mapping each
-reachable code-object to a stable integer index. Discovery order gives
-the same index sequence as archive/collect-reachable would in
-src/compilation-unit.scm, so keys stay consistent between archive-level
-codegen and ad-hoc single-code-object codegen."
+  "Depth-first walk over TOP-CO's instruction tree, returning a hash-table
+mapping each reachable code-object to a stable integer index. `assign`
+recurses into each nested code-object inline the moment it is first
+seen — that is DFS pre-order, not BFS. Discovery order matches
+archive/collect-reachable in src/compilation-unit.scm (which is also
+DFS despite its older docstring wording), so keys stay consistent
+between archive-level codegen and ad-hoc single-code-object codegen.
+These two walks MUST stay in lockstep: any change to traversal order
+here has to be mirrored in archive/collect-reachable and vice versa."
   (let ((h (%make-hash-table))
         (next-idx 0))
     (define (assign co)
@@ -336,11 +340,15 @@ into the same EQUAL hash key the archive loader constructs."
   (write-string "))" out) (newline out))
 
 (define (emit-file-stem-symbol out file-stem)
-  "Emit FILE-STEM (a string) as a quoted case-preserved ECE-package
-symbol: `(cl:intern \"FILE-STEM\" :ece)` wrapped in cl:quote via a static
-`'|...|`. Using pipe syntax keeps the symbol lowercase-preserved
-(matching how the archive loader derives its key) without a runtime
-intern call."
+  "Emit FILE-STEM (a string) as a pipe-quoted symbol literal `'|stem|`.
+The emitted bytes are bare — no package qualifier — and resolve in the
+`:ece` package at file-load time because the generated zone file opens
+with `(in-package :ece)` (see emit-zone-header). Pipe syntax preserves
+lowercase under CL's default upcasing reader. The archive loader in
+src/runtime.lisp derives its matching key via
+`(intern STEM :ece)` (see archive-file-stem-symbol), so both sides
+land on the same `eq` symbol and the (FILE-STEM . CO-KEY) registry key
+round-trips without a runtime intern call here."
   (write-char #\' out)
   (write-char #\| out)
   (write-string file-stem out)
