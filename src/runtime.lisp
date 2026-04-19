@@ -2133,14 +2133,18 @@ gracefully — callers skip registration rather than erroring)."
         (intern (if dot (subseq file-str 0 dot) file-str) :ece)))))
 
 (defun archive-co-key (co index)
-  "Derive the registry key for CO at archive INDEX. Named code-objects
-use their name symbol; anonymous ones (name = NIL or *scheme-false*)
-fall back to the index. Must match the key the codegen emits in
-src/codegen-cl-inline.scm co-key-for-archive-entry."
-  (let ((name (code-object-name co)))
-    (if (and name (not (scheme-false-p name)) (symbolp name))
-        name
-        index)))
+  "Derive the registry key for CO at archive INDEX. Always uses the
+archive index — names are not unique within an archive (e.g., prelude
+has 7 distinct `iter` code-objects nested inside reverse, length, map,
+for-each, min/max, range). If we keyed on name, registration would
+silently overwrite earlier entries, and all same-named code-objects
+would share a single zone fn — catastrophic for correctness.
+
+Must match the key the codegen emits in src/codegen-cl-inline.scm
+co-key-for-archive-entry. CO is unused but kept for symmetry with the
+codegen side."
+  (declare (ignore co))
+  index)
 
 (defun register-archive-code-objects (cos file-stem)
   "Register each code-object in COS under (FILE-STEM . CO-KEY) in

@@ -1004,7 +1004,16 @@ emitting a code-object constant is unsupported — it shouldn't happen,
 since spaces don't have per-procedure identities. We raise at codegen
 time rather than emit a form that would crash at runtime."
   (cond
-   ((number? value) (write-string (number->string value) out))
+   ;; Integers use number->string (unambiguous decimal). Non-integer numbers
+   ;; (floats) route through write-to-string-flat because ECE's number->string
+   ;; truncates floats — it calls (number->string (truncate n)) in the
+   ;; non-integer path, which turns 0.5 into "0". That truncation silently
+   ;; corrupted constant operands in zones (round's 0.5 comparison became
+   ;; 0, making it a ceiling instead of round-to-nearest).
+   ((number? value)
+    (if (integer? value)
+        (write-string (number->string value) out)
+        (write-string (write-to-string-flat value) out)))
    ((eq? value #t) (write-string "t" out))
    ((eq? value #f) (write-string "ece::*scheme-false*" out))
    ((null? value) (write-string "cl:nil" out))
@@ -1026,34 +1035,29 @@ time rather than emit a form that would crash at runtime."
 archive-co-lookup into the live code-object struct from
 *archive-code-objects*. CO is a code-object value baked into the
 instruction by bottom-up compilation; its archive identity (file-stem +
-co-key) is known at codegen time through *emit-file-stem* and
+archive-index) is known at codegen time through *emit-file-stem* and
 *emit-co-index-map*.
 
-Key derivation matches the archive loader in runtime.lisp:
-  - If CO has a name (set by mc-compile-define), use the name symbol.
-  - Otherwise fall back to CO's zero-based archive index, looked up in
-    *emit-co-index-map*."
+Keys are always archive indices (integers) — names are not unique
+(prelude has 7 distinct `iter` code-objects), so keying on name would
+make every same-named code-object route to the same zone fn. Must match
+the key the archive loader derives (runtime.lisp: archive-co-key)."
   (let ((file-stem (*emit-file-stem*))
         (index-map (*emit-co-index-map*)))
     (when (not file-stem)
       (%raw-error
        "emit-inner-co-lookup: no *emit-file-stem* bound. Code-object constants are only valid in archive zones."))
-    (let* ((co-name (code-object-name co))
-           (co-key (cond
-                    ((and co-name (symbol? co-name)) co-name)
-                    (index-map (hash-ref index-map co #f))
-                    (else #f))))
+    (when (not index-map)
+      (%raw-error
+       "emit-inner-co-lookup: no *emit-co-index-map* bound. Archive codegen must seed the index map."))
+    (let ((co-key (hash-ref index-map co #f)))
       (when (not co-key)
         (%raw-error
-         "emit-inner-co-lookup: code-object has no name and no archive index is registered. Archive codegen must seed *emit-co-index-map* for anonymous lambdas."))
+         "emit-inner-co-lookup: code-object is not in the archive index map."))
       (write-string "(archive-co-lookup " out)
       (emit-file-stem-symbol out file-stem)
       (write-char #\space out)
-      (cond
-       ((symbol? co-key)
-        (write-cl-quoted-ece-symbol out co-key))
-       (else
-        (write-string (number->string co-key) out)))
+      (write-string (number->string co-key) out)
       (write-char #\) out))))
 
 (define (emit-quoted-datum out datum)
@@ -1065,7 +1069,12 @@ proper backslash/quote escaping."
   (cond
    ((null? datum) (write-string "()" out))
    ((symbol? datum) (write-cl-data-symbol out datum))
-   ((number? datum) (write-string (number->string datum) out))
+   ((number? datum)
+    ;; See emit-const: ECE's number->string truncates floats, so route
+    ;; non-integer numbers through write-to-string-flat.
+    (if (integer? datum)
+        (write-string (number->string datum) out)
+        (write-string (write-to-string-flat datum) out)))
    ((eq? datum #t) (write-string "t" out))
    ((eq? datum #f) (write-string "ece::*scheme-false*" out))
    ((string? datum) (write-cl-string datum out))
@@ -1271,21 +1280,24 @@ no worse than identical names."
                     acc)))))
 
 (define (zone-name-for-code-object file-stem index co)
-  "Compose a zone filename stem. Uses the code-object's name if set
-(for the init code-object of a source file, that's `%init`), falls back
-to FILE-STEM-INDEX. Sanitizes Scheme-legal but filesystem-unsafe
-characters like `?`, `!`, and `/` so SBCL's pathname parser accepts
-the result. Index suffix is appended for anonymous code-objects, so
-collisions between sanitized names remain possible but only for
-identically-named code-objects — and those would collide regardless
-of sanitization."
+  "Compose a zone filename stem. The archive INDEX is always appended —
+names are not unique within an archive (e.g., prelude has 7 distinct
+`iter` code-objects, 3 distinct `pc`, 2 distinct `thunk`, etc.). Named
+code-objects get a readable prefix for debugging; filenames and defun
+names are still 1:1 with archive entries.
+
+Sanitizes Scheme-legal but filesystem-unsafe characters like `?`, `!`,
+and `/` so SBCL's pathname parser accepts the result."
   (let ((name (code-object-name co)))
     (cond
      ((and name (symbol? name))
       (string-append file-stem "-"
-                     (sanitize-name-for-filename (symbol->string name))))
+                     (sanitize-name-for-filename (symbol->string name))
+                     "-" (number->string index)))
      ((and name (string? name))
-      (string-append file-stem "-" (sanitize-name-for-filename name)))
+      (string-append file-stem "-"
+                     (sanitize-name-for-filename name)
+                     "-" (number->string index)))
      (else
       (string-append file-stem "-" (number->string index))))))
 
@@ -1302,12 +1314,16 @@ directly and don't hit this map."
     h))
 
 (define (co-key-for-archive-entry co index)
-  "Derive the registry key for CO at archive INDEX. Named code-objects
-use their name symbol; anonymous ones fall back to the index. Must
-match the key the archive loader derives (runtime.lisp:
-load-ecec-archive-section)."
-  (let ((name (code-object-name co)))
-    (if (and name (symbol? name)) name index)))
+  "Derive the registry key for CO at archive INDEX. Always uses the
+archive index — names are not unique within an archive (prelude has
+7 distinct `iter` code-objects inside reverse, length, map, for-each,
+min/max, range). If we keyed on name, the archive loader would silently
+overwrite earlier registrations and all same-named code-objects would
+share a single zone fn. Must match the key the archive loader derives
+(runtime.lisp: archive-co-key). CO is unused but kept for symmetry with
+the runtime side."
+  co  ; unused
+  index)
 
 (define (archive-file-stem archive)
   "Derive the file-stem symbol from ARCHIVE's |file| plist field (minus
