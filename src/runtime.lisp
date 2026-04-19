@@ -2087,16 +2087,86 @@ more sections (including skipped ones), NIL on EOF."
     t))
 
 (defun load-ecec-archive-section (raw-archive)
-  "Archive-format dispatch: parse the archive, execute the init code-object.
+  "Archive-format dispatch: parse the archive, register each code-object
+in *archive-code-objects*, attach any pre-loaded zone fn to native-fn,
+then execute the init code-object.
+
 RAW-ARCHIVE is the form as produced by CL:READ — this handler owns its
 own downcasing + constant canonicalization so the dispatcher never walks
-the tree. Nested code-objects become globally reachable through whatever
-top-level bindings the init sets up; no separate registry is needed."
+the tree.
+
+Registration key convention (shared with codegen-cl-inline.scm
+emit-zone-registration-for-co):
+  key = (cons FILE-STEM CO-KEY)
+  FILE-STEM = (intern \"stem\" :ece) from archive's |file| minus extension
+  CO-KEY    = (code-object-name co) when set, else the zero-based index
+
+After the init runs, nested code-objects remain reachable via the
+closures the init builds — *archive-code-objects* is only consulted by
+emitted zone code at execution time (to resolve (const <inner-co>)
+operands), not for general reachability.
+
+Missing zone fn => native-fn left NIL. The executor's
+maybe-dispatch-compiled-zone checks the slot and falls through to the
+interpreter when it's NIL, so code-objects with no registered zone run
+interpreted. This is the Phase C / Phase D transitional state: once
+Phase D flips compile-system to archive format and the zone-file load
+order is corrected, every reachable code-object gets a zone fn here."
   (let* ((archive (downcase-ece-symbols
                    (canonicalize-ecec-constants raw-archive)))
          (cos (parse-archive-sexp archive))
-         (init (aref cos 0)))
-    (execute-instructions init 0 *global-env*)))
+         (file-stem (archive-file-stem-symbol archive)))
+    (when file-stem
+      (register-archive-code-objects cos file-stem)
+      (attach-archive-native-fns cos file-stem))
+    (let ((init (aref cos 0)))
+      (execute-instructions init 0 *global-env*))))
+
+(defun archive-file-stem-symbol (archive)
+  "Derive the :ece-package file-stem symbol for ARCHIVE's |file| field,
+stripping any extension. Returns NIL when the archive has no |file|
+field (shouldn't happen for well-formed archives, but we degrade
+gracefully — callers skip registration rather than erroring)."
+  (let ((file-str (archive-plist-get (cdr archive) '|file|)))
+    (when (stringp file-str)
+      (let ((dot (position #\. file-str :from-end t)))
+        (intern (if dot (subseq file-str 0 dot) file-str) :ece)))))
+
+(defun archive-co-key (co index)
+  "Derive the registry key for CO at archive INDEX. Named code-objects
+use their name symbol; anonymous ones (name = NIL or *scheme-false*)
+fall back to the index. Must match the key the codegen emits in
+src/codegen-cl-inline.scm co-key-for-archive-entry."
+  (let ((name (code-object-name co)))
+    (if (and name (not (scheme-false-p name)) (symbolp name))
+        name
+        index)))
+
+(defun register-archive-code-objects (cos file-stem)
+  "Register each code-object in COS under (FILE-STEM . CO-KEY) in
+*archive-code-objects* so emitted zone code can dereference nested-
+lambda (const <co>) operands at execution time."
+  (dotimes (i (length cos))
+    (let* ((co (aref cos i))
+           (co-key (archive-co-key co i)))
+      (setf (gethash (cons file-stem co-key) *archive-code-objects*) co))))
+
+(defun attach-archive-native-fns (cos file-stem)
+  "For each code-object in COS, look up its zone fn in *archive-zone-fns*
+and, when found, set the native-fn slot so the executor's compiled-zone
+fast-path dispatches to it on entry.
+
+When a key is missing, leave native-fn NIL. This is intentional during
+Phase C: zone files for archive format aren't generated yet, so no keys
+exist. Phase D populates *archive-zone-fns* before this runs (via
+reversed load order); any missing entry at that point indicates a
+stale/regen-pending zone file."
+  (dotimes (i (length cos))
+    (let* ((co (aref cos i))
+           (co-key (archive-co-key co i))
+           (zone-fn (gethash (cons file-stem co-key) *archive-zone-fns*)))
+      (when zone-fn
+        (setf (code-object-native-fn co) zone-fn)))))
 
 (defun load-ecec-legacy-section (raw-header stream &key skip)
   "Legacy-format dispatch: RAW-HEADER is the head form as read by CL:READ.
