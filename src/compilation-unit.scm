@@ -313,11 +313,21 @@ Returns the result of the last section."
 ;;;
 ;;; Shape:
 ;;;   (ecec-archive
-;;;     :version 2
-;;;     :file "foo.scm"
-;;;     :entries ((code-object :name %init :instructions (...) ...)
-;;;               (code-object :name add1 :instructions (...) ...)
-;;;               ...))
+;;;     version 2
+;;;     file "foo.scm"
+;;;     entries ((code-object name %init instructions (...) ...)
+;;;              (code-object name add1 instructions (...) ...)
+;;;              ...))
+;;;
+;;; Tag symbols are plain (no `:` prefix). A `:keyword` style would be
+;;; cleaner visually but doesn't round-trip cleanly through the existing
+;;; writer+reader pair: write-to-string-flat escapes ECE `:foo` symbols
+;;; with pipes (CL reader rules), and re-reading via CL's read produces
+;;; a CL keyword in the :keyword package instead of the ECE-package
+;;; symbol the ECE reader would have produced from source. Fixing that
+;;; requires coordinated changes to ece-print-flat + downcase-ece-symbols
+;;; and is tracked separately; until then, plain symbols avoid the
+;;; ambiguity.
 ;;;
 ;;; - Entry 0 is the file's init code-object (top-level forms, merged).
 ;;; - Entries 1..N are nested lambdas hoisted to archive level.
