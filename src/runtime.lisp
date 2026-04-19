@@ -2025,35 +2025,56 @@ the downcased (source-map filename (pc line col) ...) cdr."
 so load-ecec-file can read both old and new serialization formats.")
 
 (defun load-ecec-section (stream &key skip)
-  "Load one ecec section (header + instructions) from STREAM.
-Creates a named space, registers source-map, assembles, and executes.
-If SKIP is a list of strings, skip sections whose space name matches.
+  "Load one ecec section from STREAM. Dispatches on the first form:
+  - (ecec-header ...) → legacy space-based section, reads a second form
+    with the compiled instructions and executes against a new space.
+  - (ecec-archive ...) → archive format, builds code-objects via
+    parse-archive-sexp and invokes the init.
 Returns T if a section was loaded, NIL on EOF."
   ;; Bind *package* to :ece so cl:read interns symbols in the ECE package,
   ;; regardless of caller context (e.g., CL-USER from run.lisp).
   (let* ((*package* (find-package :ece))
          (*readtable* *ecec-readtable*)
-         (raw-header (cl:read stream nil :eof)))
-    (when (eq raw-header :eof) (return-from load-ecec-section nil))
-    (let* ((header (downcase-ece-symbols raw-header))
-           (space-sym (cadr (assoc '|space| (cdr header))))
-           (space-name (symbol-name space-sym)))
-      ;; Skip this section if its name is in the skip list
-      (when (and skip (member space-name skip :test #'string=))
-        (cl:read stream)  ; read and discard instruction forms
-        (return-from load-ecec-section t))
-      (let ((source-map-raw (cdr (assoc '|source-map| (cdr header))))
-            (sid (create-space space-name)))
-        ;; Register source-map if present
-        (when source-map-raw
-          (register-ecec-source-map space-sym source-map-raw))
-        (let ((*current-space-id* sid))
-          (let* ((instrs (cl:read stream))
-                 (fixed (downcase-ece-symbols
-                         (canonicalize-ecec-constants instrs)))
-                 (start-pc (assemble-into-space sid fixed)))
-            (execute-instructions sid start-pc *global-env*)))))
+         (raw-head (cl:read stream nil :eof)))
+    (when (eq raw-head :eof) (return-from load-ecec-section nil))
+    (let ((head (downcase-ece-symbols raw-head)))
+      (cond
+        ((and (consp head) (eq (car head) '|ecec-archive|))
+         (load-ecec-archive-section head))
+        (t
+         (load-ecec-legacy-section head stream :skip skip))))
     t))
+
+(defun load-ecec-archive-section (archive)
+  "Archive-format dispatch: parse the archive, execute the init code-object.
+Nested code-objects become globally reachable through whatever top-level
+bindings the init sets up; no separate registry is needed."
+  (let* ((canonicalized (downcase-ece-symbols
+                         (canonicalize-ecec-constants archive)))
+         (cos (parse-archive-sexp canonicalized))
+         (init (aref cos 0)))
+    (execute-instructions init 0 *global-env*)))
+
+(defun load-ecec-legacy-section (header stream &key skip)
+  "Legacy-format dispatch: HEADER is already read. Read instructions as a
+second form and execute against a fresh space. Retires once old-format
+.ecec files disappear (§9.3)."
+  (let* ((space-sym (cadr (assoc '|space| (cdr header))))
+         (space-name (symbol-name space-sym)))
+    (when (and skip (member space-name skip :test #'string=))
+      (cl:read stream)  ; read and discard instruction forms
+      (return-from load-ecec-legacy-section nil))
+    (let ((source-map-raw (cdr (assoc '|source-map| (cdr header))))
+          (sid (create-space space-name)))
+      ;; Register source-map if present
+      (when source-map-raw
+        (register-ecec-source-map space-sym source-map-raw))
+      (let ((*current-space-id* sid))
+        (let* ((instrs (cl:read stream))
+               (fixed (downcase-ece-symbols
+                       (canonicalize-ecec-constants instrs)))
+               (start-pc (assemble-into-space sid fixed)))
+          (execute-instructions sid start-pc *global-env*))))))
 
 (defun load-ecec-file (pathname &key skip)
   "Load a .ecec file: read sections, create named spaces, assemble and execute.
