@@ -1626,6 +1626,81 @@ entry fall through to the interpreted dispatch loop unchanged.")
        `(|perform| (|op-fn| ,(get-operation (cadr op-spec))) ,@(cddr instr))))
     (t instr)))
 
+;;; ─────────────────────────────────────────────────────────────────────────
+;;; Archive-format parser (CL-side, mirrors archive-sexp->code-objects
+;;; in src/compilation-unit.scm). Needed at boot because bootstrap.ecec
+;;; is read by load-ecec-section BEFORE ECE prelude is loaded, so the
+;;; ECE-side parser isn't available yet.
+;;; ─────────────────────────────────────────────────────────────────────────
+
+(defun archive-plist-get (plist key)
+  "Walk a plain-symbol-keyed plist, return value after KEY or NIL."
+  (cond
+    ((null plist) nil)
+    ((null (cdr plist)) nil)
+    ((eq (car plist) key) (cadr plist))
+    (t (archive-plist-get (cddr plist) key))))
+
+(defun archive-patch-co-refs (tree cos-vec)
+  "Replace every (const (co-ref N)) in TREE with (const <code-object-at-N>)."
+  (cond
+    ((null tree) nil)
+    ((not (consp tree)) tree)
+    ((and (eq (car tree) '|const|)
+          (consp (cdr tree))
+          (consp (cadr tree))
+          (eq (car (cadr tree)) '|co-ref|))
+     (list '|const| (aref cos-vec (cadr (cadr tree)))))
+    (t (cons (archive-patch-co-refs (car tree) cos-vec)
+             (archive-patch-co-refs (cdr tree) cos-vec)))))
+
+(defun parse-archive-sexp (archive)
+  "Parse a read archive s-expr into a simple-vector of code-object structs.
+The shape matches the ECE-side archive-sexp->code-objects output: entry 0 is
+the file init; entries 1..N-1 are nested hoisted code-objects. Signals an
+ece-runtime-error on version mismatch."
+  (let* ((version (archive-plist-get (cdr archive) '|version|))
+         (entries (archive-plist-get (cdr archive) '|entries|)))
+    (unless (eql version 2)
+      (error 'ece-runtime-error
+             :procedure nil
+             :arguments nil
+             :environment *global-env*
+             :instruction nil
+             :backtrace nil
+             :original-error
+             (make-condition 'simple-error
+                             :format-control "Unsupported .ecec archive version: ~A. Run `make bootstrap` to regenerate."
+                             :format-arguments (list (or version "missing")))))
+    (let* ((entries-vec (coerce entries 'simple-vector))
+           (n (length entries-vec))
+           (cos (make-array n)))
+      ;; Pass 1: create code-objects, set metadata + labels.
+      (dotimes (i n)
+        (let* ((entry (aref entries-vec i))
+               (fields (cdr entry))
+               (co (make-code-object)))
+          (let ((name (archive-plist-get fields '|name|)))
+            (when name (setf (code-object-name co) name)))
+          (let ((arity (archive-plist-get fields '|arity|)))
+            (when arity (setf (code-object-arity co) arity)))
+          (let ((src-loc (archive-plist-get fields '|source-loc|)))
+            (when src-loc (setf (code-object-source-loc co) src-loc)))
+          (dolist (pair (archive-plist-get fields '|labels|))
+            (setf (gethash (car pair) (code-object-labels co)) (cdr pair)))
+          (setf (aref cos i) co)))
+      ;; Pass 2: push instructions (with (co-ref N) patched to code-objects).
+      (dotimes (i n)
+        (let* ((entry (aref entries-vec i))
+               (co (aref cos i))
+               (raw-instrs (archive-plist-get (cdr entry) '|instructions|)))
+          (dolist (instr raw-instrs)
+            (let ((patched (archive-patch-co-refs instr cos)))
+              (vector-push-extend patched (code-object-source-instructions co))
+              (vector-push-extend (resolve-operations patched)
+                                  (code-object-resolved-instructions co))))))
+      cos)))
+
 (defun assemble-into-space (space-id instruction-list)
   "Append instructions to a space's arrays, register labels. Return local start PC."
   (let* ((cs (get-space space-id))
