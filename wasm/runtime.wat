@@ -4847,52 +4847,17 @@
         (return (call $intern
           (ref.cast (ref $string) (call $arg1 (local.get $args)))))))
 
-    ;; 93 = %instruction-vector-length — current space instruction count
-    (if (i32.eq (local.get $id) (i32.const 93))
-      (then
-        (return (call $make-fixnum
-          (struct.get $comp-space $len
-            (call $get-space (global.get $current-space-id)))))))
-
-    ;; 94 = %instruction-vector-push! (instr-list) — defer to current space
-    (if (i32.eq (local.get $id) (i32.const 94))
-      (then
-        ;; Record the instruction's target PC (current len) and defer conversion
-        (global.set $pending-instrs
-          (call $cons
-            (call $cons
-              (call $make-fixnum (global.get $current-space-id))
-              (call $cons
-                (call $make-fixnum
-                  (struct.get $comp-space $len
-                    (call $get-space (global.get $current-space-id))))
-                (call $arg1 (local.get $args))))
-            (global.get $pending-instrs)))
-        ;; Increment len so label PCs are correct
-        (struct.set $comp-space $len
-          (call $get-space (global.get $current-space-id))
-          (i32.add
-            (struct.get $comp-space $len
-              (call $get-space (global.get $current-space-id)))
-            (i32.const 1)))
-        (return (global.get $void))))
-
-    ;; 95 = %label-table-set! (label-sym, pc) — set in current space
-    (if (i32.eq (local.get $id) (i32.const 95))
-      (then
-        (call $space-label-set
-          (call $get-space (global.get $current-space-id))
-          (call $arg1 (local.get $args))
-          (call $fixnum-value (ref.cast (ref i31) (call $arg2 (local.get $args)))))
-        (return (global.get $void))))
-
-    ;; 96 = %label-table-ref (label-sym) — look up in current space
-    (if (i32.eq (local.get $id) (i32.const 96))
-      (then
-        (return (call $make-fixnum
-          (call $space-label-ref
-            (call $get-space (global.get $current-space-id))
-            (call $arg1 (local.get $args)))))))
+    ;; 93-96 = %instruction-vector-* / %label-table-* — retired in Phase F
+    ;; alongside the bootstrap-space assembler path. IDs stay reserved; any
+    ;; call traps so stale archives surface loudly.
+    (if (i32.or
+          (i32.or
+            (i32.eq (local.get $id) (i32.const 93))
+            (i32.eq (local.get $id) (i32.const 94)))
+          (i32.or
+            (i32.eq (local.get $id) (i32.const 95))
+            (i32.eq (local.get $id) (i32.const 96))))
+      (then (unreachable)))
 
     ;; 97 = %procedure-name-set! (pc, name) — no-op for now
     (if (i32.eq (local.get $id) (i32.const 97))
@@ -4904,116 +4869,15 @@
     (if (i32.eq (local.get $id) (i32.const 240))
       (then (return (global.get $false))))
 
-    ;; --- Compilation space primitives (core IDs 125-135) ---
-
-    ;; 125 = %create-space (name) — name can be symbol or string
-    (if (i32.eq (local.get $id) (i32.const 125))
-      (then
-        ;; If arg is a string, intern it as a symbol first
-        (if (call $is-string (call $arg1 (local.get $args)))
-          (then
-            (call $register-space
-              (struct.new $comp-space
-                (call $intern (ref.cast (ref $string) (call $arg1 (local.get $args))))
-                (array.new_default $instr-vec (i32.const 131072))
-                (i32.const 0)
-                (ref.null eq)))
-            (return (call $make-fixnum
-              (struct.get $symbol $id
-                (call $intern (ref.cast (ref $string) (call $arg1 (local.get $args))))))))
-          (else
-            (call $register-space
-              (struct.new $comp-space
-                (ref.cast (ref $symbol) (call $arg1 (local.get $args)))
-                (array.new_default $instr-vec (i32.const 131072))
-                (i32.const 0)
-                (ref.null eq)))
-            (return (call $make-fixnum
-              (struct.get $symbol $id
-                (ref.cast (ref $symbol) (call $arg1 (local.get $args))))))))))
-
-    ;; 126 = %space-instruction-length (space-id)
-    (if (i32.eq (local.get $id) (i32.const 126))
-      (then
-        (return (call $make-fixnum
-          (struct.get $comp-space $len
-            (call $get-space
-              (call $fixnum-value (ref.cast (ref i31) (call $arg1 (local.get $args))))))))))
-
-    ;; 127 = %space-name (space-id)
-    (if (i32.eq (local.get $id) (i32.const 127))
-      (then
-        (return (struct.get $comp-space $name
-          (call $get-space
-            (call $fixnum-value (ref.cast (ref i31) (call $arg1 (local.get $args)))))))))
-
-    ;; 128 = %current-space-id
-    (if (i32.eq (local.get $id) (i32.const 128))
-      (then (return (call $make-fixnum (global.get $current-space-id)))))
-
-    ;; 129 = %set-current-space-id! (space-id)
-    (if (i32.eq (local.get $id) (i32.const 129))
-      (then
-        (global.set $current-space-id
-          (call $fixnum-value (ref.cast (ref i31) (call $arg1 (local.get $args)))))
-        (return (global.get $void))))
-
-    ;; 130 = %space-instruction-push! (space-id, instr-list) — defer
-    (if (i32.eq (local.get $id) (i32.const 130))
-      (then
-        ;; Record: (space-id pc . instr-list) and defer conversion
-        (global.set $pending-instrs
-          (call $cons
-            (call $cons
-              (call $arg1 (local.get $args))
-              (call $cons
-                (call $make-fixnum
-                  (struct.get $comp-space $len
-                    (call $get-space
-                      (call $fixnum-value (ref.cast (ref i31) (call $arg1 (local.get $args)))))))
-                (call $arg2 (local.get $args))))
-            (global.get $pending-instrs)))
-        ;; Increment len
-        (struct.set $comp-space $len
-          (call $get-space
-            (call $fixnum-value (ref.cast (ref i31) (call $arg1 (local.get $args)))))
-          (i32.add
-            (struct.get $comp-space $len
-              (call $get-space
-                (call $fixnum-value (ref.cast (ref i31) (call $arg1 (local.get $args))))))
-            (i32.const 1)))
-        (return (global.get $void))))
-
-    ;; 131 = %space-label-set! (space-id, label-sym, pc)
-    (if (i32.eq (local.get $id) (i32.const 131))
-      (then
-        (call $space-label-set
-          (call $get-space
-            (call $fixnum-value (ref.cast (ref i31) (call $arg1 (local.get $args)))))
-          (call $arg2 (local.get $args))
-          (call $fixnum-value (ref.cast (ref i31) (call $arg3 (local.get $args)))))
-        (return (global.get $void))))
-
-    ;; 132 = %space-label-ref (space-id, label-sym)
-    (if (i32.eq (local.get $id) (i32.const 132))
-      (then
-        (return (call $make-fixnum
-          (call $space-label-ref
-            (call $get-space
-              (call $fixnum-value (ref.cast (ref i31) (call $arg1 (local.get $args)))))
-            (call $arg2 (local.get $args)))))))
-
-    ;; 133 = %space-count
-    (if (i32.eq (local.get $id) (i32.const 133))
-      (then (return (call $make-fixnum (global.get $space-count)))))
-
-    ;; 134 = %space-source-ref — not applicable on WASM (instrs are structs, not lists)
-    (if (i32.eq (local.get $id) (i32.const 134))
-      (then (return (global.get $void))))
-
-    ;; 135 = %space-label-entries — return label table as alist
-    (if (i32.eq (local.get $id) (i32.const 135))
-      (then (return (global.get $nil))))  ;; stub for now
+    ;; --- Compilation space primitives (core IDs 125-135) retired ---
+    ;; Phase F of per-procedure-code-objects: the compilation-space
+    ;; abstraction retired in favour of per-procedure code-objects
+    ;; (primitive ids 241-249/254-257). IDs 125-135 stay reserved.
+    ;; Any call traps so stale archives surface loudly.
+    (if (i32.and
+          (i32.ge_u (local.get $id) (i32.const 125))
+          (i32.le_u (local.get $id) (i32.const 135)))
+      (then (unreachable)))
 
     ;; --- Platform hash table primitives (core IDs 141-149) ---
     ;; 141 = %make-hash-table
