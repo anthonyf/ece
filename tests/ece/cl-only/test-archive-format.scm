@@ -75,3 +75,19 @@
     (guard (e (#t (set! raised #t)))
       (archive-sexp->code-objects bad-archive))
     (assert-equal #t raised))))
+
+(test "archive: file round-trip — compile-to-disk, load, invoke" (lambda ()
+  ;; Write a tiny .scm, compile via compile-file-archive (which writes
+  ;; <stem>.ecec next to the source), load via load-archive, call the
+  ;; defined procedure, compare to direct eval.
+  (define scm-path "/tmp/claude/rt-src.scm")
+  (define ecec-path "/tmp/claude/rt-src.ecec")
+  (define out (open-output-file scm-path))
+  (display "(define (triple x) (* x 3))" out)
+  (newline out)
+  (close-output-port out)
+  (compile-file-archive scm-path)
+  ;; compile-file-archive writes <stem>.ecec next to source — already at
+  ;; ecec-path, no rename needed.
+  (load-archive ecec-path)
+  (assert-equal 21 (triple 7))))
