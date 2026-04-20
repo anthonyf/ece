@@ -11,7 +11,7 @@
 
 (test "codegen: emits zone .lisp from a code-object" (lambda ()
   (define co (mc-compile-to-code-object '(lambda (x) (* x x))))
-  (define tmp-path "/tmp/claude/test-zone-from-co.lisp")
+  (define tmp-path ".tmp/test-zone-from-co.lisp")
   (generate-zone-cl-for-code-object! co "test-square" tmp-path "test" 0)
   ;; Confirm the file exists and starts with the expected header.
   (define in (open-input-file tmp-path))
@@ -21,7 +21,7 @@
 
 (test "codegen: emitted zone contains a defun whose name matches" (lambda ()
   (define co (mc-compile-to-code-object '(+ 1 2)))
-  (define tmp-path "/tmp/claude/test-zone-addone.lisp")
+  (define tmp-path ".tmp/test-zone-addone.lisp")
   (generate-zone-cl-for-code-object! co "plan-b2-addone" tmp-path "test" 0)
   ;; read the file as a string and search for the defun token
   (define in (open-input-file tmp-path))
@@ -37,7 +37,7 @@
 
 (test "codegen: emitted zone registers under *archive-zone-fns*" (lambda ()
   (define co (mc-compile-to-code-object '(+ 1 2)))
-  (define tmp-path "/tmp/claude/test-zone-register.lisp")
+  (define tmp-path ".tmp/test-zone-register.lisp")
   ;; co-key is an archive-index integer — matches what the archive loader
   ;; computes via archive-co-key (runtime.lisp).
   (generate-zone-cl-for-code-object! co "test-register" tmp-path "fixture" 7)

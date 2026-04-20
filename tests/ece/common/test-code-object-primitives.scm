@@ -1,10 +1,6 @@
-;;; Code-object primitive parity tests (ids 241-249).
-;;;
-;;; Exercises the predicate and each accessor's availability on both CL and
-;;; WASM runtimes. Construction tests for code objects arrive in a later
-;;; stage of this change (once the compiler emits them); for now, the
-;;; platform-agnostic contract is: `code-object?` is false on every value
-;;; ECE currently produces, and every accessor primitive is registered.
+;;; Phase 3: code-object primitives runtime-agnostic tests. Covers the
+;;; platform-has? probes, the %make-code-object constructor, and the
+;;; per-field accessors/mutators. Runs on both CL and WASM runtimes.
 
 (test "code-object? on standard values" (lambda ()
   (assert-equal #f (code-object? 42))

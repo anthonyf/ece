@@ -80,8 +80,8 @@
   ;; Write a tiny .scm, compile via compile-file-archive (which writes
   ;; <stem>.ecec next to the source), load via load-archive, call the
   ;; defined procedure, compare to direct eval.
-  (define scm-path "/tmp/claude/rt-src.scm")
-  (define ecec-path "/tmp/claude/rt-src.ecec")
+  (define scm-path ".tmp/rt-src.scm")
+  (define ecec-path ".tmp/rt-src.ecec")
   (define out (open-output-file scm-path))
   (display "(define (triple x) (* x 3))" out)
   (newline out)
@@ -96,17 +96,19 @@
   ;; compile-file-to-archive should stamp every reachable code-object's
   ;; source-loc with the source basename, satisfying the compile-system
   ;; spec scenario "Each code object records its source origin".
-  (define scm-path "/tmp/claude/rt-srcloc.scm")
+  (define scm-path ".tmp/rt-srcloc.scm")
   (define sink (open-output-string))
   (define out (open-output-file scm-path))
   (display "(define (id x) x)" out)
   (newline out)
   (close-output-port out)
   (let ((top-co (compile-file-to-archive scm-path sink)))
-    (assert-equal "rt-srcloc.scm" (code-object-source-loc top-co))
+    ;; Triple shape (file line col) — matches the canonical form consumed
+    ;; by format-ece-proc (runtime.lisp) when rendering backtraces.
+    (assert-equal (list "rt-srcloc.scm" 1 1) (code-object-source-loc top-co))
     ;; Nested code-objects (the `id` lambda) should also carry the origin.
     (for-each (lambda (co)
-                (assert-equal "rt-srcloc.scm" (code-object-source-loc co)))
+                (assert-equal (list "rt-srcloc.scm" 1 1) (code-object-source-loc co)))
               (archive/collect-reachable top-co)))))
 
 (test "archive: compile-system orders multiple files" (lambda ()
@@ -114,9 +116,9 @@
   ;; a.scm defines add1, b.scm defines use-add1 which calls add1. Verify
   ;; the bundle loads, both procedures are bound, and use-add1 reaches
   ;; add1 (so the ordering a-before-b worked).
-  (define a-path "/tmp/claude/cs-a.scm")
-  (define b-path "/tmp/claude/cs-b.scm")
-  (define out-path "/tmp/claude/cs-ab.ecec")
+  (define a-path ".tmp/cs-a.scm")
+  (define b-path ".tmp/cs-b.scm")
+  (define out-path ".tmp/cs-ab.ecec")
   (let ((a-out (open-output-file a-path)))
     (display "(define (cs-add1 x) (+ x 1))" a-out)
     (newline a-out)

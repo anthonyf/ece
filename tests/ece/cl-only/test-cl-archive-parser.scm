@@ -9,8 +9,8 @@
   (define co (mc-compile-to-code-object '(+ 1 2)))
   (define archive (code-object->archive-sexp co "scratch.scm"))
   (define text (write-to-string-flat archive))
-  ;; Write to /tmp/claude/ path
-  (define tmp-path "/tmp/claude/test-archive-cl.ecec")
+  ;; Write to .tmp/ path
+  (define tmp-path ".tmp/test-archive-cl.ecec")
   (define out (open-output-file tmp-path))
   (display text out) (newline out) (close-output-port out)
   ;; The CL-side load path is what §9.2 will exercise. For now, use the
@@ -23,7 +23,7 @@
   (define co (mc-compile-to-code-object '(define *plan-a4-binding* 777)))
   (define archive (code-object->archive-sexp co "scratch.scm"))
   (define text (write-to-string-flat archive))
-  (define tmp-path "/tmp/claude/test-archive-define.ecec")
+  (define tmp-path ".tmp/test-archive-define.ecec")
   (define out (open-output-file tmp-path))
   (display text out) (newline out) (close-output-port out)
   (load-bundle tmp-path)

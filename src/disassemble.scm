@@ -49,8 +49,9 @@
         ;; Inline labels at this pc
         (for-each (lambda (entry)
                     (when (= (cdr entry) pc)
+                      (display "(label ")
                       (display (car entry))
-                      (display ":")
+                      (display ")")
                       (newline)))
                   label-entries)
         (let ((instr (vector-ref instrs pc)))
