@@ -1232,30 +1232,31 @@ Uses the manifest-driven dispatch table via name→ID→function lookup."
 ;;; Instruction executor
 
 (defvar *executing-space-id* '|bootstrap|
-  "The space-id (symbol) of the currently executing space in the executor.
-Used by make-compiled-procedure and capture-continuation to qualify
-addresses. Distinct from *current-space-id* which is the assembler's
-target space.")
+  "The current dispatch target in the executor — usually a code-object
+(archive-loaded procedures) but still accepts a symbol space-id during
+REPL coexistence, since mc-compile-and-go routes through the legacy
+space-based assembler (retired by Phase G). Used by make-compiled-procedure
+and capture-continuation to qualify addresses.")
 
-(defun execute-instructions (initial-space-id initial-pc initial-env
+(defun execute-instructions (initial-code-obj initial-pc initial-env
                              &key initial-proc initial-argl initial-continue
                                initial-stack)
-  "Execute assembled instructions starting in INITIAL-SPACE-ID at INITIAL-PC.
-INITIAL-SPACE-ID is either a symbol (classic space) or a code-object
-(per-procedure identity, §6 coexistence).
-Single-loop executor: cross-space jumps update local space-id/instrs/ltab
-variables inline — no throw/catch, no dispatcher, no allocation per transition."
-  (let* ((space-id initial-space-id)
-         (initial-from-co (code-object-p initial-space-id))
+  "Execute assembled instructions starting at INITIAL-CODE-OBJ / INITIAL-PC.
+INITIAL-CODE-OBJ is normally a code-object (per-procedure identity) but
+during Phase F coexistence may still be a symbol space-id for REPL-compiled
+forms routed through assemble-into-global. Single-loop executor: cross-
+dispatch-target jumps update local code-obj/instrs/ltab variables inline."
+  (let* ((code-obj initial-code-obj)
+         (initial-from-co (code-object-p initial-code-obj))
          (instrs (if initial-from-co
-                     (code-object-resolved-instructions initial-space-id)
+                     (code-object-resolved-instructions initial-code-obj)
                      (compilation-space-resolved-instructions
-                      (get-space initial-space-id))))
+                      (get-space initial-code-obj))))
          (ltab (if initial-from-co
-                   (code-object-labels initial-space-id)
+                   (code-object-labels initial-code-obj)
                    (compilation-space-label-table
-                    (get-space initial-space-id))))
-         (*executing-space-id* space-id)
+                    (get-space initial-code-obj))))
+         (*executing-space-id* code-obj)
          (pc initial-pc)
          (flag nil)
          (val nil)
@@ -1266,12 +1267,12 @@ variables inline — no throw/catch, no dispatcher, no allocation per transition
          (stack (or initial-stack '()))
          (len (length instrs))
          ;; Dual-zone hook flag (Stage 1). Set on entry and after every
-         ;; switch-space. The loop-start tagbody body checks this flag,
-         ;; clears it, and dispatches to the registered compiled-zone
-         ;; function for the current space (if any). The flag prevents
-         ;; the hook from re-firing every loop iteration, which would
-         ;; cause infinite recursion when the compiled zone bails to the
-         ;; interpreter from a register-valued goto.
+         ;; switch-code-object. The loop-start tagbody body checks this
+         ;; flag, clears it, and dispatches to the registered compiled-zone
+         ;; function for the current dispatch target (if any). The flag
+         ;; prevents the hook from re-firing every loop iteration, which
+         ;; would cause infinite recursion when the compiled zone bails
+         ;; to the interpreter from a register-valued goto.
          (just-entered-space t))
     (labels ((get-reg (name)
                (ecase name
@@ -1291,13 +1292,14 @@ variables inline — no throw/catch, no dispatcher, no allocation per transition
              (norm-space (sid)
                ;; Normalize integer 0 to bootstrap for old image compat
                (if (eql sid 0) '|bootstrap| sid))
-             (switch-space (target-space-id)
-               ;; target-space-id can be a symbol (classic space identity) or
-               ;; a code-object (per-procedure identity, §6 coexistence).
-               ;; Both paths update the three executor-local fields
-               ;; (instrs, ltab, len) so the dispatch loop doesn't care.
-               (let ((normalized (norm-space target-space-id)))
-                 (setf space-id normalized)
+             (switch-code-object (target)
+               ;; TARGET is normally a code-object (per-procedure identity);
+               ;; during REPL coexistence it may also be a symbol space-id
+               ;; for forms compiled via mc-compile-and-go (retired by
+               ;; Phase G). Both paths update the three executor-local
+               ;; fields (instrs, ltab, len) so the dispatch loop doesn't care.
+               (let ((normalized (norm-space target)))
+                 (setf code-obj normalized)
                  (cond
                    ((code-object-p normalized)
                     (setf instrs (code-object-resolved-instructions normalized))
@@ -1310,20 +1312,21 @@ variables inline — no throw/catch, no dispatcher, no allocation per transition
                       (setf ltab (compilation-space-label-table target-cs))
                       (setf len (length instrs))
                       (setf *executing-space-id* normalized))))
-                 ;; Mark "we just entered a (potentially compiled) space".
-                 ;; The actual hash lookup + dispatch happens in loop-start
-                 ;; AFTER pc has been updated by the caller (the goto
-                 ;; instruction's setf pc runs after switch-space returns).
+                 ;; Mark "we just entered a (potentially compiled) dispatch
+                 ;; target". The actual hash lookup + dispatch happens in
+                 ;; loop-start AFTER pc has been updated by the caller (the
+                 ;; goto instruction's setf pc runs after switch-code-object
+                 ;; returns).
                  (setf just-entered-space t)))
              (maybe-dispatch-compiled-zone ()
                ;; Zone-function source of truth:
-               ;; - When space-id is a code-object, read its native-fn slot
+               ;; - When code-obj is a code-object, read its native-fn slot
                ;;   directly (§6.5 — no hash lookup).
-               ;; - When space-id is a symbol (classic space), fall back to
+               ;; - When code-obj is a symbol (REPL space), fall back to
                ;;   the *compiled-zone-functions* registry.
-               (let ((zone-fn (if (code-object-p space-id)
-                                  (code-object-native-fn space-id)
-                                  (gethash space-id *compiled-zone-functions*))))
+               (let ((zone-fn (if (code-object-p code-obj)
+                                  (code-object-native-fn code-obj)
+                                  (gethash code-obj *compiled-zone-functions*))))
                  (when zone-fn
                    (multiple-value-bind (new-pc new-val new-env new-proc
                                                 new-argl new-continue new-stack)
@@ -1374,12 +1377,12 @@ variables inline — no throw/catch, no dispatcher, no allocation per transition
         (tagbody
          loop-start
            ;; Dual-zone hook: when just-entered-space is set, the compiled
-           ;; zone for the current space gets one chance to run from the
-           ;; current pc. The flag is cleared first so the hook doesn't
-           ;; re-fire on subsequent loop iterations (which would infinite-
-           ;; loop on register-valued goto bails). This runs AFTER pc has
-           ;; been updated by switch-space callers, so the dispatch lands
-           ;; on the correct PC in the new space's PC space.
+           ;; zone for the current dispatch target gets one chance to run
+           ;; from the current pc. The flag is cleared first so the hook
+           ;; doesn't re-fire on subsequent loop iterations (which would
+           ;; infinite-loop on register-valued goto bails). This runs
+           ;; AFTER pc has been updated by switch-code-object callers, so
+           ;; the dispatch lands on the correct PC in the new target's PC space.
            (when just-entered-space
              (setf just-entered-space nil)
              (maybe-dispatch-compiled-zone))
@@ -1395,7 +1398,7 @@ variables inline — no throw/catch, no dispatcher, no allocation per transition
                     (|label| (let ((resolved-pc (resolve-label (cadr source))))
                                (set-reg target
                                         (if (eq target '|continue|)
-                                            (cons space-id resolved-pc)
+                                            (cons code-obj resolved-pc)
                                             resolved-pc))))
                     (|op-fn|
                      (let ((result (call-op (cadr source) (cdddr instr))))
@@ -1410,8 +1413,8 @@ variables inline — no throw/catch, no dispatcher, no allocation per transition
                                    (setf proc error-fn)
                                    (setf argl (cons (ece-error-sentinel-message result)
                                                     (ece-error-sentinel-irritants result)))
-                                   (unless (eq err-space space-id)
-                                     (switch-space err-space))
+                                   (unless (eq err-space code-obj)
+                                     (switch-code-object err-space))
                                    (setf pc err-pc)
                                    (go loop-start))
                                  ;; Fallback: no error yet (cold boot) — signal CL error
@@ -1441,14 +1444,14 @@ variables inline — no throw/catch, no dispatcher, no allocation per transition
                                ;; at its pc 0. Switch if it's not the
                                ;; currently-executing code-object.
                                ((code-object-p addr)
-                                (unless (eq addr space-id)
-                                  (switch-space addr))
+                                (unless (eq addr code-obj)
+                                  (switch-code-object addr))
                                 (setf pc 0))
-                               ;; Cross-space qualified address
-                               ((and (consp addr) (not (eq (norm-space (car addr)) space-id)))
-                                (switch-space (car addr))
+                               ;; Cross-target qualified address
+                               ((and (consp addr) (not (eq (norm-space (car addr)) code-obj)))
+                                (switch-code-object (car addr))
                                 (setf pc (cdr addr)))
-                               ;; Same-space qualified address
+                               ;; Same-target qualified address
                                ((consp addr) (setf pc (cdr addr)))
                                ;; Bare integer (backward compat)
                                ((numberp addr) (setf pc addr))
