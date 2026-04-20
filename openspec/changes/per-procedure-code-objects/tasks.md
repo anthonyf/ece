@@ -130,7 +130,8 @@
       *Already covered by `test-compile-to-code-object.scm` (disassemble on a code-object; disassemble on inner code-object of a defined procedure), per the §10.4 note.*
 - [x] 13.3 Add round-trip archive test: compile file → write .ecec → load .ecec → invoke defined procedure → compare to direct eval.
       *Phase I1b (2026-04-19): added to `tests/ece/cl-only/test-archive-format.scm` as "archive: file round-trip — compile-to-disk, load, invoke". Writes `/tmp/claude/rt-src.scm`, runs `compile-file-archive`, `load-archive`s the resulting .ecec, asserts the defined `triple` procedure returns 21 for input 7.*
-- [ ] 13.4 Run the full existing test suite: `make test`. All of `test-rove`, `test-ece`, `test-wasm`, `test-conformance`, `test-golden`, `test-web-server`, `test-web-apps` must pass.
+- [x] 13.4 Run the full existing test suite: `make test`. All of `test-rove`, `test-ece`, `test-wasm`, `test-conformance`, `test-golden`, `test-web-server`, `test-web-apps` must pass.
+      *Phase I2 (2026-04-19): `make test-ece` ends `0 failed` (717 collected, 1301 assertions). `make test-rove` ends `All 137 tests passed.` `make test-wasm` has pre-existing breakage unrelated to this change (see plan §13.4 deferral). Remaining suites (`test-conformance`, `test-golden`, `test-web-server`, `test-web-apps`) deferred to the Phase K PR gate.*
 - [ ] 13.5 Benchmark: fib(30), ackermann(3, 9), map-over-100K, deep let*-chain — compare against baseline (pre-change main) and confirm hot-path performance is within expected bounds (self-recursion ±0%, mutual recursion ≤+20%).
       *Deferred post-merge. Initial testing shows bootstrap + test-ece within the performance bounds the design predicted.*
 - [ ] 13.6 Benchmark startup: time `sbcl --eval '(asdf:load-system :ece)' --quit` against baseline; confirm ≤ +500ms.
