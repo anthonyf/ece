@@ -97,22 +97,22 @@
   (ece-make-output-port (cl:make-synonym-stream 'cl:*standard-output*)))
 
 (defun ece-%instruction-vector-length ()
-  (cl:fill-pointer (compilation-space-resolved-instructions (get-space '|bootstrap|))))
+  (cl:error "Primitive %instruction-vector-length is retired; bootstrap-space assembler path removed in per-procedure-code-objects."))
 
 (defun ece-%instruction-vector-push! (source-instr)
-  (let* ((cs (get-space '|bootstrap|)) (instrs (compilation-space-instructions cs)) (resolved (compilation-space-resolved-instructions cs))) (cl:vector-push-extend source-instr instrs) (cl:vector-push-extend (resolve-operations source-instr) resolved) cl:nil))
+  (cl:progn (cl:declare (cl:ignore source-instr)) (cl:error "Primitive %instruction-vector-push! is retired; bootstrap-space assembler path removed in per-procedure-code-objects.")))
 
 (defun ece-%intern-ece (s)
   (cl:intern s :ece))
 
 (defun ece-%label-table-entries ()
-  (let ((entries '())) (cl:maphash (cl:lambda (label pc) (cl:push (cl:cons label pc) entries)) (compilation-space-label-table (get-space '|bootstrap|))) entries))
+  (cl:error "Primitive %label-table-entries is retired; bootstrap-space label table removed in per-procedure-code-objects."))
 
 (defun ece-%label-table-ref (label)
-  (cl:gethash label (compilation-space-label-table (get-space '|bootstrap|))))
+  (cl:progn (cl:declare (cl:ignore label)) (cl:error "Primitive %label-table-ref is retired; bootstrap-space assembler path removed in per-procedure-code-objects.")))
 
 (defun ece-%label-table-set! (label pc)
-  (cl:progn (cl:setf (cl:gethash label (compilation-space-label-table (get-space '|bootstrap|))) pc) cl:nil))
+  (cl:progn (cl:declare (cl:ignore label pc)) (cl:error "Primitive %label-table-set! is retired; bootstrap-space assembler path removed in per-procedure-code-objects.")))
 
 (defun ece-%list-directory (path)
   (let ((dir (cl:if (cl:and (cl:stringp path) (cl:> (cl:length path) 0) (cl:not (cl:char= (cl:char path (cl:1- (cl:length path))) #\/))) (cl:concatenate 'cl:string path "/") path))) (cl:mapcar (cl:lambda (p) (let ((name (cl:file-namestring p))) (cl:if (cl:or (cl:null name) (cl:zerop (cl:length name))) (cl:car (cl:last (cl:pathname-directory p))) name))) (cl:directory (cl:concatenate 'cl:string dir "*.*")))))

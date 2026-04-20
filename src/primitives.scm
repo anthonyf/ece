@@ -329,33 +329,37 @@
 
 ;;; ─────────────────────────────────────────────────────────────────────────
 ;;; Instruction-vector / assembler (ids 92-97)
+;;;
+;;; The bootstrap-space assembler primitives (%instruction-vector-length,
+;;; %instruction-vector-push!, %label-table-set!, %label-table-ref) retired
+;;; alongside the compilation-space struct in Phase F of the
+;;; per-procedure-code-objects change. Their ids (93-96) stay reserved
+;;; in primitives.def — callers were removed together with
+;;; `assemble-into-global` in Phase G1, but we keep the registrations
+;;; so that stale archives surface a clear error instead of a primitive
+;;; mismatch. The :cl bodies below raise "retired primitive".
 ;;; ─────────────────────────────────────────────────────────────────────────
 
 (define-host-primitive (%intern-ece s)
   :cl `(cl:intern ,s :ece))
 
 (define-host-primitive (%instruction-vector-length)
-  :cl `(cl:fill-pointer
-        (compilation-space-resolved-instructions (get-space (quote |bootstrap|)))))
+  :cl `(cl:error "Primitive %instruction-vector-length is retired; bootstrap-space assembler path removed in per-procedure-code-objects."))
 
 (define-host-primitive (%instruction-vector-push! source-instr)
-  :cl `(let* ((cs (get-space (quote |bootstrap|)))
-              (instrs (compilation-space-instructions cs))
-              (resolved (compilation-space-resolved-instructions cs)))
-         (cl:vector-push-extend ,source-instr instrs)
-         (cl:vector-push-extend (resolve-operations ,source-instr) resolved)
-         cl:nil))
+  :cl `(cl:progn
+        (cl:declare (cl:ignore ,source-instr))
+        (cl:error "Primitive %instruction-vector-push! is retired; bootstrap-space assembler path removed in per-procedure-code-objects.")))
 
 (define-host-primitive (%label-table-set! label pc)
   :cl `(cl:progn
-        (cl:setf (cl:gethash ,label
-                             (compilation-space-label-table (get-space (quote |bootstrap|))))
-                 ,pc)
-        cl:nil))
+        (cl:declare (cl:ignore ,label ,pc))
+        (cl:error "Primitive %label-table-set! is retired; bootstrap-space assembler path removed in per-procedure-code-objects.")))
 
 (define-host-primitive (%label-table-ref label)
-  :cl `(cl:gethash ,label
-                   (compilation-space-label-table (get-space (quote |bootstrap|)))))
+  :cl `(cl:progn
+        (cl:declare (cl:ignore ,label))
+        (cl:error "Primitive %label-table-ref is retired; bootstrap-space assembler path removed in per-procedure-code-objects.")))
 
 (define-host-primitive (%procedure-name-set! pc-or-qualified name)
   :cl `(cl:progn
@@ -475,10 +479,7 @@
 ;;; ─────────────────────────────────────────────────────────────────────────
 
 (define-host-primitive (%label-table-entries)
-  :cl `(let ((entries (quote ())))
-         (cl:maphash (cl:lambda (label pc) (cl:push (cl:cons label pc) entries))
-                     (compilation-space-label-table (get-space (quote |bootstrap|))))
-         entries))
+  :cl `(cl:error "Primitive %label-table-entries is retired; bootstrap-space label table removed in per-procedure-code-objects."))
 
 (define-host-primitive (%macro-table-entries)
   :cl `(let ((entries (quote ())))

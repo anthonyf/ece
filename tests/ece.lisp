@@ -3036,6 +3036,17 @@ provide an ece-NAME defun for each."
 ;;; should be equivalent to zone-toy-hand below — byte-equivalent modulo
 ;;; formatting, or at least semantically equivalent.
 
+;; TODO(per-procedure-code-objects §F4): build-toy-zone-space plus the
+;; test-compiled-zone-* / test-inline-codegen-* / test-runtime-hook-* /
+;; test-parity-toy-zone-end-to-end / test-compiled-zone-honors-initial-pc-
+;; dispatch deftests below all rely on ece::create-space + ece::assemble-
+;; into-space, which were retired alongside the compilation-space struct
+;; in Phase F of per-procedure-code-objects. Per-procedure zone coverage
+;; now lives in tests/ece/cl-only/test-codegen-code-object.scm and
+;; tests/ece.lisp's test-shipped-zone-files-* suite. The helpers and
+;; deftests are kept here (commented) per project convention so they can
+;; be revived against a code-object-native toy fixture in the future.
+#+(or)
 (defun build-toy-zone-space ()
   "Assemble the 8-instruction toy space that computes val = 1 + 2 + 3.
 Creates (or resets) the 'toy-zone' compilation space and returns its
@@ -3063,6 +3074,7 @@ case dispatch in execute-instructions."
        (ece::|halt|)))
     space-id))
 
+#+(or)
 (defun zone-toy-hand (initial-pc initial-val initial-env initial-proc
                       initial-argl initial-continue initial-stack)
   "Hand-written compiled-zone function for the toy space.
@@ -3107,6 +3119,7 @@ the calling convention the inline codegen will emit in Phase 3."
      zone-exit)
     (values pc val env proc argl continue stack)))
 
+#+(or)
 (deftest test-compiled-zone-walking-skeleton
     (testing "toy-zone assembles, runs interpreted, and matches hand-written CL"
              (let* ((space-id (build-toy-zone-space)))
@@ -3122,6 +3135,7 @@ the calling convention the inline codegen will emit in Phase 3."
                  (ok (= val 6)
                      "hand-written zone-toy-hand halts with val = 6")))))
 
+#+(or)
 (deftest test-compiled-zone-toy-parity
     (testing "interpreted and hand-written toy-zone produce identical val"
              (let* ((space-id (build-toy-zone-space))
@@ -3143,11 +3157,13 @@ the test deterministic against in-flight codegen changes."
   (ece::evaluate (list (intern "load" :ece) "src/primitives.scm"))
   (ece::evaluate (list (intern "load" :ece) "src/codegen-cl-inline.scm")))
 
+#+(or)
 (defun run-zone-codegen (space-name output-path)
   "Invoke (generate-zone-cl! SPACE-NAME OUTPUT-PATH) via the ECE evaluator."
   (ece::evaluate
    (list (intern "generate-zone-cl!" :ece) space-name output-path)))
 
+#+(or)
 (deftest test-inline-codegen-toy-zone
     (testing "inline codegen produces a runnable zone for the toy space"
              (build-toy-zone-space)
@@ -3170,6 +3186,7 @@ the test deterministic against in-flight codegen changes."
                      (ok (= val 6)
                          (format nil "auto-codegen toy-zone halts with val=6 pc=~A" pc))))))))
 
+#+(or)
 (deftest test-inline-codegen-determinism
     (testing "regenerating the toy zone twice produces byte-identical output"
              (build-toy-zone-space)
@@ -3189,6 +3206,7 @@ the test deterministic against in-flight codegen changes."
                  (ignore-errors (delete-file path-a))
                  (ignore-errors (delete-file path-b))))))
 
+#+(or)
 (deftest test-inline-codegen-inlines-known-primitive
     (testing "the +-call site at pc-7 inlines the :cl template body"
              (build-toy-zone-space)
@@ -3206,11 +3224,13 @@ the test deterministic against in-flight codegen changes."
                (ok (not (search "apply-primitive-procedure proc argl" text))
                    "no fallback dispatch appears for the statically-known + call"))))
 
+#+(or)
 (defun build-empty-zone-space ()
   "Create an empty compilation space — no instructions at all. Exercises
 the codegen's degenerate-space path."
   (ece::create-space "empty-zone"))
 
+#+(or)
 (defun build-branchy-zone-space ()
   "Assemble a space that exercises (test ...), (branch ...), label resolution
 and goto. Builds argl=(3 5) and computes (> 3 5) → #f, then `false?` of #f
@@ -3241,6 +3261,7 @@ must still be compilable. Both interpreted and compiled paths must agree."
        (ece::|halt|)))
     space-id))
 
+#+(or)
 (deftest test-inline-codegen-empty-space
     (testing "codegen handles a zero-instruction space"
              (build-empty-zone-space)
@@ -3262,6 +3283,7 @@ must still be compilable. Both interpreted and compiled paths must agree."
                      (ok (= pc 0)
                          "empty zone leaves pc at the entry value"))))) ))
 
+#+(or)
 (deftest test-runtime-hook-dispatches-compiled-zone
     (testing "execute-instructions hands off to a registered compiled-zone fn"
              (build-toy-zone-space)
@@ -3294,6 +3316,7 @@ must still be compilable. Both interpreted and compiled paths must agree."
                      ;; Always unregister so other tests aren't affected.
                      (remhash space-id ece::*compiled-zone-functions*))))) ))
 
+#+(or)
 (deftest test-runtime-hook-no-compiled-zone
     (testing "execute-instructions falls through to the interpreter when no zone is registered"
              (build-toy-zone-space)
@@ -3339,6 +3362,7 @@ compiled) pair so the caller can assert equality."
            (with-compiled-zone space-id zone-fn thunk)))
       (cons interp-result compiled-result))))
 
+#+(or)
 (deftest test-parity-toy-zone-end-to-end
     (testing "toy-zone produces identical results under interpreter and compiled-zone"
              (build-toy-zone-space)
@@ -3361,6 +3385,7 @@ compiled) pair so the caller can assert equality."
                  (ok (eql (car result-pair) (cdr result-pair))
                      "parity: interpreted = compiled")))))
 
+#+(or)
 (deftest test-compiled-zone-honors-initial-pc-dispatch
     (testing "executor entering at non-zero initial-pc dispatches into the right tag"
              (build-toy-zone-space)
@@ -3586,6 +3611,12 @@ defun's archive key in O(1) instead of O(N) per lookup (N ~= 1000)."
                         (ok (= after 700) "stage1-test-fn 7 = 700 after redef")))
                  (ensure-assembler-zone-registered)))))
 
+;; TODO(per-procedure-code-objects §F4): test-inline-codegen-branch-and-goto
+;; relies on build-branchy-zone-space, which uses the retired
+;; create-space + assemble-into-space entry points. Kept here (commented)
+;; per project convention; rewrite against a code-object-native branchy
+;; fixture is tracked alongside the rest of Phase F4's test retirements.
+#+(or)
 (deftest test-inline-codegen-branch-and-goto
     (testing "codegen handles test, branch, goto, labels, and runs to halt"
              (build-branchy-zone-space)
