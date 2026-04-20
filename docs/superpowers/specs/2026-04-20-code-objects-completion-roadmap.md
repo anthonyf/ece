@@ -18,6 +18,31 @@ Port `parse-archive-sexp` to WAT, migrate JS glue to `loadArchiveText` / `runCod
 
 **Why P0:** unblocks `test-wasm`, `test-web-server`, `test-web-apps` from CI `continue-on-error`; removes the longest-lived dead-code path in the codebase.
 
+## P0.5 — Keywordize archive format
+
+**Status:** roadmap bullet; spec to be written after P0 merges.
+
+**Scope:** flip the archive shape from plain symbols to `:keyword` tags:
+
+- Wrapper head: `(ecec-archive ...)` → `(:ecec-archive ...)`
+- Plist tags: `version file entries` → `:version :file :entries`
+- Entry head: `(code-object ...)` → `(:code-object ...)`
+- Entry fields: `name arity source-loc labels instructions` → `:name :arity :source-loc :labels :instructions`
+
+Matches idiomatic Scheme and makes named parameters read as named parameters.
+
+**Blocker:** the `.ecec` keyword round-trip bug (`~/.claude/projects/-Users-anthonyfairchild-git-ece/memory/project_ecec_keyword_roundtrip_bug.md`). `write-to-string-flat` escapes `:foo` as `|:foo|`; CL's `read` then interns into the `:keyword` package instead of `:ece`; `archive-plist-get`'s `eq?` lookup silently fails.
+
+**Coordinated fix required in a single bootstrap cycle:**
+- `ece-print-flat` in `src/runtime.lisp` — emit `:foo` bare (no pipes) for `:ece`-package symbols whose name starts with `:`.
+- `downcase-ece-symbols` in `src/runtime.lisp` — normalize CL keywords back to `:ece`-package symbols named `":foo"`.
+- WAT reader side — verify `:foo` tokens intern into the same symbol the ECE reader produces; fix `$ecec-read-sexp` if not.
+- Regenerate `bootstrap.ecec` and all zone files.
+
+**Why P0.5 and not bundled with P0:** a prior attempt cascaded — the symbol name dropped its colon somewhere, producing mismatched round-trips. Needs focused debugging on a stable baseline. Bundling into the WASM port would block CI gate recovery on an orthogonal runtime bug; a red `make bootstrap` during the keyword fix would leave the WASM branch unbootable mid-PR.
+
+**Why P0.5 and not deferred indefinitely:** the archive format is young enough that flipping once is cheap; flipping after years of accumulated `.ecec` files in the wild is expensive. Doing it now, between P0 and P1, costs one bootstrap regen.
+
 ## P1 — CL rename `*executing-space-id*` → `*executing-code-obj*`
 
 **Scope (CL side):**
@@ -55,4 +80,4 @@ A hybrid is likely: reference by default, inline for anonymous / REPL-compiled c
 
 ## Ordering
 
-P0 first. P1 anytime after P0 merges. P2 needs its own brainstorm before design; no hard blocker after P1 but pairing them in the same quarter keeps the code-object model in working memory.
+P0 → P0.5 → P1. P2 needs its own brainstorm before design; no hard blocker after P1 but pairing them in the same quarter keeps the code-object model in working memory.
