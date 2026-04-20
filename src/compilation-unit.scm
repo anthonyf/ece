@@ -549,10 +549,15 @@ compile-file-to-port but produces the §8 archive format."
              ;; Wrap all forms in (begin ...) so mc-compile-to-code-object
              ;; gets a single expression. define-variable! side effects
              ;; sequence correctly inside begin.
-             (top-co (mc-compile-to-code-object (cons 'begin forms)))
-             (archive (code-object->archive-sexp top-co basename)))
-        (write-string-to-port (write-to-string-flat archive) output-port)
-        (write-char #\newline output-port)
+             (top-co (mc-compile-to-code-object (cons 'begin forms))))
+        ;; Record BASENAME on every reachable code-object so archive
+        ;; entries can preserve the source origin (see `compile-system`
+        ;; spec: "Each code object records its source origin").
+        (for-each (lambda (co) (%code-object-set-source-loc! co basename))
+                  (archive/collect-reachable top-co))
+        (let ((archive (code-object->archive-sexp top-co basename)))
+          (write-string-to-port (write-to-string-flat archive) output-port)
+          (write-char #\newline output-port))
         (set! *source-locations* (%make-hash-table))
         (set! *source-file-name* #f)
         top-co))))

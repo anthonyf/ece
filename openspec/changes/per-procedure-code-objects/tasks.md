@@ -118,9 +118,12 @@
 
 ## 12. Update generated files and codegen
 
-- [ ] 12.1 Update `src/codegen-cl.scm` to emit per-code-object CL functions (one `defun` per code object) rather than per-space tagbody/go functions.
-- [ ] 12.2 Regenerate `bootstrap/*-zone.lisp` via the updated codegen.
-- [ ] 12.3 Verify the regenerated zone files load cleanly and no stale references to retired primitives remain.
+- [x] 12.1 Update `src/codegen-cl.scm` to emit per-code-object CL functions (one `defun` per code object) rather than per-space tagbody/go functions.
+      *Superseded by §9.2 Phase D archive-driven codegen. `src/codegen-cl-inline.scm` grew `generate-zone-cl-for-code-object!` and `generate-all-zones-from-archive!`; `src/codegen-cl.scm` is primitives-only and didn't need the refactor.*
+- [x] 12.2 Regenerate `bootstrap/*-zone.lisp` via the updated codegen.
+      *Superseded by §9.2 Phase D archive-driven codegen. `src/codegen-cl-inline.scm` grew `generate-zone-cl-for-code-object!` and `generate-all-zones-from-archive!`; `src/codegen-cl.scm` is primitives-only and didn't need the refactor.*
+- [x] 12.3 Verify the regenerated zone files load cleanly and no stale references to retired primitives remain.
+      *Superseded by §9.2 Phase D archive-driven codegen. `src/codegen-cl-inline.scm` grew `generate-zone-cl-for-code-object!` and `generate-all-zones-from-archive!`; `src/codegen-cl.scm` is primitives-only and didn't need the refactor.*
 
 ## 13. Tests and regression coverage
 

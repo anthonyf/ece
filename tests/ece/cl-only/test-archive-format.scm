@@ -91,3 +91,41 @@
   ;; ecec-path, no rename needed.
   (load-archive ecec-path)
   (assert-equal 21 (triple 7))))
+
+(test "archive: code-object source-loc records filename" (lambda ()
+  ;; compile-file-to-archive should stamp every reachable code-object's
+  ;; source-loc with the source basename, satisfying the compile-system
+  ;; spec scenario "Each code object records its source origin".
+  (define scm-path "/tmp/claude/rt-srcloc.scm")
+  (define sink (open-output-string))
+  (define out (open-output-file scm-path))
+  (display "(define (id x) x)" out)
+  (newline out)
+  (close-output-port out)
+  (let ((top-co (compile-file-to-archive scm-path sink)))
+    (assert-equal "rt-srcloc.scm" (code-object-source-loc top-co))
+    ;; Nested code-objects (the `id` lambda) should also carry the origin.
+    (for-each (lambda (co)
+                (assert-equal "rt-srcloc.scm" (code-object-source-loc co)))
+              (archive/collect-reachable top-co)))))
+
+(test "archive: compile-system orders multiple files" (lambda ()
+  ;; compile-system spec scenario: "Compile two files into an archive".
+  ;; a.scm defines add1, b.scm defines use-add1 which calls add1. Verify
+  ;; the bundle loads, both procedures are bound, and use-add1 reaches
+  ;; add1 (so the ordering a-before-b worked).
+  (define a-path "/tmp/claude/cs-a.scm")
+  (define b-path "/tmp/claude/cs-b.scm")
+  (define out-path "/tmp/claude/cs-ab.ecec")
+  (let ((a-out (open-output-file a-path)))
+    (display "(define (cs-add1 x) (+ x 1))" a-out)
+    (newline a-out)
+    (close-output-port a-out))
+  (let ((b-out (open-output-file b-path)))
+    (display "(define (cs-use-add1) (cs-add1 5))" b-out)
+    (newline b-out)
+    (close-output-port b-out))
+  (compile-system (list a-path b-path) out-path)
+  (load-bundle out-path)
+  (assert-equal 6 (cs-add1 5))
+  (assert-equal 6 (cs-use-add1))))
