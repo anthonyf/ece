@@ -186,18 +186,21 @@
 (123 %make-hash-frame     0  cl     "Create empty hash-table frame")
 (124 %hash-frame-set!     3  cl     "Set key in hash-table frame")
 
-;;; --- Compilation spaces ---
-(125 %create-space             1  core   "Create a new compilation space")
-(126 %space-instruction-length 1  core   "Instruction count for a space")
-(127 %space-name               1  core   "Name of a space")
-(128 %current-space-id         0  core   "Current assembler target space ID")
-(129 %set-current-space-id!    1  core   "Set current assembler target space ID")
-(130 %space-instruction-push!  2  core   "Append instruction to a space")
-(131 %space-label-set!         3  core   "Register label in a space")
-(132 %space-label-ref          2  core   "Look up label in a space")
-(133 %space-count              0  core   "Number of spaces in registry")
-(134 %space-source-ref         2  core   "Get source instruction at index in a space")
-(135 %space-label-entries      1  core   "Label table of a space as alist")
+;;; --- Compilation spaces (retired — Phase F, per-procedure-code-objects) ---
+;;; IDs 125-135 are reserved; do not reuse. The compiler now emits
+;;; per-procedure code-objects (ids 241-249/254-257) instead of writing
+;;; into symbol-keyed compilation spaces.
+;;; (125 %create-space             1  core   "Create a new compilation space")
+;;; (126 %space-instruction-length 1  core   "Instruction count for a space")
+;;; (127 %space-name               1  core   "Name of a space")
+;;; (128 %current-space-id         0  core   "Current assembler target space ID")
+;;; (129 %set-current-space-id!    1  core   "Set current assembler target space ID")
+;;; (130 %space-instruction-push!  2  core   "Append instruction to a space")
+;;; (131 %space-label-set!         3  core   "Register label in a space")
+;;; (132 %space-label-ref          2  core   "Look up label in a space")
+;;; (133 %space-count              0  core   "Number of spaces in registry")
+;;; (134 %space-source-ref         2  core   "Get source instruction at index in a space")
+;;; (135 %space-label-entries      1  core   "Label table of a space as alist")
 (136 write-to-string-flat      1  core    "Serialize to string without shared-structure markers")
 (137 keyword?                  1  core   "Test if value is a keyword symbol")
 (138 %primitive-name            1  core   "Get name symbol for primitive ID")

@@ -33,12 +33,6 @@
 (defun ece-%create-repl-space! (name size)
   (cl:locally (cl:declare (cl:ignore name size)) cl:nil))
 
-(defun ece-%create-space (name)
-  (create-space name))
-
-(defun ece-%current-space-id ()
-  *current-space-id*)
-
 (defun ece-%display-to-port (obj port)
   (let ((stream (ece-port-stream port))) (ece-output-to-stream obj stream (cl:function cl:princ)) (cl:finish-output stream) obj))
 
@@ -186,38 +180,11 @@
 (defun ece-%set-continuation-syms! (do-winds-sym winding-stack-sym)
   (cl:locally (cl:declare (cl:ignore do-winds-sym winding-stack-sym)) cl:nil))
 
-(defun ece-%set-current-space-id! (space-id)
-  (cl:setf *current-space-id* space-id))
-
 (defun ece-%set-error-sym! (error-sym)
   (cl:locally (cl:declare (cl:ignore error-sym)) cl:nil))
 
 (defun ece-%set-winding-stack! (val)
   (cl:progn (cl:setf *cl-winding-stack* val) cl:nil))
-
-(defun ece-%space-count ()
-  (cl:hash-table-count *space-registry*))
-
-(defun ece-%space-instruction-length (space-id)
-  (cl:fill-pointer (compilation-space-instructions (get-space space-id))))
-
-(defun ece-%space-instruction-push! (space-id source-instr)
-  (let* ((cs (get-space space-id)) (instrs (compilation-space-instructions cs)) (resolved (compilation-space-resolved-instructions cs))) (cl:vector-push-extend source-instr instrs) (cl:vector-push-extend (resolve-operations source-instr) resolved) cl:nil))
-
-(defun ece-%space-label-entries (space-id)
-  (let ((entries '())) (cl:maphash (cl:lambda (label pc) (cl:push (cl:cons label pc) entries)) (compilation-space-label-table (get-space space-id))) entries))
-
-(defun ece-%space-label-ref (space-id label)
-  (cl:gethash label (compilation-space-label-table (get-space space-id))))
-
-(defun ece-%space-label-set! (space-id label local-pc)
-  (cl:progn (cl:setf (cl:gethash label (compilation-space-label-table (get-space space-id))) local-pc) cl:nil))
-
-(defun ece-%space-name (space-id)
-  (compilation-space-name (get-space space-id)))
-
-(defun ece-%space-source-ref (space-id index)
-  (cl:aref (compilation-space-instructions (get-space space-id)) index))
 
 (defun ece-%store-asm-sym (slot name)
   (cl:locally (cl:declare (cl:ignore slot name)) cl:nil))

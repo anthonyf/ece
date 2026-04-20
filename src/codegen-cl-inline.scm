@@ -47,30 +47,19 @@
        (< pc (chunk-ctx-end ctx))))
 
 ;;; ─────────────────────────────────────────────────────────────────────────
-;;; Source abstraction: accept either a space-id symbol OR a code-object.
-;;; Lets the same emitter walk bootstrap spaces (legacy) or archive code-
-;;; objects (post §9.2). Once the space path retires (§11), these collapse
-;;; to the code-object branch.
+;;; Source abstraction: emit code walks code-objects. Historically these
+;;; helpers also accepted a space-id symbol, but Phase F retired the
+;;; `%space-*` primitives — code-objects are the only supported source.
 ;;; ─────────────────────────────────────────────────────────────────────────
 
 (define (cg/source-ref src pc)
-  (if (code-object? src)
-      (vector-ref (code-object-instructions src) pc)
-      (%space-source-ref src pc)))
+  (vector-ref (code-object-instructions src) pc))
 
 (define (cg/instruction-length src)
-  (if (code-object? src)
-      (code-object-length src)
-      (%space-instruction-length src)))
+  (code-object-length src))
 
 (define (cg/label-entries src)
-  (if (code-object? src)
-      (code-object-label-entries src)
-      (%space-label-entries src)))
-
-;;; ─────────────────────────────────────────────────────────────────────────
-;;; Top-level entry point
-;;; ─────────────────────────────────────────────────────────────────────────
+  (code-object-label-entries src))
 
 ;;; ─────────────────────────────────────────────────────────────────────────
 ;;; Emission-context parameters (code-object zone path)
@@ -83,46 +72,18 @@
 ;;;
 ;;; - *emit-file-stem* — string naming the archive file-stem (no extension).
 ;;;   Emitted into generated CL forms as the first half of (file-stem . co-key)
-;;;   lookup keys. Zero value is #f — legacy space path leaves it unset.
+;;;   lookup keys.
 ;;; - *emit-co-index-map* — a hash-table-or-#f mapping nested code-objects
 ;;;   (eq-keyed) to their co-key (either the co's name symbol or its archive
 ;;;   index as an integer). Populated once per archive by
 ;;;   generate-all-zones-from-archive!; used by emit-const to find the key
 ;;;   for a (const <inner-co>) operand.
-;;;
-;;; Legacy space path does not set these — its emit-const branch never
-;;; sees a code-object value (spaces don't have per-procedure identities).
 
 (define *emit-file-stem* (make-parameter #f))
 (define *emit-co-index-map* (make-parameter #f))
 
-(define (generate-zone-cl! space-name output-path)
-  "Walk the compilation space named SPACE-NAME and write a CL source file
-containing one (defun zone-NAME ...) to OUTPUT-PATH. SPACE-NAME may be a
-string or a symbol. Returns OUTPUT-PATH on success; raises an error if the
-space has no instructions registered."
-  (let ((space-id (if (symbol? space-name)
-                      space-name
-                      (string->symbol space-name))))
-    (let ((count (cg/instruction-length space-id)))
-      (when (< count 0)
-        (%raw-error
-         (string-append "generate-zone-cl!: unknown space "
-                        (if (symbol? space-name)
-                            (symbol->string space-name)
-                            space-name))))
-      (let ((out (open-output-file output-path))
-            (reg-mode (list 'space space-id)))
-        (emit-zone-header out space-name 'space)
-        (if (needs-splitting? count)
-            (emit-zone-defun-split out space-name space-id count reg-mode)
-            (emit-zone-defun out space-name space-id count reg-mode))
-        (close-output-port out)
-        output-path))))
-
-;;; Code-object-oriented entry point. Mirrors generate-zone-cl! but takes
-;;; a code-object directly (no registry lookup). Used by Phase D's archive
-;;; codegen driver.
+;;; Code-object-oriented entry point. Takes a code-object directly.
+;;; Used by Phase D's archive codegen driver.
 (define (generate-zone-cl-for-code-object! co zone-name output-path
                                            file-stem co-key)
   "Emit one (defun zone-NAME ...) for CO. ZONE-NAME is the string used as
@@ -199,12 +160,10 @@ here has to be mirrored in archive/collect-reachable and vice versa."
 ;;; ─────────────────────────────────────────────────────────────────────────
 
 (define (emit-zone-header out space-name mode)
-  "Emit the file-level banner for a zone .lisp file. MODE is either 'space
-(legacy bootstrap space path — registers into *compiled-zone-functions*)
-or 'code-object (archive path from Phase B — Phase C will register into
-*archive-zone-fns*). The shared preamble (AUTOMATICALLY GENERATED header,
-(in-package :ece)) is identical for both modes; only the registration-
-semantics comment differs."
+  "Emit the file-level banner for a zone .lisp file. MODE is always
+'code-object after Phase F (the legacy 'space mode retired with the
+%space-* primitives). Kept as a parameter so the emitter signature
+stays stable for future modes."
   (let ((name-str (if (symbol? space-name)
                       (symbol->string space-name)
                       space-name)))
@@ -221,14 +180,9 @@ semantics comment differs."
     (write-string name-str out)
     (write-string "-zone.lisp" out) (newline out)
     (write-string ";;;;" out) (newline out)
-    (cond
-     ((eq? mode 'code-object)
-      (write-string ";;;; The CL runtime loads this file at boot and registers the defun" out) (newline out)
-      (write-string ";;;; below under (file-stem . co-key) in *archive-zone-fns*; archive" out) (newline out)
-      (write-string ";;;; loaders then attach it to the code-object's native-fn slot." out) (newline out))
-     (else
-      (write-string ";;;; The CL runtime loads this file at boot and registers the defun" out) (newline out)
-      (write-string ";;;; below under its space symbol in *compiled-zone-functions*." out) (newline out)))
+    (write-string ";;;; The CL runtime loads this file at boot and registers the defun" out) (newline out)
+    (write-string ";;;; below under (file-stem . co-key) in *archive-zone-fns*; archive" out) (newline out)
+    (write-string ";;;; loaders then attach it to the code-object's native-fn slot." out) (newline out)
     (newline out)
     (write-string "(in-package :ece)" out) (newline out)
     (newline out)))
@@ -1218,33 +1172,12 @@ loop exits cleanly regardless of the halt instruction's position."
 
 ;;; ─────────────────────────────────────────────────────────────────────────
 ;;; Batch generation
+;;;
+;;; Phase F retired the space-based `generate-all-zones!` entry point.
+;;; All batch zone generation goes through `generate-all-zones-from-archive!`
+;;; (defined below), which walks an .ecec archive and emits one zone file
+;;; per code-object.
 ;;; ─────────────────────────────────────────────────────────────────────────
-
-(define all-bootstrap-spaces
-  '("assembler" "boot-env" "compilation-unit" "reader"
-    "syntax-rules" "compiler" "prelude"))
-
-(define (generate-all-zones! output-dir)
-  "Generate compiled-zone files for all bootstrap spaces with non-zero
-instruction counts. Deterministic: spaces are processed in a fixed order.
-Signals an error if a bootstrap space name is unknown."
-  (for-each
-   (lambda (space-name)
-     (let* ((space-id (string->symbol space-name))
-            (count (cg/instruction-length space-id)))
-       (cond
-        ((< count 0)
-         (%raw-error
-          (string-append "generate-all-zones!: unknown compilation space: "
-                         space-name)))
-        ((> count 0)
-         (let ((output-path (string-append output-dir "/" space-name "-zone.lisp")))
-           (display (string-append "Generating " output-path " (" (number->string count) " PCs)..."))
-           (newline)
-           (generate-zone-cl! space-name output-path)
-           (display (string-append "  Done: " output-path))
-           (newline))))))
-   all-bootstrap-spaces))
 
 (define (sanitize-char-for-filename c)
   "Map one filesystem-unsafe character to an ASCII substitute. Scheme

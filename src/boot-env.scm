@@ -141,18 +141,11 @@
 (%register-primitive! '%eq-hash-set! 118)
 (%register-primitive! '%hash-frame? 121)
 
-;; --- Compilation spaces ---
-(%register-primitive! '%create-space 125)
-(%register-primitive! '%space-instruction-length 126)
-(%register-primitive! '%space-name 127)
-(%register-primitive! '%current-space-id 128)
-(%register-primitive! '%set-current-space-id! 129)
-(%register-primitive! '%space-instruction-push! 130)
-(%register-primitive! '%space-label-set! 131)
-(%register-primitive! '%space-label-ref 132)
-(%register-primitive! '%space-count 133)
-(%register-primitive! '%space-source-ref 134)
-(%register-primitive! '%space-label-entries 135)
+;; --- Compilation spaces (retired — ids 125-135 reserved) ---
+;; Retired in Phase F of per-procedure-code-objects. The compiler and
+;; assembler now emit per-procedure code-objects instead of writing into
+;; symbol-keyed compilation spaces; primitives 241-249/254-257 cover the
+;; code-object API. IDs 125-135 remain reserved in primitives.def.
 
 ;; --- Miscellaneous core ---
 (%register-primitive! 'write-to-string-flat 136)

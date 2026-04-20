@@ -535,53 +535,11 @@
   :cl `(cl:progn (cl:setf (cl:gethash ,key (cl:cdr ,frame)) ,val) ,frame))
 
 ;;; ─────────────────────────────────────────────────────────────────────────
-;;; Compilation spaces (ids 125-135)
+;;; Compilation spaces (retired — Phase F, per-procedure-code-objects)
+;;; IDs 125-135 remain reserved in primitives.def. The compiler and
+;;; assembler now operate on per-procedure code-objects (see ids
+;;; 241-249/254-257 below).
 ;;; ─────────────────────────────────────────────────────────────────────────
-
-(define-host-primitive (%create-space name)
-  :cl `(create-space ,name))
-
-(define-host-primitive (%space-instruction-length space-id)
-  :cl `(cl:fill-pointer (compilation-space-instructions (get-space ,space-id))))
-
-(define-host-primitive (%space-name space-id)
-  :cl `(compilation-space-name (get-space ,space-id)))
-
-(define-host-primitive (%current-space-id)
-  :cl `*current-space-id*)
-
-(define-host-primitive (%set-current-space-id! space-id)
-  :cl `(cl:setf *current-space-id* ,space-id))
-
-(define-host-primitive (%space-instruction-push! space-id source-instr)
-  :cl `(let* ((cs (get-space ,space-id))
-              (instrs (compilation-space-instructions cs))
-              (resolved (compilation-space-resolved-instructions cs)))
-         (cl:vector-push-extend ,source-instr instrs)
-         (cl:vector-push-extend (resolve-operations ,source-instr) resolved)
-         cl:nil))
-
-(define-host-primitive (%space-label-set! space-id label local-pc)
-  :cl `(cl:progn
-        (cl:setf (cl:gethash ,label
-                             (compilation-space-label-table (get-space ,space-id)))
-                 ,local-pc)
-        cl:nil))
-
-(define-host-primitive (%space-label-ref space-id label)
-  :cl `(cl:gethash ,label (compilation-space-label-table (get-space ,space-id))))
-
-(define-host-primitive (%space-count)
-  :cl `(cl:hash-table-count *space-registry*))
-
-(define-host-primitive (%space-source-ref space-id index)
-  :cl `(cl:aref (compilation-space-instructions (get-space ,space-id)) ,index))
-
-(define-host-primitive (%space-label-entries space-id)
-  :cl `(let ((entries (quote ())))
-         (cl:maphash (cl:lambda (label pc) (cl:push (cl:cons label pc) entries))
-                     (compilation-space-label-table (get-space ,space-id)))
-         entries))
 
 ;;; ─────────────────────────────────────────────────────────────────────────
 ;;; Code objects (ids 241-249)

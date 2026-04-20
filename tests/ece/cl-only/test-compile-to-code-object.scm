@@ -49,12 +49,16 @@
     ;; if/then/else generates labels; table should be non-empty.
     (assert-equal #t (pair? entries)))))
 
-(test "pure compile does not mutate current space" (lambda ()
-  (let* ((sid (%current-space-id))
-         (before (%space-instruction-length sid)))
-    (mc-compile-to-code-object '(+ 1 2))
-    (let ((after (%space-instruction-length sid)))
-      (assert-equal before after)))))
+;; TODO: Phase F retired %current-space-id and %space-instruction-length —
+;; there is no "current space" to observe any more. Test is preserved here
+;; (commented) until we decide whether it's worth rewriting against the
+;; code-object API or deleting as genuinely obsolete.
+;; (test "pure compile does not mutate current space" (lambda ()
+;;   (let* ((sid (%current-space-id))
+;;          (before (%space-instruction-length sid)))
+;;     (mc-compile-to-code-object '(+ 1 2))
+;;     (let ((after (%space-instruction-length sid)))
+;;       (assert-equal before after)))))
 
 (test "idempotence: same expr yields same shape" (lambda ()
   ;; Labels gensym globally, so instruction lists aren't equal? across
