@@ -550,14 +550,13 @@ compile-file-to-port but produces the §8 archive format."
              ;; gets a single expression. define-variable! side effects
              ;; sequence correctly inside begin.
              (top-co (mc-compile-to-code-object (cons 'begin forms))))
-        ;; Record (basename 1 1) triple on every reachable code-object so
-        ;; archive entries preserve the source origin (see `compile-system`
-        ;; spec: "Each code object records its source origin"). The triple
-        ;; shape matches the canonical (file line col) form consumed by
-        ;; `format-ece-proc` in runtime.lisp — stamping a bare string would
-        ;; crash `(car loc)` during backtrace rendering.
-        (for-each (lambda (co) (%code-object-set-source-loc! co (list basename 1 1)))
-                  (archive/collect-reachable top-co))
+        ;; NOTE: we intentionally DO NOT populate code-object-source-loc
+        ;; per-code-object here. Source origin is recorded once at the
+        ;; archive level via the `file` field in the archive wrapper
+        ;; (see `code-object->archive-sexp` below). Stamping a list-shaped
+        ;; source-loc on every code-object broke the WASM loader's
+        ;; cast in `$%code-object-set-source-loc!`. Per-PC source-map
+        ;; tracking is diagnostics roadmap thread 5 — a separate proposal.
         (let ((archive (code-object->archive-sexp top-co basename)))
           (write-string-to-port (write-to-string-flat archive) output-port)
           (write-char #\newline output-port))

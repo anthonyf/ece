@@ -92,10 +92,11 @@
   (load-archive ecec-path)
   (assert-equal 21 (triple 7))))
 
-(test "archive: code-object source-loc records filename" (lambda ()
-  ;; compile-file-to-archive should stamp every reachable code-object's
-  ;; source-loc with the source basename, satisfying the compile-system
-  ;; spec scenario "Each code object records its source origin".
+(test "archive: source origin recorded at archive level" (lambda ()
+  ;; Source origin for a compiled file is recorded once at the archive
+  ;; level (the `file` field on the archive wrapper). Per-code-object
+  ;; source-loc stays #f; per-PC source-map is a separate future proposal
+  ;; (diagnostics roadmap thread 5).
   (define scm-path ".tmp/rt-srcloc.scm")
   (define sink (open-output-string))
   (define out (open-output-file scm-path))
@@ -103,13 +104,13 @@
   (newline out)
   (close-output-port out)
   (let ((top-co (compile-file-to-archive scm-path sink)))
-    ;; Triple shape (file line col) — matches the canonical form consumed
-    ;; by format-ece-proc (runtime.lisp) when rendering backtraces.
-    (assert-equal (list "rt-srcloc.scm" 1 1) (code-object-source-loc top-co))
-    ;; Nested code-objects (the `id` lambda) should also carry the origin.
-    (for-each (lambda (co)
-                (assert-equal (list "rt-srcloc.scm" 1 1) (code-object-source-loc co)))
-              (archive/collect-reachable top-co)))))
+    ;; Code-objects themselves have #f source-loc — archive carries
+    ;; the filename at the wrapper level.
+    (assert-equal #f (code-object-source-loc top-co))
+    ;; And the emitted archive sexp records the source filename.
+    (let* ((archive (code-object->archive-sexp top-co "rt-srcloc.scm"))
+           (fields (cdr archive)))
+      (assert-equal "rt-srcloc.scm" (archive/plist-get fields 'file))))))
 
 (test "archive: compile-system orders multiple files" (lambda ()
   ;; compile-system spec scenario: "Compile two files into an archive".
