@@ -102,7 +102,8 @@
       *Implemented as `dis/disassemble-code-object` (~25 lines). Branch/goto annotations aren't highlighted yet — future refinement.*
 - [x] 10.4 Update `tests/ece/cl-only/test-disassemble.scm` to cover the new "disassemble a code object directly" path. Remove (or mark deferred) the "unreached labels in span" test if it's no longer reachable.
       *Tests added in `test-compile-to-code-object.scm` (kept with the rest of the code-object scenarios): disassemble on a pure code-object, and on the inner code-object of a defined procedure. All existing disassemble tests still pass (legacy space path).*
-- [ ] 10.5 Manually verify that `disassemble` output for `square` is qualitatively similar (header + instructions + branch annotations) but noticeably smaller (reachability-walk padding retires).
+- [x] 10.5 Manually verify that `disassemble` output for `square` is qualitatively similar (header + instructions + branch annotations) but noticeably smaller (reachability-walk padding retires).
+      *Phase H2 (2026-04-19): verified compact output for `(define (square x) (* x x))` — 24 instruction lines covering compiled-proc/continuation/parameter/primitive dispatch, with 4 inline label markers and `→ pc N` branch annotations. No reachability-walk padding.*
 
 ## 11. Retire old primitives and dead code
 
