@@ -48,7 +48,13 @@ jobs:
           sleep 1
           touch bootstrap/primitives-auto.lisp
           touch bootstrap/bootstrap.ecec
-          touch bootstrap/*-zone.lisp
+          # Zone files are gitignored — the glob usually expands to nothing
+          # at clone time. Use `find` instead of `touch bootstrap/*-zone.lisp`
+          # because bash's default glob passes unmatched patterns through
+          # literally, which `touch` would then CREATE as a file named
+          # `bootstrap/*-zone.lisp` — later picked up by the test suite as
+          # a bogus zone file.
+          find bootstrap -maxdepth 1 -name '*-zone.lisp' -type f -exec touch {} +
 
       - name: Warm FASL cache
         run: |
