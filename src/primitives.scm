@@ -361,14 +361,11 @@
         (cl:declare (cl:ignore ,label))
         (cl:error "Primitive %label-table-ref is retired; bootstrap-space assembler path removed in per-procedure-code-objects.")))
 
-(define-host-primitive (%procedure-name-set! pc-or-qualified name)
-  :cl `(cl:progn
-        (cl:setf (cl:gethash ,pc-or-qualified *procedure-name-table*) ,name)
-        cl:nil))
-
-(define-host-primitive (%procedure-name-ref pc-or-qualified)
-  :cl `(cl:or (cl:gethash ,pc-or-qualified *procedure-name-table*)
-              *scheme-false*))
+;;; %procedure-name-set! (97) and %procedure-name-ref (240) retired in
+;;; per-procedure-code-objects §11.2: procedure names now live on the
+;;; code-object struct (set at compile time via %code-object-set-name!;
+;;; read via code-object-name). The *procedure-name-table* side table
+;;; retires with this commit. IDs 97 and 240 stay reserved.
 
 ;;; ─────────────────────────────────────────────────────────────────────────
 ;;; Platform discovery (ids 98-99)
@@ -1002,28 +999,27 @@
                     keys)))
 
 (define-host-primitive (%procedure-params-set! entry-addr params-info)
+  ;; Retired in per-procedure-code-objects §11.2: parameter metadata now
+  ;; lives on the code-object struct (set at compile time via
+  ;; %code-object-set-arity!). The *procedure-params-table* side table
+  ;; is gone; this stub is a no-op so stale callers don't crash boot.
   :cl `(cl:progn
-        (cl:setf (cl:gethash ,entry-addr *procedure-params-table*) ,params-info)
+        (cl:declare (cl:ignore ,entry-addr ,params-info))
         cl:nil))
 
 (define-host-primitive (%procedure-params proc)
   :cl `(cl:cond
         ((compiled-procedure-p ,proc)
+         ;; Archive-loaded code-objects carry arity in the struct itself
+         ;; (%code-object-set-arity! at compile time). Post-§11.2, that is
+         ;; the only path — the *procedure-params-table* side table retired
+         ;; alongside %procedure-params-set!.
          (cl:let* ((entry (cl:cadr ,proc))
-                   ;; Archive-loaded code-objects carry arity in the struct
-                   ;; itself (%code-object-set-arity! at compile time). Prefer
-                   ;; that; fall back to the side-table for legacy space-based
-                   ;; entries where the compiler emits procedure-params
-                   ;; pseudo-instructions that populate the hash.
                    (co (cl:cond ((code-object-p entry) entry)
                                 ((cl:and (cl:consp entry) (code-object-p (cl:car entry)))
                                  (cl:car entry))
                                 (cl:t cl:nil)))
-                   (co-arity (cl:when co (code-object-arity co)))
-                   (params (cl:or co-arity
-                                  (cl:gethash entry *procedure-params-table*)
-                                  (cl:when (cl:consp entry)
-                                           (cl:gethash (cl:cdr entry) *procedure-params-table*)))))
+                   (params (cl:when co (code-object-arity co))))
                   (cl:or params *scheme-false*)))
         ((primitive-procedure-p ,proc)
          (cl:let* ((id (cl:cadr ,proc))

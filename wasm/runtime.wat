@@ -4652,11 +4652,12 @@
               (else
                 (if (call $is-primitive (local.get $result))
                   (then
-                    ;; Exclude known WASM stubs/no-ops:
+                    ;; Exclude known WASM stubs/no-ops and retired primitives:
                     ;; sleep (83), clear-screen (84), try-eval (90),
-                    ;; %procedure-name-set! (97), open-input/output-file (100/101),
+                    ;; %procedure-name-set! (97, retired §11.2),
+                    ;; open-input/output-file (100/101),
                     ;; %space-label-entries (135), %make-directory (194), %chmod (195),
-                    ;; %procedure-name-ref (240)
+                    ;; %procedure-name-ref (240, retired §11.2)
                     (local.set $id (struct.get $primitive $id
                           (ref.cast (ref $primitive) (local.get $result))))
                     (if (i32.or (i32.eq (local.get $id) (i32.const 83))
@@ -4859,15 +4860,15 @@
             (i32.eq (local.get $id) (i32.const 96))))
       (then (unreachable)))
 
-    ;; 97 = %procedure-name-set! (pc, name) — no-op for now
-    (if (i32.eq (local.get $id) (i32.const 97))
-      (then (return (global.get $void))))
-
-    ;; 240 = %procedure-name-ref (pc) — always #f on WASM: no name table
-    ;; (procedure-name-set! is also a no-op, so there is nothing to look up).
-    ;; Callers that want the name for diagnostics get "<anonymous>".
-    (if (i32.eq (local.get $id) (i32.const 240))
-      (then (return (global.get $false))))
+    ;; 97 = %procedure-name-set! and 240 = %procedure-name-ref retired in
+    ;; per-procedure-code-objects §11.2 — name now lives on the code-object
+    ;; struct (set at compile time via %code-object-set-name!, read via
+    ;; code-object-name). IDs stay reserved; any call traps so stale
+    ;; archives surface loudly.
+    (if (i32.or
+          (i32.eq (local.get $id) (i32.const 97))
+          (i32.eq (local.get $id) (i32.const 240)))
+      (then (unreachable)))
 
     ;; --- Compilation space primitives (core IDs 125-135) retired ---
     ;; Phase F of per-procedure-code-objects: the compilation-space

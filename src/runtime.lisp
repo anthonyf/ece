@@ -172,8 +172,6 @@
            #:%instruction-vector-push!
            #:%label-table-set!
            #:%label-table-ref
-           #:%procedure-name-set!
-           #:%procedure-name-ref
            #:code-object
            #:code-object-p
            #:make-code-object
@@ -873,17 +871,15 @@ bootstrap/primitives-auto.lisp from a template in src/primitives.scm."
   (cadr param))
 
 (defun procedure-name (proc)
-  "Look up a compiled procedure's name. Code-object closures store the
-name on the code-object itself (§4.3); legacy closures use the
-*procedure-name-table* side table keyed on (space-id . pc) or bare pc."
+  "Look up a compiled procedure's name. Names live on the code-object
+struct (set at compile time via %code-object-set-name!). Legacy
+non-code-object entries have no name — returns NIL."
   (let ((entry (compiled-procedure-entry proc)))
     (cond
       ((code-object-p entry) (code-object-name entry))
       ((and (consp entry) (code-object-p (car entry)))
        (code-object-name (car entry)))
-      (t (or (gethash entry *procedure-name-table*)
-             (when (consp entry)
-               (gethash (cdr entry) *procedure-name-table*)))))))
+      (t nil))))
 
 ;;; --- Type introspection primitives (ECE-facing) ---
 ;;; Return Scheme booleans. Exposed as ECE primitives.
@@ -1443,15 +1439,9 @@ variables inline."
          loop-end))
       val)))
 
-(defvar *procedure-name-table*
-  (make-hash-table :test 'equal)
-  "Maps space-qualified entry addresses (space-id . local-pc) to procedure name symbols.
-Populated at assembly time from procedure-name pseudo-instructions.")
-
-(defvar *procedure-params-table*
-  (make-hash-table :test 'equal)
-  "Maps space-qualified entry addresses (space-id . local-pc) to (param-names . rest?) pairs.
-Populated at assembly time from procedure-params pseudo-instructions.")
+;;; *procedure-name-table* and *procedure-params-table* retired in
+;;; per-procedure-code-objects §11.2. Names and parameter metadata now
+;;; live on the code-object struct (code-object-name / code-object-arity).
 
 (defvar *traced-procedures*
   (make-hash-table :test 'eq)

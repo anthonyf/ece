@@ -117,7 +117,8 @@
 (%register-primitive! '%instruction-vector-push! 94)
 (%register-primitive! '%label-table-set! 95)
 (%register-primitive! '%label-table-ref 96)
-(%register-primitive! '%procedure-name-set! 97)
+;; 97 = %procedure-name-set! retired in per-procedure-code-objects §11.2
+;; (name now lives on code-object struct); ID stays reserved.
 
 ;; --- Platform discovery ---
 (%register-primitive! 'platform-has? 98)
@@ -261,7 +262,9 @@
 (%register-primitive! '%global-env-symbols 237)
 (%register-primitive! '%procedure-params-set! 238)
 (%register-primitive! '%procedure-params 239)
-(%register-primitive! '%procedure-name-ref 240)
+;; 240 = %procedure-name-ref retired in per-procedure-code-objects §11.2
+;; (name now lives on code-object struct; read via code-object-name);
+;; ID stays reserved.
 
 ;; --- Code objects ---
 (%register-primitive! 'code-object? 241)
