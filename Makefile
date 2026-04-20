@@ -160,7 +160,7 @@ test-golden:
 	    --eval "(evaluate (list (intern \"compile-file\" :ece) \"$$src\"))" \
 	    --quit 2>/dev/null; \
 	  ecec="tests/golden/$$base.ecec"; \
-	  tail -n +2 "$$ecec" > "$$actual"; \
+	  cp "$$ecec" "$$actual"; \
 	  rm -f "$$ecec"; \
 	  if diff -u "$$expected" "$$actual" > /dev/null 2>&1; then \
 	    echo "  PASS: $$base"; \
@@ -184,9 +184,9 @@ update-golden:
 	    --eval "(evaluate (list (intern \"compile-file\" :ece) \"$$src\"))" \
 	    --quit 2>/dev/null; \
 	  ecec="tests/golden/$$base.ecec"; \
-	  tail -n +2 "$$ecec" > "$$expected"; \
+	  cp "$$ecec" "$$expected"; \
 	  rm -f "$$ecec"; \
-	  echo "  Updated: $$base.expected ($$(wc -l < "$$expected") lines)"; \
+	  echo "  Updated: $$base.expected ($$(wc -c < "$$expected") bytes)"; \
 	done
 
 test-web-server: ece
