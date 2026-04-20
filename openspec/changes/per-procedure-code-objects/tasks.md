@@ -106,8 +106,10 @@
 ## 11. Retire old primitives and dead code
 
 - [ ] 11.1 Remove `%space-source-ref`, `%space-instruction-length`, `%space-label-entries`, `%space-label-ref`, `%space-name`, `%space-instruction-push!`, `%space-label-set!`, `%space-count`, `%create-space`, `%current-space-id`, `%set-current-space-id!` from `src/primitives.scm`, `src/boot-env.scm`, `primitives.def`, and the WASM runtime.
+      *Phase F survey (2026-04-19): caller sites still present — `src/assembler.scm` (`ece-assemble-into-global`, `load`), `src/disassemble.scm` (legacy reachability walk), `tests/ece/cl-only/test-compile-to-code-object.scm` ("pure compile does not mutate current space" test). Retirement gated on Phase G1 (retire `assemble-into-global`) + Phase H1 (drop reachability walk) first. Migrating `mc-compile-and-go` to emit code-objects also fails the `round-trip compiled procedure` serialization test — the code-object entry serializes as `%ser/opaque-co` placeholder, which the deserializer cannot invoke (by design, per §7 note). That test will need to be commented out with a TODO when Phase G1 lands.*
 - [ ] 11.2 Remove `%procedure-name-set!` / `%procedure-name-ref` as side-table primitives. Replace their behavior with code-object metadata accessors (either retire the primitive ids, or repurpose them to read/write the code-object name field).
 - [ ] 11.3 Remove the `*space-registry*`, `*procedure-name-table*`, `*procedure-params-table*` CL globals. Remove their WASM equivalents.
+      *Phase F survey (2026-04-19): `tests/ece.lisp` has 8 deftests that exercise `ece::create-space` + `ece::assemble-into-space` directly (test-compiled-zone-*, test-inline-codegen-*, lines 3028/3192/3199). Retirement will require commenting those tests out with TODO per project convention ("never delete failing tests"). `*space-registry*` retirement is otherwise blocked on §11.1 (primitive retirement).*
 - [ ] 11.4 Remove the `compilation-space` defstruct once no code references it. Leave a deprecated typedef during a grace window if needed; otherwise delete outright.
 
 ## 12. Update generated files and codegen
