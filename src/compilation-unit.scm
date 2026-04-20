@@ -26,9 +26,14 @@
   (cadr unit))
 
 (define (execute unit)
-  "Assemble and execute a compiled unit, returning the result."
-  (let ((start-pc (assemble-into-global (compiled-unit-instructions unit))))
-    (execute-from-pc start-pc)))
+  "Assemble and execute a compiled unit, returning the result.
+§5.2: assembles into a fresh code-object and runs via execute-code-object."
+  (let ((co (assemble-into-code-object
+             (%make-code-object)
+             (append (strip-source-locations
+                      (compiled-unit-instructions unit))
+                     '((halt))))))
+    (execute-code-object co)))
 
 ;;; --- Serialization ---
 ;;; Uses write-to-string + write-char for port-directed output,

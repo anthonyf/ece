@@ -1802,6 +1802,15 @@ VARS are CL symbols (auto-downcased to ECE package)."
   (testing "empty first list"
            (ok (null (evaluate '(set-difference '() '(a b)))))))
 
+;; TODO(per-procedure-code-objects §G1): assemble-into-global was retired in
+;; Phase G1; mc-compile-and-go now routes through mc-compile-to-code-object
+;; + execute-code-object. Equivalent coverage lives in
+;; tests/ece/cl-only/test-compile-to-code-object.scm (the
+;; "assemble-into-code-object returns the object it was given" suite and the
+;; execute-code-object end-to-end tests). This CL-side deftest remains
+;; commented per project convention ("never delete failing tests") so it
+;; can be revived if a future change restores a global-vector assembler.
+#+(or)
 (deftest test-assemble-and-execute
     (testing "assemble-into-global returns a PC and execute-from-pc runs it"
              (ok (= (ece-eval-string
@@ -2147,6 +2156,17 @@ VARS are CL symbols (auto-downcased to ECE package)."
                       (loop-sum 100000 0))")
                   5000050000))))
 
+;; TODO(per-procedure-code-objects §G1/§G2): After Phase G1 routed
+;; mc-compile-and-go through code-objects, defined procedures store their
+;; name on the inner code-object (via %code-object-set-name!) instead of
+;; inside the *procedure-name-table* side-table. Phase G2 (§11.2) will
+;; delete *procedure-name-table* outright. The "format-ece-proc displays
+;; procedure name" assertion still holds — exercised by
+;; tests/ece/cl-only/test-compile-to-code-object.scm "code-object-name
+;; round-trips …" — but the deftest below reaches into the retired
+;; side-table hash directly, so it stays commented until rewritten against
+;; code-object-name or deleted along with the table in §11.2.
+#+(or)
 (deftest test-procedure-name-table
     (testing "format-ece-proc displays procedure name for defined function"
              (ece-eval-string "(define (my-test-fn x) (+ x 1))")

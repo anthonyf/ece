@@ -178,6 +178,19 @@
          (newline)))
      pcs)))
 
+;; Resolve a (goto|branch (label L)) target to a PC via CO's own label
+;; table. Returns #f for any other instruction shape (fall-through cases,
+;; register-valued gotos, etc.).
+(define (dis/co-branch-target-pc co instr)
+  (cond
+   ((not (pair? instr)) #f)
+   ((or (eq? (car instr) 'goto) (eq? (car instr) 'branch))
+    (let ((target (cadr instr)))
+      (if (and (pair? target) (eq? (car target) 'label))
+          (code-object-label-ref co (cadr target))
+          #f)))
+   (else #f)))
+
 ;; §10: code-object disassembler — trivial iteration, no reachability walk
 ;; needed because the code-object's instructions ARE the procedure's body.
 (define (dis/disassemble-code-object co)
@@ -201,11 +214,16 @@
                       (display ":")
                       (newline)))
                   label-entries)
-        (display " ")
-        (display (dis/pad-left (number->string pc) width))
-        (display ":  ")
-        (display (write-to-string-flat (vector-ref instrs pc)))
-        (newline)
+        (let ((instr (vector-ref instrs pc)))
+          (display " ")
+          (display (dis/pad-left (number->string pc) width))
+          (display ":  ")
+          (display (write-to-string-flat instr))
+          (let ((target (dis/co-branch-target-pc co instr)))
+            (when target
+              (display "  ; → pc ")
+              (display target)))
+          (newline))
         (loop (+ pc 1))))))
 
 (define (dis/disassemble-compiled proc)

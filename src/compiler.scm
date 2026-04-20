@@ -834,18 +834,16 @@ list (bottom-up emission only). Mirrors mc-find-entry-label but looks for a
              '((halt))))))
 
 (define (mc-compile-and-go expr . env-args)
-  ;; Inline mc-compile + mc-instructions into assemble-into-global so the
-  ;; instruction sequence is a temporary, not captured in a let binding.
-  ;; This prevents the instruction list from leaking into continuations
-  ;; captured inside execute-from-pc (the env frame for a let binding
-  ;; persists while execute-from-pc runs, and call/cc inside it would
-  ;; capture the entire env chain including the instruction list).
-  (let ((start-pc (assemble-into-global
-                   (append (strip-source-locations
-                            (mc-instructions (mc-compile expr 'val 'next)))
-                           '((halt))))))
+  ;; §5.2/§4.1: Route through a fresh per-invocation code-object instead of
+  ;; mutating a shared space. mc-compile-to-code-object produces a pure
+  ;; code-object (with the trailing (halt) already appended) and
+  ;; execute-code-object runs it from pc 0. The instruction list is
+  ;; referenced only through the code-object struct, so it can't leak into
+  ;; a let binding's env frame that a call/cc inside execute-from-pc might
+  ;; capture (the old leak concern).
+  (let ((co (mc-compile-to-code-object expr)))
     (if (null? env-args)
-        (execute-from-pc start-pc)
-        (execute-from-pc start-pc (car env-args)))))
+        (execute-code-object co)
+        (execute-code-object co (car env-args)))))
 
 (define (eval expr) (mc-compile-and-go expr))
