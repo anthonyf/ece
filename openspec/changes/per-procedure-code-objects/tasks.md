@@ -139,8 +139,10 @@
 
 ## 14. Documentation and convention updates
 
-- [ ] 14.1 Update CLAUDE.md's "Architecture: Compiler & .ecec Boot" section to describe the code-object model. Retire mentions of "compilation spaces" as the primary unit.
-- [ ] 14.2 Update the "Browser Port: Compile-to-Host Strategy" section in CLAUDE.md to note that the `native-fn` slot is now per-code-object (cleaner than per-space).
+- [x] 14.1 Update CLAUDE.md's "Architecture: Compiler & .ecec Boot" section to describe the code-object model. Retire mentions of "compilation spaces" as the primary unit.
+      *Phase J1 (2026-04-19): "CLAUDE.md" here is the project memory file at `~/.claude/projects/-Users-anthonyfairchild-git-ece/memory/MEMORY.md` — no in-repo CLAUDE.md exists. The "Architecture: Compiler & .ecec Boot" section was rewritten to describe the code-object model: `.ecec` archives (version 2), per-code-object instructions/labels/name/arity/source-loc/native-fn, executor dispatch via code-object field access, `disassemble` on code-objects directly. Compilation-space language retired with a note that it shipped in per-procedure-code-objects.*
+- [x] 14.2 Update the "Browser Port: Compile-to-Host Strategy" section in CLAUDE.md to note that the `native-fn` slot is now per-code-object (cleaner than per-space).
+      *Phase J1 (2026-04-19): same MEMORY.md pass. Added a "Per-code-object zones already shipped" paragraph describing `bootstrap/*-zone.lisp` as one CL defun per code-object, registered in `*archive-zone-fns*` and attached to `code-object-native-fn` at archive load time — Phase 1 of the browser port plan (CL codegen compile-to-host PoC) is partially realized.*
 - [ ] 14.3 Update `openspec/roadmap-if.md` if it references per-space assumptions.
 - [ ] 14.4 Document the new `.ecec` archive format (either in a README next to `bootstrap/` or an OpenSpec note).
 
