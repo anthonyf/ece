@@ -2,26 +2,21 @@
 
 Architectural items to revisit. Not blocking anything currently.
 
-## Per-space instruction vectors grow unboundedly on redefine
+> *Compilation spaces retired in per-procedure-code-objects (2026-04): the compilation unit is now the `code-object`, `.ecec` is a code-object archive (version 2), and the executor dispatches on code-objects via struct field access. Entries below that still reference "spaces" are preserved as historical context and rewritten in terms of code-objects below each old "Status" block.*
 
-**Status:** Documented, deferred.
+## Per-procedure instructions reclaim on redefine
 
-Each compilation space has an append-only instruction vector. Each `(define (f ...) ...)` appends new instructions. Redefining `f` appends a second copy — the old instructions become unreachable dead code but remain in the vector.
+**Status:** Resolved by per-procedure-code-objects (2026-04).
 
-**Impact:** During long REPL sessions with many redefines, the bootstrap space's vector grows. Each function is ~20-50 instructions, so thousands of redefines before it matters. Per-file spaces (from `load`) are scoped and don't accumulate across sessions.
+Previously: each compilation space had an append-only instruction vector; redefining `(define (f ...) ...)` appended a second copy and the old instructions became unreachable dead code but stayed in the vector.
 
-**Why compaction is hard:**
-- Compiled procedure values `(compiled-procedure (space . entry-pc) env)` are scattered throughout the environment and captured in closures
-- Saved `continue` register values on the stack contain space-qualified addresses
-- Captured continuations from `call/cc` contain stack copies with embedded addresses and compiled-procedure values
-
-**Decision:** Accept the growth for now. Not a practical problem during normal development. Per-file spaces from `.ecec` boot keep each module's instructions separate and bounded.
+After per-procedure-code-objects each `(define ...)` produces a fresh `code-object` whose instructions live on the code-object struct itself. Redefining rebinds the name to a new closure pointing at a new code-object; the old code-object becomes unreferenced and is GC'd naturally (modulo any captured closures or saved continuations that still point at it — those keep it alive, which is correct). There is no longer a shared per-file instruction vector to grow.
 
 ## REPL error recovery after .ecec boot
 
 **Status:** Known issue.
 
-After .ecec boot, error recovery in the REPL can leave stale labels in the bootstrap space. If an expression causes an error during compilation/assembly, the next expression may fail with "Unknown label" because partially-assembled labels pollute the label table.
+After .ecec boot, error recovery in the REPL can leave stale labels in the bootstrap code-object. If an expression causes an error during compilation/assembly, the next expression may fail with "Unknown label" because partially-assembled labels pollute the label table of the REPL's resident code-object.
 
 **Workaround:** Single expressions work fine. The issue only manifests when an error occurs mid-compilation and the REPL tries to compile the next expression.
 
@@ -43,6 +38,6 @@ After .ecec boot, error recovery in the REPL can leave stale labels in the boots
 
 **Status:** Known limitation, not unique to ECE.
 
-Serialized continuations contain return addresses as `(space . pc)` pairs. If the source code changes and the `.ecec` files are rebuilt, PCs shift and old continuations become invalid. This affects all implementations with serialized continuations — Racket's defunctionalized continuations also break on any code change ("if you change your program in a trivial way, all serialized continuations will be obsolete").
+Serialized continuations contain return addresses as `(code-obj . pc)` pairs (previously `(space . pc)`). If the source code changes and the `.ecec` files are rebuilt, PCs shift and old continuations become invalid. This affects all implementations with serialized continuations — Racket's defunctionalized continuations also break on any code change ("if you change your program in a trivial way, all serialized continuations will be obsolete").
 
 For the browser/localStorage use case (page refresh), this is a non-issue — the same code is running. For cross-version save compatibility (game updates), the recommended approach is to save game state data (the parameter values) separately from the continuation, and use named checkpoints to restart from the closest point.
