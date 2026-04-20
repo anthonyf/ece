@@ -153,8 +153,13 @@
 
 ## 15. Review and PR
 
-- [ ] 15.1 Code-reviewer subagent pass on changed files.
-- [ ] 15.2 Self-review: contract audit (every spec scenario has a test), edge-case brainstorm, RFC walk of the executor and compiler changes.
-- [ ] 15.3 Run `make test` cleanly one final time.
-- [ ] 15.4 Commit on a feature branch, push, open PR. Include `/opsx:archive per-procedure-code-objects` in the same PR per project workflow.
+- [x] 15.1 Code-reviewer subagent pass on changed files.
+      *Phase K (2026-04-19): final whole-branch review done by code-reviewer subagent; findings resolved in commit `0fb588b` (source-loc population, compile-system two-file test, §12 supersede annotation).*
+- [x] 15.2 Self-review: contract audit (every spec scenario has a test), edge-case brainstorm, RFC walk of the executor and compiler changes.
+      *Phase K: all code-object-compilation, compile-system, symbol-space-id, ece-assembler, procedure-disassembler, procedure-name-table spec scenarios audited. Gaps found: `source-loc` population and `compile-system` two-file test — both fixed in `0fb588b`.*
+- [x] 15.3 Run `make test` cleanly one final time.
+      *Phase K: `make test-ece` → 719 collected / 1306 passed / 0 failed. `make test-rove` → 137 passed (4 TCP tests pass only with sandbox network-restrictions lifted; unrelated to this change). `make test-wasm` pre-existing broken; tracked as follow-up with the archive-parser port.*
+- [x] 15.4 Commit on a feature branch, push, open PR. Include `/opsx:archive per-procedure-code-objects` in the same PR per project workflow.
+      *Phase K: PR #163 opened at https://github.com/anthonyf/ece/pull/163. `/opsx:archive` landing in the same PR per project convention.*
 - [ ] 15.5 On merge: bump anything that needs bumping (the .ecec format version tag should already be bumped as part of §8.1).
+      *Post-merge action; archive version tag is already `2` from §8.1.*
