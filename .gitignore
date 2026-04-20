@@ -2,6 +2,10 @@
 /.fasl-cache/
 /.tmp/
 /.qlot/
+/.worktrees/
+# Generated per-code-object zone files (archive-driven codegen, §12).
+# Regenerated from bootstrap.ecec when ECE_ZONES=1 make bootstrap runs.
+bootstrap/*-zone.lisp
 wasm/runtime.wasm
 sandbox/ece-runtime.js
 sandbox/ece-bootstrap.js

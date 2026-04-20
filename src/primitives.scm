@@ -289,9 +289,18 @@
 (define-host-primitive (execute-from-pc . args)
   :cl `(let ((start-pc (cl:car ,args))
              (env (cl:if (cl:cdr ,args) (cl:cadr ,args) *global-env*)))
-         (execute-instructions (qualified-space-id start-pc)
-                               (qualified-local-pc start-pc)
-                               env)))
+         (cl:cond
+          ;; Bare code-object → run from its pc 0
+          ((code-object-p start-pc)
+           (execute-instructions start-pc 0 env))
+          ;; (code-obj . pc) pair
+          ((cl:and (cl:consp start-pc) (code-object-p (cl:car start-pc)))
+           (execute-instructions (cl:car start-pc) (cl:cdr start-pc) env))
+          ;; Legacy (space-id . pc) pair or bare integer
+          (cl:t
+           (execute-instructions (qualified-space-id start-pc)
+                                 (qualified-local-pc start-pc)
+                                 env)))))
 
 (define-host-primitive (get-macro name)
   :cl `(cl:or (cl:gethash ,name *compile-time-macros*) *scheme-false*))
@@ -320,42 +329,43 @@
 
 ;;; ─────────────────────────────────────────────────────────────────────────
 ;;; Instruction-vector / assembler (ids 92-97)
+;;;
+;;; The bootstrap-space assembler primitives (%instruction-vector-length,
+;;; %instruction-vector-push!, %label-table-set!, %label-table-ref) retired
+;;; alongside the compilation-space struct in Phase F of the
+;;; per-procedure-code-objects change. Their ids (93-96) stay reserved
+;;; in primitives.def — callers were removed together with
+;;; `assemble-into-global` in Phase G1, but we keep the registrations
+;;; so that stale archives surface a clear error instead of a primitive
+;;; mismatch. The :cl bodies below raise "retired primitive".
 ;;; ─────────────────────────────────────────────────────────────────────────
 
 (define-host-primitive (%intern-ece s)
   :cl `(cl:intern ,s :ece))
 
 (define-host-primitive (%instruction-vector-length)
-  :cl `(cl:fill-pointer
-        (compilation-space-resolved-instructions (get-space (quote |bootstrap|)))))
+  :cl `(cl:error "Primitive %instruction-vector-length is retired; bootstrap-space assembler path removed in per-procedure-code-objects."))
 
 (define-host-primitive (%instruction-vector-push! source-instr)
-  :cl `(let* ((cs (get-space (quote |bootstrap|)))
-              (instrs (compilation-space-instructions cs))
-              (resolved (compilation-space-resolved-instructions cs)))
-         (cl:vector-push-extend ,source-instr instrs)
-         (cl:vector-push-extend (resolve-operations ,source-instr) resolved)
-         cl:nil))
+  :cl `(cl:progn
+        (cl:declare (cl:ignore ,source-instr))
+        (cl:error "Primitive %instruction-vector-push! is retired; bootstrap-space assembler path removed in per-procedure-code-objects.")))
 
 (define-host-primitive (%label-table-set! label pc)
   :cl `(cl:progn
-        (cl:setf (cl:gethash ,label
-                             (compilation-space-label-table (get-space (quote |bootstrap|))))
-                 ,pc)
-        cl:nil))
+        (cl:declare (cl:ignore ,label ,pc))
+        (cl:error "Primitive %label-table-set! is retired; bootstrap-space assembler path removed in per-procedure-code-objects.")))
 
 (define-host-primitive (%label-table-ref label)
-  :cl `(cl:gethash ,label
-                   (compilation-space-label-table (get-space (quote |bootstrap|)))))
-
-(define-host-primitive (%procedure-name-set! pc-or-qualified name)
   :cl `(cl:progn
-        (cl:setf (cl:gethash ,pc-or-qualified *procedure-name-table*) ,name)
-        cl:nil))
+        (cl:declare (cl:ignore ,label))
+        (cl:error "Primitive %label-table-ref is retired; bootstrap-space assembler path removed in per-procedure-code-objects.")))
 
-(define-host-primitive (%procedure-name-ref pc-or-qualified)
-  :cl `(cl:or (cl:gethash ,pc-or-qualified *procedure-name-table*)
-              *scheme-false*))
+;;; %procedure-name-set! (97) and %procedure-name-ref (240) retired in
+;;; per-procedure-code-objects §11.2: procedure names now live on the
+;;; code-object struct (set at compile time via %code-object-set-name!;
+;;; read via code-object-name). The *procedure-name-table* side table
+;;; retires with this commit. IDs 97 and 240 stay reserved.
 
 ;;; ─────────────────────────────────────────────────────────────────────────
 ;;; Platform discovery (ids 98-99)
@@ -466,10 +476,7 @@
 ;;; ─────────────────────────────────────────────────────────────────────────
 
 (define-host-primitive (%label-table-entries)
-  :cl `(let ((entries (quote ())))
-         (cl:maphash (cl:lambda (label pc) (cl:push (cl:cons label pc) entries))
-                     (compilation-space-label-table (get-space (quote |bootstrap|))))
-         entries))
+  :cl `(cl:error "Primitive %label-table-entries is retired; bootstrap-space label table removed in per-procedure-code-objects."))
 
 (define-host-primitive (%macro-table-entries)
   :cl `(let ((entries (quote ())))
@@ -526,53 +533,83 @@
   :cl `(cl:progn (cl:setf (cl:gethash ,key (cl:cdr ,frame)) ,val) ,frame))
 
 ;;; ─────────────────────────────────────────────────────────────────────────
-;;; Compilation spaces (ids 125-135)
+;;; Compilation spaces (retired — Phase F, per-procedure-code-objects)
+;;; IDs 125-135 remain reserved in primitives.def. The compiler and
+;;; assembler now operate on per-procedure code-objects (see ids
+;;; 241-249/254-257 below).
 ;;; ─────────────────────────────────────────────────────────────────────────
 
-(define-host-primitive (%create-space name)
-  :cl `(create-space ,name))
+;;; ─────────────────────────────────────────────────────────────────────────
+;;; Code objects (ids 241-249)
+;;; ─────────────────────────────────────────────────────────────────────────
+;;; Accessors on the per-procedure compilation unit. Mirrors the %space-*
+;;; primitives but keyed on a code-object value instead of a space-id symbol.
 
-(define-host-primitive (%space-instruction-length space-id)
-  :cl `(cl:fill-pointer (compilation-space-instructions (get-space ,space-id))))
+(define-host-primitive (code-object? x)
+  :cl `(scheme-bool (code-object-p ,x)))
 
-(define-host-primitive (%space-name space-id)
-  :cl `(compilation-space-name (get-space ,space-id)))
+(define-host-primitive (code-object-instructions co)
+  :cl `(code-object-source-instructions ,co))
 
-(define-host-primitive (%current-space-id)
-  :cl `*current-space-id*)
+(define-host-primitive (code-object-resolved-instructions co)
+  :cl `(code-object-resolved-instructions ,co))
 
-(define-host-primitive (%set-current-space-id! space-id)
-  :cl `(cl:setf *current-space-id* ,space-id))
+(define-host-primitive (code-object-length co)
+  :cl `(cl:fill-pointer (code-object-source-instructions ,co)))
 
-(define-host-primitive (%space-instruction-push! space-id source-instr)
-  :cl `(let* ((cs (get-space ,space-id))
-              (instrs (compilation-space-instructions cs))
-              (resolved (compilation-space-resolved-instructions cs)))
-         (cl:vector-push-extend ,source-instr instrs)
-         (cl:vector-push-extend (resolve-operations ,source-instr) resolved)
-         cl:nil))
-
-(define-host-primitive (%space-label-set! space-id label local-pc)
-  :cl `(cl:progn
-        (cl:setf (cl:gethash ,label
-                             (compilation-space-label-table (get-space ,space-id)))
-                 ,local-pc)
-        cl:nil))
-
-(define-host-primitive (%space-label-ref space-id label)
-  :cl `(cl:gethash ,label (compilation-space-label-table (get-space ,space-id))))
-
-(define-host-primitive (%space-count)
-  :cl `(cl:hash-table-count *space-registry*))
-
-(define-host-primitive (%space-source-ref space-id index)
-  :cl `(cl:aref (compilation-space-instructions (get-space ,space-id)) ,index))
-
-(define-host-primitive (%space-label-entries space-id)
+(define-host-primitive (code-object-label-entries co)
   :cl `(let ((entries (quote ())))
          (cl:maphash (cl:lambda (label pc) (cl:push (cl:cons label pc) entries))
-                     (compilation-space-label-table (get-space ,space-id)))
+                     (code-object-labels ,co))
          entries))
+
+(define-host-primitive (code-object-label-ref co label)
+  :cl `(cl:gethash ,label (code-object-labels ,co)))
+
+(define-host-primitive (code-object-name co)
+  :cl `(cl:or (code-object-name ,co) *scheme-false*))
+
+(define-host-primitive (code-object-native-fn co)
+  :cl `(cl:or (code-object-native-fn ,co) *scheme-false*))
+
+(define-host-primitive (code-object-source-loc co)
+  :cl `(cl:or (code-object-source-loc ,co) *scheme-false*))
+
+;;; Constructors / mutators (ids 250-255) — used by the compiler when
+;;; building a code-object bottom-up. Metadata setters follow the
+;;; `set-<slot>!` convention; accessors stay read-only above.
+
+(define-host-primitive (%make-code-object)
+  :cl `(make-code-object))
+
+(define-host-primitive (%code-object-push-instruction! co source-instr)
+  :cl `(cl:progn
+        (cl:vector-push-extend ,source-instr (code-object-source-instructions ,co))
+        (cl:vector-push-extend (resolve-operations ,source-instr)
+                               (code-object-resolved-instructions ,co))
+        cl:nil))
+
+(define-host-primitive (%code-object-set-label! co label local-pc)
+  :cl `(cl:progn
+        (cl:setf (cl:gethash ,label (code-object-labels ,co)) ,local-pc)
+        cl:nil))
+
+(define-host-primitive (%code-object-set-name! co name)
+  :cl `(cl:progn (cl:setf (code-object-name ,co) ,name) cl:nil))
+
+(define-host-primitive (%code-object-set-arity! co arity)
+  :cl `(cl:progn (cl:setf (code-object-arity ,co) ,arity) cl:nil))
+
+(define-host-primitive (%code-object-set-source-loc! co loc)
+  :cl `(cl:progn (cl:setf (code-object-source-loc ,co) ,loc) cl:nil))
+
+(define-host-primitive (execute-code-object . args)
+  :cl `(let ((co (cl:car ,args))
+             (env (cl:if (cl:cdr ,args) (cl:cadr ,args) *global-env*)))
+         (execute-instructions co 0 env)))
+
+(define-host-primitive (code-object-arity co)
+  :cl `(cl:or (code-object-arity ,co) *scheme-false*))
 
 ;;; ─────────────────────────────────────────────────────────────────────────
 ;;; Serialization (id 136)
@@ -962,17 +999,27 @@
                     keys)))
 
 (define-host-primitive (%procedure-params-set! entry-addr params-info)
+  ;; Retired in per-procedure-code-objects §11.2: parameter metadata now
+  ;; lives on the code-object struct (set at compile time via
+  ;; %code-object-set-arity!). The *procedure-params-table* side table
+  ;; is gone; this stub is a no-op so stale callers don't crash boot.
   :cl `(cl:progn
-        (cl:setf (cl:gethash ,entry-addr *procedure-params-table*) ,params-info)
+        (cl:declare (cl:ignore ,entry-addr ,params-info))
         cl:nil))
 
 (define-host-primitive (%procedure-params proc)
   :cl `(cl:cond
         ((compiled-procedure-p ,proc)
+         ;; Archive-loaded code-objects carry arity in the struct itself
+         ;; (%code-object-set-arity! at compile time). Post-§11.2, that is
+         ;; the only path — the *procedure-params-table* side table retired
+         ;; alongside %procedure-params-set!.
          (cl:let* ((entry (cl:cadr ,proc))
-                   (params (cl:or (cl:gethash entry *procedure-params-table*)
-                                  (cl:when (cl:consp entry)
-                                           (cl:gethash (cl:cdr entry) *procedure-params-table*)))))
+                   (co (cl:cond ((code-object-p entry) entry)
+                                ((cl:and (cl:consp entry) (code-object-p (cl:car entry)))
+                                 (cl:car entry))
+                                (cl:t cl:nil)))
+                   (params (cl:when co (code-object-arity co))))
                   (cl:or params *scheme-false*)))
         ((primitive-procedure-p ,proc)
          (cl:let* ((id (cl:cadr ,proc))

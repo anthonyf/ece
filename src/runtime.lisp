@@ -122,7 +122,6 @@
            #:union
            #:set-difference
            #:execute-from-pc
-           #:assemble-into-global
            #:get-macro
            #:set-macro!
            #:expand-macro
@@ -173,8 +172,16 @@
            #:%instruction-vector-push!
            #:%label-table-set!
            #:%label-table-ref
-           #:%procedure-name-set!
-           #:%procedure-name-ref
+           #:code-object
+           #:code-object-p
+           #:make-code-object
+           #:code-object-source-instructions
+           #:code-object-resolved-instructions
+           #:code-object-labels
+           #:code-object-name
+           #:code-object-arity
+           #:code-object-source-loc
+           #:code-object-native-fn
            #:disassemble
            #:extend-environment
            #:ece-runtime-error
@@ -231,7 +238,7 @@
 ;;; What stays here: helper functions referenced by templates (scheme-bool,
 ;;; hash-frame-p, ece-output-to-stream, ece-port-stream and related,
 ;;; format-ece-proc, etc.), CL specials (*executing-space-id*, *global-env*,
-;;; *traced-procedures*, ...), the compilation-space struct, the executor
+;;; *traced-procedures*, ...), the code-object struct, the executor
 ;;; (execute-instructions), and the operation dispatch infrastructure.
 
 ;;; ECE runtime error condition
@@ -291,8 +298,14 @@ Includes source location if available."
     ((compiled-procedure-p proc)
      (let* ((entry (compiled-procedure-entry proc))
             (name (procedure-name proc))
-            (loc (when (consp entry)
-                   (resolve-ece-source-location (car entry) (cdr entry)))))
+            (loc (cond
+                   ;; §7.4: bare code-object entry — read source-loc from struct
+                   ((code-object-p entry)
+                    (code-object-source-loc entry))
+                   ((and (consp entry) (code-object-p (car entry)))
+                    (code-object-source-loc (car entry)))
+                   ((consp entry)
+                    (resolve-ece-source-location (car entry) (cdr entry))))))
        (cond
          ((and name loc)
           (format nil "~A (~A:~D:~D)" name (car loc) (cadr loc) (caddr loc)))
@@ -858,11 +871,15 @@ bootstrap/primitives-auto.lisp from a template in src/primitives.scm."
   (cadr param))
 
 (defun procedure-name (proc)
-  "Look up a compiled procedure's name from *procedure-name-table*."
+  "Look up a compiled procedure's name. Names live on the code-object
+struct (set at compile time via %code-object-set-name!). Legacy
+non-code-object entries have no name — returns NIL."
   (let ((entry (compiled-procedure-entry proc)))
-    (or (gethash entry *procedure-name-table*)
-        (when (consp entry)
-          (gethash (cdr entry) *procedure-name-table*)))))
+    (cond
+      ((code-object-p entry) (code-object-name entry))
+      ((and (consp entry) (code-object-p (car entry)))
+       (code-object-name (car entry)))
+      (t nil))))
 
 ;;; --- Type introspection primitives (ECE-facing) ---
 ;;; Return Scheme booleans. Exposed as ECE primitives.
@@ -963,8 +980,11 @@ bootstrap/primitives-auto.lisp from a template in src/primitives.scm."
 
 (defun make-compiled-procedure (entry env)
   (list '|compiled-procedure|
-        (if (consp entry) entry
-            (cons *executing-space-id* entry))
+        (cond ((consp entry) entry)
+              ;; §7.1: a bare code-object entry IS the closure's entry —
+              ;; the body starts at its pc 0 implicitly. No cons wrapper.
+              ((code-object-p entry) entry)
+              (t (cons *executing-space-id* entry)))
         env))
 
 ;;; Space-qualified address helpers
@@ -976,20 +996,22 @@ bootstrap/primitives-auto.lisp from a template in src/primitives.scm."
   (consp addr))
 
 (defun qualified-space-id (addr)
-  "Extract space-id (symbol) from a qualified address.
-Bare integers and integer 0 in qualified addresses return '|bootstrap|
-for backward compat with old images."
-  (if (consp addr)
-      (let ((sid (car addr)))
-        (if (eql sid 0) '|bootstrap| sid))
-      '|bootstrap|))
+  "Extract code-object from a qualified address.
+A bare code-object is itself the identity (§7.1/§7.2). A (code-obj . pc)
+pair returns the code-obj head."
+  (cond ((code-object-p addr) addr)
+        ((consp addr) (car addr))
+        (t (error "qualified-space-id: expected code-object or (code-obj . pc), got ~S" addr))))
 
 (defun qualified-local-pc (addr)
-  "Extract local-pc from a qualified address. Bare integers return themselves."
-  (if (consp addr) (cdr addr) addr))
+  "Extract local-pc from a qualified address. A bare code-object is pc 0.
+A (code-obj . pc) pair returns the pc."
+  (cond ((code-object-p addr) 0)
+        ((consp addr) (cdr addr))
+        (t (error "qualified-local-pc: expected code-object or (code-obj . pc), got ~S" addr))))
 
 (defun make-qualified-address (space-id local-pc)
-  "Create a space-qualified address."
+  "Create a (code-obj . pc) qualified address."
   (cons space-id local-pc))
 
 ;;; Error sentinel — returned by apply-primitive-procedure when CL signals
@@ -1201,23 +1223,23 @@ Uses the manifest-driven dispatch table via name→ID→function lookup."
 
 ;;; Instruction executor
 
-(defvar *executing-space-id* '|bootstrap|
-  "The space-id (symbol) of the currently executing space in the executor.
-Used by make-compiled-procedure and capture-continuation to qualify
-addresses. Distinct from *current-space-id* which is the assembler's
-target space.")
+(defvar *executing-space-id* nil
+  "The current dispatch target in the executor — always a code-object
+after Phase F. Retained under the legacy name for continuity with external
+callers and until the post-F refactor renames it alongside the other
+space→code-object terminology cleanups.")
 
-(defun execute-instructions (initial-space-id initial-pc initial-env
+(defun execute-instructions (initial-code-obj initial-pc initial-env
                              &key initial-proc initial-argl initial-continue
                                initial-stack)
-  "Execute assembled instructions starting in INITIAL-SPACE-ID at INITIAL-PC.
-Single-loop executor: cross-space jumps update local space-id/instrs/ltab
-variables inline — no throw/catch, no dispatcher, no allocation per transition."
-  (let* ((space-id initial-space-id)
-         (cs (get-space space-id))
-         (instrs (compilation-space-resolved-instructions cs))
-         (ltab (compilation-space-label-table cs))
-         (*executing-space-id* space-id)
+  "Execute assembled instructions starting at INITIAL-CODE-OBJ / INITIAL-PC.
+INITIAL-CODE-OBJ is a code-object (per-procedure identity). Single-loop
+executor: cross-dispatch-target jumps update local code-obj/instrs/ltab
+variables inline."
+  (let* ((code-obj initial-code-obj)
+         (instrs (code-object-resolved-instructions initial-code-obj))
+         (ltab (code-object-labels initial-code-obj))
+         (*executing-space-id* code-obj)
          (pc initial-pc)
          (flag nil)
          (val nil)
@@ -1228,12 +1250,12 @@ variables inline — no throw/catch, no dispatcher, no allocation per transition
          (stack (or initial-stack '()))
          (len (length instrs))
          ;; Dual-zone hook flag (Stage 1). Set on entry and after every
-         ;; switch-space. The loop-start tagbody body checks this flag,
-         ;; clears it, and dispatches to the registered compiled-zone
-         ;; function for the current space (if any). The flag prevents
-         ;; the hook from re-firing every loop iteration, which would
-         ;; cause infinite recursion when the compiled zone bails to the
-         ;; interpreter from a register-valued goto.
+         ;; switch-code-object. The loop-start tagbody body checks this
+         ;; flag, clears it, and dispatches to the registered compiled-zone
+         ;; function for the current dispatch target (if any). The flag
+         ;; prevents the hook from re-firing every loop iteration, which
+         ;; would cause infinite recursion when the compiled zone bails
+         ;; to the interpreter from a register-valued goto.
          (just-entered-space t))
     (labels ((get-reg (name)
                (ecase name
@@ -1250,24 +1272,25 @@ variables inline — no throw/catch, no dispatcher, no allocation per transition
              (resolve-label (label)
                (or (gethash label ltab)
                    (error "Unknown label: ~A" label)))
-             (norm-space (sid)
-               ;; Normalize integer 0 to bootstrap for old image compat
-               (if (eql sid 0) '|bootstrap| sid))
-             (switch-space (target-space-id)
-               (let ((normalized (norm-space target-space-id)))
-                 (setf space-id normalized)
-                 (let ((target-cs (get-space normalized)))
-                   (setf instrs (compilation-space-resolved-instructions target-cs))
-                   (setf ltab (compilation-space-label-table target-cs))
-                   (setf len (length instrs))
-                   (setf *executing-space-id* normalized))
-                 ;; Mark "we just entered a (potentially compiled) space".
-                 ;; The actual hash lookup + dispatch happens in loop-start
-                 ;; AFTER pc has been updated by the caller (the goto
-                 ;; instruction's setf pc runs after switch-space returns).
-                 (setf just-entered-space t)))
+             (switch-code-object (target)
+               ;; TARGET is a code-object (per-procedure identity). Updates
+               ;; the three executor-local fields (instrs, ltab, len) so the
+               ;; dispatch loop doesn't care.
+               (setf code-obj target)
+               (setf instrs (code-object-resolved-instructions target))
+               (setf ltab (code-object-labels target))
+               (setf len (length instrs))
+               (setf *executing-space-id* target)
+               ;; Mark "we just entered a (potentially compiled) dispatch
+               ;; target". The actual hash lookup + dispatch happens in
+               ;; loop-start AFTER pc has been updated by the caller (the
+               ;; goto instruction's setf pc runs after switch-code-object
+               ;; returns).
+               (setf just-entered-space t))
              (maybe-dispatch-compiled-zone ()
-               (let ((zone-fn (gethash space-id *compiled-zone-functions*)))
+               ;; Read the native-fn slot off the current code-object.
+               ;; When nil, the interpreter keeps running (§6.5).
+               (let ((zone-fn (code-object-native-fn code-obj)))
                  (when zone-fn
                    (multiple-value-bind (new-pc new-val new-env new-proc
                                                 new-argl new-continue new-stack)
@@ -1318,12 +1341,12 @@ variables inline — no throw/catch, no dispatcher, no allocation per transition
         (tagbody
          loop-start
            ;; Dual-zone hook: when just-entered-space is set, the compiled
-           ;; zone for the current space gets one chance to run from the
-           ;; current pc. The flag is cleared first so the hook doesn't
-           ;; re-fire on subsequent loop iterations (which would infinite-
-           ;; loop on register-valued goto bails). This runs AFTER pc has
-           ;; been updated by switch-space callers, so the dispatch lands
-           ;; on the correct PC in the new space's PC space.
+           ;; zone for the current dispatch target gets one chance to run
+           ;; from the current pc. The flag is cleared first so the hook
+           ;; doesn't re-fire on subsequent loop iterations (which would
+           ;; infinite-loop on register-valued goto bails). This runs
+           ;; AFTER pc has been updated by switch-code-object callers, so
+           ;; the dispatch lands on the correct PC in the new target's PC space.
            (when just-entered-space
              (setf just-entered-space nil)
              (maybe-dispatch-compiled-zone))
@@ -1339,7 +1362,7 @@ variables inline — no throw/catch, no dispatcher, no allocation per transition
                     (|label| (let ((resolved-pc (resolve-label (cadr source))))
                                (set-reg target
                                         (if (eq target '|continue|)
-                                            (cons space-id resolved-pc)
+                                            (cons code-obj resolved-pc)
                                             resolved-pc))))
                     (|op-fn|
                      (let ((result (call-op (cadr source) (cdddr instr))))
@@ -1354,8 +1377,8 @@ variables inline — no throw/catch, no dispatcher, no allocation per transition
                                    (setf proc error-fn)
                                    (setf argl (cons (ece-error-sentinel-message result)
                                                     (ece-error-sentinel-irritants result)))
-                                   (unless (eq err-space space-id)
-                                     (switch-space err-space))
+                                   (unless (eq err-space code-obj)
+                                     (switch-code-object err-space))
                                    (setf pc err-pc)
                                    (go loop-start))
                                  ;; Fallback: no error yet (cold boot) — signal CL error
@@ -1381,13 +1404,21 @@ variables inline — no throw/catch, no dispatcher, no allocation per transition
                     (|label| (setf pc (resolve-label (cadr dest))))
                     (|reg| (let ((addr (get-reg (cadr dest))))
                              (cond
-                               ;; Cross-space qualified address
-                               ((and (consp addr) (not (eq (norm-space (car addr)) space-id)))
-                                (switch-space (car addr))
+                               ;; §7.1/§7.2: bare code-object is an entry
+                               ;; at its pc 0. Switch if it's not the
+                               ;; currently-executing code-object.
+                               ((code-object-p addr)
+                                (unless (eq addr code-obj)
+                                  (switch-code-object addr))
+                                (setf pc 0))
+                               ;; Cross-target qualified address
+                               ;; (code-obj . local-pc) — §7.3 continuations.
+                               ((and (consp addr) (not (eq (car addr) code-obj)))
+                                (switch-code-object (car addr))
                                 (setf pc (cdr addr)))
-                               ;; Same-space qualified address
+                               ;; Same-target qualified address
                                ((consp addr) (setf pc (cdr addr)))
-                               ;; Bare integer (backward compat)
+                               ;; Bare integer (same-target relative pc)
                                ((numberp addr) (setf pc addr))
                                ;; Symbol label
                                (t (setf pc (resolve-label addr)))))))
@@ -1408,15 +1439,9 @@ variables inline — no throw/catch, no dispatcher, no allocation per transition
          loop-end))
       val)))
 
-(defvar *procedure-name-table*
-  (make-hash-table :test 'equal)
-  "Maps space-qualified entry addresses (space-id . local-pc) to procedure name symbols.
-Populated at assembly time from procedure-name pseudo-instructions.")
-
-(defvar *procedure-params-table*
-  (make-hash-table :test 'equal)
-  "Maps space-qualified entry addresses (space-id . local-pc) to (param-names . rest?) pairs.
-Populated at assembly time from procedure-params pseudo-instructions.")
+;;; *procedure-name-table* and *procedure-params-table* retired in
+;;; per-procedure-code-objects §11.2. Names and parameter metadata now
+;;; live on the code-object struct (code-object-name / code-object-arity).
 
 (defvar *traced-procedures*
   (make-hash-table :test 'eq)
@@ -1426,55 +1451,36 @@ Populated at assembly time from procedure-params pseudo-instructions.")
   "Current nesting depth for trace output indentation.")
 
 ;;; ============================================================
-;;; Compilation Spaces
+;;; Code Objects (per-procedure compilation unit)
 ;;; ============================================================
-;;; Each compilation space holds its own instruction array with local PCs.
-;;; Procedure entry points and continuation addresses are space-qualified:
-;;; (space-id . local-pc) instead of bare integers.
+;;; A code-object is the per-procedure output of the compiler: the
+;;; source and resolved instruction vectors for one procedure body,
+;;; its own label table, and metadata. Entry/continuation addresses
+;;; become (code-object . local-pc) pairs.
+;;;
+;;; Replaces the `compilation-space` / `*space-registry*` /
+;;; `*current-space-id*` / `create-space` / `get-space` /
+;;; `assemble-into-space` infrastructure that retired in Phase F of
+;;; the per-procedure-code-objects change.
 
-(defstruct compilation-space
-  "A compilation space — an independent instruction array with local PCs."
-  (name "" :type string)
-  (instructions (make-array 256 :adjustable t :fill-pointer 0)
-                :type vector)
-  (resolved-instructions (make-array 256 :adjustable t :fill-pointer 0)
+(defstruct code-object
+  "A code object — the compilation unit for a single procedure or top-level form."
+  (source-instructions (make-array 32 :adjustable t :fill-pointer 0)
+                       :type vector)
+  (resolved-instructions (make-array 32 :adjustable t :fill-pointer 0)
                          :type vector)
-  (label-table (make-hash-table :test 'eq)
-               :type hash-table)
-  (compiled-fn nil))
+  (labels (make-hash-table :test 'eq)
+    :type hash-table)
+  (name nil)
+  (arity nil)
+  (source-loc nil)
+  (native-fn nil))
 
-(defvar *space-registry* (make-hash-table :test 'eq)
-  "Hash table of space records, keyed by symbol.")
-
-(defvar *current-space-id* '|bootstrap|
-  "The space-id (symbol) that the assembler currently targets.
-Set by (load ...) for per-file spaces, defaults to bootstrap.")
-
-
-(defun create-space (name)
-  "Allocate a new space with NAME (string), intern as symbol in :ece, return symbol."
-  (let* ((sym (intern name :ece))
-         (cs (make-compilation-space :name name)))
-    (setf (gethash sym *space-registry*) cs)
-    sym))
-
-(defun get-space (space-id)
-  "Look up a space by its symbol ID. Integer 0 maps to bootstrap for backward compat."
-  (let ((key (if (eql space-id 0) '|bootstrap| space-id)))
-    (or (gethash key *space-registry*)
-        (error "Unknown space: ~A" space-id))))
-
-(defun find-space-by-name (name)
-  "Find a space by name string. Returns the space record, or NIL."
-  (let ((sym (find-symbol name :ece)))
-    (when sym (gethash sym *space-registry*))))
-
-;;; ECE-accessible space primitives
-
-
-(defun ece-%get-space (space-id)
-  "ECE primitive: get a space by ID."
-  (get-space space-id))
+(defmethod print-object ((obj code-object) stream)
+  (print-unreadable-object (obj stream :type nil :identity t)
+    (format stream "code-object ~A len=~D"
+            (or (code-object-name obj) "<anon>")
+            (length (code-object-source-instructions obj)))))
 
 
 
@@ -1485,11 +1491,6 @@ Set by (load ...) for per-file spaces, defaults to bootstrap.")
 
 
 
-
-;;; Create bootstrap space (keyed by symbol '|bootstrap|).
-(unless (gethash '|bootstrap| *space-registry*)
-  (setf (gethash '|bootstrap| *space-registry*)
-        (make-compilation-space :name "bootstrap")))
 
 ;;; Compiled zone support (compile-to-host, Stage 1+)
 ;;;
@@ -1517,6 +1518,44 @@ initial-argl initial-continue initial-stack) returning
 bootstrap/*-zone.lisp files at load time. Spaces without a registered
 entry fall through to the interpreted dispatch loop unchanged.")
 
+(defvar *archive-zone-fns* (make-hash-table :test #'equal)
+  "Registry mapping (file-stem . co-key) keys to compiled-zone CL
+functions for per-code-object zones. FILE-STEM is an ECE-package symbol
+derived from the archive's |file| field minus its extension. CO-KEY is
+either the code-object's name symbol or its zero-based index within the
+archive. Populated by per-code-object zone .lisp files at load time;
+archive loaders consult this to attach code-object-native-fn.
+
+Distinct from *compiled-zone-functions* (symbol-keyed on space-id, still
+used by the legacy space path during Phase C coexistence).")
+
+(defvar *archive-code-objects* (make-hash-table :test #'equal)
+  "Registry mapping (file-stem . co-key) keys to the live code-object
+struct materialized by the archive loader. Same keying convention as
+*archive-zone-fns*. Used by emitted zone code at execution time to
+resolve (const <code-object>) operands for inner-lambda references —
+the zone-file is emitted for one specific archive, so the file-stem is
+a constant in the emitted form and the co-key identifies the target.")
+
+(defun archive-co-lookup (file-stem co-key)
+  "Resolve a (file-stem . co-key) pair to the live code-object struct in
+*archive-code-objects*. Called from emitted zone code to dereference
+nested-lambda constants at zone-execution time. Signals ECE-runtime-error
+if the key is unregistered — that indicates either a stale zone file
+(archive re-generated but zone not regenerated) or a mis-threaded
+co-key at codegen time."
+  (or (gethash (cons file-stem co-key) *archive-code-objects*)
+      (error 'ece-runtime-error
+             :procedure nil
+             :arguments nil
+             :environment *global-env*
+             :instruction nil
+             :backtrace nil
+             :original-error
+             (make-condition 'simple-error
+                             :format-control "archive-co-lookup: no code-object registered for (~A . ~A). Zone file may be stale; run `make bootstrap`."
+                             :format-arguments (list file-stem co-key)))))
+
 
 (defun resolve-operations (instr)
   "Pre-resolve operation names to function pointers in an instruction."
@@ -1535,45 +1574,85 @@ entry fall through to the interpreted dispatch loop unchanged.")
        `(|perform| (|op-fn| ,(get-operation (cadr op-spec))) ,@(cddr instr))))
     (t instr)))
 
-(defun assemble-into-space (space-id instruction-list)
-  "Append instructions to a space's arrays, register labels. Return local start PC."
-  (let* ((cs (get-space space-id))
-         (instrs (compilation-space-instructions cs))
-         (resolved (compilation-space-resolved-instructions cs))
-         (labels (compilation-space-label-table cs))
-         (start-pc (fill-pointer instrs)))
-    (dolist (item instruction-list)
-      (cond
-        ((symbolp item)
-         (setf (gethash item labels) (fill-pointer instrs)))
-        ((and (consp item) (eq (car item) '|procedure-name|))
-         ;; Pseudo-instruction: (procedure-name <label> <name>)
-         ;; Resolve label to local PC and store in name table with qualified key.
-         (let ((local-pc (gethash (cadr item) labels)))
-           (when local-pc
-             (setf (gethash (cons space-id local-pc) *procedure-name-table*)
-                   (caddr item)))))
-        ((and (consp item) (eq (car item) '|procedure-params|))
-         ;; Pseudo-instruction: (procedure-params <label> <params-info>)
-         (let ((local-pc (gethash (cadr item) labels)))
-           (when local-pc
-             (setf (gethash (cons space-id local-pc) *procedure-params-table*)
-                   (caddr item)))))
-        ;; Source-location marker — skip (used by compile-file for source-map)
-        ((and (consp item) (eq (car item) '|source-location|)))
-        (t
-         (vector-push-extend item instrs)
-         (vector-push-extend (resolve-operations item) resolved))))
-    start-pc))
+;;; ─────────────────────────────────────────────────────────────────────────
+;;; Archive-format parser (CL-side, mirrors archive-sexp->code-objects
+;;; in src/compilation-unit.scm). Needed at boot because bootstrap.ecec
+;;; is read by load-ecec-section BEFORE ECE prelude is loaded, so the
+;;; ECE-side parser isn't available yet.
+;;; ─────────────────────────────────────────────────────────────────────────
 
-(defun assemble-into-global (instruction-list)
-  "Append instructions to the bootstrap space. Return start PC.
-Delegates to assemble-into-space with the bootstrap space."
-  (assemble-into-space '|bootstrap| instruction-list))
+(defun archive-plist-get (plist key)
+  "Walk a plain-symbol-keyed plist, return value after KEY or NIL."
+  (cond
+    ((null plist) nil)
+    ((null (cdr plist)) nil)
+    ((eq (car plist) key) (cadr plist))
+    (t (archive-plist-get (cddr plist) key))))
 
-;;; Assembler access primitives for ECE assembler
-;;; These thin wrappers use the bootstrap space's instruction vector,
-;;; label table, and the global procedure name table.
+(defun archive-patch-co-refs (tree cos-vec)
+  "Replace every (const (co-ref N)) in TREE with (const <code-object-at-N>)."
+  (cond
+    ((null tree) nil)
+    ((not (consp tree)) tree)
+    ((and (eq (car tree) '|const|)
+          (consp (cdr tree))
+          (consp (cadr tree))
+          (eq (car (cadr tree)) '|co-ref|))
+     (list '|const| (aref cos-vec (cadr (cadr tree)))))
+    (t (cons (archive-patch-co-refs (car tree) cos-vec)
+             (archive-patch-co-refs (cdr tree) cos-vec)))))
+
+(defun parse-archive-sexp (archive)
+  "Parse a read archive s-expr into a simple-vector of code-object structs.
+The shape matches the ECE-side archive-sexp->code-objects output: entry 0 is
+the file init; entries 1..N-1 are nested hoisted code-objects. Signals an
+ece-runtime-error on version mismatch."
+  (let* ((version (archive-plist-get (cdr archive) '|version|))
+         (entries (archive-plist-get (cdr archive) '|entries|)))
+    (unless (eql version 2)
+      (error 'ece-runtime-error
+             :procedure nil
+             :arguments nil
+             :environment *global-env*
+             :instruction nil
+             :backtrace nil
+             :original-error
+             (make-condition 'simple-error
+                             :format-control "Unsupported .ecec archive version: ~A. Run `make bootstrap` to regenerate."
+                             :format-arguments (list (or version "missing")))))
+    (let* ((entries-vec (coerce entries 'simple-vector))
+           (n (length entries-vec))
+           (cos (make-array n)))
+      ;; Pass 1: create code-objects, set metadata + labels.
+      (dotimes (i n)
+        (let* ((entry (aref entries-vec i))
+               (fields (cdr entry))
+               (co (make-code-object)))
+          (let ((name (archive-plist-get fields '|name|)))
+            (when name (setf (code-object-name co) name)))
+          (let ((arity (archive-plist-get fields '|arity|)))
+            (when arity (setf (code-object-arity co) arity)))
+          (let ((src-loc (archive-plist-get fields '|source-loc|)))
+            (when src-loc (setf (code-object-source-loc co) src-loc)))
+          (dolist (pair (archive-plist-get fields '|labels|))
+            (setf (gethash (car pair) (code-object-labels co)) (cdr pair)))
+          (setf (aref cos i) co)))
+      ;; Pass 2: push instructions (with (co-ref N) patched to code-objects).
+      (dotimes (i n)
+        (let* ((entry (aref entries-vec i))
+               (co (aref cos i))
+               (raw-instrs (archive-plist-get (cdr entry) '|instructions|)))
+          (dolist (instr raw-instrs)
+            (let ((patched (archive-patch-co-refs instr cos)))
+              (vector-push-extend patched (code-object-source-instructions co))
+              (vector-push-extend (resolve-operations patched)
+                                  (code-object-resolved-instructions co))))))
+      cos)))
+
+;;; assemble-into-space / assemble-into-global retired in Phase F
+;;; alongside compilation-space and *space-registry*. Callers go through
+;;; assemble-into-code-object (defined in src/assembler.scm) with a fresh
+;;; code-object per compilation unit.
 
 
 
@@ -1615,14 +1694,13 @@ Sets up proc and argl registers so the compiled code's entry point can
 extract its environment and extend it with arguments.
 Sets continue to a past-end address so (goto (reg continue)) exits cleanly."
   (let* ((entry (compiled-procedure-entry compiled-proc))
-         (space-id (qualified-space-id entry))
+         (code-obj (qualified-space-id entry))
          (local-pc (qualified-local-pc entry))
-         (cs (get-space space-id))
-         (return-pc (fill-pointer (compilation-space-resolved-instructions cs))))
-    (execute-instructions space-id local-pc *global-env*
+         (return-pc (length (code-object-resolved-instructions code-obj))))
+    (execute-instructions code-obj local-pc *global-env*
                           :initial-proc compiled-proc
                           :initial-argl args
-                          :initial-continue (cons space-id return-pc))))
+                          :initial-continue (cons code-obj return-pc))))
 
 
 
@@ -1857,35 +1935,122 @@ the downcased (source-map filename (pc line col) ...) cdr."
 so load-ecec-file can read both old and new serialization formats.")
 
 (defun load-ecec-section (stream &key skip)
-  "Load one ecec section (header + instructions) from STREAM.
-Creates a named space, registers source-map, assembles, and executes.
-If SKIP is a list of strings, skip sections whose space name matches.
-Returns T if a section was loaded, NIL on EOF."
+  "Load one ecec archive section from STREAM. Expects (ecec-archive ...).
+SKIP is retained for Makefile API compat (skips sections whose archive
+|file| field matches) but is rarely used. Returns T while the stream
+has more sections (including skipped ones), NIL on EOF. Legacy
+(ecec-header ...) files were retired in §9.3 — if one is encountered,
+signals an error pointing at `make bootstrap` for regeneration."
   ;; Bind *package* to :ece so cl:read interns symbols in the ECE package,
   ;; regardless of caller context (e.g., CL-USER from run.lisp).
   (let* ((*package* (find-package :ece))
          (*readtable* *ecec-readtable*)
-         (raw-header (cl:read stream nil :eof)))
-    (when (eq raw-header :eof) (return-from load-ecec-section nil))
-    (let* ((header (downcase-ece-symbols raw-header))
-           (space-sym (cadr (assoc '|space| (cdr header))))
-           (space-name (symbol-name space-sym)))
-      ;; Skip this section if its name is in the skip list
-      (when (and skip (member space-name skip :test #'string=))
-        (cl:read stream)  ; read and discard instruction forms
-        (return-from load-ecec-section t))
-      (let ((source-map-raw (cdr (assoc '|source-map| (cdr header))))
-            (sid (create-space space-name)))
-        ;; Register source-map if present
-        (when source-map-raw
-          (register-ecec-source-map space-sym source-map-raw))
-        (let ((*current-space-id* sid))
-          (let* ((instrs (cl:read stream))
-                 (fixed (downcase-ece-symbols
-                         (canonicalize-ecec-constants instrs)))
-                 (start-pc (assemble-into-space sid fixed)))
-            (execute-instructions sid start-pc *global-env*)))))
+         (raw-head (cl:read stream nil :eof)))
+    (when (eq raw-head :eof) (return-from load-ecec-section nil))
+    (unless (and (consp raw-head)
+                 (symbolp (car raw-head))
+                 (string-equal (symbol-name (car raw-head)) "ecec-archive"))
+      (error 'ece-runtime-error
+             :procedure nil :arguments nil :environment *global-env*
+             :instruction nil :backtrace nil
+             :original-error
+             (make-condition 'simple-error
+                             :format-control "load-ecec-section: expected (ecec-archive ...), got ~A. Run `make bootstrap` to regenerate."
+                             :format-arguments (list (if (consp raw-head) (car raw-head) raw-head)))))
+    (when skip
+      (let* ((archive (downcase-ece-symbols raw-head))
+             (file (archive-plist-get (cdr archive) '|file|)))
+        (when (and file (member file skip :test #'string=))
+          (return-from load-ecec-section t))))
+    (load-ecec-archive-section raw-head)
     t))
+
+(defun load-ecec-archive-section (raw-archive)
+  "Archive-format dispatch: parse the archive, register each code-object
+in *archive-code-objects*, attach any pre-loaded zone fn to native-fn,
+then execute the init code-object.
+
+RAW-ARCHIVE is the form as produced by CL:READ — this handler owns its
+own downcasing + constant canonicalization so the dispatcher never walks
+the tree.
+
+Registration key convention (shared with codegen-cl-inline.scm
+emit-zone-registration-for-co):
+  key = (cons FILE-STEM CO-KEY)
+  FILE-STEM = (intern \"stem\" :ece) from archive's |file| minus extension
+  CO-KEY    = (code-object-name co) when set, else the zero-based index
+
+After the init runs, nested code-objects remain reachable via the
+closures the init builds — *archive-code-objects* is only consulted by
+emitted zone code at execution time (to resolve (const <inner-co>)
+operands), not for general reachability.
+
+Missing zone fn => native-fn left NIL. The executor's
+maybe-dispatch-compiled-zone checks the slot and falls through to the
+interpreter when it's NIL, so code-objects with no registered zone run
+interpreted. This is the Phase C / Phase D transitional state: once
+Phase D flips compile-system to archive format and the zone-file load
+order is corrected, every reachable code-object gets a zone fn here."
+  (let* ((archive (downcase-ece-symbols
+                   (canonicalize-ecec-constants raw-archive)))
+         (cos (parse-archive-sexp archive))
+         (file-stem (archive-file-stem-symbol archive)))
+    (when file-stem
+      (register-archive-code-objects cos file-stem)
+      (attach-archive-native-fns cos file-stem))
+    (let ((init (aref cos 0)))
+      (execute-instructions init 0 *global-env*))))
+
+(defun archive-file-stem-symbol (archive)
+  "Derive the :ece-package file-stem symbol for ARCHIVE's |file| field,
+stripping any extension. Returns NIL when the archive has no |file|
+field (shouldn't happen for well-formed archives, but we degrade
+gracefully — callers skip registration rather than erroring)."
+  (let ((file-str (archive-plist-get (cdr archive) '|file|)))
+    (when (stringp file-str)
+      (let ((dot (position #\. file-str :from-end t)))
+        (intern (if dot (subseq file-str 0 dot) file-str) :ece)))))
+
+(defun archive-co-key (co index)
+  "Derive the registry key for CO at archive INDEX. Always uses the
+archive index — names are not unique within an archive (e.g., prelude
+has 7 distinct `iter` code-objects nested inside reverse, length, map,
+for-each, min/max, range). If we keyed on name, registration would
+silently overwrite earlier entries, and all same-named code-objects
+would share a single zone fn — catastrophic for correctness.
+
+Must match the key the codegen emits in src/codegen-cl-inline.scm
+co-key-for-archive-entry. CO is unused but kept here because
+attach-archive-native-fns / register-archive-code-objects already have
+the CO in hand and passing it matches the helper's positional shape."
+  (declare (ignore co))
+  index)
+
+(defun register-archive-code-objects (cos file-stem)
+  "Register each code-object in COS under (FILE-STEM . CO-KEY) in
+*archive-code-objects* so emitted zone code can dereference nested-
+lambda (const <co>) operands at execution time."
+  (dotimes (i (length cos))
+    (let* ((co (aref cos i))
+           (co-key (archive-co-key co i)))
+      (setf (gethash (cons file-stem co-key) *archive-code-objects*) co))))
+
+(defun attach-archive-native-fns (cos file-stem)
+  "For each code-object in COS, look up its zone fn in *archive-zone-fns*
+and, when found, set the native-fn slot so the executor's compiled-zone
+fast-path dispatches to it on entry.
+
+When a key is missing, leave native-fn NIL. This is intentional during
+Phase C: zone files for archive format aren't generated yet, so no keys
+exist. Phase D populates *archive-zone-fns* before this runs (via
+reversed load order); any missing entry at that point indicates a
+stale/regen-pending zone file."
+  (dotimes (i (length cos))
+    (let* ((co (aref cos i))
+           (co-key (archive-co-key co i))
+           (zone-fn (gethash (cons file-stem co-key) *archive-zone-fns*)))
+      (when zone-fn
+        (setf (code-object-native-fn co) zone-fn)))))
 
 (defun load-ecec-file (pathname &key skip)
   "Load a .ecec file: read sections, create named spaces, assemble and execute.
@@ -1912,19 +2077,25 @@ Uses the CL reader (not the ECE reader) so this works at boot before the ECE rea
     (when (probe-file path)
       (load-ecec-file path :skip '("browser-lib")))))
 
-;;; Boot from .ecec files
-(boot-from-compiled)
-
 ;;; ─────────────────────────────────────────────────────────────────────────
 ;;; Compiled-zone loader (Stage 1)
 ;;; ─────────────────────────────────────────────────────────────────────────
 ;;;
-;;; After the bootstrap .ecec files have populated *space-registry* with
-;;; instruction vectors, scan bootstrap/ for any *-zone.lisp files and load
-;;; them. Each file's load-time effects register a zone-NAME function in
-;;; *compiled-zone-functions* under the corresponding space-id symbol; the
-;;; next call to execute-instructions on that space dispatches to the
-;;; compiled zone instead of the interpreter loop.
+;;; Scan bootstrap/ for any *-zone.lisp files and load them. Each file's
+;;; load-time effects register a zone-NAME function in one of two
+;;; registries:
+;;;   - *compiled-zone-functions* (legacy space path) — keyed on space-id
+;;;     symbol. Consulted by execute-instructions on space entry.
+;;;   - *archive-zone-fns* (§9.2 archive path) — keyed on
+;;;     (file-stem . co-key). Consulted by load-ecec-archive-section as it
+;;;     materializes each code-object, to attach native-fn in place.
+;;;
+;;; Load order: zones FIRST, then boot-from-compiled. This ordering lets
+;;; the archive loader (inside boot-from-compiled → load-ecec-file →
+;;; load-ecec-archive-section) populate code-object-native-fn immediately
+;;; as each archive section is read. Zone files are pure self-registration
+;;; (they only mutate the two hash tables above) and have no dependency
+;;; on any state established by boot-from-compiled, so this flip is safe.
 ;;;
 ;;; Files are sorted alphabetically for deterministic load order. Missing
 ;;; bootstrap/ directory is not an error — Stage 1 ships zero or more
@@ -1932,10 +2103,10 @@ Uses the CL reader (not the ECE reader) so this works at boot before the ECE rea
 
 (defun load-compiled-zones ()
   "Find and load every bootstrap/*-zone.lisp file. Each file is expected
-to define a zone-NAME function and register it in *compiled-zone-functions*.
-Uses compile-file to produce cached FASLs so subsequent loads skip
-compilation. Errors during load are propagated with a hint about
-regeneration."
+to define a zone-NAME function and register it in *compiled-zone-functions*
+(legacy space path) or *archive-zone-fns* (archive path). Uses compile-file
+to produce cached FASLs so subsequent loads skip compilation. Errors during
+load are propagated with a hint about regeneration."
   (let* ((bootstrap-dir (asdf:system-relative-pathname :ece "bootstrap/"))
          (pattern (merge-pathnames "*-zone.lisp" bootstrap-dir))
          (files (sort (directory pattern) #'string< :key #'namestring))
@@ -1956,6 +2127,11 @@ regeneration."
                  path e (file-namestring path)))))))
 
 (load-compiled-zones)
+
+;;; Boot from .ecec files. Runs AFTER load-compiled-zones so the archive
+;;; loader's attach-archive-native-fns call finds registrations in
+;;; *archive-zone-fns* for every code-object in bootstrap.ecec.
+(boot-from-compiled)
 
 ;;; Ensure all manifest primitives are in *global-env*. The image/ecec may
 ;;; predate new manifest entries; this top-up adds any missing bindings.

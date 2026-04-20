@@ -145,7 +145,7 @@
 (94  %instruction-vector-push!  1 core "Append instruction to global vector")
 (95  %label-table-set!   2  core   "Set label in global label table")
 (96  %label-table-ref    1  core   "Look up label in global label table")
-(97  %procedure-name-set! 2 core   "Set procedure name for PC")
+;;; (97  %procedure-name-set! 2 core   "Set procedure name for PC") — retired in per-procedure-code-objects §11.2; name now lives on code-object struct; id stays reserved
 
 ;;; --- Platform discovery ---
 (98  platform-has?       1  core   "Test if named primitive is available")
@@ -186,18 +186,21 @@
 (123 %make-hash-frame     0  cl     "Create empty hash-table frame")
 (124 %hash-frame-set!     3  cl     "Set key in hash-table frame")
 
-;;; --- Compilation spaces ---
-(125 %create-space             1  core   "Create a new compilation space")
-(126 %space-instruction-length 1  core   "Instruction count for a space")
-(127 %space-name               1  core   "Name of a space")
-(128 %current-space-id         0  core   "Current assembler target space ID")
-(129 %set-current-space-id!    1  core   "Set current assembler target space ID")
-(130 %space-instruction-push!  2  core   "Append instruction to a space")
-(131 %space-label-set!         3  core   "Register label in a space")
-(132 %space-label-ref          2  core   "Look up label in a space")
-(133 %space-count              0  core   "Number of spaces in registry")
-(134 %space-source-ref         2  core   "Get source instruction at index in a space")
-(135 %space-label-entries      1  core   "Label table of a space as alist")
+;;; --- Compilation spaces (retired — Phase F, per-procedure-code-objects) ---
+;;; IDs 125-135 are reserved; do not reuse. The compiler now emits
+;;; per-procedure code-objects (ids 241-249/254-257) instead of writing
+;;; into symbol-keyed compilation spaces.
+;;; (125 %create-space             1  core   "Create a new compilation space")
+;;; (126 %space-instruction-length 1  core   "Instruction count for a space")
+;;; (127 %space-name               1  core   "Name of a space")
+;;; (128 %current-space-id         0  core   "Current assembler target space ID")
+;;; (129 %set-current-space-id!    1  core   "Set current assembler target space ID")
+;;; (130 %space-instruction-push!  2  core   "Append instruction to a space")
+;;; (131 %space-label-set!         3  core   "Register label in a space")
+;;; (132 %space-label-ref          2  core   "Look up label in a space")
+;;; (133 %space-count              0  core   "Number of spaces in registry")
+;;; (134 %space-source-ref         2  core   "Get source instruction at index in a space")
+;;; (135 %space-label-entries      1  core   "Label table of a space as alist")
 (136 write-to-string-flat      1  core    "Serialize to string without shared-structure markers")
 (137 keyword?                  1  core   "Test if value is a keyword symbol")
 (138 %primitive-name            1  core   "Get name symbol for primitive ID")
@@ -339,4 +342,26 @@
 (237 %global-env-symbols    0  cl     "List all bound symbol names in global env")
 (238 %procedure-params-set! 2  cl     "Store parameter metadata for a compiled procedure entry")
 (239 %procedure-params      1  cl     "Look up parameter metadata for a callable value")
-(240 %procedure-name-ref    1  core   "Look up registered name for a compiled procedure entry")
+;;; (240 %procedure-name-ref    1  core   "Look up registered name for a compiled procedure entry") — retired in per-procedure-code-objects §11.2; read via code-object-name; id stays reserved
+
+;;; ═══════════════════════════════════════════════════════════════════════
+;;; CODE-OBJECT PRIMITIVES (241-249) — per-procedure compilation unit
+;;; ═══════════════════════════════════════════════════════════════════════
+
+(241 code-object?                     1  core   "Test if value is a code object")
+(242 code-object-instructions         1  core   "Source instruction vector of a code object")
+(243 code-object-resolved-instructions 1 core   "Resolved (op-fn-bound) instruction vector of a code object")
+(244 code-object-length               1  core   "Number of instructions in a code object")
+(245 code-object-label-entries        1  core   "Label table of a code object as alist of (label . pc)")
+(246 code-object-label-ref            2  core   "Look up a label's pc in a code object (#f if missing)")
+(247 code-object-name                 1  core   "Name metadata of a code object (or #f)")
+(248 code-object-native-fn            1  core   "Native-fn slot of a code object (or #f)")
+(249 code-object-source-loc           1  core   "Source-loc metadata of a code object (or #f)")
+(250 %make-code-object                0  core   "Construct a fresh empty code object")
+(251 %code-object-push-instruction!   2  core   "Append source instruction to code object (auto-resolves ops for resolved-instructions)")
+(252 %code-object-set-label!          3  core   "Register a label-symbol → local-pc binding in a code object")
+(253 %code-object-set-name!           2  core   "Set the name metadata field of a code object")
+(254 %code-object-set-arity!          2  core   "Set the arity metadata field of a code object")
+(255 %code-object-set-source-loc!     2  core   "Set the source-loc metadata field of a code object")
+(256 execute-code-object             -1  core   "Execute a code object from pc 0 (optional env); returns val")
+(257 code-object-arity                1  core   "Arity metadata of a code object (or #f)")

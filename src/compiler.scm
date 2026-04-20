@@ -282,7 +282,17 @@
                     (list 'const extra-slots))))
        (mc-compile-sequence body 'val 'return)))))
 
+;; Parameter: #f = label-based lambda emission (bootstrap- and .ecec-safe);
+;; #t = code-object-based (bottom-up, RAM-only until §8 serialization).
+;; Default #f so compile-file stays safe; mc-compile-to-code-object binds it.
+(define *emit-code-object-lambdas* (make-parameter #f))
+
 (define (mc-compile-lambda expr target linkage)
+  (if (*emit-code-object-lambdas*)
+      (mc-compile-lambda-as-code-object expr target linkage)
+      (mc-compile-lambda-as-label expr target linkage)))
+
+(define (mc-compile-lambda-as-label expr target linkage)
   (let ((proc-entry (mc-make-label 'entry))
         (after-lambda (mc-make-label 'after-lambda)))
     (let ((lambda-linkage (if (eq? linkage 'next) after-lambda linkage)))
@@ -298,6 +308,43 @@
                                            (list 'label proc-entry) '(reg env)))))
             body-code)
            after-lambda))))))
+
+;; Bottom-up lambda: the body gets its own code-object; the outer references
+;; it as a (const <code-object>) operand of make-compiled-procedure.
+(define (mc-compile-lambda-as-code-object expr target linkage)
+  (let ((after-lambda (mc-make-label 'after-lambda)))
+    (let ((lambda-linkage (if (eq? linkage 'next) after-lambda linkage)))
+      (let* ((params (cadr expr))
+             (body (cddr expr))
+             (body-seq (mc-compile-lambda-body-standalone params body))
+             (body-instrs (strip-source-locations (mc-instructions body-seq)))
+             (inner-co (%make-code-object)))
+        (assemble-into-code-object inner-co body-instrs)
+        (append-instruction-sequences
+         (end-with-linkage lambda-linkage
+                           (make-instruction-sequence
+                            '(env) (list target)
+                            (list (list 'assign target '(op make-compiled-procedure)
+                                        (list 'const inner-co) '(reg env)))))
+         after-lambda)))))
+
+;; Lambda body without a leading proc-entry label — for assembly into a
+;; standalone code-object (body starts at the code-object's PC 0).
+(define (mc-compile-lambda-body-standalone params body)
+  (let* ((param-names (mc-flatten-params params))
+         (define-names (mc-extract-define-names body))
+         (frame (append param-names define-names))
+         (extra-slots (length define-names)))
+    (parameterize ((*mc-compile-lexical-env*
+                    (cons frame (*mc-compile-lexical-env*))))
+      (append-instruction-sequences
+       (make-instruction-sequence
+        '(env proc argl) '(env)
+        (list '(assign env (op compiled-procedure-env) (reg proc))
+              (list 'assign 'env '(op extend-environment)
+                    (list 'const params) '(reg argl) '(reg env)
+                    (list 'const extra-slots))))
+       (mc-compile-sequence body 'val 'return)))))
 
 (define *mc-all-regs* '(env proc val argl continue))
 
@@ -459,6 +506,25 @@
                   (mc-find-entry-label (cdr instruction-list))))
             (mc-find-entry-label (cdr instruction-list))))))
 
+(define (mc-find-entry-code-object instruction-list)
+  "Find the inner code-object constant from a compiled lambda's instruction
+list (bottom-up emission only). Mirrors mc-find-entry-label but looks for a
+(const <code-object>) operand instead of a (label ...) one."
+  (if (null? instruction-list)
+      #f
+      (let ((instr (car instruction-list)))
+        (if (and (pair? instr)
+                 (eq? (car instr) 'assign)
+                 (pair? (caddr instr))
+                 (eq? (car (caddr instr)) 'op)
+                 (eq? (cadr (caddr instr)) 'make-compiled-procedure))
+            (let ((const-arg (car (cdr (cddr instr)))))
+              (if (and (pair? const-arg) (eq? (car const-arg) 'const)
+                       (code-object? (cadr const-arg)))
+                  (cadr const-arg)
+                  (mc-find-entry-code-object (cdr instruction-list))))
+            (mc-find-entry-code-object (cdr instruction-list))))))
+
 (define (extract-lambda-params formals)
   (cond
    ((null? formals) (cons '() 0))
@@ -495,19 +561,26 @@
                                        (list (list 'perform '(op define-variable!)
                                                    (list 'const variable) '(reg val) '(reg env))
                                              (list 'assign target '(reg val)))))))
-         (entry-label (if (and (pair? value-expr) (eq? (car value-expr) 'lambda))
-                          (mc-find-entry-label (mc-instructions value-code))
-                          #f)))
+         (is-lambda (and (pair? value-expr) (eq? (car value-expr) 'lambda)))
+         (entry-label (if is-lambda (mc-find-entry-label (mc-instructions value-code)) #f))
+         (entry-co (if is-lambda (mc-find-entry-code-object (mc-instructions value-code)) #f)))
+    ;; §4.5: thread the name/arity onto the inner code-object at compile time
+    ;; in the bottom-up path. No pseudo-instruction needed — we hold the
+    ;; code-object value in hand.
+    (when entry-co
+      (%code-object-set-name! entry-co variable)
+      (%code-object-set-arity! entry-co (extract-lambda-params (cadr value-expr))))
     (end-with-linkage linkage
-                      (if entry-label
-                          (let ((params-info (extract-lambda-params (cadr value-expr))))
-                            (append-instruction-sequences
-                             define-code
-                             (make-instruction-sequence
-                              '() '()
-                              (list (list 'procedure-name entry-label variable)
-                                    (list 'procedure-params entry-label params-info)))))
-                          define-code))))
+                      (cond
+                       (entry-label
+                        (let ((params-info (extract-lambda-params (cadr value-expr))))
+                          (append-instruction-sequences
+                           define-code
+                           (make-instruction-sequence
+                            '() '()
+                            (list (list 'procedure-name entry-label variable)
+                                  (list 'procedure-params entry-label params-info))))))
+                       (else define-code)))))
 
 (define (mc-compile-callcc expr target linkage)
   (let ((receiver-code (mc-compile (cadr expr) 'proc 'next)))
@@ -749,19 +822,28 @@
 
 ;;; Integration: compile-and-go via metacircular compiler
 
+;; Pure compile entry point. Returns a fresh code-object containing the
+;; assembled instructions for `expr` followed by a trailing (halt) so the
+;; executor terminates cleanly. Does not mutate any space. Executes nothing.
+(define (mc-compile-to-code-object expr)
+  (parameterize ((*emit-code-object-lambdas* #t))
+    (assemble-into-code-object
+     (%make-code-object)
+     (append (strip-source-locations
+              (mc-instructions (mc-compile expr 'val 'next)))
+             '((halt))))))
+
 (define (mc-compile-and-go expr . env-args)
-  ;; Inline mc-compile + mc-instructions into assemble-into-global so the
-  ;; instruction sequence is a temporary, not captured in a let binding.
-  ;; This prevents the instruction list from leaking into continuations
-  ;; captured inside execute-from-pc (the env frame for a let binding
-  ;; persists while execute-from-pc runs, and call/cc inside it would
-  ;; capture the entire env chain including the instruction list).
-  (let ((start-pc (assemble-into-global
-                   (append (strip-source-locations
-                            (mc-instructions (mc-compile expr 'val 'next)))
-                           '((halt))))))
+  ;; §5.2/§4.1: Route through a fresh per-invocation code-object instead of
+  ;; mutating a shared space. mc-compile-to-code-object produces a pure
+  ;; code-object (with the trailing (halt) already appended) and
+  ;; execute-code-object runs it from pc 0. The instruction list is
+  ;; referenced only through the code-object struct, so it can't leak into
+  ;; a let binding's env frame that a call/cc inside execute-from-pc might
+  ;; capture (the old leak concern).
+  (let ((co (mc-compile-to-code-object expr)))
     (if (null? env-args)
-        (execute-from-pc start-pc)
-        (execute-from-pc start-pc (car env-args)))))
+        (execute-code-object co)
+        (execute-code-object co (car env-args)))))
 
 (define (eval expr) (mc-compile-and-go expr))

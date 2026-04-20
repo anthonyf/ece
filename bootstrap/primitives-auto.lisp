@@ -15,14 +15,23 @@
 (defun ece-%chmod (path mode)
   (let* ((pkg (cl:find-package "SB-POSIX")) (chmod-fn (cl:and pkg (cl:find-symbol "CHMOD" pkg)))) (cl:when (cl:and chmod-fn (cl:fboundp chmod-fn)) (cl:funcall chmod-fn path mode)) cl:nil))
 
+(defun ece-%code-object-push-instruction! (co source-instr)
+  (cl:progn (cl:vector-push-extend source-instr (code-object-source-instructions co)) (cl:vector-push-extend (resolve-operations source-instr) (code-object-resolved-instructions co)) cl:nil))
+
+(defun ece-%code-object-set-arity! (co arity)
+  (cl:progn (cl:setf (code-object-arity co) arity) cl:nil))
+
+(defun ece-%code-object-set-label! (co label local-pc)
+  (cl:progn (cl:setf (cl:gethash label (code-object-labels co)) local-pc) cl:nil))
+
+(defun ece-%code-object-set-name! (co name)
+  (cl:progn (cl:setf (code-object-name co) name) cl:nil))
+
+(defun ece-%code-object-set-source-loc! (co loc)
+  (cl:progn (cl:setf (code-object-source-loc co) loc) cl:nil))
+
 (defun ece-%create-repl-space! (name size)
   (cl:locally (cl:declare (cl:ignore name size)) cl:nil))
-
-(defun ece-%create-space (name)
-  (create-space name))
-
-(defun ece-%current-space-id ()
-  *current-space-id*)
 
 (defun ece-%display-to-port (obj port)
   (let ((stream (ece-port-stream port))) (ece-output-to-stream obj stream (cl:function cl:princ)) (cl:finish-output stream) obj))
@@ -88,28 +97,31 @@
   (ece-make-output-port (cl:make-synonym-stream 'cl:*standard-output*)))
 
 (defun ece-%instruction-vector-length ()
-  (cl:fill-pointer (compilation-space-resolved-instructions (get-space '|bootstrap|))))
+  (cl:error "Primitive %instruction-vector-length is retired; bootstrap-space assembler path removed in per-procedure-code-objects."))
 
 (defun ece-%instruction-vector-push! (source-instr)
-  (let* ((cs (get-space '|bootstrap|)) (instrs (compilation-space-instructions cs)) (resolved (compilation-space-resolved-instructions cs))) (cl:vector-push-extend source-instr instrs) (cl:vector-push-extend (resolve-operations source-instr) resolved) cl:nil))
+  (cl:progn (cl:declare (cl:ignore source-instr)) (cl:error "Primitive %instruction-vector-push! is retired; bootstrap-space assembler path removed in per-procedure-code-objects.")))
 
 (defun ece-%intern-ece (s)
   (cl:intern s :ece))
 
 (defun ece-%label-table-entries ()
-  (let ((entries '())) (cl:maphash (cl:lambda (label pc) (cl:push (cl:cons label pc) entries)) (compilation-space-label-table (get-space '|bootstrap|))) entries))
+  (cl:error "Primitive %label-table-entries is retired; bootstrap-space label table removed in per-procedure-code-objects."))
 
 (defun ece-%label-table-ref (label)
-  (cl:gethash label (compilation-space-label-table (get-space '|bootstrap|))))
+  (cl:progn (cl:declare (cl:ignore label)) (cl:error "Primitive %label-table-ref is retired; bootstrap-space assembler path removed in per-procedure-code-objects.")))
 
 (defun ece-%label-table-set! (label pc)
-  (cl:progn (cl:setf (cl:gethash label (compilation-space-label-table (get-space '|bootstrap|))) pc) cl:nil))
+  (cl:progn (cl:declare (cl:ignore label pc)) (cl:error "Primitive %label-table-set! is retired; bootstrap-space assembler path removed in per-procedure-code-objects.")))
 
 (defun ece-%list-directory (path)
   (let ((dir (cl:if (cl:and (cl:stringp path) (cl:> (cl:length path) 0) (cl:not (cl:char= (cl:char path (cl:1- (cl:length path))) #\/))) (cl:concatenate 'cl:string path "/") path))) (cl:mapcar (cl:lambda (p) (let ((name (cl:file-namestring p))) (cl:if (cl:or (cl:null name) (cl:zerop (cl:length name))) (cl:car (cl:last (cl:pathname-directory p))) name))) (cl:directory (cl:concatenate 'cl:string dir "*.*")))))
 
 (defun ece-%macro-table-entries ()
   (let ((entries '())) (cl:maphash (cl:lambda (name proc) (cl:push (cl:cons name proc) entries)) *compile-time-macros*) entries))
+
+(defun ece-%make-code-object ()
+  (make-code-object))
 
 (defun ece-%make-compiled-procedure (entry env)
   (cl:list '|compiled-procedure| entry env))
@@ -147,17 +159,11 @@
 (defun ece-%primitive-name (id)
   (cl:if (cl:and (cl:integerp id) (cl:< id (cl:length *primitive-name-table*))) (cl:or (cl:aref *primitive-name-table* id) *scheme-false*) *scheme-false*))
 
-(defun ece-%procedure-name-ref (pc-or-qualified)
-  (cl:or (cl:gethash pc-or-qualified *procedure-name-table*) *scheme-false*))
-
-(defun ece-%procedure-name-set! (pc-or-qualified name)
-  (cl:progn (cl:setf (cl:gethash pc-or-qualified *procedure-name-table*) name) cl:nil))
-
 (defun ece-%procedure-params (proc)
-  (cl:cond ((compiled-procedure-p proc) (cl:let* ((entry (cl:cadr proc)) (params (cl:or (cl:gethash entry *procedure-params-table*) (cl:when (cl:consp entry) (cl:gethash (cl:cdr entry) *procedure-params-table*))))) (cl:or params *scheme-false*))) ((primitive-procedure-p proc) (cl:let* ((id (cl:cadr proc)) (entry (cl:find id *manifest-entries* :key (cl:function cl:first)))) (cl:if entry (cl:let ((arity (cl:third entry))) (cl:if (cl:= arity -1) (cl:cons (cl:list "args") 1) (cl:let ((names cl:nil)) (cl:dotimes (i arity) (cl:push (cl:format cl:nil "arg~D" (cl:1+ i)) names)) (cl:cons (cl:nreverse names) 0)))) *scheme-false*))) (cl:t *scheme-false*)))
+  (cl:cond ((compiled-procedure-p proc) (cl:let* ((entry (cl:cadr proc)) (co (cl:cond ((code-object-p entry) entry) ((cl:and (cl:consp entry) (code-object-p (cl:car entry))) (cl:car entry)) (cl:t cl:nil))) (params (cl:when co (code-object-arity co)))) (cl:or params *scheme-false*))) ((primitive-procedure-p proc) (cl:let* ((id (cl:cadr proc)) (entry (cl:find id *manifest-entries* :key (cl:function cl:first)))) (cl:if entry (cl:let ((arity (cl:third entry))) (cl:if (cl:= arity -1) (cl:cons (cl:list "args") 1) (cl:let ((names cl:nil)) (cl:dotimes (i arity) (cl:push (cl:format cl:nil "arg~D" (cl:1+ i)) names)) (cl:cons (cl:nreverse names) 0)))) *scheme-false*))) (cl:t *scheme-false*)))
 
 (defun ece-%procedure-params-set! (entry-addr params-info)
-  (cl:progn (cl:setf (cl:gethash entry-addr *procedure-params-table*) params-info) cl:nil))
+  (cl:progn (cl:declare (cl:ignore entry-addr params-info)) cl:nil))
 
 (defun ece-%raw-error (&rest args)
   (cl:apply (cl:function cl:error) args))
@@ -168,38 +174,11 @@
 (defun ece-%set-continuation-syms! (do-winds-sym winding-stack-sym)
   (cl:locally (cl:declare (cl:ignore do-winds-sym winding-stack-sym)) cl:nil))
 
-(defun ece-%set-current-space-id! (space-id)
-  (cl:setf *current-space-id* space-id))
-
 (defun ece-%set-error-sym! (error-sym)
   (cl:locally (cl:declare (cl:ignore error-sym)) cl:nil))
 
 (defun ece-%set-winding-stack! (val)
   (cl:progn (cl:setf *cl-winding-stack* val) cl:nil))
-
-(defun ece-%space-count ()
-  (cl:hash-table-count *space-registry*))
-
-(defun ece-%space-instruction-length (space-id)
-  (cl:fill-pointer (compilation-space-instructions (get-space space-id))))
-
-(defun ece-%space-instruction-push! (space-id source-instr)
-  (let* ((cs (get-space space-id)) (instrs (compilation-space-instructions cs)) (resolved (compilation-space-resolved-instructions cs))) (cl:vector-push-extend source-instr instrs) (cl:vector-push-extend (resolve-operations source-instr) resolved) cl:nil))
-
-(defun ece-%space-label-entries (space-id)
-  (let ((entries '())) (cl:maphash (cl:lambda (label pc) (cl:push (cl:cons label pc) entries)) (compilation-space-label-table (get-space space-id))) entries))
-
-(defun ece-%space-label-ref (space-id label)
-  (cl:gethash label (compilation-space-label-table (get-space space-id))))
-
-(defun ece-%space-label-set! (space-id label local-pc)
-  (cl:progn (cl:setf (cl:gethash label (compilation-space-label-table (get-space space-id))) local-pc) cl:nil))
-
-(defun ece-%space-name (space-id)
-  (compilation-space-name (get-space space-id)))
-
-(defun ece-%space-source-ref (space-id index)
-  (cl:aref (compilation-space-instructions (get-space space-id)) index))
 
 (defun ece-%store-asm-sym (slot name)
   (cl:locally (cl:declare (cl:ignore slot name)) cl:nil))
@@ -279,6 +258,36 @@
 (defun ece-close-output-port (port)
   (cl:progn (cl:close (ece-port-stream port)) cl:nil))
 
+(defun ece-code-object-arity (co)
+  (cl:or (code-object-arity co) *scheme-false*))
+
+(defun ece-code-object-instructions (co)
+  (code-object-source-instructions co))
+
+(defun ece-code-object-label-entries (co)
+  (let ((entries '())) (cl:maphash (cl:lambda (label pc) (cl:push (cl:cons label pc) entries)) (code-object-labels co)) entries))
+
+(defun ece-code-object-label-ref (co label)
+  (cl:gethash label (code-object-labels co)))
+
+(defun ece-code-object-length (co)
+  (cl:fill-pointer (code-object-source-instructions co)))
+
+(defun ece-code-object-name (co)
+  (cl:or (code-object-name co) *scheme-false*))
+
+(defun ece-code-object-native-fn (co)
+  (cl:or (code-object-native-fn co) *scheme-false*))
+
+(defun ece-code-object-resolved-instructions (co)
+  (code-object-resolved-instructions co))
+
+(defun ece-code-object-source-loc (co)
+  (cl:or (code-object-source-loc co) *scheme-false*))
+
+(defun ece-code-object? (x)
+  (scheme-bool (code-object-p x)))
+
 (defun ece-command-line ()
   (cl:coerce sb-ext:*posix-argv* 'cl:list))
 
@@ -321,8 +330,11 @@
 (defun ece-exact->inexact (x)
   (cl:coerce x 'cl:single-float))
 
+(defun ece-execute-code-object (&rest args)
+  (let ((co (cl:car args)) (env (cl:if (cl:cdr args) (cl:cadr args) *global-env*))) (execute-instructions co 0 env)))
+
 (defun ece-execute-from-pc (&rest args)
-  (let ((start-pc (cl:car args)) (env (cl:if (cl:cdr args) (cl:cadr args) *global-env*))) (execute-instructions (qualified-space-id start-pc) (qualified-local-pc start-pc) env)))
+  (let ((start-pc (cl:car args)) (env (cl:if (cl:cdr args) (cl:cadr args) *global-env*))) (cl:cond ((code-object-p start-pc) (execute-instructions start-pc 0 env)) ((cl:and (cl:consp start-pc) (code-object-p (cl:car start-pc))) (execute-instructions (cl:car start-pc) (cl:cdr start-pc) env)) (cl:t (execute-instructions (qualified-space-id start-pc) (qualified-local-pc start-pc) env)))))
 
 (defun ece-exit (&rest args)
   (let ((code (cl:cond ((cl:null args) 0) ((cl:integerp (cl:car args)) (cl:car args)) ((scheme-false-p (cl:car args)) 1) ((cl:eq (cl:car args) cl:t) 0) (cl:t 0)))) (sb-ext:exit :code code)))

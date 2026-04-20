@@ -1,40 +1,51 @@
-## ADDED Requirements
+## Requirements
 
-### Requirement: assembler appends instructions to global vector
-The ECE assembler SHALL walk an instruction list, appending non-label instructions to the global instruction vector and resolving operations. It SHALL return the start PC (the index of the first appended instruction).
+### Requirement: assembler returns a code object
 
-#### Scenario: Assemble simple instructions
-- **WHEN** `(assemble-into-global '((assign val (const 42))))` is called
-- **THEN** the instruction SHALL be appended to the global instruction vector and the start PC SHALL be returned
+The ECE assembler SHALL walk an instruction list and produce a fresh code object containing that list's non-label instructions and a label table whose entries map labels (symbols) to local PCs within the code object's instruction vector. The assembler SHALL NOT append to a shared global instruction vector, and SHALL NOT mutate any "current space" state.
 
-#### Scenario: Start PC reflects prior instructions
-- **WHEN** instructions are assembled after previous compilations
-- **THEN** the returned start PC SHALL equal the length of the instruction vector before assembly
+#### Scenario: assemble produces a fresh code object
 
-### Requirement: assembler registers labels in label table
-The ECE assembler SHALL recognize symbols in the instruction list as labels and register them in the global label table with their PC (position in the instruction vector).
+- **WHEN** `(assemble '((assign val (const 42))))` is called
+- **THEN** the return value SHALL satisfy `code-object?`
+- **AND** the code object's instruction vector SHALL contain exactly the instruction `(assign val (const 42))`
+
+#### Scenario: assemble is mutation-free
+
+- **WHEN** `(assemble '((assign val (const 1))))` is called twice in succession
+- **THEN** each call SHALL return a fresh, distinct code object
+- **AND** no prior return value SHALL be mutated
+
+### Requirement: assembler registers labels local to the code object
+
+The ECE assembler SHALL recognize symbols in the instruction list as labels and register them in the code object's own label table with their local PC. Labels SHALL NOT be visible across code objects.
 
 #### Scenario: Label registration
-- **WHEN** `(assemble-into-global '(my-label (assign val (const 1))))` is called
-- **THEN** the label `my-label` SHALL be registered at the PC of the following instruction
+
+- **WHEN** `(assemble '(my-label (assign val (const 1))))` is called
+- **THEN** the resulting code object's label table SHALL map `my-label` to the local PC of the `(assign val (const 1))` instruction
+
+#### Scenario: Label namespace is per-code-object
+
+- **WHEN** two code objects are assembled, both containing a label named `L1`
+- **THEN** each code object's label table SHALL have its own independent entry for `L1`
+- **AND** the two entries SHALL NOT collide
 
 ### Requirement: assembler handles procedure-name pseudo-instructions
-The ECE assembler SHALL recognize `(procedure-name label name)` pseudo-instructions and register the mapping from the label's PC to the procedure name in the procedure name table.
+
+The ECE assembler SHALL recognize `(procedure-name <name>)` pseudo-instructions and write the name onto the code object's name metadata field. The pseudo-instruction SHALL NOT be emitted as a real instruction.
 
 #### Scenario: Procedure name registration
-- **WHEN** instructions containing `(procedure-name entry-1 my-func)` are assembled and `entry-1` was previously registered as a label
-- **THEN** the PC for `entry-1` SHALL be mapped to `my-func` in the procedure name table
+
+- **WHEN** instructions containing `(procedure-name my-func)` are assembled
+- **THEN** the resulting code object's name field SHALL be `my-func`
 
 ### Requirement: assembler resolves operations
-The ECE assembler SHALL resolve `(op name)` forms in instructions to function references at assembly time, producing the same resolved form as the CL assembler.
+
+The ECE assembler SHALL resolve `(op name)` forms in instructions to function references at assembly time, storing them in the code object's resolved-instructions vector (separate from the source-instructions vector used for introspection).
 
 #### Scenario: Operation resolution
+
 - **WHEN** an instruction `(assign val (op lookup-variable-value) (const x) (reg env))` is assembled
-- **THEN** the stored instruction SHALL have the operation name resolved to its function reference
-
-### Requirement: assembler produces identical results to CL assembler
-The ECE assembler SHALL produce identical instruction vector contents and label table entries as the CL `assemble-into-global` for the same input.
-
-#### Scenario: Round-trip equivalence
-- **WHEN** a compiled expression is assembled by the ECE assembler
-- **THEN** executing from the returned start PC SHALL produce the same result as the CL assembler would
+- **THEN** the code object's resolved-instructions vector SHALL contain the instruction with the operation name replaced by its function reference
+- **AND** the code object's source-instructions vector SHALL retain the original symbolic form

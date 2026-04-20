@@ -1,41 +1,47 @@
 ## Purpose
-Map compiled procedure entry points to their defined names, enabling meaningful procedure display in error messages, backtraces, and REPL output.
+Attach defined names to compiled procedure code objects, enabling meaningful procedure display in error messages, backtraces, and REPL output. Names are stored directly on the code object's metadata, not in a side table.
 
 ## Requirements
 
 ### Requirement: compiler registers procedure names at define time
-When `compile-define` (CL compiler) or `mc-compile-define` (MC compiler) compiles a `(define (name ...) ...)` form, the compiler SHALL emit a `(procedure-name <label> <name>)` pseudo-instruction that associates the lambda's entry label with the defined name.
 
-#### Scenario: CL compiler emits procedure-name for define
-- **WHEN** `(define (f x) (+ x 1))` is compiled by the CL compiler
-- **THEN** the instruction sequence SHALL contain a `(procedure-name <entry-label> f)` pseudo-instruction
+When the compiler translates a `(define (name ...) ...)` form (or equivalent), the compiler SHALL attach the defined name to the resulting code object's name field. Alternatively, the compiler MAY emit a `(procedure-name <name>)` pseudo-instruction that the assembler consumes by writing the name onto the code object being built. Either approach is acceptable; the requirement is that the name reaches the code object's name field before compilation completes.
 
-#### Scenario: MC compiler emits procedure-name for define
-- **WHEN** `(define (f x) (+ x 1))` is compiled by the MC compiler
-- **THEN** the instruction sequence SHALL contain a `(procedure-name <entry-label> f)` pseudo-instruction
+#### Scenario: Name is attached to the code object
 
-#### Scenario: Variable-form define does not emit procedure-name
+- **WHEN** `(define (f x) (+ x 1))` is compiled
+- **THEN** the resulting code object's name field SHALL contain `f`
+
+#### Scenario: Variable-form define does not set a name
+
 - **WHEN** `(define x 42)` is compiled (value is not a lambda)
-- **THEN** no `procedure-name` pseudo-instruction SHALL be emitted
+- **THEN** no code object is involved for this define form
+- **AND** nothing is written to a code-object name field
 
-### Requirement: assembler populates procedure name table
-`assemble-into-global` SHALL recognize `(procedure-name <label> <name>)` pseudo-instructions, resolve the label to a PC, and store the mapping in `*procedure-name-table*`. The pseudo-instruction SHALL NOT be emitted as a real instruction in the instruction vector.
+### Requirement: assembler attaches procedure names to code objects
 
-#### Scenario: Pseudo-instruction populates table
-- **WHEN** `assemble-into-global` processes a `(procedure-name ENTRY42 f)` pseudo-instruction and `ENTRY42` resolves to PC 1500
-- **THEN** `(gethash 1500 *procedure-name-table*)` SHALL return `f`
+The ECE assembler SHALL recognize `(procedure-name <name>)` pseudo-instructions (or equivalent structural mechanism) and write the name onto the code object currently being assembled. The pseudo-instruction SHALL NOT be emitted as a real instruction in the instruction vector.
+
+#### Scenario: Pseudo-instruction writes the code-object name field
+
+- **WHEN** the assembler processes `(procedure-name f)` in the course of assembling a code object
+- **THEN** the resulting code object's name field SHALL be `f`
 
 #### Scenario: Pseudo-instruction is not in instruction vector
-- **WHEN** `assemble-into-global` processes a `(procedure-name ...)` pseudo-instruction
-- **THEN** the instruction vector SHALL NOT contain any `procedure-name` instruction
 
-### Requirement: procedure name lookup by entry PC
-`format-ece-proc` SHALL look up the entry PC of compiled procedures in `*procedure-name-table*` and display the procedure name when available.
+- **WHEN** the assembler processes a `(procedure-name ...)` pseudo-instruction
+- **THEN** the resulting code object's instruction vector SHALL NOT contain any `procedure-name` instruction
+
+### Requirement: procedure name lookup by code object
+
+`format-ece-proc` and other diagnostic formatters SHALL read the name field of a compiled procedure's code object and display that name when non-`#f`. When the name field is `#f`, formatters SHALL fall back to a human-readable identifier for the code object (such as its address or an index).
 
 #### Scenario: Named procedure displays name
-- **WHEN** a compiled procedure with entry PC 1500 is formatted and `*procedure-name-table*` maps 1500 to `f`
+
+- **WHEN** a compiled procedure whose code object's name field is `f` is formatted
 - **THEN** `format-ece-proc` SHALL return a string containing `f`
 
-#### Scenario: Unnamed procedure displays entry PC
-- **WHEN** a compiled procedure's entry PC is not in `*procedure-name-table*`
-- **THEN** `format-ece-proc` SHALL fall back to displaying the entry PC
+#### Scenario: Unnamed procedure uses a fallback identifier
+
+- **WHEN** a compiled procedure whose code object's name field is `#f` is formatted
+- **THEN** `format-ece-proc` SHALL fall back to a human-readable identifier for the code object (no `*procedure-name-table*` lookup)

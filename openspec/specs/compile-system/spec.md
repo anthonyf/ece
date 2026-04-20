@@ -1,59 +1,60 @@
-## ADDED Requirements
+## Requirements
 
-### Requirement: compile-system produces multi-space .ecec bundle
-`compile-system` SHALL accept a list of .scm filenames and an output path, compile each file to its own named compilation space, and write all spaces to a single .ecec bundle file.
+### Requirement: compile-system produces a code-object archive
 
-#### Scenario: Compile two files into a bundle
+`compile-system` SHALL accept a list of `.scm` filenames and an output path, compile each file to a sequence of code objects (one per top-level procedure definition, plus code objects for inner lambdas), and write all resulting code objects to a single `.ecec` archive file. The archive SHALL preserve the order of source files and the order of top-level forms within each file.
+
+#### Scenario: Compile two files into an archive
+
 - **GIVEN** files `a.scm` defining `(define (add1 x) (+ x 1))` and `b.scm` defining `(define (use-add1) (add1 5))`
 - **WHEN** `(compile-system '("a.scm" "b.scm") "out.ecec")` is called
-- **THEN** `out.ecec` SHALL contain two ecec-header + instruction-list sections
-- **AND** the first section's space name SHALL be `a`
-- **AND** the second section's space name SHALL be `b`
+- **THEN** `out.ecec` SHALL be a code-object archive containing at least two code objects
+- **AND** the code objects derived from `a.scm` SHALL precede those derived from `b.scm`
 
-#### Scenario: Each space has its own source-map
-- **WHEN** a bundle is produced from files `a.scm` and `b.scm`
-- **THEN** the first section's ecec-header SHALL contain `(source-map "a.scm" ...)`
-- **AND** the second section's ecec-header SHALL contain `(source-map "b.scm" ...)`
+#### Scenario: Each code object records its source origin
 
-#### Scenario: Bundle is valid concatenation of single-space .ecec
-- **WHEN** a bundle is produced
-- **THEN** each section in the bundle SHALL be independently valid as a single-space .ecec file
+- **WHEN** an archive is produced from files `a.scm` and `b.scm`
+- **THEN** code objects originating from `a.scm` SHALL have `a.scm` in their source-location field
+- **AND** code objects originating from `b.scm` SHALL have `b.scm` in their source-location field
 
-#### Scenario: Empty file list produces empty output
-- **WHEN** `(compile-system '() "out.ecec")` is called
-- **THEN** `out.ecec` SHALL be an empty file
+#### Scenario: Inner lambdas become distinct code objects
 
-### Requirement: load-bundle loads multi-space .ecec bundles
-`load-bundle` SHALL read a .ecec file containing one or more space sections, loading each sequentially. Each space's instructions SHALL execute before the next space is loaded.
+- **WHEN** an archive is produced from a file containing `(define (outer x) (let ((f (lambda (y) y))) (f x)))`
+- **THEN** the archive SHALL contain at least two code objects derived from this file: one for `outer`'s body and one for the inner lambda
+- **AND** the inner lambda's code object SHALL be referenced as a constant by `outer`'s `make-compiled-procedure` instruction
 
-#### Scenario: Load a two-space bundle
-- **GIVEN** a bundle containing spaces `a` and `b`
-- **WHEN** `(load-bundle "out.ecec")` is called
-- **THEN** space `a` SHALL be created and executed first
-- **AND** space `b` SHALL be created and executed second
-- **AND** definitions from `a` SHALL be available when `b` executes
+### Requirement: load reads a code-object archive
 
-#### Scenario: Load a single-space bundle
-- **GIVEN** a .ecec file with one space (standard compile-file output)
-- **WHEN** `(load-bundle "file.ecec")` is called
-- **THEN** it SHALL load successfully (backward compatible)
+The runtime loader for `.ecec` files SHALL read a code-object archive, register each code object as a runtime value, and execute any top-level initialization code in archive order.
 
-#### Scenario: Source-maps registered for each space
-- **GIVEN** a bundle where each section has a source-map in its header
-- **WHEN** the bundle is loaded
-- **THEN** each space's source-map SHALL be registered in `*source-maps*`
+#### Scenario: Archive loads and registers code objects
 
-### Requirement: CL runtime supports multi-space .ecec loading
-The CL-side `load-ecec-file` SHALL support loading multi-space bundles by reading sections until EOF.
+- **GIVEN** an `.ecec` file produced by `(compile-system '("a.scm") "a.ecec")` where `a.scm` defines `(define (f x) x)`
+- **WHEN** the runtime loads `a.ecec`
+- **THEN** `f` SHALL be bound in the global environment to a compiled procedure whose code object was read from the archive
 
-#### Scenario: CL loads multi-space bundle at boot
-- **WHEN** a multi-space .ecec bundle is loaded via the CL runtime
-- **THEN** each section SHALL be processed as a separate space
-- **AND** source-maps SHALL be registered for each space
+#### Scenario: Top-level forms execute in archive order
 
-### Requirement: WASM runtime supports multi-space .ecec loading
-The WASM `load_ecec` function SHALL support loading multi-space bundles.
+- **GIVEN** a file `init.scm` containing, in order, `(define *counter* 0)` and `(set! *counter* 1)`
+- **WHEN** the compiled archive is loaded
+- **THEN** after load completes, `*counter*` SHALL equal `1`
 
-#### Scenario: WASM loads multi-space bundle
-- **WHEN** a multi-space .ecec bundle is loaded via the WASM runtime
-- **THEN** each section SHALL be processed as a separate space
+### Requirement: CL runtime loads code-object archives
+
+The CL runtime SHALL load code-object archive `.ecec` files produced by `compile-system`. Code objects SHALL be materialized as CL struct values; closures and continuations captured during load SHALL reference code objects by direct value reference.
+
+#### Scenario: CL runtime loads and executes
+
+- **WHEN** a code-object archive `.ecec` is loaded by the CL runtime and a procedure defined in that archive is invoked
+- **THEN** execution SHALL proceed through the procedure's code-object instructions
+- **AND** produce results identical to the file having been evaluated from source
+
+### Requirement: WASM runtime loads code-object archives
+
+The WASM runtime SHALL load code-object archive `.ecec` files produced by `compile-system`. Code objects SHALL be materialized as WASM struct values; dispatch SHALL update the executor's current-code-object pointer, not a space-id index.
+
+#### Scenario: WASM runtime loads and executes
+
+- **WHEN** a code-object archive `.ecec` is loaded by the WASM runtime and a procedure defined in that archive is invoked
+- **THEN** execution SHALL proceed through the procedure's code-object instructions
+- **AND** produce results identical to the CL runtime executing the same archive

@@ -26,9 +26,14 @@
   (cadr unit))
 
 (define (execute unit)
-  "Assemble and execute a compiled unit, returning the result."
-  (let ((start-pc (assemble-into-global (compiled-unit-instructions unit))))
-    (execute-from-pc start-pc)))
+  "Assemble and execute a compiled unit, returning the result.
+§5.2: assembles into a fresh code-object and runs via execute-code-object."
+  (let ((co (assemble-into-code-object
+             (%make-code-object)
+             (append (strip-source-locations
+                      (compiled-unit-instructions unit))
+                     '((halt))))))
+    (execute-code-object co)))
 
 ;;; --- Serialization ---
 ;;; Uses write-to-string + write-char for port-directed output,
@@ -220,25 +225,25 @@ use them. Returns the space name symbol."
         space-name))))
 
 (define (compile-file filename)
-  "Compile all forms in FILENAME, write compiled units to a .ecec file.
-Emits an ecec-header with space name, macro list, and source-map,
-followed by compiled units.
-Returns the output filename."
+  "Compile all forms in FILENAME, write compiled units to a .ecec file
+in the §8 archive format. Returns the output filename."
   (let* ((output-name
           (string-append (filename-strip-extension filename ".scm") ".ecec"))
          (out (open-output-file output-name)))
-    (compile-file-to-port filename out)
+    (compile-file-to-archive filename out)
     (close-output-port out)
     output-name))
 
 (define (compile-system filenames output-path)
-  "Compile a list of .scm FILENAMES into a single multi-space .ecec bundle
-at OUTPUT-PATH. Each file is compiled to its own named space with its own
-source-map. Returns OUTPUT-PATH."
+  "Compile a list of .scm FILENAMES into a single .ecec archive bundle at
+OUTPUT-PATH. Each file is compiled to a code-object archive (§8 format);
+the bundle is the concatenation of those archives. Loaders iterate
+sections via load-section-from-port, dispatching on each section's head
+symbol (ecec-archive). Returns OUTPUT-PATH."
   (let ((out (open-output-file output-path)))
     (let loop ((files filenames))
       (when (pair? files)
-        (compile-file-to-port (car files) out)
+        (compile-file-to-archive (car files) out)
         (loop (cdr files))))
     (close-output-port out)
     output-path))
@@ -268,25 +273,24 @@ SPACE-NAME is a symbol, SOURCE-MAP-FIELD is (filename (pc line col) ...)."
         #f)))
 
 (define (load-section-from-port port)
-  "Load one ecec section (header + instructions) from PORT.
-Creates a named space, registers source-map if present, and executes.
-Returns the result of executing the section, or eof if no more sections."
-  (let ((header (ece-scheme-read port)))
-    (if (eof? header)
-        header
-        (let* ((space-sym (cadr (assoc 'space (cdr header))))
-               (source-map-field (let ((sm (assoc 'source-map (cdr header))))
-                                   (if sm (cdr sm) #f)))
-               (prev-space (%current-space-id))
-               (new-space (%create-space (symbol->string space-sym)))
-               (instrs (ece-scheme-read port)))
-          ;; Register source-map if present in header
-          (when source-map-field
-            (register-source-map! space-sym source-map-field))
-          (%set-current-space-id! new-space)
-          (let ((result (execute (list 'compiled-unit instrs))))
-            (%set-current-space-id! prev-space)
-            result)))))
+  "Load one ecec archive section from PORT. Expects (ecec-archive ...).
+Returns the init's result, or eof if no more sections. Legacy
+(ecec-header ...) files were retired in §9.3 — if one is encountered,
+signals an error pointing at `make bootstrap` for regeneration."
+  (let ((head (ece-scheme-read port)))
+    (cond
+     ((eof? head) head)
+     ((and (pair? head) (eq? (car head) 'ecec-archive))
+      (load-archive-section-form head))
+     (else
+      (error "load-section-from-port: expected (ecec-archive ...). Run `make bootstrap` to regenerate.")))))
+
+(define (load-archive-section-form archive)
+  "Archive-format path: ARCHIVE is the parsed (ecec-archive ...) form.
+Rebuild code-objects and execute the init."
+  (let* ((cos (archive-sexp->code-objects archive))
+         (init (vector-ref cos 0)))
+    (execute-code-object init)))
 
 (define (load-compiled filename)
   "Load and execute compiled code from a .ecec file (first section only).
@@ -307,3 +311,264 @@ Returns the result of the last section."
         (if (eof? result)
             (begin (close-input-port port) last-result)
             (loop result))))))
+
+;;; ─────────────────────────────────────────────────────────────────────────
+;;; §8: .ecec archive format (version 2)
+;;;
+;;; Shape:
+;;;   (ecec-archive
+;;;     version 2
+;;;     file "foo.scm"
+;;;     entries ((code-object name %init instructions (...) ...)
+;;;              (code-object name add1 instructions (...) ...)
+;;;              ...))
+;;;
+;;; Tag symbols are plain (no `:` prefix). A `:keyword` style would be
+;;; cleaner visually but doesn't round-trip cleanly through the existing
+;;; writer+reader pair: write-to-string-flat escapes ECE `:foo` symbols
+;;; with pipes (CL reader rules), and re-reading via CL's read produces
+;;; a CL keyword in the :keyword package instead of the ECE-package
+;;; symbol the ECE reader would have produced from source. Fixing that
+;;; requires coordinated changes to ece-print-flat + downcase-ece-symbols
+;;; and is tracked separately; until then, plain symbols avoid the
+;;; ambiguity.
+;;;
+;;; - Entry 0 is the file's init code-object (top-level forms, merged).
+;;; - Entries 1..N are nested lambdas hoisted to archive level.
+;;; - Inner references use (const (co-ref N)) — second pass at load time
+;;;   patches these to the actual code-object values.
+;;; - resolved-instructions rebuilt at load via resolve-operations.
+;;; ─────────────────────────────────────────────────────────────────────────
+
+(define (archive/plist-get plist key)
+  "Walk a keyword-tagged plist, return value after KEY or #f."
+  (cond
+   ((null? plist) #f)
+   ((null? (cdr plist)) #f)
+   ((eq? (car plist) key) (cadr plist))
+   (else (archive/plist-get (cddr plist) key))))
+
+(define (archive/rewrite-co-refs tree co-map)
+  "Walk TREE, replacing each `(const <code-object>)` with
+`(const (co-ref ID))` using ID from CO-MAP."
+  (cond
+   ((null? tree) '())
+   ((not (pair? tree)) tree)
+   ;; (const <code-object>) → (const (co-ref ID))
+   ((and (eq? (car tree) 'const)
+         (pair? (cdr tree))
+         (code-object? (cadr tree)))
+    (list 'const (list 'co-ref (hash-ref co-map (cadr tree) #f))))
+   (else
+    (cons (archive/rewrite-co-refs (car tree) co-map)
+          (archive/rewrite-co-refs (cdr tree) co-map)))))
+
+(define (archive/patch-co-refs tree cos-vec)
+  "Inverse of archive/rewrite-co-refs: replace `(const (co-ref N))` with
+`(const <code-object-at-N>)` using the loaded entries vector."
+  (cond
+   ((null? tree) '())
+   ((not (pair? tree)) tree)
+   ((and (eq? (car tree) 'const)
+         (pair? (cdr tree))
+         (pair? (cadr tree))
+         (eq? (car (cadr tree)) 'co-ref))
+    (list 'const (vector-ref cos-vec (cadr (cadr tree)))))
+   (else
+    (cons (archive/patch-co-refs (car tree) cos-vec)
+          (archive/patch-co-refs (cdr tree) cos-vec)))))
+
+(define (archive/collect-reachable top-co)
+  "Depth-first walk over TOP-CO's instruction tree, collecting all reachable
+code-objects in DFS pre-order. `visit` recurses into each nested
+code-object the moment it is first seen — that is DFS, not BFS. TOP-CO
+is first. Each code-object appears exactly once. Discovery order is
+identical to build-reachable-co-index-map in src/codegen-cl-inline.scm;
+the two walks must stay in lockstep so archive-level codegen and ad-hoc
+single-code-object codegen produce matching indices."
+  (let ((seen (%make-hash-table))
+        (order '()))
+    (define (visit co)
+      (when (not (hash-has-key? seen co))
+        (hash-set! seen co #t)
+        (set! order (cons co order))
+        (let ((instrs (code-object-instructions co))
+              (len (code-object-length co)))
+          (let loop ((i 0))
+            (when (< i len)
+              (visit-tree (vector-ref instrs i))
+              (loop (+ i 1)))))))
+    (define (visit-tree tree)
+      (cond
+       ((null? tree) #f)
+       ((not (pair? tree)) #f)
+       ((and (eq? (car tree) 'const)
+             (pair? (cdr tree))
+             (code-object? (cadr tree)))
+        (visit (cadr tree)))
+       (else
+        (visit-tree (car tree))
+        (visit-tree (cdr tree)))))
+    (visit top-co)
+    (reverse order)))
+
+(define (archive/code-object->entry co co-map)
+  "Serialize CO to a (code-object :key val ...) entry form, rewriting
+nested code-object constants to (co-ref N) via CO-MAP."
+  (let* ((instrs (code-object-instructions co))
+         (len (code-object-length co))
+         (rewritten
+          (let loop ((i 0) (acc '()))
+            (if (>= i len) (reverse acc)
+                (loop (+ i 1)
+                      (cons (archive/rewrite-co-refs
+                             (vector-ref instrs i) co-map)
+                            acc))))))
+    (list 'code-object
+          'name (code-object-name co)
+          'arity (code-object-arity co)
+          'source-loc (code-object-source-loc co)
+          'labels (code-object-label-entries co)
+          'instructions rewritten)))
+
+(define (code-object->archive-sexp top-co filename)
+  "Build the full archive s-expression from TOP-CO (and all reachable
+code-objects) for FILENAME."
+  (let* ((all-cos (archive/collect-reachable top-co))
+         (co-map (%make-hash-table)))
+    (let loop ((cos all-cos) (idx 0))
+      (when (pair? cos)
+        (hash-set! co-map (car cos) idx)
+        (loop (cdr cos) (+ idx 1))))
+    (list 'ecec-archive
+          'version 2
+          'file filename
+          'entries
+          (let loop ((cos all-cos) (acc '()))
+            (if (null? cos) (reverse acc)
+                (loop (cdr cos)
+                      (cons (archive/code-object->entry (car cos) co-map) acc)))))))
+
+(define (archive-sexp->code-objects archive)
+  "Parse an archive s-expression (as read from disk). Returns the vector
+of code-objects. Entry 0 is the init code-object. Raises on version
+mismatch."
+  (let* ((version (archive/plist-get (cdr archive) 'version))
+         (entries (archive/plist-get (cdr archive) 'entries)))
+    (when (not (equal? version 2))
+      (error (string-append
+              "Unsupported .ecec archive version: "
+              (if version (write-to-string version) "missing")
+              ". Run `make bootstrap` to regenerate.")))
+    (let* ((n (length entries))
+           (cos (make-vector n))
+           (entries-vec (list->vector entries)))
+      ;; Pass 1: create code-objects + set metadata + set labels.
+      (let loop ((i 0))
+        (when (< i n)
+          (let* ((entry (vector-ref entries-vec i))
+                 (fields (cdr entry))
+                 (co (%make-code-object)))
+            (when (archive/plist-get fields 'name)
+              (%code-object-set-name! co (archive/plist-get fields 'name)))
+            (when (archive/plist-get fields 'arity)
+              (%code-object-set-arity! co (archive/plist-get fields 'arity)))
+            (when (archive/plist-get fields 'source-loc)
+              (%code-object-set-source-loc! co (archive/plist-get fields 'source-loc)))
+            (for-each (lambda (pair)
+                        (%code-object-set-label! co (car pair) (cdr pair)))
+                      (archive/plist-get fields 'labels))
+            (vector-set! cos i co))
+          (loop (+ i 1))))
+      ;; Pass 2: push instructions (with (co-ref N) patched to code-objects).
+      (let loop ((i 0))
+        (when (< i n)
+          (let* ((entry (vector-ref entries-vec i))
+                 (co (vector-ref cos i))
+                 (raw-instrs (archive/plist-get (cdr entry) 'instructions)))
+            (for-each (lambda (instr)
+                        (%code-object-push-instruction!
+                         co (archive/patch-co-refs instr cos)))
+                      raw-instrs))
+          (loop (+ i 1))))
+      cos)))
+
+(define (load-archive-from-port port)
+  "Read an archive from PORT, build all code-objects, execute the init
+(entry 0). Returns the init's result."
+  (let* ((archive (ece-scheme-read port))
+         (cos (archive-sexp->code-objects archive))
+         (init (vector-ref cos 0)))
+    (execute-code-object init)))
+
+(define (load-archive filename)
+  "Load and execute a code-object archive from FILENAME. Returns the
+result of the init code-object."
+  (let ((port (open-input-file filename)))
+    (let ((result (load-archive-from-port port)))
+      (close-input-port port)
+      result)))
+
+(define (compile-file-to-archive filename output-port)
+  "Compile all forms in FILENAME via mc-compile-to-code-object and
+write the resulting code-object archive to OUTPUT-PORT. Mirrors
+compile-file-to-port but produces the §8 archive format."
+  (let ((basename (filename-basename filename)))
+    (set! *source-locations* (%make-hash-table))
+    (set! *source-file-name* basename)
+    (let ((in (open-input-file filename)))
+      ;; Same define-macro handling as compile-file-to-port: run at compile
+      ;; time so later forms see the macro, then emit set-macro! for load.
+      (define (define-macro-to-set-macro expr)
+        (let* ((name (if (pair? (cadr expr)) (car (cadr expr)) (cadr expr)))
+               (params (if (pair? (cadr expr)) (cdr (cadr expr)) (list (cadr expr))))
+               (body (cddr expr)))
+          (list 'begin
+                (list 'set-macro! (list 'quote name)
+                      (cons 'lambda (cons params body)))
+                (list 'quote name))))
+      (define (maybe-expand-define-syntax expr)
+        (if (and (pair? expr) (eq? (car expr) 'define-syntax)
+                 (get-macro 'define-syntax))
+            (mc-expand-macro-at-compile-time
+             (get-macro 'define-syntax) (cdr expr))
+            expr))
+      (define (read-loop forms)
+        (let ((expr (maybe-expand-define-syntax (ece-scheme-read in))))
+          (if (eof? expr)
+              (begin (close-input-port in) (reverse forms))
+              (begin
+                (when (and (pair? expr) (eq? (car expr) 'define-macro))
+                  (mc-compile-and-go expr))
+                (read-loop
+                 (cons (if (and (pair? expr) (eq? (car expr) 'define-macro))
+                           (define-macro-to-set-macro expr)
+                           expr)
+                       forms))))))
+      (let* ((forms (read-loop '()))
+             ;; Wrap all forms in (begin ...) so mc-compile-to-code-object
+             ;; gets a single expression. define-variable! side effects
+             ;; sequence correctly inside begin.
+             (top-co (mc-compile-to-code-object (cons 'begin forms))))
+        ;; NOTE: we intentionally DO NOT populate code-object-source-loc
+        ;; per-code-object here. Source origin is recorded once at the
+        ;; archive level via the `file` field in the archive wrapper
+        ;; (see `code-object->archive-sexp` below). Stamping a list-shaped
+        ;; source-loc on every code-object broke the WASM loader's
+        ;; cast in `$%code-object-set-source-loc!`. Per-PC source-map
+        ;; tracking is diagnostics roadmap thread 5 — a separate proposal.
+        (let ((archive (code-object->archive-sexp top-co basename)))
+          (write-string-to-port (write-to-string-flat archive) output-port)
+          (write-char #\newline output-port))
+        (set! *source-locations* (%make-hash-table))
+        (set! *source-file-name* #f)
+        top-co))))
+
+(define (compile-file-archive filename)
+  "Compile FILENAME to a .ecec archive file. Returns the output filename."
+  (let* ((output-name
+          (string-append (filename-strip-extension filename ".scm") ".ecec"))
+         (out (open-output-file output-name)))
+    (compile-file-to-archive filename out)
+    (close-output-port out)
+    output-name))

@@ -1802,6 +1802,15 @@ VARS are CL symbols (auto-downcased to ECE package)."
   (testing "empty first list"
            (ok (null (evaluate '(set-difference '() '(a b)))))))
 
+;; TODO(per-procedure-code-objects §G1): assemble-into-global was retired in
+;; Phase G1; mc-compile-and-go now routes through mc-compile-to-code-object
+;; + execute-code-object. Equivalent coverage lives in
+;; tests/ece/cl-only/test-compile-to-code-object.scm (the
+;; "assemble-into-code-object returns the object it was given" suite and the
+;; execute-code-object end-to-end tests). This CL-side deftest remains
+;; commented per project convention ("never delete failing tests") so it
+;; can be revived if a future change restores a global-vector assembler.
+#+(or)
 (deftest test-assemble-and-execute
     (testing "assemble-into-global returns a PC and execute-from-pc runs it"
              (ok (= (ece-eval-string
@@ -2147,6 +2156,17 @@ VARS are CL symbols (auto-downcased to ECE package)."
                       (loop-sum 100000 0))")
                   5000050000))))
 
+;; TODO(per-procedure-code-objects §G1/§G2): After Phase G1 routed
+;; mc-compile-and-go through code-objects, defined procedures store their
+;; name on the inner code-object (via %code-object-set-name!) instead of
+;; inside the *procedure-name-table* side-table. Phase G2 (§11.2) will
+;; delete *procedure-name-table* outright. The "format-ece-proc displays
+;; procedure name" assertion still holds — exercised by
+;; tests/ece/cl-only/test-compile-to-code-object.scm "code-object-name
+;; round-trips …" — but the deftest below reaches into the retired
+;; side-table hash directly, so it stays commented until rewritten against
+;; code-object-name or deleted along with the table in §11.2.
+#+(or)
 (deftest test-procedure-name-table
     (testing "format-ece-proc displays procedure name for defined function"
              (ece-eval-string "(define (my-test-fn x) (+ x 1))")
@@ -3016,6 +3036,17 @@ provide an ece-NAME defun for each."
 ;;; should be equivalent to zone-toy-hand below — byte-equivalent modulo
 ;;; formatting, or at least semantically equivalent.
 
+;; TODO(per-procedure-code-objects §F4): build-toy-zone-space plus the
+;; test-compiled-zone-* / test-inline-codegen-* / test-runtime-hook-* /
+;; test-parity-toy-zone-end-to-end / test-compiled-zone-honors-initial-pc-
+;; dispatch deftests below all rely on ece::create-space + ece::assemble-
+;; into-space, which were retired alongside the compilation-space struct
+;; in Phase F of per-procedure-code-objects. Per-procedure zone coverage
+;; now lives in tests/ece/cl-only/test-codegen-code-object.scm and
+;; tests/ece.lisp's test-shipped-zone-files-* suite. The helpers and
+;; deftests are kept here (commented) per project convention so they can
+;; be revived against a code-object-native toy fixture in the future.
+#+(or)
 (defun build-toy-zone-space ()
   "Assemble the 8-instruction toy space that computes val = 1 + 2 + 3.
 Creates (or resets) the 'toy-zone' compilation space and returns its
@@ -3043,6 +3074,7 @@ case dispatch in execute-instructions."
        (ece::|halt|)))
     space-id))
 
+#+(or)
 (defun zone-toy-hand (initial-pc initial-val initial-env initial-proc
                       initial-argl initial-continue initial-stack)
   "Hand-written compiled-zone function for the toy space.
@@ -3087,6 +3119,7 @@ the calling convention the inline codegen will emit in Phase 3."
      zone-exit)
     (values pc val env proc argl continue stack)))
 
+#+(or)
 (deftest test-compiled-zone-walking-skeleton
     (testing "toy-zone assembles, runs interpreted, and matches hand-written CL"
              (let* ((space-id (build-toy-zone-space)))
@@ -3102,6 +3135,7 @@ the calling convention the inline codegen will emit in Phase 3."
                  (ok (= val 6)
                      "hand-written zone-toy-hand halts with val = 6")))))
 
+#+(or)
 (deftest test-compiled-zone-toy-parity
     (testing "interpreted and hand-written toy-zone produce identical val"
              (let* ((space-id (build-toy-zone-space))
@@ -3123,11 +3157,13 @@ the test deterministic against in-flight codegen changes."
   (ece::evaluate (list (intern "load" :ece) "src/primitives.scm"))
   (ece::evaluate (list (intern "load" :ece) "src/codegen-cl-inline.scm")))
 
+#+(or)
 (defun run-zone-codegen (space-name output-path)
   "Invoke (generate-zone-cl! SPACE-NAME OUTPUT-PATH) via the ECE evaluator."
   (ece::evaluate
    (list (intern "generate-zone-cl!" :ece) space-name output-path)))
 
+#+(or)
 (deftest test-inline-codegen-toy-zone
     (testing "inline codegen produces a runnable zone for the toy space"
              (build-toy-zone-space)
@@ -3150,6 +3186,7 @@ the test deterministic against in-flight codegen changes."
                      (ok (= val 6)
                          (format nil "auto-codegen toy-zone halts with val=6 pc=~A" pc))))))))
 
+#+(or)
 (deftest test-inline-codegen-determinism
     (testing "regenerating the toy zone twice produces byte-identical output"
              (build-toy-zone-space)
@@ -3169,6 +3206,7 @@ the test deterministic against in-flight codegen changes."
                  (ignore-errors (delete-file path-a))
                  (ignore-errors (delete-file path-b))))))
 
+#+(or)
 (deftest test-inline-codegen-inlines-known-primitive
     (testing "the +-call site at pc-7 inlines the :cl template body"
              (build-toy-zone-space)
@@ -3186,11 +3224,13 @@ the test deterministic against in-flight codegen changes."
                (ok (not (search "apply-primitive-procedure proc argl" text))
                    "no fallback dispatch appears for the statically-known + call"))))
 
+#+(or)
 (defun build-empty-zone-space ()
   "Create an empty compilation space — no instructions at all. Exercises
 the codegen's degenerate-space path."
   (ece::create-space "empty-zone"))
 
+#+(or)
 (defun build-branchy-zone-space ()
   "Assemble a space that exercises (test ...), (branch ...), label resolution
 and goto. Builds argl=(3 5) and computes (> 3 5) → #f, then `false?` of #f
@@ -3221,6 +3261,7 @@ must still be compilable. Both interpreted and compiled paths must agree."
        (ece::|halt|)))
     space-id))
 
+#+(or)
 (deftest test-inline-codegen-empty-space
     (testing "codegen handles a zero-instruction space"
              (build-empty-zone-space)
@@ -3242,6 +3283,7 @@ must still be compilable. Both interpreted and compiled paths must agree."
                      (ok (= pc 0)
                          "empty zone leaves pc at the entry value"))))) ))
 
+#+(or)
 (deftest test-runtime-hook-dispatches-compiled-zone
     (testing "execute-instructions hands off to a registered compiled-zone fn"
              (build-toy-zone-space)
@@ -3274,6 +3316,7 @@ must still be compilable. Both interpreted and compiled paths must agree."
                      ;; Always unregister so other tests aren't affected.
                      (remhash space-id ece::*compiled-zone-functions*))))) ))
 
+#+(or)
 (deftest test-runtime-hook-no-compiled-zone
     (testing "execute-instructions falls through to the interpreter when no zone is registered"
              (build-toy-zone-space)
@@ -3319,6 +3362,7 @@ compiled) pair so the caller can assert equality."
            (with-compiled-zone space-id zone-fn thunk)))
       (cons interp-result compiled-result))))
 
+#+(or)
 (deftest test-parity-toy-zone-end-to-end
     (testing "toy-zone produces identical results under interpreter and compiled-zone"
              (build-toy-zone-space)
@@ -3341,6 +3385,7 @@ compiled) pair so the caller can assert equality."
                  (ok (eql (car result-pair) (cdr result-pair))
                      "parity: interpreted = compiled")))))
 
+#+(or)
 (deftest test-compiled-zone-honors-initial-pc-dispatch
     (testing "executor entering at non-zero initial-pc dispatches into the right tag"
              (build-toy-zone-space)
@@ -3378,17 +3423,27 @@ compiled) pair so the caller can assert equality."
 ;;; load-bearing parity test we have for Stage 1.
 
 (defun ensure-assembler-zone-registered ()
-  "Make sure the assembler space has a compiled-zone function registered.
-Returns the space-id symbol. The boot-time loader (load-compiled-zones in
-runtime.lisp) usually does this automatically; if not — for example after
-a test cleared the registry — we re-register from the already-loaded
-zone-assembler defun."
-  (let ((space-id (intern "assembler" :ece))
-        (zone-fn (find-symbol "ZONE-ASSEMBLER" :ece)))
-    (when (and zone-fn (fboundp zone-fn))
-      (setf (gethash space-id ece::*compiled-zone-functions*)
-            (symbol-function zone-fn)))
-    space-id))
+  "Make sure every assembler code-object has its native-fn slot wired up
+so execute-instructions dispatches through the compiled path. Returns
+the assembler file-stem symbol for compatibility with call sites that
+bind `space-id`.
+
+Post-Phase-D: zones are per-code-object, keyed by (file-stem . index) in
+*archive-zone-fns*, and the archive loader attaches native-fn at boot
+via attach-archive-native-fns. This helper re-runs that attachment for
+any assembler code-object in *archive-code-objects* whose native-fn was
+cleared (e.g., by a test that mutated the slot). It has no work to do
+during a clean run, which is by design."
+  (let ((file-stem (intern "assembler" :ece)))
+    (maphash (lambda (key co)
+               (when (and (consp key) (eq (car key) file-stem))
+                 (let* ((co-key (cdr key))
+                        (zone-fn (gethash (cons file-stem co-key)
+                                          ece::*archive-zone-fns*)))
+                   (when (and zone-fn (null (ece::code-object-native-fn co)))
+                     (setf (ece::code-object-native-fn co) zone-fn)))))
+             ece::*archive-code-objects*)
+    file-stem))
 
 (deftest test-real-space-parity-arithmetic
     (testing "(+ 1 2 3) returns 6 with the assembler compiled zone registered"
@@ -3433,51 +3488,92 @@ zone-assembler defun."
                           "dynamic-wind runs before/body/after in order"))
                  (ensure-assembler-zone-registered)))))
 
+(defun build-archive-zone-fn-inverse ()
+  "Invert *archive-zone-fns* to a (make-hash-table :test 'eq) keyed on the
+function value, mapping back to the original (file-stem . co-key) cons.
+Used by test-shipped-zone-files-load-and-register to look up each zone
+defun's archive key in O(1) instead of O(N) per lookup (N ~= 1000)."
+  (let ((inv (make-hash-table :test 'eq)))
+    (maphash (lambda (key fn)
+               (setf (gethash fn inv) key))
+             ece::*archive-zone-fns*)
+    inv))
+
 (deftest test-shipped-zone-files-load-and-register
-    (testing "every bootstrap/*-zone.lisp file installs an fbound zone-NAME function"
+    (testing "every bootstrap/*-zone.lisp file installs an fbound zone-NAME function registered in *archive-zone-fns*"
              (let* ((bootstrap-dir
                      (asdf:system-relative-pathname :ece "bootstrap/"))
                     (pattern (merge-pathnames "*-zone.lisp" bootstrap-dir))
-                    (files (directory pattern)))
+                    (files (directory pattern))
+                    ;; Build fn→key inverse once — with ~1000 zone files,
+                    ;; a per-file maphash scan would be O(N^2).
+                    (fn-to-key (build-archive-zone-fn-inverse)))
                (ok (>= (length files) 1)
                    "at least one bootstrap/*-zone.lisp file ships with the build")
                (dolist (file files)
-                 ;; The codegen prepends "zone-" to the space name passed in,
-                 ;; so when the Makefile invokes generate-zone-cl! with
-                 ;; "assembler" the resulting function is `zone-assembler` —
-                 ;; we strip `-zone` from the file basename to recover the
-                 ;; space name, then look up `zone-NAME` in :ece.
+                 ;; Post-Phase-D naming: filenames look like
+                 ;; <file-stem>-<co-name?>-<index>-zone.lisp, and the emitted
+                 ;; defun is named `zone-<file-stem>-<co-name?>-<index>`.
+                 ;; The file registers under (file-stem . index) in
+                 ;; *archive-zone-fns* (NOT *compiled-zone-functions* — that
+                 ;; registry is reserved for the legacy space-keyed path).
+                 ;; Since file-stem may itself contain hyphens (boot-env,
+                 ;; browser-lib, compilation-unit), we can't cleanly split
+                 ;; the filename into (file-stem . index) — instead we
+                 ;; derive the defun from the filename stem and confirm the
+                 ;; registered function is (eq) to it.
                  (let* ((base (pathname-name file))
-                        (space-name (subseq base 0 (- (length base)
-                                                      (length "-zone")))))
+                        (zone-stem (subseq base 0 (- (length base)
+                                                     (length "-zone")))))
                    (let ((sym (find-symbol (concatenate 'string
                                                         "ZONE-"
-                                                        (string-upcase space-name))
+                                                        (string-upcase zone-stem))
                                            :ece)))
                      (ok (and sym (fboundp sym))
                          (format nil "~A defines fbound ~A" file sym))
-                     (let* ((space-id (intern space-name :ece))
-                            (registered (gethash space-id ece::*compiled-zone-functions*)))
-                       (ok registered
-                           (format nil "~A registered in *compiled-zone-functions*" space-name))
-                       (ok (eq registered (and sym (symbol-function sym)))
-                           "registered function matches the defun"))))))))
+                     (when (and sym (fboundp sym))
+                       (let ((key (gethash (symbol-function sym) fn-to-key)))
+                         (ok key
+                             (format nil "~A registered in *archive-zone-fns*"
+                                     zone-stem))
+                         (when key
+                           (ok (and (consp key)
+                                    (symbolp (car key))
+                                    (integerp (cdr key)))
+                               (format nil
+                                       "~A key has (file-stem-symbol . index-integer) shape"
+                                       zone-stem)))))))))))
 
 (deftest test-shipped-zone-files-determinism
-    (testing "regenerating the assembler zone file twice produces byte-identical output"
+    (testing "regenerating a code-object zone file twice produces byte-identical output"
              (load-codegen-cl-inline)
              (let ((path-a (uiop:with-temporary-file (:pathname p :type "lisp" :keep t)
                              (namestring p)))
                    (path-b (uiop:with-temporary-file (:pathname p :type "lisp" :keep t)
                              (namestring p))))
                (unwind-protect
-                    (progn
-                      (run-zone-codegen "assembler" path-a)
-                      (run-zone-codegen "assembler" path-b)
+                    (flet ((emit-probe (path)
+                             ;; Reset the global label counter so both runs
+                             ;; see identical label names (L1, L2, ...).
+                             ;; mc-compile-to-code-object mutates it.
+                             (ece::set-variable-value!
+                              (intern "mc-label-counter" :ece)
+                              0
+                              ece:*global-env*)
+                             (ece::evaluate
+                              (list (intern "generate-zone-cl-for-code-object!" :ece)
+                                    (list (intern "mc-compile-to-code-object" :ece)
+                                          (list 'quote '(+ 1 2)))
+                                    "determinism-probe" path "fixture" 0))))
+                      ;; Post-Phase-D codegen is per-code-object, not per-space.
+                      ;; Compile a small expression to a code-object, then emit
+                      ;; a zone file for it twice and compare bytes.
+                      (emit-probe path-a)
+                      (emit-probe path-b)
                       (let ((bytes-a (alexandria:read-file-into-byte-vector path-a))
                             (bytes-b (alexandria:read-file-into-byte-vector path-b)))
                         (ok (equalp bytes-a bytes-b)
-                            "two runs against the assembler space produce identical bytes")))
+                            "two runs against the same expression produce identical bytes")))
                  (ignore-errors (delete-file path-a))
                  (ignore-errors (delete-file path-b))))))
 
@@ -3515,6 +3611,12 @@ zone-assembler defun."
                         (ok (= after 700) "stage1-test-fn 7 = 700 after redef")))
                  (ensure-assembler-zone-registered)))))
 
+;; TODO(per-procedure-code-objects §F4): test-inline-codegen-branch-and-goto
+;; relies on build-branchy-zone-space, which uses the retired
+;; create-space + assemble-into-space entry points. Kept here (commented)
+;; per project convention; rewrite against a code-object-native branchy
+;; fixture is tracked alongside the rest of Phase F4's test retirements.
+#+(or)
 (deftest test-inline-codegen-branch-and-goto
     (testing "codegen handles test, branch, goto, labels, and runs to halt"
              (build-branchy-zone-space)

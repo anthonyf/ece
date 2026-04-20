@@ -94,7 +94,12 @@
   (type $compiled-proc (struct
     (field $space i32)
     (field $pc i32)
-    (field $env (ref null eq))))
+    (field $env (ref null eq))
+    ;; §6.6 coexistence: when non-null, this closure targets a code-object
+    ;; (body at pc 0). $space and $pc are ignored in that case. §11 will
+    ;; retire the old fields. Typed as (ref null eq) because $code-object
+    ;; is defined later in the file — cast at use sites.
+    (field $code-obj (mut (ref null eq)))))
 
   ;; --- Continuation ---
   ;; Captured by call/cc: the stack, return address, and winding stack at capture time.
@@ -379,7 +384,7 @@
   ;; --- Compiled procedure ---
 
   (func $make-compiled-proc (param $space i32) (param $pc i32) (param $env (ref null eq)) (result (ref $compiled-proc))
-    (struct.new $compiled-proc (local.get $space) (local.get $pc) (local.get $env))
+    (struct.new $compiled-proc (local.get $space) (local.get $pc) (local.get $env) (ref.null eq))
   )
 
   (func $compiled-proc-space (param $p (ref $compiled-proc)) (result i32)
@@ -1439,6 +1444,21 @@
     (field $len (mut i32))              ;; used length (may be less than array length)
     (field $labels (mut (ref null eq))))) ;; label symbol → fixnum PC (hash-table or null)
 
+  ;; --- Code object (per-procedure compilation unit) ---
+  ;; Mirrors the CL `code-object` defstruct. Coexists with compilation-space
+  ;; during the migration to per-procedure code objects. Instruction storage
+  ;; uses the already-resolved $instr struct (WASM instructions carry their
+  ;; op-id directly), so source-instructions and resolved-instructions map
+  ;; to the same $instrs field.
+  (type $code-object (struct
+    (field $instrs (mut (ref $instr-vec)))
+    (field $len    (mut i32))
+    (field $labels (mut (ref null eq)))     ;; hash-table or null
+    (field $name       (mut (ref null eq))) ;; symbol or null
+    (field $arity      (mut (ref null eq))) ;; fixnum or null
+    (field $source-loc (mut (ref null eq))) ;; list or null
+    (field $native-fn  (mut (ref null eq))))) ;; procedure or null
+
   ;; --- Space registry (array of spaces, indexed by symbol ID) ---
   (type $space-array (array (mut (ref null $comp-space))))
   (global $spaces (mut (ref null $space-array))
@@ -1551,6 +1571,14 @@
   ;; List of (space-id pc instr-list) triples, built during assembly.
   ;; Converted to $instr structs when execute-from-pc is called (all labels set).
   (global $pending-instrs (mut (ref null eq)) (ref.null eq))
+
+  ;; --- Pending code-object instructions (§6.6) ---
+  ;; List of (code-obj pc . instr-list) entries. Flushed lazily by
+  ;; $finalize-co-pending-instrs before a code-object is executed or
+  ;; before its instruction vector is consulted. Forward-label
+  ;; resolution uses the code-object's own $labels hash, so a deferred
+  ;; flush guarantees all labels are set before any operand is resolved.
+  (global $co-pending-instrs (mut (ref null eq)) (ref.null eq))
 
   ;; --- Assembler symbol ID table ---
   ;; Slots: 0-6 = instr types (assign,test,branch,goto,save,restore,perform)
@@ -1679,12 +1707,21 @@
 
   (func $space-label-ref (param $space (ref $comp-space))
                          (param $label-sym (ref null eq)) (result i32)
+    (call $labels-ht-ref
+      (struct.get $comp-space $labels (local.get $space))
+      (local.get $label-sym)))
+
+  ;; §6.6: label lookup against a labels hash-table directly (no space
+  ;; wrapper). Used by the parser so it can resolve labels for either a
+  ;; $comp-space or a $code-object. Returns 0 if the hash is null or the
+  ;; label is absent.
+  (func $labels-ht-ref (param $labels (ref null eq))
+                       (param $label-sym (ref null eq)) (result i32)
     (local $ht (ref $hash-table))
     (local $val (ref null eq))
-    (if (ref.is_null (struct.get $comp-space $labels (local.get $space)))
+    (if (ref.is_null (local.get $labels))
       (then (return (i32.const 0))))
-    (local.set $ht (ref.cast (ref $hash-table)
-      (struct.get $comp-space $labels (local.get $space))))
+    (local.set $ht (ref.cast (ref $hash-table) (local.get $labels)))
     (local.set $val (call $hash-ref-impl (local.get $ht) (local.get $label-sym)))
     (if (result i32) (ref.is_null (local.get $val))
       (then (i32.const 0))
@@ -1723,8 +1760,10 @@
   ;; --- Build operand pair list from ECE operand list ---
   ;; Input: list of (const val), (reg name), (label name)
   ;; Output: list of (type . value) pairs for $eval-operand
+  ;; §6.6: $labels-ht is the resolution context for `(label X)` operands —
+  ;; either a $comp-space's labels or a $code-object's labels.
   (func $build-operand-list (param $ops (ref null eq))
-                            (param $space-id i32)
+                            (param $labels-ht (ref null eq))
                             (result (ref null eq))
     (local $result (ref null eq))
     (local $tail (ref null eq))
@@ -1766,8 +1805,8 @@
           (local.set $operand (call $cons
             (call $make-fixnum (i32.const 2))
             (call $make-fixnum
-              (call $space-label-ref
-                (call $get-space (local.get $space-id))
+              (call $labels-ht-ref
+                (local.get $labels-ht)
                 (call $cadr (local.get $op-pair))))))))
       ;; Prepend to result (reverse order for now)
       (local.set $result (call $cons (local.get $operand) (local.get $result)))
@@ -1840,15 +1879,69 @@
           (struct.set $comp-space $instrs (local.get $space) (local.get $new-instrs))
           (local.set $instrs (local.get $new-instrs))))
       (array.set $instr-vec (local.get $instrs) (local.get $pc)
-        (call $ece-instr-to-wasm-instr (local.get $instr-list) (local.get $space-id)))
+        (call $ece-instr-to-wasm-instr (local.get $instr-list)
+          (struct.get $comp-space $labels (local.get $space))))
+      (local.set $cur (call $xcdr (local.get $cur)))
+      (br $iter))))
+
+  ;; §6.6: flush pending code-object instructions. Each entry is
+  ;; (code-obj pc . instr-list). Parses with the code-object's own
+  ;; $labels hash so forward labels resolve correctly (all labels
+  ;; are set by the time this is called).
+  (func $finalize-co-pending-instrs
+    (local $cur (ref null eq))
+    (local $entry (ref $pair))
+    (local $co (ref $code-object))
+    (local $pc i32)
+    (local $instr-list (ref null eq))
+    (local $instrs (ref $instr-vec))
+    (local $cap i32)
+    (local $new-instrs (ref $instr-vec))
+    (local $i i32)
+    (local.set $cur (call $reverse-list (global.get $co-pending-instrs)))
+    (global.set $co-pending-instrs (ref.null eq))
+    (block $done (loop $iter
+      (br_if $done (ref.is_null (local.get $cur)))
+      (br_if $done (call $is-null (local.get $cur)))
+      ;; Entry: (code-obj pc . instr-list)
+      (local.set $entry (ref.cast (ref $pair)
+        (call $xcar (local.get $cur))))
+      (local.set $co (ref.cast (ref $code-object) (call $car (local.get $entry))))
+      (local.set $entry (ref.cast (ref $pair) (call $cdr (local.get $entry))))
+      (local.set $pc
+        (call $fixnum-value (ref.cast (ref i31) (call $car (local.get $entry)))))
+      (local.set $instr-list (call $cdr (local.get $entry)))
+      ;; Grow $instrs vector if needed
+      (local.set $instrs (struct.get $code-object $instrs (local.get $co)))
+      (local.set $cap (array.len (local.get $instrs)))
+      (if (i32.ge_u (local.get $pc) (local.get $cap))
+        (then
+          (local.set $new-instrs
+            (array.new_default $instr-vec (i32.shl (local.get $cap) (i32.const 1))))
+          (local.set $i (i32.const 0))
+          (block $cdone (loop $ccopy
+            (br_if $cdone (i32.ge_u (local.get $i) (local.get $cap)))
+            (array.set $instr-vec (local.get $new-instrs) (local.get $i)
+              (array.get $instr-vec (local.get $instrs) (local.get $i)))
+            (local.set $i (i32.add (local.get $i) (i32.const 1)))
+            (br $ccopy)))
+          (struct.set $code-object $instrs (local.get $co) (local.get $new-instrs))
+          (local.set $instrs (local.get $new-instrs))))
+      ;; Parse source-instr using the code-object's $labels hash.
+      (array.set $instr-vec (local.get $instrs) (local.get $pc)
+        (call $ece-instr-to-wasm-instr (local.get $instr-list)
+          (struct.get $code-object $labels (local.get $co))))
       (local.set $cur (call $xcdr (local.get $cur)))
       (br $iter))))
 
   ;; --- Convert ECE list instruction to $instr struct ---
   ;; Input: ECE list like (assign val (op lookup-variable-value) (const x) (reg env))
   ;; Output: $instr struct
+  ;; §6.6: $labels-ht carries the label-resolution context. Callers that
+  ;; have a space pass `(struct.get $comp-space $labels space)`; callers
+  ;; that have a code-object pass `(struct.get $code-object $labels co)`.
   (func $ece-instr-to-wasm-instr (param $instr-list (ref null eq))
-                                  (param $space-id i32)
+                                  (param $labels-ht (ref null eq))
                                   (result (ref $instr))
     (local $type-sym (ref $symbol))
     (local $type-id i32)
@@ -1895,8 +1988,8 @@
         ;; label → b=2, c=pc
         (if (i32.eq (local.get $src-type) (i32.const 2))
           (then
-            (local.set $label-pc (call $space-label-ref
-              (call $get-space (local.get $space-id))
+            (local.set $label-pc (call $labels-ht-ref
+              (local.get $labels-ht)
               (call $cadr (local.get $src-pair))))
             (return (struct.new $instr
               (i32.const 0) (local.get $target) (i32.const 2)
@@ -1907,7 +2000,7 @@
         ;; Remaining operands after (op name) start at cddr of rest
         (local.set $operands (call $build-operand-list
           (call $xcdr (local.get $rest))
-          (local.get $space-id)))
+          (local.get $labels-ht)))
         (return (struct.new $instr
           (i32.const 0) (local.get $target) (i32.const 3)
           (local.get $op-id) (local.get $operands)))))
@@ -1922,7 +2015,7 @@
           (ref.cast (ref $symbol) (call $cadr (local.get $src-pair)))))
         (local.set $operands (call $build-operand-list
           (call $xcdr (local.get $rest))
-          (local.get $space-id)))
+          (local.get $labels-ht)))
         (return (struct.new $instr
           (i32.const 1) (i32.const 0) (i32.const 0)
           (local.get $op-id) (local.get $operands)))))
@@ -1933,8 +2026,8 @@
         ;; (branch (label <name>))
         (local.set $src-pair (ref.cast (ref $pair)
           (call $xcar (local.get $rest))))
-        (local.set $label-pc (call $space-label-ref
-          (call $get-space (local.get $space-id))
+        (local.set $label-pc (call $labels-ht-ref
+          (local.get $labels-ht)
           (call $cadr (local.get $src-pair))))
         (return (struct.new $instr
           (i32.const 2) (i32.const 0) (i32.const 0)
@@ -1951,8 +2044,8 @@
         ;; label → b=0, c=pc
         (if (i32.eq (local.get $src-type) (i32.const 2))
           (then
-            (local.set $label-pc (call $space-label-ref
-              (call $get-space (local.get $space-id))
+            (local.set $label-pc (call $labels-ht-ref
+              (local.get $labels-ht)
               (call $cadr (local.get $src-pair))))
             (return (struct.new $instr
               (i32.const 3) (i32.const 0) (i32.const 0)
@@ -1994,7 +2087,7 @@
           (ref.cast (ref $symbol) (call $cadr (local.get $src-pair)))))
         (local.set $operands (call $build-operand-list
           (call $xcdr (local.get $rest))
-          (local.get $space-id)))
+          (local.get $labels-ht)))
         (return (struct.new $instr
           (i32.const 6) (i32.const 0) (i32.const 0)
           (local.get $op-id) (local.get $operands)))))
@@ -2088,11 +2181,17 @@
   ;; --- Execute instructions ---
   ;; The core interpreter loop. Takes a space and start PC,
   ;; returns the value in the val register when PC reaches end.
+  ;; §6.6: $init-code-obj — when non-null, the executor starts inside a
+  ;; code-object (reading $instrs/$labels/$len from it). $init-space-id
+  ;; and $init-pc are ignored in that case. When null, the legacy space
+  ;; path applies.
   (func $execute (export "execute")
                  (param $init-space-id i32) (param $init-pc i32)
                  (param $init-env (ref null eq))
+                 (param $init-code-obj (ref null eq))
                  (result (ref null eq))
     (local $space-id i32)
+    (local $current-code-obj (ref null eq))
     (local $pc i32)
     (local $val (ref null eq))
     (local $env (ref null eq))
@@ -2101,8 +2200,9 @@
     (local $cont (ref null eq))   ;; continue register
     (local $stack (ref null eq))
     (local $flag i32)
-    (local $space (ref $comp-space))
-    (local $instrs (ref $instr-vec))
+    ;; §6.6: $space is null when running in code-object mode.
+    (local $space (ref null $comp-space))
+    (local $instrs (ref null $instr-vec))
     (local $len i32)
     (local $instr (ref $instr))
     (local $opcode i32)
@@ -2117,6 +2217,7 @@
 
     ;; Initialize
     (local.set $space-id (local.get $init-space-id))
+    (local.set $current-code-obj (local.get $init-code-obj))
     (local.set $pc (local.get $init-pc))
     (local.set $env (local.get $init-env))
     (local.set $stack (global.get $nil))
@@ -2129,14 +2230,23 @@
       (then
         (local.set $proc (global.get $execute-proc))
         (global.set $execute-proc (ref.null eq))
-        ;; Set continue to a "return" sentinel: (space-id . len)
-        ;; When the function does (goto (reg continue)), pc will be >= len,
-        ;; causing $execute to exit and return $val.
-        (local.set $cont
-          (call $cons
-            (call $make-fixnum (local.get $init-space-id))
-            (call $make-fixnum (struct.get $comp-space $len
-              (call $get-space (local.get $init-space-id))))))))
+        ;; Set continue to a "return" sentinel. When the function does
+        ;; (goto (reg continue)), pc will be >= len, causing $execute to
+        ;; exit and return $val. For space mode: (space-id . len); for
+        ;; code-object mode: (code-obj . len).
+        (if (ref.is_null (local.get $current-code-obj))
+          (then
+            (local.set $cont
+              (call $cons
+                (call $make-fixnum (local.get $init-space-id))
+                (call $make-fixnum (struct.get $comp-space $len
+                  (call $get-space (local.get $init-space-id)))))))
+          (else
+            (local.set $cont
+              (call $cons
+                (local.get $current-code-obj)
+                (call $make-fixnum (struct.get $code-object $len
+                  (ref.cast (ref $code-object) (local.get $current-code-obj))))))))))
     ;; Check for pending val/stack (set by call_continuation)
     (if (i32.eqz (ref.is_null (global.get $execute-val)))
       (then
@@ -2146,9 +2256,17 @@
       (then
         (local.set $stack (global.get $execute-stack))
         (global.set $execute-stack (ref.null eq))))
-    (local.set $space (call $get-space (local.get $space-id)))
-    (local.set $instrs (struct.get $comp-space $instrs (local.get $space)))
-    (local.set $len (struct.get $comp-space $len (local.get $space)))
+    ;; §6.6: init instrs/len from either the code-object or the space.
+    (if (ref.is_null (local.get $current-code-obj))
+      (then
+        (local.set $space (call $get-space (local.get $space-id)))
+        (local.set $instrs (struct.get $comp-space $instrs (local.get $space)))
+        (local.set $len (struct.get $comp-space $len (local.get $space))))
+      (else
+        (local.set $instrs (struct.get $code-object $instrs
+          (ref.cast (ref $code-object) (local.get $current-code-obj))))
+        (local.set $len (struct.get $code-object $len
+          (ref.cast (ref $code-object) (local.get $current-code-obj))))))
 
     ;; Main dispatch loop
     (block $loop-end
@@ -2197,13 +2315,22 @@
             ;; assign from label (src-type 2)
             (if (i32.eq (local.get $src-type) (i32.const 2))
               (then
-                ;; For continue register, store space-qualified address
+                ;; For continue register, store an identity-qualified address:
+                ;; (current-code-obj . pc) in code-object mode, (space-id . pc)
+                ;; otherwise. §6.6.
                 (if (i32.eq (local.get $target) (i32.const 4))
                   (then
-                    (local.set $op-result
-                      (call $cons
-                        (call $make-fixnum (local.get $space-id))
-                        (call $make-fixnum (struct.get $instr $c (local.get $instr))))))
+                    (if (ref.is_null (local.get $current-code-obj))
+                      (then
+                        (local.set $op-result
+                          (call $cons
+                            (call $make-fixnum (local.get $space-id))
+                            (call $make-fixnum (struct.get $instr $c (local.get $instr))))))
+                      (else
+                        (local.set $op-result
+                          (call $cons
+                            (local.get $current-code-obj)
+                            (call $make-fixnum (struct.get $instr $c (local.get $instr))))))))
                   (else
                     (local.set $op-result
                       (call $make-fixnum (struct.get $instr $c (local.get $instr))))))))
@@ -2339,10 +2466,42 @@
               (call $get-reg (struct.get $instr $c (local.get $instr))
                 (local.get $val) (local.get $env) (local.get $proc)
                 (local.get $argl) (local.get $cont) (local.get $stack)))
-            ;; Space-qualified address is a pair (space-id . pc)
+            ;; §7.1: bare code-object → pc 0 of that code-object
+            (if (ref.test (ref $code-object) (local.get $addr))
+              (then
+                (if (i32.eqz (ref.eq (local.get $addr) (local.get $current-code-obj)))
+                  (then
+                    (local.set $current-code-obj (local.get $addr))
+                    (local.set $instrs (struct.get $code-object $instrs
+                      (ref.cast (ref $code-object) (local.get $addr))))
+                    (local.set $len (struct.get $code-object $len
+                      (ref.cast (ref $code-object) (local.get $addr))))))
+                (local.set $pc (i32.const 0))
+                (br $loop-start)))
+            ;; Space-qualified address is a pair (space-id . pc) OR (code-obj . pc)
             (if (ref.test (ref $pair) (local.get $addr))
               (then
                 (local.set $addr-pair (ref.cast (ref $pair) (local.get $addr)))
+                ;; (code-obj . pc) pair?
+                (if (ref.test (ref $code-object) (call $car (local.get $addr-pair)))
+                  (then
+                    (if (i32.eqz (ref.eq
+                          (call $car (local.get $addr-pair))
+                          (local.get $current-code-obj)))
+                      (then
+                        (local.set $current-code-obj
+                          (call $car (local.get $addr-pair)))
+                        (local.set $instrs (struct.get $code-object $instrs
+                          (ref.cast (ref $code-object)
+                            (call $car (local.get $addr-pair)))))
+                        (local.set $len (struct.get $code-object $len
+                          (ref.cast (ref $code-object)
+                            (call $car (local.get $addr-pair)))))))
+                    (local.set $pc
+                      (call $fixnum-value
+                        (ref.cast (ref i31) (call $cdr (local.get $addr-pair)))))
+                    (br $loop-start)))
+                ;; Legacy (space-id . pc) pair
                 (local.set $dest-space
                   (call $fixnum-value
                     (ref.cast (ref i31) (call $car (local.get $addr-pair)))))
@@ -2352,10 +2511,13 @@
                 ;; Cross-space jump?
                 (if (i32.ne (local.get $dest-space) (local.get $space-id))
                   (then
+                    (local.set $current-code-obj (ref.null eq))
                     (local.set $space-id (local.get $dest-space))
                     (local.set $space (call $get-space (local.get $space-id)))
-                    (local.set $instrs (struct.get $comp-space $instrs (local.get $space)))
-                    (local.set $len (struct.get $comp-space $len (local.get $space)))))
+                    (local.set $instrs (struct.get $comp-space $instrs
+                      (ref.as_non_null (local.get $space))))
+                    (local.set $len (struct.get $comp-space $len
+                      (ref.as_non_null (local.get $space))))))
                 (local.set $pc (local.get $dest-pc))
                 (br $loop-start))
               (else
@@ -2610,23 +2772,35 @@
               (call $fixnum-value (ref.cast (ref i31)
                 (call $xcdr (local.get $a))))
               (local.get $b)))
-          ;; Fallback: bare fixnum PC (same space)
+          ;; Fallback: bare fixnum PC or §7.1 bare code-object
           (else
-            (call $make-compiled-proc
-              (local.get $space-id)
-              (if (result i32) (ref.test (ref i31) (local.get $a))
-                (then (call $fixnum-value (ref.cast (ref i31) (local.get $a))))
-                (else (i32.const 0)))
-              (local.get $b)))))
+            (if (result (ref null eq)) (ref.test (ref $code-object) (local.get $a))
+              (then
+                (struct.new $compiled-proc
+                  (i32.const 0) (i32.const 0)
+                  (local.get $b)
+                  (local.get $a)))
+              (else (call $make-compiled-proc
+                (local.get $space-id)
+                (if (result i32) (ref.test (ref i31) (local.get $a))
+                  (then (call $fixnum-value (ref.cast (ref i31) (local.get $a))))
+                  (else (i32.const 0)))
+                (local.get $b)))))))
 
-    ;; 8 = compiled-procedure-entry(proc) → space-qualified pair
+    ;; 8 = compiled-procedure-entry(proc) → code-object (§7.1) or (space-id . pc).
     (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 8))
       (then
-        (call $cons
-          (call $make-fixnum
-            (call $compiled-proc-space (ref.cast (ref $compiled-proc) (local.get $a))))
-          (call $make-fixnum
-            (call $compiled-proc-pc (ref.cast (ref $compiled-proc) (local.get $a))))))
+        (if (result (ref null eq))
+          (i32.eqz (ref.is_null
+            (struct.get $compiled-proc $code-obj
+              (ref.cast (ref $compiled-proc) (local.get $a)))))
+          (then (struct.get $compiled-proc $code-obj
+                  (ref.cast (ref $compiled-proc) (local.get $a))))
+          (else (call $cons
+                  (call $make-fixnum
+                    (call $compiled-proc-space (ref.cast (ref $compiled-proc) (local.get $a))))
+                  (call $make-fixnum
+                    (call $compiled-proc-pc (ref.cast (ref $compiled-proc) (local.get $a))))))))
 
     ;; 9 = compiled-procedure-env(proc)
     (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 9))
@@ -2742,7 +2916,8 @@
         (drop (call $execute
           (call $compiled-proc-space (ref.cast (ref $compiled-proc) (local.get $c)))
           (call $compiled-proc-pc (ref.cast (ref $compiled-proc) (local.get $c)))
-          (call $compiled-proc-env (ref.cast (ref $compiled-proc) (local.get $c)))))
+          (call $compiled-proc-env (ref.cast (ref $compiled-proc) (local.get $c)))
+          (ref.null eq)))
         (global.get $void))
 
     ;; 20 = continuation-stack(cont)
@@ -4001,6 +4176,14 @@
     (local $cur (ref null eq))
     (local $key (ref null eq))
     (local $result (ref null eq))
+    ;; --- Code-object primitive locals (ids 241-249) ---
+    (local $co-for-labels (ref null $code-object))
+    (local $lbl-ht (ref null $hash-table))
+    (local $lbl-keys (ref null $hash-keys))
+    (local $lbl-vals (ref null $hash-vals))
+    (local $lbl-count i32)
+    (local $lbl-i i32)
+    (local $lbl-result (ref null eq))
     (local.set $id (call $primitive-id (local.get $prim)))
     ;; Debug: store prim ID for crash diagnosis
     (global.set $dbg-opcode (i32.add (local.get $id) (i32.const 1000)))
@@ -4469,11 +4652,12 @@
               (else
                 (if (call $is-primitive (local.get $result))
                   (then
-                    ;; Exclude known WASM stubs/no-ops:
+                    ;; Exclude known WASM stubs/no-ops and retired primitives:
                     ;; sleep (83), clear-screen (84), try-eval (90),
-                    ;; %procedure-name-set! (97), open-input/output-file (100/101),
+                    ;; %procedure-name-set! (97, retired §11.2),
+                    ;; open-input/output-file (100/101),
                     ;; %space-label-entries (135), %make-directory (194), %chmod (195),
-                    ;; %procedure-name-ref (240)
+                    ;; %procedure-name-ref (240, retired §11.2)
                     (local.set $id (struct.get $primitive $id
                           (ref.cast (ref $primitive) (local.get $result))))
                     (if (i32.or (i32.eq (local.get $id) (i32.const 83))
@@ -4596,13 +4780,21 @@
         ;; Finalize any pending instructions before execution
         (if (i32.eqz (ref.is_null (global.get $pending-instrs)))
           (then (call $finalize-pending-instrs)))
-        ;; arg1 = qualified address pair (space-id . pc)
+        (if (i32.eqz (ref.is_null (global.get $co-pending-instrs)))
+          (then (call $finalize-co-pending-instrs)))
+        ;; arg1 = qualified address pair (space-id . pc) or bare code-object (§6.4)
+        (if (ref.test (ref $code-object) (call $arg1 (local.get $args)))
+          (then (return (call $execute
+            (i32.const 0) (i32.const 0)
+            (global.get $global-env)
+            (call $arg1 (local.get $args))))))
         (return (call $execute
           (call $fixnum-value (ref.cast (ref i31)
             (call $xcar (call $arg1 (local.get $args)))))
           (call $fixnum-value (ref.cast (ref i31)
             (call $xcdr (call $arg1 (local.get $args)))))
-          (global.get $global-env)))))
+          (global.get $global-env)
+          (ref.null eq)))))
 
     ;; 89 = apply-compiled-procedure (proc, args)
     (if (i32.eq (local.get $id) (i32.const 89))
@@ -4610,13 +4802,24 @@
         ;; Set pending proc and argl so $execute initializes registers
         (global.set $execute-proc (call $arg1 (local.get $args)))
         (global.set $execute-argl (call $arg2 (local.get $args)))
+        ;; §7.1 shape: if the closure has a $code-obj, dispatch via that.
+        (if (i32.eqz (ref.is_null
+                       (struct.get $compiled-proc $code-obj
+                         (ref.cast (ref $compiled-proc) (call $arg1 (local.get $args))))))
+          (then (return (call $execute
+            (i32.const 0) (i32.const 0)
+            (call $compiled-proc-env
+              (ref.cast (ref $compiled-proc) (call $arg1 (local.get $args))))
+            (struct.get $compiled-proc $code-obj
+              (ref.cast (ref $compiled-proc) (call $arg1 (local.get $args))))))))
         (return (call $execute
           (call $compiled-proc-space
             (ref.cast (ref $compiled-proc) (call $arg1 (local.get $args))))
           (call $compiled-proc-pc
             (ref.cast (ref $compiled-proc) (call $arg1 (local.get $args))))
           (call $compiled-proc-env
-            (ref.cast (ref $compiled-proc) (call $arg1 (local.get $args))))))))
+            (ref.cast (ref $compiled-proc) (call $arg1 (local.get $args))))
+          (ref.null eq)))))
 
     ;; 90 = try-eval (expr) — evaluate with error trapping
     ;; On WASM, errors propagate as traps — JS catches them.
@@ -4645,173 +4848,37 @@
         (return (call $intern
           (ref.cast (ref $string) (call $arg1 (local.get $args)))))))
 
-    ;; 93 = %instruction-vector-length — current space instruction count
-    (if (i32.eq (local.get $id) (i32.const 93))
-      (then
-        (return (call $make-fixnum
-          (struct.get $comp-space $len
-            (call $get-space (global.get $current-space-id)))))))
+    ;; 93-96 = %instruction-vector-* / %label-table-* — retired in Phase F
+    ;; alongside the bootstrap-space assembler path. IDs stay reserved; any
+    ;; call traps so stale archives surface loudly.
+    (if (i32.or
+          (i32.or
+            (i32.eq (local.get $id) (i32.const 93))
+            (i32.eq (local.get $id) (i32.const 94)))
+          (i32.or
+            (i32.eq (local.get $id) (i32.const 95))
+            (i32.eq (local.get $id) (i32.const 96))))
+      (then (unreachable)))
 
-    ;; 94 = %instruction-vector-push! (instr-list) — defer to current space
-    (if (i32.eq (local.get $id) (i32.const 94))
-      (then
-        ;; Record the instruction's target PC (current len) and defer conversion
-        (global.set $pending-instrs
-          (call $cons
-            (call $cons
-              (call $make-fixnum (global.get $current-space-id))
-              (call $cons
-                (call $make-fixnum
-                  (struct.get $comp-space $len
-                    (call $get-space (global.get $current-space-id))))
-                (call $arg1 (local.get $args))))
-            (global.get $pending-instrs)))
-        ;; Increment len so label PCs are correct
-        (struct.set $comp-space $len
-          (call $get-space (global.get $current-space-id))
-          (i32.add
-            (struct.get $comp-space $len
-              (call $get-space (global.get $current-space-id)))
-            (i32.const 1)))
-        (return (global.get $void))))
+    ;; 97 = %procedure-name-set! and 240 = %procedure-name-ref retired in
+    ;; per-procedure-code-objects §11.2 — name now lives on the code-object
+    ;; struct (set at compile time via %code-object-set-name!, read via
+    ;; code-object-name). IDs stay reserved; any call traps so stale
+    ;; archives surface loudly.
+    (if (i32.or
+          (i32.eq (local.get $id) (i32.const 97))
+          (i32.eq (local.get $id) (i32.const 240)))
+      (then (unreachable)))
 
-    ;; 95 = %label-table-set! (label-sym, pc) — set in current space
-    (if (i32.eq (local.get $id) (i32.const 95))
-      (then
-        (call $space-label-set
-          (call $get-space (global.get $current-space-id))
-          (call $arg1 (local.get $args))
-          (call $fixnum-value (ref.cast (ref i31) (call $arg2 (local.get $args)))))
-        (return (global.get $void))))
-
-    ;; 96 = %label-table-ref (label-sym) — look up in current space
-    (if (i32.eq (local.get $id) (i32.const 96))
-      (then
-        (return (call $make-fixnum
-          (call $space-label-ref
-            (call $get-space (global.get $current-space-id))
-            (call $arg1 (local.get $args)))))))
-
-    ;; 97 = %procedure-name-set! (pc, name) — no-op for now
-    (if (i32.eq (local.get $id) (i32.const 97))
-      (then (return (global.get $void))))
-
-    ;; 240 = %procedure-name-ref (pc) — always #f on WASM: no name table
-    ;; (procedure-name-set! is also a no-op, so there is nothing to look up).
-    ;; Callers that want the name for diagnostics get "<anonymous>".
-    (if (i32.eq (local.get $id) (i32.const 240))
-      (then (return (global.get $false))))
-
-    ;; --- Compilation space primitives (core IDs 125-135) ---
-
-    ;; 125 = %create-space (name) — name can be symbol or string
-    (if (i32.eq (local.get $id) (i32.const 125))
-      (then
-        ;; If arg is a string, intern it as a symbol first
-        (if (call $is-string (call $arg1 (local.get $args)))
-          (then
-            (call $register-space
-              (struct.new $comp-space
-                (call $intern (ref.cast (ref $string) (call $arg1 (local.get $args))))
-                (array.new_default $instr-vec (i32.const 131072))
-                (i32.const 0)
-                (ref.null eq)))
-            (return (call $make-fixnum
-              (struct.get $symbol $id
-                (call $intern (ref.cast (ref $string) (call $arg1 (local.get $args))))))))
-          (else
-            (call $register-space
-              (struct.new $comp-space
-                (ref.cast (ref $symbol) (call $arg1 (local.get $args)))
-                (array.new_default $instr-vec (i32.const 131072))
-                (i32.const 0)
-                (ref.null eq)))
-            (return (call $make-fixnum
-              (struct.get $symbol $id
-                (ref.cast (ref $symbol) (call $arg1 (local.get $args))))))))))
-
-    ;; 126 = %space-instruction-length (space-id)
-    (if (i32.eq (local.get $id) (i32.const 126))
-      (then
-        (return (call $make-fixnum
-          (struct.get $comp-space $len
-            (call $get-space
-              (call $fixnum-value (ref.cast (ref i31) (call $arg1 (local.get $args))))))))))
-
-    ;; 127 = %space-name (space-id)
-    (if (i32.eq (local.get $id) (i32.const 127))
-      (then
-        (return (struct.get $comp-space $name
-          (call $get-space
-            (call $fixnum-value (ref.cast (ref i31) (call $arg1 (local.get $args)))))))))
-
-    ;; 128 = %current-space-id
-    (if (i32.eq (local.get $id) (i32.const 128))
-      (then (return (call $make-fixnum (global.get $current-space-id)))))
-
-    ;; 129 = %set-current-space-id! (space-id)
-    (if (i32.eq (local.get $id) (i32.const 129))
-      (then
-        (global.set $current-space-id
-          (call $fixnum-value (ref.cast (ref i31) (call $arg1 (local.get $args)))))
-        (return (global.get $void))))
-
-    ;; 130 = %space-instruction-push! (space-id, instr-list) — defer
-    (if (i32.eq (local.get $id) (i32.const 130))
-      (then
-        ;; Record: (space-id pc . instr-list) and defer conversion
-        (global.set $pending-instrs
-          (call $cons
-            (call $cons
-              (call $arg1 (local.get $args))
-              (call $cons
-                (call $make-fixnum
-                  (struct.get $comp-space $len
-                    (call $get-space
-                      (call $fixnum-value (ref.cast (ref i31) (call $arg1 (local.get $args)))))))
-                (call $arg2 (local.get $args))))
-            (global.get $pending-instrs)))
-        ;; Increment len
-        (struct.set $comp-space $len
-          (call $get-space
-            (call $fixnum-value (ref.cast (ref i31) (call $arg1 (local.get $args)))))
-          (i32.add
-            (struct.get $comp-space $len
-              (call $get-space
-                (call $fixnum-value (ref.cast (ref i31) (call $arg1 (local.get $args))))))
-            (i32.const 1)))
-        (return (global.get $void))))
-
-    ;; 131 = %space-label-set! (space-id, label-sym, pc)
-    (if (i32.eq (local.get $id) (i32.const 131))
-      (then
-        (call $space-label-set
-          (call $get-space
-            (call $fixnum-value (ref.cast (ref i31) (call $arg1 (local.get $args)))))
-          (call $arg2 (local.get $args))
-          (call $fixnum-value (ref.cast (ref i31) (call $arg3 (local.get $args)))))
-        (return (global.get $void))))
-
-    ;; 132 = %space-label-ref (space-id, label-sym)
-    (if (i32.eq (local.get $id) (i32.const 132))
-      (then
-        (return (call $make-fixnum
-          (call $space-label-ref
-            (call $get-space
-              (call $fixnum-value (ref.cast (ref i31) (call $arg1 (local.get $args)))))
-            (call $arg2 (local.get $args)))))))
-
-    ;; 133 = %space-count
-    (if (i32.eq (local.get $id) (i32.const 133))
-      (then (return (call $make-fixnum (global.get $space-count)))))
-
-    ;; 134 = %space-source-ref — not applicable on WASM (instrs are structs, not lists)
-    (if (i32.eq (local.get $id) (i32.const 134))
-      (then (return (global.get $void))))
-
-    ;; 135 = %space-label-entries — return label table as alist
-    (if (i32.eq (local.get $id) (i32.const 135))
-      (then (return (global.get $nil))))  ;; stub for now
+    ;; --- Compilation space primitives (core IDs 125-135) retired ---
+    ;; Phase F of per-procedure-code-objects: the compilation-space
+    ;; abstraction retired in favour of per-procedure code-objects
+    ;; (primitive ids 241-249/254-257). IDs 125-135 stay reserved.
+    ;; Any call traps so stale archives surface loudly.
+    (if (i32.and
+          (i32.ge_u (local.get $id) (i32.const 125))
+          (i32.le_u (local.get $id) (i32.const 135)))
+      (then (unreachable)))
 
     ;; --- Platform hash table primitives (core IDs 141-149) ---
     ;; 141 = %make-hash-table
@@ -5054,9 +5121,14 @@
                   (call $is-continuation (local.get $result)))
           (then (global.get $true)) (else (global.get $false))))))
 
-    ;; 158 = compiled-procedure-entry(proc) → (space-id . pc) pair
+    ;; 158 = compiled-procedure-entry(proc) → code-object (§7.1) or (space-id . pc).
     (if (i32.eq (local.get $id) (i32.const 158))
       (then
+        (if (i32.eqz (ref.is_null
+                       (struct.get $compiled-proc $code-obj
+                         (ref.cast (ref $compiled-proc) (call $arg1 (local.get $args))))))
+          (then (return (struct.get $compiled-proc $code-obj
+                          (ref.cast (ref $compiled-proc) (call $arg1 (local.get $args)))))))
         (return (call $cons
           (call $make-fixnum (call $compiled-proc-space
             (ref.cast (ref $compiled-proc) (call $arg1 (local.get $args)))))
@@ -5084,12 +5156,20 @@
         (ref.cast (ref $primitive) (call $arg1 (local.get $args))))))))
 
     ;; 163 = %make-compiled-procedure(entry, env) → compiled-proc
-    ;; entry is (space-id . pc) pair
+    ;; entry is (space-id . pc) pair, or a bare code-object (§7.1 shape).
     (if (i32.eq (local.get $id) (i32.const 163))
-      (then (return (struct.new $compiled-proc
-        (call $fixnum-value (ref.cast (ref i31) (call $xcar (call $arg1 (local.get $args)))))
-        (call $fixnum-value (ref.cast (ref i31) (call $xcdr (call $arg1 (local.get $args)))))
-        (call $arg2 (local.get $args))))))
+      (then
+        ;; §7.1 shape: bare code-object entry → store in $code-obj field.
+        (if (ref.test (ref $code-object) (call $arg1 (local.get $args)))
+          (then (return (struct.new $compiled-proc
+            (i32.const 0) (i32.const 0)
+            (call $arg2 (local.get $args))
+            (call $arg1 (local.get $args))))))
+        (return (struct.new $compiled-proc
+          (call $fixnum-value (ref.cast (ref i31) (call $xcar (call $arg1 (local.get $args)))))
+          (call $fixnum-value (ref.cast (ref i31) (call $xcdr (call $arg1 (local.get $args)))))
+          (call $arg2 (local.get $args))
+          (ref.null eq)))))
 
     ;; 164 = %make-continuation(stack, conts, winds) → continuation
     (if (i32.eq (local.get $id) (i32.const 164))
@@ -5424,6 +5504,227 @@
           (struct.get $symbol $id
             (ref.cast (ref $symbol) (call $arg1 (local.get $args)))))
         (return (global.get $void))))
+
+    ;; --- Code-object primitives (IDs 241-249) ---
+    ;; Per-procedure compilation unit accessors. Coexist with %space-* during
+    ;; the migration. ECE never sees $code-object values until the compiler
+    ;; and executor switch over; these accessors are here for parity and for
+    ;; WAT-side code that will construct code objects during §4–§6.
+
+    ;; 241 = code-object?(x)
+    (if (i32.eq (local.get $id) (i32.const 241))
+      (then (return (if (result (ref null eq))
+        (ref.test (ref $code-object) (call $arg1 (local.get $args)))
+        (then (global.get $true)) (else (global.get $false))))))
+
+    ;; 242 = code-object-instructions(co) — stub (instr-vec is not an ECE-visible ref eq)
+    (if (i32.eq (local.get $id) (i32.const 242))
+      (then (return (global.get $void))))
+
+    ;; 243 = code-object-resolved-instructions(co) — stub (same as 242 on WASM)
+    (if (i32.eq (local.get $id) (i32.const 243))
+      (then (return (global.get $void))))
+
+    ;; 244 = code-object-length(co)
+    (if (i32.eq (local.get $id) (i32.const 244))
+      (then (return (call $make-fixnum
+        (struct.get $code-object $len
+          (ref.cast (ref $code-object) (call $arg1 (local.get $args))))))))
+
+    ;; 245 = code-object-label-entries(co) — alist of (label-sym . pc-fixnum)
+    (if (i32.eq (local.get $id) (i32.const 245))
+      (then
+        (local.set $co-for-labels
+          (ref.cast (ref $code-object) (call $arg1 (local.get $args))))
+        (if (ref.is_null (struct.get $code-object $labels
+                           (ref.as_non_null (local.get $co-for-labels))))
+          (then (return (global.get $nil))))
+        (local.set $lbl-ht
+          (ref.cast (ref $hash-table)
+            (struct.get $code-object $labels
+              (ref.as_non_null (local.get $co-for-labels)))))
+        (local.set $lbl-keys (struct.get $hash-table $keys
+                              (ref.as_non_null (local.get $lbl-ht))))
+        (local.set $lbl-vals (struct.get $hash-table $vals
+                              (ref.as_non_null (local.get $lbl-ht))))
+        (local.set $lbl-count (struct.get $hash-table $count
+                                (ref.as_non_null (local.get $lbl-ht))))
+        (local.set $lbl-result (global.get $nil))
+        (local.set $lbl-i (i32.sub (local.get $lbl-count) (i32.const 1)))
+        (block $lblbuild (loop $lblscan
+          (br_if $lblbuild (i32.lt_s (local.get $lbl-i) (i32.const 0)))
+          (local.set $lbl-result (call $cons
+            (call $cons
+              (array.get $hash-keys
+                (ref.as_non_null (local.get $lbl-keys)) (local.get $lbl-i))
+              (array.get $hash-vals
+                (ref.as_non_null (local.get $lbl-vals)) (local.get $lbl-i)))
+            (local.get $lbl-result)))
+          (local.set $lbl-i (i32.sub (local.get $lbl-i) (i32.const 1)))
+          (br $lblscan)))
+        (return (local.get $lbl-result))))
+
+    ;; 246 = code-object-label-ref(co, label-sym) — pc-fixnum or #f
+    (if (i32.eq (local.get $id) (i32.const 246))
+      (then
+        (local.set $co-for-labels
+          (ref.cast (ref $code-object) (call $arg1 (local.get $args))))
+        (if (ref.is_null (struct.get $code-object $labels
+                           (ref.as_non_null (local.get $co-for-labels))))
+          (then (return (global.get $false))))
+        (local.set $lbl-result
+          (call $hash-ref-impl
+            (ref.cast (ref $hash-table)
+              (struct.get $code-object $labels
+                (ref.as_non_null (local.get $co-for-labels))))
+            (call $arg2 (local.get $args))))
+        (return (if (result (ref null eq)) (ref.is_null (local.get $lbl-result))
+          (then (global.get $false))
+          (else (local.get $lbl-result))))))
+
+    ;; 247 = code-object-name(co)
+    (if (i32.eq (local.get $id) (i32.const 247))
+      (then
+        (local.set $co-for-labels
+          (ref.cast (ref $code-object) (call $arg1 (local.get $args))))
+        (local.set $lbl-result (struct.get $code-object $name
+                                 (ref.as_non_null (local.get $co-for-labels))))
+        (return (if (result (ref null eq)) (ref.is_null (local.get $lbl-result))
+          (then (global.get $false))
+          (else (local.get $lbl-result))))))
+
+    ;; 248 = code-object-native-fn(co)
+    (if (i32.eq (local.get $id) (i32.const 248))
+      (then
+        (local.set $co-for-labels
+          (ref.cast (ref $code-object) (call $arg1 (local.get $args))))
+        (local.set $lbl-result (struct.get $code-object $native-fn
+                                 (ref.as_non_null (local.get $co-for-labels))))
+        (return (if (result (ref null eq)) (ref.is_null (local.get $lbl-result))
+          (then (global.get $false))
+          (else (local.get $lbl-result))))))
+
+    ;; 249 = code-object-source-loc(co)
+    (if (i32.eq (local.get $id) (i32.const 249))
+      (then
+        (local.set $co-for-labels
+          (ref.cast (ref $code-object) (call $arg1 (local.get $args))))
+        (local.set $lbl-result (struct.get $code-object $source-loc
+                                 (ref.as_non_null (local.get $co-for-labels))))
+        (return (if (result (ref null eq)) (ref.is_null (local.get $lbl-result))
+          (then (global.get $false))
+          (else (local.get $lbl-result))))))
+
+    ;; 250 = %make-code-object() — return a fresh empty code object
+    (if (i32.eq (local.get $id) (i32.const 250))
+      (then (return (struct.new $code-object
+        (array.new_default $instr-vec (i32.const 32))
+        (i32.const 0)
+        (ref.null eq)
+        (ref.null eq)
+        (ref.null eq)
+        (ref.null eq)
+        (ref.null eq)))))
+
+    ;; 251 = %code-object-push-instruction!(co, source-instr)
+    ;; Defer parsing until execute-code-object flushes. The entry shape
+    ;; is (code-obj pc . instr-list) — pc is captured at push time so a
+    ;; later flush knows where to write in the code-object's $instrs vec.
+    ;; Increments the code-object's $len eagerly so code-object-length
+    ;; reports the right count before any flush.
+    (if (i32.eq (local.get $id) (i32.const 251))
+      (then
+        (local.set $co-for-labels
+          (ref.cast (ref $code-object) (call $arg1 (local.get $args))))
+        ;; Build entry: (cons co (cons (make-fixnum pc) instr-list))
+        (global.set $co-pending-instrs
+          (call $cons
+            (call $cons
+              (local.get $co-for-labels)
+              (call $cons
+                (call $make-fixnum
+                  (struct.get $code-object $len
+                    (ref.as_non_null (local.get $co-for-labels))))
+                (call $arg2 (local.get $args))))
+            (global.get $co-pending-instrs)))
+        ;; Bump len
+        (struct.set $code-object $len
+          (ref.as_non_null (local.get $co-for-labels))
+          (i32.add
+            (struct.get $code-object $len
+              (ref.as_non_null (local.get $co-for-labels)))
+            (i32.const 1)))
+        (return (global.get $void))))
+
+    ;; 252 = %code-object-set-label!(co, label-sym, local-pc)
+    (if (i32.eq (local.get $id) (i32.const 252))
+      (then
+        (local.set $co-for-labels
+          (ref.cast (ref $code-object) (call $arg1 (local.get $args))))
+        ;; Ensure labels hash-table exists
+        (if (ref.is_null (struct.get $code-object $labels
+                           (ref.as_non_null (local.get $co-for-labels))))
+          (then
+            (struct.set $code-object $labels
+              (ref.as_non_null (local.get $co-for-labels))
+              (struct.new $hash-table
+                (array.new_default $hash-keys (i32.const 16))
+                (array.new_default $hash-vals (i32.const 16))
+                (i32.const 0)))))
+        (call $hash-set-impl
+          (ref.cast (ref $hash-table)
+            (struct.get $code-object $labels
+              (ref.as_non_null (local.get $co-for-labels))))
+          (call $arg2 (local.get $args))
+          (call $arg3 (local.get $args)))
+        (return (global.get $void))))
+
+    ;; 253 = %code-object-set-name!(co, name)
+    (if (i32.eq (local.get $id) (i32.const 253))
+      (then
+        (struct.set $code-object $name
+          (ref.cast (ref $code-object) (call $arg1 (local.get $args)))
+          (call $arg2 (local.get $args)))
+        (return (global.get $void))))
+
+    ;; 254 = %code-object-set-arity!(co, arity)
+    (if (i32.eq (local.get $id) (i32.const 254))
+      (then
+        (struct.set $code-object $arity
+          (ref.cast (ref $code-object) (call $arg1 (local.get $args)))
+          (call $arg2 (local.get $args)))
+        (return (global.get $void))))
+
+    ;; 255 = %code-object-set-source-loc!(co, loc)
+    (if (i32.eq (local.get $id) (i32.const 255))
+      (then
+        (struct.set $code-object $source-loc
+          (ref.cast (ref $code-object) (call $arg1 (local.get $args)))
+          (call $arg2 (local.get $args)))
+        (return (global.get $void))))
+
+    ;; 256 = execute-code-object(co, [env]) — §6.6 runs it on WASM too.
+    (if (i32.eq (local.get $id) (i32.const 256))
+      (then
+        (if (i32.eqz (ref.is_null (global.get $pending-instrs)))
+          (then (call $finalize-pending-instrs)))
+        (if (i32.eqz (ref.is_null (global.get $co-pending-instrs)))
+          (then (call $finalize-co-pending-instrs)))
+        (return (call $execute
+          (i32.const 0) (i32.const 0)
+          (global.get $global-env)
+          (call $arg1 (local.get $args))))))
+
+    ;; 257 = code-object-arity(co)
+    (if (i32.eq (local.get $id) (i32.const 257))
+      (then
+        (local.set $co-for-labels
+          (ref.cast (ref $code-object) (call $arg1 (local.get $args))))
+        (local.set $lbl-result (struct.get $code-object $arity
+                                 (ref.as_non_null (local.get $co-for-labels))))
+        (return (if (result (ref null eq)) (ref.is_null (local.get $lbl-result))
+          (then (global.get $false))
+          (else (local.get $lbl-result))))))
 
     ;; Unknown primitive — return void
     (global.get $void)
@@ -6654,6 +6955,8 @@
         (call $compiled-proc-pc
           (ref.cast (ref $compiled-proc) (call $deref-handle (local.get $proc-handle))))
         (call $compiled-proc-env
+          (ref.cast (ref $compiled-proc) (call $deref-handle (local.get $proc-handle))))
+        (struct.get $compiled-proc $code-obj
           (ref.cast (ref $compiled-proc) (call $deref-handle (local.get $proc-handle)))))))
 
   ;; Resume a captured continuation with a value (returns handle)
@@ -6694,7 +6997,9 @@
             (drop (call $execute
               (call $compiled-proc-space (ref.cast (ref $compiled-proc) (local.get $do-winds-fn)))
               (call $compiled-proc-pc (ref.cast (ref $compiled-proc) (local.get $do-winds-fn)))
-              (call $compiled-proc-env (ref.cast (ref $compiled-proc) (local.get $do-winds-fn)))))))))
+              (call $compiled-proc-env (ref.cast (ref $compiled-proc) (local.get $do-winds-fn)))
+              (struct.get $compiled-proc $code-obj
+                (ref.cast (ref $compiled-proc) (local.get $do-winds-fn)))))))))
     ;; conts = saved continue register = (space-id . pc)
     (local.set $conts (ref.cast (ref $pair)
       (struct.get $continuation $conts (local.get $cont))))
@@ -6706,7 +7011,7 @@
     (global.set $execute-val (call $deref-handle (local.get $val-handle)))
     (global.set $execute-stack (struct.get $continuation $stack (local.get $cont)))
     (call $alloc-handle
-      (call $execute (local.get $space-id) (local.get $pc) (global.get $global-env))))
+      (call $execute (local.get $space-id) (local.get $pc) (global.get $global-env) (ref.null eq))))
 
   ;; Debug: inspect instruction at (space-id, pc)
   (func (export "dbg_instr") (param $space-id i32) (param $pc i32) (param $field i32) (result i32)
@@ -6975,7 +7280,8 @@
         (param $env-handle i32) (result i32)
     (call $alloc-handle
       (call $execute (local.get $space-id) (local.get $pc)
-        (call $deref-handle (local.get $env-handle))))
+        (call $deref-handle (local.get $env-handle))
+        (ref.null eq)))
   )
 
   ;; Module-init hook: populate the ASCII intern table before any code runs.

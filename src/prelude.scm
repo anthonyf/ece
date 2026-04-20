@@ -1181,11 +1181,34 @@ Returns #f if it contains non-serializable objects (ports, CL streams, etc.)."
      (else (emit "(%ser/opaque)"))))
 
   (define (ser-entry entry)
-    "Serialize a space-qualified entry address or bare integer."
-    (if (pair? entry)
-        (begin (emit "(") (emit (write-to-string-flat (car entry)))
-               (emit " . ") (emit (write-to-string-flat (cdr entry))) (emit ")"))
-        (emit (write-to-string-flat entry))))
+    "Serialize a space-qualified entry address or bare integer.
+
+Entry shapes:
+  - (SPACE-ID . PC) pair where SPACE-ID is a symbol — legacy per-space
+    format. Serializes inline as `(space-id . pc)`.
+  - (CODE-OBJECT . PC) pair — per-procedure format. The code-object
+    itself isn't readably serializable (no stable name space across
+    deserialization), so emit an opaque sentinel. Continuations built
+    from this form satisfy `continuation?` but can't be reinvoked.
+  - bare CODE-OBJECT — same as the pair case with pc=0.
+  - bare integer — emit directly (rare, from older code paths).
+
+The opaque path is a pragmatic compromise: code-object identity is
+process-local, so there's nothing reader-portable to emit. Tests that
+don't invoke the deserialized continuation (just check the predicate)
+still pass; tests that invoke fail loudly rather than silently."
+    (cond
+     ((code-object? entry)
+      (emit "(%ser/opaque-co)"))
+     ((and (pair? entry) (code-object? (car entry)))
+      (emit "(%ser/opaque-co-pc . ")
+      (emit (write-to-string-flat (cdr entry)))
+      (emit ")"))
+     ((pair? entry)
+      (emit "(") (emit (write-to-string-flat (car entry)))
+      (emit " . ") (emit (write-to-string-flat (cdr entry))) (emit ")"))
+     (else
+      (emit (write-to-string-flat entry)))))
 
   (define (ser-pair obj)
     "Serialize a pair, detecting proper lists for compact output."
@@ -1270,6 +1293,17 @@ Reconstructs tagged types and resolves #:def/#:ref references."
        ;; Opaque non-serializable object — replaced with #f
        ((string=? tag "%ser/opaque")
         #f)
+       ;; Code-object entry (bare) — emit a placeholder pair so the
+       ;; reconstructed procedure/continuation satisfies the standard
+       ;; predicates (`compiled-procedure?`, `continuation?`). The
+       ;; original code-object isn't reachable across processes; any
+       ;; attempt to invoke the deserialized object fails loudly.
+       ((string=? tag "%ser/opaque-co")
+        (cons '%ser/opaque-co 0))
+       ;; Code-object entry paired with a PC — same placeholder shape
+       ;; as %ser/opaque-co but preserving the PC from the original.
+       ((string=? tag "%ser/opaque-co-pc")
+        (cons '%ser/opaque-co (cdr form)))
        ;; Env frame
        ((string=? tag "%ser/env-frame")
         (define names (deser (cadr form)))

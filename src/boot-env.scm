@@ -117,7 +117,8 @@
 (%register-primitive! '%instruction-vector-push! 94)
 (%register-primitive! '%label-table-set! 95)
 (%register-primitive! '%label-table-ref 96)
-(%register-primitive! '%procedure-name-set! 97)
+;; 97 = %procedure-name-set! retired in per-procedure-code-objects §11.2
+;; (name now lives on code-object struct); ID stays reserved.
 
 ;; --- Platform discovery ---
 (%register-primitive! 'platform-has? 98)
@@ -141,18 +142,11 @@
 (%register-primitive! '%eq-hash-set! 118)
 (%register-primitive! '%hash-frame? 121)
 
-;; --- Compilation spaces ---
-(%register-primitive! '%create-space 125)
-(%register-primitive! '%space-instruction-length 126)
-(%register-primitive! '%space-name 127)
-(%register-primitive! '%current-space-id 128)
-(%register-primitive! '%set-current-space-id! 129)
-(%register-primitive! '%space-instruction-push! 130)
-(%register-primitive! '%space-label-set! 131)
-(%register-primitive! '%space-label-ref 132)
-(%register-primitive! '%space-count 133)
-(%register-primitive! '%space-source-ref 134)
-(%register-primitive! '%space-label-entries 135)
+;; --- Compilation spaces (retired — ids 125-135 reserved) ---
+;; Retired in Phase F of per-procedure-code-objects. The compiler and
+;; assembler now emit per-procedure code-objects instead of writing into
+;; symbol-keyed compilation spaces; primitives 241-249/254-257 cover the
+;; code-object API. IDs 125-135 remain reserved in primitives.def.
 
 ;; --- Miscellaneous core ---
 (%register-primitive! 'write-to-string-flat 136)
@@ -268,7 +262,28 @@
 (%register-primitive! '%global-env-symbols 237)
 (%register-primitive! '%procedure-params-set! 238)
 (%register-primitive! '%procedure-params 239)
-(%register-primitive! '%procedure-name-ref 240)
+;; 240 = %procedure-name-ref retired in per-procedure-code-objects §11.2
+;; (name now lives on code-object struct; read via code-object-name);
+;; ID stays reserved.
+
+;; --- Code objects ---
+(%register-primitive! 'code-object? 241)
+(%register-primitive! 'code-object-instructions 242)
+(%register-primitive! 'code-object-resolved-instructions 243)
+(%register-primitive! 'code-object-length 244)
+(%register-primitive! 'code-object-label-entries 245)
+(%register-primitive! 'code-object-label-ref 246)
+(%register-primitive! 'code-object-name 247)
+(%register-primitive! 'code-object-native-fn 248)
+(%register-primitive! 'code-object-source-loc 249)
+(%register-primitive! '%make-code-object 250)
+(%register-primitive! '%code-object-push-instruction! 251)
+(%register-primitive! '%code-object-set-label! 252)
+(%register-primitive! '%code-object-set-name! 253)
+(%register-primitive! '%code-object-set-arity! 254)
+(%register-primitive! '%code-object-set-source-loc! 255)
+(%register-primitive! 'execute-code-object 256)
+(%register-primitive! 'code-object-arity 257)
 
 ;;; ═══════════════════════════════════════════════════════════════════
 ;;; 2. Initialize assembler symbol table
