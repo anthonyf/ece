@@ -333,6 +333,77 @@
         (local.set $i (i32.add (local.get $i) (i32.const 1)))
         (br $loop)))
     (global.set $ascii-chars (local.get $arr))
+
+    ;; Cache sym-ids used by the archive loader.
+    ;; "const" (5 chars)
+    (global.set $sym-id-const
+      (struct.get $symbol $id (call $intern
+        (array.new_fixed $string 5
+          (i32.const 99) (i32.const 111) (i32.const 110) (i32.const 115)
+          (i32.const 116)))))
+    ;; "co-ref" (6 chars)
+    (global.set $sym-id-co-ref
+      (struct.get $symbol $id (call $intern
+        (array.new_fixed $string 6
+          (i32.const 99) (i32.const 111) (i32.const 45)
+          (i32.const 114) (i32.const 101) (i32.const 102)))))
+    ;; "ecec-archive" (12 chars)
+    (global.set $sym-id-ecec-archive
+      (struct.get $symbol $id (call $intern
+        (array.new_fixed $string 12
+          (i32.const 101) (i32.const 99) (i32.const 101) (i32.const 99)
+          (i32.const 45) (i32.const 97) (i32.const 114) (i32.const 99)
+          (i32.const 104) (i32.const 105) (i32.const 118) (i32.const 101)))))
+    ;; "ecec-header" (11 chars)
+    (global.set $sym-id-ecec-header
+      (struct.get $symbol $id (call $intern
+        (array.new_fixed $string 11
+          (i32.const 101) (i32.const 99) (i32.const 101) (i32.const 99)
+          (i32.const 45) (i32.const 104) (i32.const 101) (i32.const 97)
+          (i32.const 100) (i32.const 101) (i32.const 114)))))
+    ;; "version" (7 chars)
+    (global.set $sym-id-version
+      (struct.get $symbol $id (call $intern
+        (array.new_fixed $string 7
+          (i32.const 118) (i32.const 101) (i32.const 114) (i32.const 115)
+          (i32.const 105) (i32.const 111) (i32.const 110)))))
+    ;; "entries" (7 chars)
+    (global.set $sym-id-entries
+      (struct.get $symbol $id (call $intern
+        (array.new_fixed $string 7
+          (i32.const 101) (i32.const 110) (i32.const 116) (i32.const 114)
+          (i32.const 105) (i32.const 101) (i32.const 115)))))
+    ;; "name" (4 chars)
+    (global.set $sym-id-arch-name
+      (struct.get $symbol $id (call $intern
+        (array.new_fixed $string 4
+          (i32.const 110) (i32.const 97) (i32.const 109) (i32.const 101)))))
+    ;; "arity" (5 chars)
+    (global.set $sym-id-arch-arity
+      (struct.get $symbol $id (call $intern
+        (array.new_fixed $string 5
+          (i32.const 97) (i32.const 114) (i32.const 105) (i32.const 116)
+          (i32.const 121)))))
+    ;; "source-loc" (10 chars)
+    (global.set $sym-id-source-loc
+      (struct.get $symbol $id (call $intern
+        (array.new_fixed $string 10
+          (i32.const 115) (i32.const 111) (i32.const 117) (i32.const 114)
+          (i32.const 99) (i32.const 101) (i32.const 45) (i32.const 108)
+          (i32.const 111) (i32.const 99)))))
+    ;; "labels" (6 chars)
+    (global.set $sym-id-labels
+      (struct.get $symbol $id (call $intern
+        (array.new_fixed $string 6
+          (i32.const 108) (i32.const 97) (i32.const 98) (i32.const 101)
+          (i32.const 108) (i32.const 115)))))
+    ;; "instructions" (12 chars)
+    (global.set $sym-id-instructions
+      (struct.get $symbol $id (call $intern
+        (array.new_fixed $string 12
+          (i32.const 105) (i32.const 110) (i32.const 115) (i32.const 116)
+          (i32.const 114) (i32.const 117) (i32.const 99) (i32.const 116)
+          (i32.const 105) (i32.const 111) (i32.const 110) (i32.const 115)))))
   )
 
   ;; --- Pair ---
@@ -1461,9 +1532,26 @@
 
   ;; --- Space registry (array of spaces, indexed by symbol ID) ---
   (type $space-array (array (mut (ref null $comp-space))))
+  ;; Vector of code-objects, used by the archive loader for co-ref patching.
+  (type $co-vec (array (mut (ref null eq))))
   (global $spaces (mut (ref null $space-array))
     (array.new_default $space-array (i32.const 65536)))  ;; indexed by symbol ID (labels inflate count)
   (global $space-count (mut i32) (i32.const 0))
+
+  ;; --- Archive loader: cached symbol IDs ---
+  ;; Populated by $init-ascii-chars at module start. Used to cheaply compare
+  ;; archive plist keys / archive-head / co-ref markers during $load-archive-impl.
+  (global $sym-id-const        (mut i32) (i32.const 0))
+  (global $sym-id-co-ref       (mut i32) (i32.const 0))
+  (global $sym-id-ecec-archive (mut i32) (i32.const 0))
+  (global $sym-id-ecec-header  (mut i32) (i32.const 0))
+  (global $sym-id-version      (mut i32) (i32.const 0))
+  (global $sym-id-entries      (mut i32) (i32.const 0))
+  (global $sym-id-arch-name    (mut i32) (i32.const 0))
+  (global $sym-id-arch-arity   (mut i32) (i32.const 0))
+  (global $sym-id-source-loc   (mut i32) (i32.const 0))
+  (global $sym-id-labels       (mut i32) (i32.const 0))
+  (global $sym-id-instructions (mut i32) (i32.const 0))
 
   ;; --- Register a space ---
   (func $register-space (param $space (ref $comp-space))
@@ -6450,6 +6538,295 @@
     ;; Unknown instruction type (e.g. procedure-name metadata) — skip
     (ref.null $instr))
 
+  ;; ─── Archive loader helpers (§8 archive format, version 2) ───
+
+  ;; Archive plist walk: find VALUE for KEY-ID in a plist (k1 v1 k2 v2 ...).
+  ;; KEY-ID is a symbol-id (i32) compared against symbol-key car eq.
+  ;; Returns null if KEY is not present or PLIST runs out.
+  (func $archive-plist-get-by-id (param $plist (ref null eq)) (param $key-id i32)
+                                 (result (ref null eq))
+    (local $cur (ref null eq))
+    (local $k (ref null eq))
+    (local.set $cur (local.get $plist))
+    (block $done (loop $walk
+      (br_if $done (ref.is_null (local.get $cur)))
+      (br_if $done (call $is-null (local.get $cur)))
+      (br_if $done (i32.eqz (call $is-pair (local.get $cur))))
+      (local.set $k (call $xcar (local.get $cur)))
+      (if (call $is-symbol (local.get $k))
+        (then
+          (if (i32.eq
+                (struct.get $symbol $id (ref.cast (ref $symbol) (local.get $k)))
+                (local.get $key-id))
+            (then
+              ;; found key — next cons has the value
+              (local.set $cur (call $xcdr (local.get $cur)))
+              (br_if $done (ref.is_null (local.get $cur)))
+              (br_if $done (call $is-null (local.get $cur)))
+              (br_if $done (i32.eqz (call $is-pair (local.get $cur))))
+              (return (call $xcar (local.get $cur)))))))
+      ;; skip two cells: key and value
+      (local.set $cur (call $xcdr (local.get $cur)))
+      (br_if $done (ref.is_null (local.get $cur)))
+      (br_if $done (call $is-null (local.get $cur)))
+      (br_if $done (i32.eqz (call $is-pair (local.get $cur))))
+      (local.set $cur (call $xcdr (local.get $cur)))
+      (br $walk)))
+    (ref.null eq))
+
+  ;; Recursive walk: return a new tree identical to TREE except that every
+  ;; subtree shaped (const (co-ref N)) is replaced by (const <co-at-N>), where
+  ;; N is a non-negative fixnum index into the archive entries. Mirrors the
+  ;; CL-side archive-patch-co-refs in src/runtime.lisp — matching only in the
+  ;; (const ...) context prevents literal 'co-ref symbols (e.g. the compiled
+  ;; form of (quote co-ref) inside the compiler's own source) from being
+  ;; misidentified as co-ref forms. Traps if N >= COUNT.
+  (func $archive-patch-co-refs (param $tree (ref null eq))
+                               (param $cos (ref $co-vec))
+                               (param $count i32)
+                               (result (ref null eq))
+    (local $head (ref null eq))
+    (local $cdr1 (ref null eq))
+    (local $sub (ref null eq))
+    (local $sub-head (ref null eq))
+    (local $cdr2 (ref null eq))
+    (local $n i32)
+    ;; Null or non-pair: return tree unchanged.
+    (if (ref.is_null (local.get $tree)) (then (return (local.get $tree))))
+    (if (call $is-null (local.get $tree)) (then (return (local.get $tree))))
+    (if (i32.eqz (call $is-pair (local.get $tree)))
+      (then (return (local.get $tree))))
+    ;; Try to match (const (co-ref N)) — flatten via a block we fall out of
+    ;; whenever the shape doesn't match. On full match, return early.
+    (block $nomatch
+      (local.set $head (call $xcar (local.get $tree)))
+      (br_if $nomatch (i32.eqz (call $is-symbol (local.get $head))))
+      (br_if $nomatch (i32.ne
+        (struct.get $symbol $id (ref.cast (ref $symbol) (local.get $head)))
+        (global.get $sym-id-const)))
+      (local.set $cdr1 (call $xcdr (local.get $tree)))
+      (br_if $nomatch (ref.is_null (local.get $cdr1)))
+      (br_if $nomatch (i32.eqz (call $is-pair (local.get $cdr1))))
+      (local.set $sub (call $xcar (local.get $cdr1)))
+      (br_if $nomatch (ref.is_null (local.get $sub)))
+      (br_if $nomatch (i32.eqz (call $is-pair (local.get $sub))))
+      (local.set $sub-head (call $xcar (local.get $sub)))
+      (br_if $nomatch (i32.eqz (call $is-symbol (local.get $sub-head))))
+      (br_if $nomatch (i32.ne
+        (struct.get $symbol $id (ref.cast (ref $symbol) (local.get $sub-head)))
+        (global.get $sym-id-co-ref)))
+      (local.set $cdr2 (call $xcdr (local.get $sub)))
+      (br_if $nomatch (ref.is_null (local.get $cdr2)))
+      (br_if $nomatch (i32.eqz (call $is-pair (local.get $cdr2))))
+      ;; Full shape match: (const (co-ref N) . _). Extract N, bounds-check,
+      ;; and rebuild as (const <co-at-N>).
+      (local.set $n (call $fixnum-value
+        (ref.cast (ref i31) (call $xcar (local.get $cdr2)))))
+      (if (i32.ge_s (local.get $n) (local.get $count))
+        (then (unreachable)))  ;; co-ref out of range
+      (return (call $cons
+        (local.get $head)
+        (call $cons
+          (array.get $co-vec (local.get $cos) (local.get $n))
+          (global.get $nil)))))
+    ;; General case: recurse into car and cdr, cons back.
+    (return (call $cons
+      (call $archive-patch-co-refs
+        (call $xcar (local.get $tree)) (local.get $cos) (local.get $count))
+      (call $archive-patch-co-refs
+        (call $xcdr (local.get $tree)) (local.get $cos) (local.get $count)))))
+
+  ;; Append an instruction to a code-object's $instrs vec at its current $len.
+  ;; Grows the vec if needed.
+  (func $co-push-instr (param $co (ref $code-object)) (param $instr (ref $instr))
+    (local $vec (ref $instr-vec))
+    (local $cap i32)
+    (local $len i32)
+    (local $newvec (ref $instr-vec))
+    (local $j i32)
+    (local.set $vec (struct.get $code-object $instrs (local.get $co)))
+    (local.set $cap (array.len (local.get $vec)))
+    (local.set $len (struct.get $code-object $len (local.get $co)))
+    (if (i32.ge_s (local.get $len) (local.get $cap))
+      (then
+        (local.set $newvec (array.new_default $instr-vec
+          (i32.mul (local.get $cap) (i32.const 2))))
+        (local.set $j (i32.const 0))
+        (block $cpdone (loop $cp
+          (br_if $cpdone (i32.ge_s (local.get $j) (local.get $cap)))
+          (array.set $instr-vec (local.get $newvec) (local.get $j)
+            (array.get $instr-vec (local.get $vec) (local.get $j)))
+          (local.set $j (i32.add (local.get $j) (i32.const 1)))
+          (br $cp)))
+        (struct.set $code-object $instrs (local.get $co) (local.get $newvec))
+        (local.set $vec (local.get $newvec))))
+    (array.set $instr-vec (local.get $vec) (local.get $len) (local.get $instr))
+    (struct.set $code-object $len (local.get $co)
+      (i32.add (local.get $len) (i32.const 1))))
+
+  ;; Parse a (ecec-archive version 2 file "..." entries (<entry>...)) sexp
+  ;; and return the init code-object (entry 0). Two passes: skeleton first,
+  ;; then instructions + co-ref patching. Cursor must be set up before calling
+  ;; (either via the load_archive export or a direct $ecec-pos/$ecec-end pair).
+  ;;
+  ;; DEVIATION FROM PLAN: The plan called $ecec-parse-instr (which uses alist
+  ;; labels via $ecec-label-pc). Here we call $ece-instr-to-wasm-instr — the
+  ;; hash-table-aware sibling, matching §6.6's code-object-based label store.
+  ;; $ece-instr-to-wasm-instr always returns a non-null $instr, so we skip
+  ;; bare-symbol "label" rows (archives don't emit them, but we guard anyway)
+  ;; before calling.
+  (func $load-archive-impl (result (ref $code-object))
+    (local $archive (ref null eq))
+    (local $head (ref null eq))
+    (local $version (ref null eq))
+    (local $entries (ref null eq))
+    (local $count i32)
+    (local $i i32)
+    (local $cos (ref $co-vec))
+    (local $entry (ref null eq))
+    (local $fields (ref null eq))
+    (local $co (ref $code-object))
+    (local $labels-alist (ref null eq))
+    (local $label-pair (ref null eq))
+    (local $labels-ht (ref $hash-table))
+    (local $raw-instrs (ref null eq))
+    (local $instr-sexp (ref null eq))
+    (local $patched (ref null eq))
+    (local $parsed-instr (ref $instr))
+    (local $entries-iter (ref null eq))
+
+    ;; Read archive sexp.
+    (local.set $archive (call $ecec-read-sexp))
+    ;; Head symbol check: (ecec-archive ...)
+    (local.set $head (call $xcar (local.get $archive)))
+    (if (i32.eq
+          (struct.get $symbol $id (ref.cast (ref $symbol) (local.get $head)))
+          (global.get $sym-id-ecec-header))
+      (then (unreachable)))  ;; legacy header — "make bootstrap" required
+    (if (i32.ne
+          (struct.get $symbol $id (ref.cast (ref $symbol) (local.get $head)))
+          (global.get $sym-id-ecec-archive))
+      (then (unreachable)))  ;; unknown archive head
+
+    ;; Version check: must be 2.
+    (local.set $version
+      (call $archive-plist-get-by-id (call $xcdr (local.get $archive))
+            (global.get $sym-id-version)))
+    (if (i32.ne (call $fixnum-value (ref.cast (ref i31) (local.get $version)))
+                (i32.const 2))
+      (then (unreachable)))  ;; version mismatch — "make bootstrap" required
+
+    ;; Entries list.
+    (local.set $entries
+      (call $archive-plist-get-by-id (call $xcdr (local.get $archive))
+            (global.get $sym-id-entries)))
+
+    ;; Count entries.
+    (local.set $count (i32.const 0))
+    (local.set $entries-iter (local.get $entries))
+    (block $cdone (loop $ccount
+      (br_if $cdone (ref.is_null (local.get $entries-iter)))
+      (br_if $cdone (call $is-null (local.get $entries-iter)))
+      (br_if $cdone (i32.eqz (call $is-pair (local.get $entries-iter))))
+      (local.set $count (i32.add (local.get $count) (i32.const 1)))
+      (local.set $entries-iter (call $xcdr (local.get $entries-iter)))
+      (br $ccount)))
+
+    ;; Allocate code-object vector.
+    (local.set $cos (array.new $co-vec (ref.null eq) (local.get $count)))
+
+    ;; ─── Pass 1: skeletons ───
+    (local.set $i (i32.const 0))
+    (local.set $entries-iter (local.get $entries))
+    (block $done1 (loop $pass1
+      (br_if $done1 (i32.ge_s (local.get $i) (local.get $count)))
+      (local.set $entry (call $xcar (local.get $entries-iter)))
+      ;; Entry shape: (code-object name <v> arity <v> source-loc <v> labels <alist> instructions <list>)
+      (local.set $fields (call $xcdr (local.get $entry)))
+      (local.set $co (struct.new $code-object
+        (array.new_default $instr-vec (i32.const 32))
+        (i32.const 0)
+        (ref.null eq)
+        (ref.null eq)
+        (ref.null eq)
+        (ref.null eq)
+        (ref.null eq)))
+      ;; Set name / arity / source-loc (may all be #f/null).
+      (struct.set $code-object $name (local.get $co)
+        (call $archive-plist-get-by-id (local.get $fields)
+              (global.get $sym-id-arch-name)))
+      (struct.set $code-object $arity (local.get $co)
+        (call $archive-plist-get-by-id (local.get $fields)
+              (global.get $sym-id-arch-arity)))
+      (struct.set $code-object $source-loc (local.get $co)
+        (call $archive-plist-get-by-id (local.get $fields)
+              (global.get $sym-id-source-loc)))
+      ;; Walk labels alist and populate the code-object's label hash table.
+      (local.set $labels-alist
+        (call $archive-plist-get-by-id (local.get $fields)
+              (global.get $sym-id-labels)))
+      ;; Create an empty hash-table up front so $ece-instr-to-wasm-instr sees
+      ;; a non-null labels-ht even when the code-object has no labels.
+      (local.set $labels-ht (struct.new $hash-table
+        (array.new_default $hash-keys (i32.const 16))
+        (array.new_default $hash-vals (i32.const 16))
+        (i32.const 0)))
+      (struct.set $code-object $labels (local.get $co) (local.get $labels-ht))
+      (block $ldone (loop $lwalk
+        (br_if $ldone (ref.is_null (local.get $labels-alist)))
+        (br_if $ldone (call $is-null (local.get $labels-alist)))
+        (br_if $ldone (i32.eqz (call $is-pair (local.get $labels-alist))))
+        (local.set $label-pair (call $xcar (local.get $labels-alist)))
+        (call $hash-set-impl
+          (local.get $labels-ht)
+          (call $xcar (local.get $label-pair))
+          (call $xcdr (local.get $label-pair)))
+        (local.set $labels-alist (call $xcdr (local.get $labels-alist)))
+        (br $lwalk)))
+      (array.set $co-vec (local.get $cos) (local.get $i) (local.get $co))
+      (local.set $entries-iter (call $xcdr (local.get $entries-iter)))
+      (local.set $i (i32.add (local.get $i) (i32.const 1)))
+      (br $pass1)))
+
+    ;; ─── Pass 2: instructions ───
+    (local.set $i (i32.const 0))
+    (local.set $entries-iter (local.get $entries))
+    (block $done2 (loop $pass2
+      (br_if $done2 (i32.ge_s (local.get $i) (local.get $count)))
+      (local.set $entry (call $xcar (local.get $entries-iter)))
+      (local.set $fields (call $xcdr (local.get $entry)))
+      (local.set $co
+        (ref.cast (ref $code-object)
+          (array.get $co-vec (local.get $cos) (local.get $i))))
+      (local.set $raw-instrs
+        (call $archive-plist-get-by-id (local.get $fields)
+              (global.get $sym-id-instructions)))
+      (block $idone (loop $iwalk
+        (br_if $idone (ref.is_null (local.get $raw-instrs)))
+        (br_if $idone (call $is-null (local.get $raw-instrs)))
+        (br_if $idone (i32.eqz (call $is-pair (local.get $raw-instrs))))
+        (local.set $instr-sexp (call $xcar (local.get $raw-instrs)))
+        ;; Bare symbol = defensive label row; archives don't emit them, skip.
+        (if (i32.eqz (call $is-symbol (local.get $instr-sexp)))
+          (then
+            (local.set $patched
+              (call $archive-patch-co-refs
+                (local.get $instr-sexp) (local.get $cos) (local.get $count)))
+            (local.set $parsed-instr
+              (call $ece-instr-to-wasm-instr
+                (local.get $patched)
+                (struct.get $code-object $labels (local.get $co))))
+            (call $co-push-instr (local.get $co) (local.get $parsed-instr))))
+        (local.set $raw-instrs (call $xcdr (local.get $raw-instrs)))
+        (br $iwalk)))
+      (local.set $entries-iter (call $xcdr (local.get $entries-iter)))
+      (local.set $i (i32.add (local.get $i) (i32.const 1)))
+      (br $pass2)))
+
+    ;; Return entry 0 = init code-object.
+    (ref.cast (ref $code-object)
+      (array.get $co-vec (local.get $cos) (i32.const 0))))
+
   ;; Load one ecec section from current cursor position.
   ;; Two-phase: (1) read all units + collect all labels, (2) create instructions with resolved labels.
   ;; Returns the space ID. Cursor must be set up before calling.
@@ -6606,6 +6983,27 @@
   ;; Returns 1 if cursor has not reached end, 0 otherwise.
   (func (export "ecec_has_more") (result i32)
     (i32.lt_u (global.get $ecec-pos) (global.get $ecec-end)))
+
+  ;; New archive-format entry point. Returns a handle wrapping the init code-object.
+  (func (export "load_archive") (param $offset i32) (param $len i32) (result i32)
+    (global.set $ecec-pos (local.get $offset))
+    (global.set $ecec-end (i32.add (local.get $offset) (local.get $len)))
+    (call $alloc-handle (call $load-archive-impl)))
+
+  ;; Continue loading the next archive from the current cursor position
+  ;; (for multi-archive bundles, mirroring load_ecec_continue). Cursor must
+  ;; have been set up by a prior load_archive call.
+  (func (export "load_archive_continue") (result i32)
+    (call $alloc-handle (call $load-archive-impl)))
+
+  ;; Run an init code-object with the given environment handle.
+  (func (export "run_code_object") (param $co-handle i32) (param $env-handle i32)
+        (result i32)
+    (call $alloc-handle
+      (call $execute
+        (i32.const 0) (i32.const 0)  ;; $init-space-id, $init-pc — unused in code-object mode
+        (call $deref-handle (local.get $env-handle))
+        (call $deref-handle (local.get $co-handle)))))
 
   ;; Create a compilation space (internal, returns space-id = symbol-id)
   (func $create-space-internal (param $name-sym (ref $symbol)) (param $cap i32) (result i32)
