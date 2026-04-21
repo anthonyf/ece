@@ -335,6 +335,59 @@ const ECE = {
     return spaceId;
   },
 
+  // Load a .ecec archive (single top-level sexp, no sections).
+  // Returns a handle wrapping the init code-object.
+  loadArchiveText(text) {
+    const w = ECE.wasm;
+    text = text.trimEnd();
+    const needed = text.length * 2;
+    const currentBytes = w.memory.buffer.byteLength;
+    if (needed > currentBytes) {
+      const pages = Math.ceil((needed - currentBytes) / 65536);
+      w.memory.grow(pages);
+    }
+    const mem = new Uint16Array(w.memory.buffer);
+    for (let i = 0; i < text.length; i++) {
+      mem[i] = text.charCodeAt(i);
+    }
+    return w.load_archive(0, text.length);
+  },
+
+  // Load a multi-archive bundle (one or more (ecec-archive ...) sexps
+  // concatenated). Each archive is loaded and its init code-object executed
+  // sequentially so definitions from earlier archives are available to later
+  // ones. When MAX is supplied, stops after MAX archives have been loaded
+  // (matching the legacy loadEcecBundleText's `s < max` guard). Returns the
+  // final init code-object handle.
+  loadArchiveBundleText(text, max) {
+    const w = ECE.wasm;
+    text = text.trimEnd();
+    const needed = text.length * 2;
+    const currentBytes = w.memory.buffer.byteLength;
+    if (needed > currentBytes) {
+      const pages = Math.ceil((needed - currentBytes) / 65536);
+      w.memory.grow(pages);
+    }
+    const mem = new Uint16Array(w.memory.buffer);
+    for (let i = 0; i < text.length; i++) {
+      mem[i] = text.charCodeAt(i);
+    }
+    let co = w.load_archive(0, text.length);
+    w.run_code_object(co, ECE.globalEnvHandle);
+    let loaded = 1;
+    while (w.ecec_has_more() && (max === undefined || loaded < max)) {
+      co = w.load_archive_continue();
+      w.run_code_object(co, ECE.globalEnvHandle);
+      loaded++;
+    }
+    return co;
+  },
+
+  // Execute a loaded archive's init code-object.
+  runCodeObject(coHandle) {
+    return ECE.wasm.run_code_object(coHandle, ECE.globalEnvHandle);
+  },
+
   // ── Bootstrap and run ──
 
   async init(wasmUrl, outputElementId) {
@@ -424,6 +477,7 @@ const ECE = {
       'capture-continuation', 'do-continuation-winds',
       'continuation-stack', 'continuation-conts',
       'false?', 'list', 'cons', 'car', 'cdr',
+      'halt',
     ];
     w.init_asm_syms(names.length);
     for (let i = 0; i < names.length; i++) {
@@ -441,7 +495,7 @@ const ECE = {
     console.log("Loading bootstrap bundle...");
     const resp = await fetch(url);
     const text = await resp.text();
-    ECE.loadEcecBundleText(text);
+    ECE.loadArchiveBundleText(text);
     ECE.wasm.mark_handles();
 
     console.log("Bootstrap complete.");

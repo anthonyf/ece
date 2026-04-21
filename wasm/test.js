@@ -219,26 +219,17 @@ async function run() {
   // Build global environment
   const envH = ECE.buildGlobalEnv();
 
-  // Boot from bootstrap bundle (skip syntax-rules and browser-lib for tests —
-  // loading them exposes a continuation/guard interaction that causes the test
-  // runner's for-each to re-enter via a stale continuation).
+  // Boot from bootstrap archive bundle (one or more archive-format sexps,
+  // version 2, concatenated — one per compiled source file). Cap at 6
+  // archives (boot-env, prelude, compiler, reader, assembler, compilation-unit)
+  // — loading syntax-rules / browser-lib / disassemble exposes a
+  // continuation/guard interaction that causes the test runner's for-each to
+  // re-enter via a stale continuation (mirrors the legacy `s < 6` guard).
   ECE.globalEnvHandle = envH;
   const bundlePath = path.join(bootstrapDir, "bootstrap.ecec");
   const bundleText = fs.readFileSync(bundlePath, "utf-8").trimEnd();
   console.log("Loading bootstrap bundle...");
-  const needed = bundleText.length * 2;
-  if (needed > w.memory.buffer.byteLength) {
-    w.memory.grow(Math.ceil((needed - w.memory.buffer.byteLength) / 65536));
-  }
-  const mem = new Uint16Array(w.memory.buffer);
-  for (let i = 0; i < bundleText.length; i++) mem[i] = bundleText.charCodeAt(i);
-  // Load first 6 sections: boot-env, prelude, compiler, reader, assembler, compilation-unit
-  let spaceId = w.load_ecec(0, bundleText.length);
-  w.run(spaceId, 0, envH);
-  for (let s = 1; s < 6 && w.ecec_has_more(); s++) {
-    spaceId = w.load_ecec_continue();
-    w.run(spaceId, 0, envH);
-  }
+  ECE.loadArchiveBundleText(bundleText, 6);
   console.log("Bootstrap loaded.");
 
   // Mark handles after bootstrap so reset_handles() preserves bootstrap state
@@ -259,7 +250,8 @@ async function run() {
   const t0 = Date.now();
   let eceCrash = null;
   try {
-    ECE.loadEcecBundleText(testText);
+    const testCo = ECE.loadArchiveText(testText);
+    ECE.runCodeObject(testCo);
   } catch (e) {
     eceCrash = e.message;
   }
@@ -307,5 +299,6 @@ async function run() {
 
 run().catch(e => {
   console.error("WASM test runner error:", e.message);
+  console.error(e.stack);
   process.exit(1);
 });
