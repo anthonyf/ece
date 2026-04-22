@@ -47,16 +47,16 @@ async function run() {
   const envHandle = ECE.buildGlobalEnv();
   ECE.globalEnvHandle = envHandle;
 
-  // Fetch and load bootstrap
+  // Fetch and load bootstrap via archive loader (multi-archive bundle)
   const bootResp = await fetch(`${baseUrl}/bootstrap.ecec`);
   const bootText = await bootResp.text();
-  ECE.loadEcecBundleText(bootText);
+  ECE.loadArchiveBundle(bootText);
   ECE.wasm.mark_handles();
 
-  // Fetch and load app
+  // Fetch and load app via archive loader
   const appResp = await fetch(`${baseUrl}/app.ecec`);
   const appText = await appResp.text();
-  ECE.loadEcecBundleText(appText);
+  ECE.loadArchiveBundle(appText);
 
   // Verify output
   const text = output.join("");

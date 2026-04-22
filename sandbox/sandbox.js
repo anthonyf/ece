@@ -74,10 +74,10 @@ const Sandbox = {
 
     Sandbox.envHandle = ECE.buildGlobalEnv();
 
-    // Boot bootstrap from single bundle
+    // Boot bootstrap from a multi-archive bundle
     ECE.globalEnvHandle = Sandbox.envHandle;
     const bootText = atob(ECE_BOOTSTRAP_BUNDLE);
-    ECE.loadEcecBundleText(bootText);
+    ECE.loadArchiveBundle(bootText);
     ECE.wasm.mark_handles();
   },
 
@@ -270,16 +270,14 @@ const Sandbox = {
         ? atob(progData)
         : Buffer.from(progData, "base64").toString("binary");
       try {
-        const spaceId = ECE.loadEcecText(text);
-        w.run(spaceId, 0, Sandbox.envHandle);
+        const co = ECE.loadArchiveText(text);
+        ECE.runCodeObject(co);
       } catch(e) {
         // Pre-compiled failed — fall through to eval-string path
         Sandbox.appendConsole("Pre-compiled failed (" + e.message.substring(0,40) + "), trying eval-string...\n");
       }
       return;
     }
-    // Reset compilation state for fresh run
-    w.reset_current_space();
 
     // Use ECE's own reader and compiler via eval-string
     const evalStrProc = w.env_lookup(Sandbox.envHandle, ECE.internSym("eval-string"));

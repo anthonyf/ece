@@ -74,9 +74,9 @@ async function run() {
 
   const bootstrapText = fs.readFileSync(path.join(ROOT, "bootstrap", "bootstrap.ecec"), "utf8");
   try {
-    ECE.loadEcecBundleText(bootstrapText);
+    ECE.loadArchiveBundle(bootstrapText);
     ECE.wasm.mark_handles();
-    console.log("PASS: Bootstrap loaded via loadEcecBundleText");
+    console.log("PASS: Bootstrap loaded via loadArchiveBundle");
   } catch(e) {
     console.log("FAIL: Bootstrap loading failed:", e.message);
     failed++;
@@ -109,8 +109,8 @@ async function run() {
     output.length = 0;
     try {
       const ececText = Buffer.from(match[1], "base64").toString("binary");
-      const spaceId = ECE.loadEcecText(ececText);
-      ECE.wasm.run(spaceId, 0, envHandle);
+      const co = ECE.loadArchiveText(ececText);
+      ECE.runCodeObject(co);
       const text = output.join("");
       if (text.includes("Hello, World!")) {
         console.log("PASS: Pre-compiled Hello World loaded and ran");

@@ -50,15 +50,15 @@
       ECE.wasm = instance.exports;
       const envHandle = ECE.buildGlobalEnv();
 
-      // Boot bootstrap from single bundle
+      // Boot bootstrap from multi-archive bundle
       ECE.globalEnvHandle = envHandle;
       const bootText = atob(ECE_BOOTSTRAP_BUNDLE);
-      ECE.loadEcecBundleText(bootText);
+      ECE.loadArchiveBundle(bootText);
       ECE.wasm.mark_handles();
 
-      // Load and execute app bundle
+      // Load and execute app archive bundle
       const appText = atob(ECE_APP_BUNDLE);
-      ECE.loadEcecBundleText(appText);
+      ECE.loadArchiveBundle(appText);
     })();
   </script>
 </body>

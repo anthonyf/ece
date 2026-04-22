@@ -292,10 +292,11 @@ const ECE = {
     return ECE.wasm.make_string(offset, len);
   },
 
-  // Load .ecec text via WAT-native reader (single-space)
-  loadEcecText(text) {
+  // Load a .ecec archive (single top-level sexp).
+  // Returns a handle wrapping the init code-object.
+  loadArchiveText(text) {
     const w = ECE.wasm;
-    // Ensure linear memory is large enough for UTF-16 text
+    text = text.trimEnd();
     const needed = text.length * 2;
     const currentBytes = w.memory.buffer.byteLength;
     if (needed > currentBytes) {
@@ -306,33 +307,27 @@ const ECE = {
     for (let i = 0; i < text.length; i++) {
       mem[i] = text.charCodeAt(i);
     }
-    return w.load_ecec(0, text.length);
+    return w.load_archive(0, text.length);
   },
 
-  // Load multi-space .ecec bundle text. Each section is loaded and executed
-  // sequentially so definitions from earlier sections are available to later ones.
-  loadEcecBundleText(text) {
+  // Load a multi-archive bundle (one or more (ecec-archive ...) sexps
+  // concatenated). Each archive's init code-object is loaded and
+  // executed sequentially so definitions from earlier archives are
+  // available to later ones. Returns the final init code-object handle.
+  loadArchiveBundle(text) {
     const w = ECE.wasm;
-    text = text.trimEnd();  // remove trailing whitespace so ecec_has_more stops cleanly
-    const needed = text.length * 2;
-    const currentBytes = w.memory.buffer.byteLength;
-    if (needed > currentBytes) {
-      const pages = Math.ceil((needed - currentBytes) / 65536);
-      w.memory.grow(pages);
+    let co = ECE.loadArchiveText(text);
+    w.run_code_object(co, ECE.globalEnvHandle);
+    while (w.archive_has_more()) {
+      co = w.load_archive_continue();
+      w.run_code_object(co, ECE.globalEnvHandle);
     }
-    const mem = new Uint16Array(w.memory.buffer);
-    for (let i = 0; i < text.length; i++) {
-      mem[i] = text.charCodeAt(i);
-    }
-    // Load and execute first section
-    let spaceId = w.load_ecec(0, text.length);
-    w.run(spaceId, 0, ECE.globalEnvHandle);
-    // Load and execute remaining sections
-    while (w.ecec_has_more()) {
-      spaceId = w.load_ecec_continue();
-      w.run(spaceId, 0, ECE.globalEnvHandle);
-    }
-    return spaceId;
+    return co;
+  },
+
+  // Execute a loaded archive's init code-object.
+  runCodeObject(coHandle) {
+    return ECE.wasm.run_code_object(coHandle, ECE.globalEnvHandle);
   },
 
   // ── Bootstrap and run ──
@@ -424,6 +419,7 @@ const ECE = {
       'capture-continuation', 'do-continuation-winds',
       'continuation-stack', 'continuation-conts',
       'false?', 'list', 'cons', 'car', 'cdr',
+      'halt',
     ];
     w.init_asm_syms(names.length);
     for (let i = 0; i < names.length; i++) {
@@ -436,25 +432,15 @@ const ECE = {
     ECE.globalEnvHandle = ECE.buildGlobalEnv();
     console.log("Global environment built.");
 
-    // Load single bootstrap bundle
+    // Load bootstrap bundle (multi-archive sexp)
     const url = `${baseUrl}/bootstrap.ecec`;
     console.log("Loading bootstrap bundle...");
     const resp = await fetch(url);
     const text = await resp.text();
-    ECE.loadEcecBundleText(text);
+    ECE.loadArchiveBundle(text);
     ECE.wasm.mark_handles();
 
     console.log("Bootstrap complete.");
-  },
-
-  // Execute a loaded space
-  runSpace(spaceName, pc) {
-    const sym = ECE.internSym(spaceName);
-    // sym is a handle; we need the symbol ID for get-space
-    // For now, use the symbol's intern index directly
-    // TODO: resolve this properly
-    const w = ECE.wasm;
-    return w.run(sym, pc || 0, ECE.globalEnvHandle);
   }
 };
 
