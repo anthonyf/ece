@@ -268,6 +268,47 @@
       (i32.const 97)(i32.const 32)(i32.const 115)(i32.const 116)(i32.const 114)(i32.const 105)
       (i32.const 110)(i32.const 103)))
 
+  ;; Archive loader error messages (used by $load-archive-impl and
+  ;; $archive-patch-co-refs — actionable text surfaced to JS via runtime_error).
+  ;; "Legacy .ecec format - run make bootstrap" (40 chars)
+  (global $err-legacy-arch (ref $string)
+    (array.new_fixed $string 40
+      (i32.const 76)(i32.const 101)(i32.const 103)(i32.const 97)(i32.const 99)(i32.const 121)
+      (i32.const 32)(i32.const 46)(i32.const 101)(i32.const 99)(i32.const 101)(i32.const 99)
+      (i32.const 32)(i32.const 102)(i32.const 111)(i32.const 114)(i32.const 109)(i32.const 97)
+      (i32.const 116)(i32.const 32)(i32.const 45)(i32.const 32)(i32.const 114)(i32.const 117)
+      (i32.const 110)(i32.const 32)(i32.const 109)(i32.const 97)(i32.const 107)(i32.const 101)
+      (i32.const 32)(i32.const 98)(i32.const 111)(i32.const 111)(i32.const 116)(i32.const 115)
+      (i32.const 116)(i32.const 114)(i32.const 97)(i32.const 112)))
+  ;; "Unknown .ecec archive head" (26 chars)
+  (global $err-unknown-arch (ref $string)
+    (array.new_fixed $string 26
+      (i32.const 85)(i32.const 110)(i32.const 107)(i32.const 110)(i32.const 111)(i32.const 119)
+      (i32.const 110)(i32.const 32)(i32.const 46)(i32.const 101)(i32.const 99)(i32.const 101)
+      (i32.const 99)(i32.const 32)(i32.const 97)(i32.const 114)(i32.const 99)(i32.const 104)
+      (i32.const 105)(i32.const 118)(i32.const 101)(i32.const 32)(i32.const 104)(i32.const 101)
+      (i32.const 97)(i32.const 100)))
+  ;; "Unsupported .ecec archive version - run make bootstrap" (54 chars)
+  (global $err-bad-version (ref $string)
+    (array.new_fixed $string 54
+      (i32.const 85)(i32.const 110)(i32.const 115)(i32.const 117)(i32.const 112)(i32.const 112)
+      (i32.const 111)(i32.const 114)(i32.const 116)(i32.const 101)(i32.const 100)(i32.const 32)
+      (i32.const 46)(i32.const 101)(i32.const 99)(i32.const 101)(i32.const 99)(i32.const 32)
+      (i32.const 97)(i32.const 114)(i32.const 99)(i32.const 104)(i32.const 105)(i32.const 118)
+      (i32.const 101)(i32.const 32)(i32.const 118)(i32.const 101)(i32.const 114)(i32.const 115)
+      (i32.const 105)(i32.const 111)(i32.const 110)(i32.const 32)(i32.const 45)(i32.const 32)
+      (i32.const 114)(i32.const 117)(i32.const 110)(i32.const 32)(i32.const 109)(i32.const 97)
+      (i32.const 107)(i32.const 101)(i32.const 32)(i32.const 98)(i32.const 111)(i32.const 111)
+      (i32.const 116)(i32.const 115)(i32.const 116)(i32.const 114)(i32.const 97)(i32.const 112)))
+  ;; "Archive co-ref out of range" (27 chars)
+  (global $err-bad-coref (ref $string)
+    (array.new_fixed $string 27
+      (i32.const 65)(i32.const 114)(i32.const 99)(i32.const 104)(i32.const 105)(i32.const 118)
+      (i32.const 101)(i32.const 32)(i32.const 99)(i32.const 111)(i32.const 45)(i32.const 114)
+      (i32.const 101)(i32.const 102)(i32.const 32)(i32.const 111)(i32.const 117)(i32.const 116)
+      (i32.const 32)(i32.const 111)(i32.const 102)(i32.const 32)(i32.const 114)(i32.const 97)
+      (i32.const 110)(i32.const 103)(i32.const 101)))
+
 
   ;; ═══════════════════════════════════════════════════════════════════
   ;; Section 3: Value Constructors and Accessors
@@ -5978,12 +6019,20 @@
       (local.set $cdr2 (call $xcdr (local.get $sub)))
       (br_if $nomatch (ref.is_null (local.get $cdr2)))
       (br_if $nomatch (i32.eqz (call $is-pair (local.get $cdr2))))
-      ;; Full shape match: (const (co-ref N) . _). Extract N, bounds-check,
-      ;; and rebuild as (const <co-at-N>).
+      ;; Full shape match: (const (co-ref N) . _). Validate N is a fixnum
+      ;; in [0, count), then rebuild as (const <co-at-N>).
+      (if (i32.eqz (ref.test (ref i31) (call $xcar (local.get $cdr2))))
+        (then
+          (call $signal-error-str (global.get $err-bad-coref))
+          (unreachable)))
       (local.set $n (call $fixnum-value
         (ref.cast (ref i31) (call $xcar (local.get $cdr2)))))
-      (if (i32.ge_s (local.get $n) (local.get $count))
-        (then (unreachable)))  ;; co-ref out of range
+      (if (i32.or
+            (i32.lt_s (local.get $n) (i32.const 0))
+            (i32.ge_s (local.get $n) (local.get $count)))
+        (then
+          (call $signal-error-str (global.get $err-bad-coref))
+          (unreachable)))
       (return (call $cons
         (local.get $head)
         (call $cons
@@ -6060,11 +6109,15 @@
     (if (i32.eq
           (struct.get $symbol $id (ref.cast (ref $symbol) (local.get $head)))
           (global.get $sym-id-ecec-header))
-      (then (unreachable)))  ;; legacy header — "make bootstrap" required
+      (then
+        (call $signal-error-str (global.get $err-legacy-arch))
+        (unreachable)))
     (if (i32.ne
           (struct.get $symbol $id (ref.cast (ref $symbol) (local.get $head)))
           (global.get $sym-id-ecec-archive))
-      (then (unreachable)))  ;; unknown archive head
+      (then
+        (call $signal-error-str (global.get $err-unknown-arch))
+        (unreachable)))
 
     ;; Version check: must be 2.
     (local.set $version
@@ -6072,7 +6125,9 @@
             (global.get $sym-id-version)))
     (if (i32.ne (call $fixnum-value (ref.cast (ref i31) (local.get $version)))
                 (i32.const 2))
-      (then (unreachable)))  ;; version mismatch — "make bootstrap" required
+      (then
+        (call $signal-error-str (global.get $err-bad-version))
+        (unreachable)))
 
     ;; Entries list.
     (local.set $entries
