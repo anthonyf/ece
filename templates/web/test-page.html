@@ -67,18 +67,18 @@ async function runTests() {
     statusEl.textContent = "Loading bootstrap...";
     ECE.globalEnvHandle = envH;
     const bootText = atob(ECE_BOOTSTRAP_BUNDLE);
-    ECE.loadEcecBundleText(bootText);
+    ECE.loadArchiveBundle(bootText);
     ECE.wasm.mark_handles();
 
     statusEl.textContent = "Running tests...";
 
     // Load and run test suite
     const testText = atob(ECE_APP_BUNDLE);
-    const testSpaceId = ECE.loadEcecText(testText);
+    const testCo = ECE.loadArchiveText(testText);
 
     const t0 = performance.now();
     try {
-      ECE.wasm.run(testSpaceId, 0, envH);
+      ECE.runCodeObject(testCo);
     } catch(e) { /* some tests may trap */ }
     const elapsed = Math.round(performance.now() - t0);
 

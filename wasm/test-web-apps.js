@@ -74,9 +74,9 @@ async function run() {
 
   const bootstrapText = fs.readFileSync(path.join(ROOT, "bootstrap", "bootstrap.ecec"), "utf8");
   try {
-    ECE.loadArchiveBundleText(bootstrapText);
+    ECE.loadArchiveBundle(bootstrapText);
     ECE.wasm.mark_handles();
-    console.log("PASS: Bootstrap loaded via loadArchiveBundleText");
+    console.log("PASS: Bootstrap loaded via loadArchiveBundle");
   } catch(e) {
     console.log("FAIL: Bootstrap loading failed:", e.message);
     failed++;
