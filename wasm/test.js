@@ -57,6 +57,14 @@ function runIntegrationTests(w, envH) {
   // under the new code-object executor — diagnosing requires the source
   // maps retired in this same commit. See the TODO near op 19
   // (do-continuation-winds) in wasm/runtime.wat for the follow-up plan.
+  //
+  // A smaller JS-side regression test that exercises just capture-
+  // continuation + invoke (no yield / no do-continuation-winds) would
+  // not cover the specific path that regressed, and the ECE-side test
+  // suite (tests/ece/test-continuations.scm, test-serialization.scm)
+  // already exercises call/cc extensively end-to-end via the bundle
+  // loaded above. Re-adding the yield-loop JS harness once the illegal-
+  // cast is diagnosed will restore the handle-table-stability coverage.
 
   // ── runtime_error import fires with clear message ──
   iTest("runtime_error produces readable exception", () => {

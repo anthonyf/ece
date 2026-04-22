@@ -314,6 +314,15 @@ const ECE = {
   // concatenated). Each archive's init code-object is loaded and
   // executed sequentially so definitions from earlier archives are
   // available to later ones. Returns the final init code-object handle.
+  //
+  // Handle-table growth: each iteration allocates two handles (the
+  // load_archive_continue co-handle + the run_code_object result). These
+  // remain live until the caller invokes mark_handles()/reset_handles().
+  // The bootstrap path (and test runners) call mark_handles() immediately
+  // after this returns, so growth is bounded by the bundle's archive count
+  // per bootstrap — not per-call-to-loadArchiveBundle over the program
+  // lifetime. Callers that invoke loadArchiveBundle repeatedly without
+  // marking afterwards should reset handles between calls.
   loadArchiveBundle(text) {
     const w = ECE.wasm;
     let co = ECE.loadArchiveText(text);

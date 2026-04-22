@@ -308,6 +308,18 @@
       (i32.const 101)(i32.const 102)(i32.const 32)(i32.const 111)(i32.const 117)(i32.const 116)
       (i32.const 32)(i32.const 111)(i32.const 102)(i32.const 32)(i32.const 114)(i32.const 97)
       (i32.const 110)(i32.const 103)(i32.const 101)))
+  ;; "Archive has no entries - run make bootstrap" (43 chars)
+  ;; Raised when an archive's entries plist is missing, empty, or improper.
+  (global $err-empty-entries (ref $string)
+    (array.new_fixed $string 43
+      (i32.const 65)(i32.const 114)(i32.const 99)(i32.const 104)(i32.const 105)(i32.const 118)
+      (i32.const 101)(i32.const 32)(i32.const 104)(i32.const 97)(i32.const 115)(i32.const 32)
+      (i32.const 110)(i32.const 111)(i32.const 32)(i32.const 101)(i32.const 110)(i32.const 116)
+      (i32.const 114)(i32.const 105)(i32.const 101)(i32.const 115)(i32.const 32)(i32.const 45)
+      (i32.const 32)(i32.const 114)(i32.const 117)(i32.const 110)(i32.const 32)(i32.const 109)
+      (i32.const 97)(i32.const 107)(i32.const 101)(i32.const 32)(i32.const 98)(i32.const 111)
+      (i32.const 111)(i32.const 116)(i32.const 115)(i32.const 116)(i32.const 114)(i32.const 97)
+      (i32.const 112)))
 
 
   ;; ═══════════════════════════════════════════════════════════════════
@@ -2154,7 +2166,15 @@
 
         ;; Debug tracking
         (global.set $dbg-pc (local.get $pc))
-        ;; Tracing enabled temporarily
+        ;; Debug trace. The second parameter was formerly a space-id for
+        ;; the retired compilation-space model; with per-procedure code
+        ;; objects there is no single integer identity for a code-object
+        ;; that is both cheap to compute and meaningful to JS-side tooling.
+        ;; All production imports (glue.js `trace_pc`, test.js `trace_pc`)
+        ;; treat this parameter as opaque, so we pass 0 as a placeholder.
+        ;; Follow-up: if a JS tracer is reintroduced, pipe a stable code-
+        ;; object identity through here (a handle, or the symbol id of
+        ;; the code-object's $name) — don't reuse the space-id meaning.
         (call $js-trace-pc (local.get $pc) (i32.const 0))
 
         ;; Fetch instruction
@@ -6019,7 +6039,13 @@
       (local.set $cdr2 (call $xcdr (local.get $sub)))
       (br_if $nomatch (ref.is_null (local.get $cdr2)))
       (br_if $nomatch (i32.eqz (call $is-pair (local.get $cdr2))))
-      ;; Full shape match: (const (co-ref N) . _). Validate N is a fixnum
+      ;; Require exact proper-list shapes: (const X) and (co-ref N) — no
+      ;; trailing elements. (cdr cdr1) and (cdr cdr2) must both be nil;
+      ;; otherwise fall through to general recursion so the subtree is
+      ;; traversed as ordinary data.
+      (br_if $nomatch (i32.eqz (call $is-null (call $xcdr (local.get $cdr1)))))
+      (br_if $nomatch (i32.eqz (call $is-null (call $xcdr (local.get $cdr2)))))
+      ;; Full shape match: (const (co-ref N)). Validate N is a fixnum
       ;; in [0, count), then rebuild as (const <co-at-N>).
       (if (i32.eqz (ref.test (ref i31) (call $xcar (local.get $cdr2))))
         (then
@@ -6134,7 +6160,9 @@
       (call $archive-plist-get-by-id (call $xcdr (local.get $archive))
             (global.get $sym-id-entries)))
 
-    ;; Count entries.
+    ;; Count entries. Stops at the first null/non-pair; an improper tail
+    ;; (atom != nil) is treated the same as an empty list and rejected
+    ;; below so we never dereference garbage.
     (local.set $count (i32.const 0))
     (local.set $entries-iter (local.get $entries))
     (block $cdone (loop $ccount
@@ -6144,6 +6172,21 @@
       (local.set $count (i32.add (local.get $count) (i32.const 1)))
       (local.set $entries-iter (call $xcdr (local.get $entries-iter)))
       (br $ccount)))
+
+    ;; Guard: entries must be a non-empty proper list. An empty or missing
+    ;; `entries` plist value would otherwise trap in the final
+    ;; (array.get $co-vec ... (i32.const 0)) with an opaque bounds error.
+    ;; Improper lists (non-null, non-pair tail) are also rejected.
+    (if (i32.eqz (local.get $count))
+      (then
+        (call $signal-error-str (global.get $err-empty-entries))
+        (unreachable)))
+    (if (i32.and
+          (i32.eqz (ref.is_null (local.get $entries-iter)))
+          (i32.eqz (call $is-null (local.get $entries-iter))))
+      (then
+        (call $signal-error-str (global.get $err-empty-entries))
+        (unreachable)))
 
     ;; Allocate code-object vector.
     (local.set $cos (array.new $co-vec (ref.null eq) (local.get $count)))
@@ -6236,7 +6279,9 @@
       (local.set $i (i32.add (local.get $i) (i32.const 1)))
       (br $pass2)))
 
-    ;; Return entry 0 = init code-object.
+    ;; Return entry 0 = init code-object. Invariant: count > 0 here — the
+    ;; empty/improper-entries guard above signals $err-empty-entries and
+    ;; traps, so this array.get is always within bounds.
     (ref.cast (ref $code-object)
       (array.get $co-vec (local.get $cos) (i32.const 0))))
 
