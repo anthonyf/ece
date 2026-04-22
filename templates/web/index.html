@@ -48,17 +48,17 @@
       ECE.wasm = instance.exports;
       const envHandle = ECE.buildGlobalEnv();
 
-      // Boot bootstrap from fetched bundle
+      // Boot bootstrap from fetched archive bundle
       ECE.globalEnvHandle = envHandle;
       const bootResp = await fetch("bootstrap.ecec");
       const bootText = await bootResp.text();
-      ECE.loadEcecBundleText(bootText);
+      ECE.loadArchiveBundle(bootText);
       ECE.wasm.mark_handles();
 
-      // Load and execute app bundle
+      // Load and execute app archive bundle
       const appResp = await fetch("app.ecec");
       const appText = await appResp.text();
-      ECE.loadEcecBundleText(appText);
+      ECE.loadArchiveBundle(appText);
     })();
   </script>
 </body>
