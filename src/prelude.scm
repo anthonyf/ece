@@ -962,6 +962,56 @@
 ;; Serialize/deserialize any ECE value to/from s-expression strings.
 ;; Handles shared structure via %ser/def/%ser/ref tags.
 
+;; ─────────────────────────────────────────────────────────────────────────
+;; Code-object serialization helpers (shared by ser-entry + ser-compound).
+;; Two forms:
+;;   (%ser/co-ref  <archive-stem> <index>)      — when the CO has an
+;;                                                 archive-key populated
+;;                                                 (registered at load
+;;                                                 time; by-reference).
+;;   (%ser/co-inline :name ... :instructions ..) — anonymous / REPL-
+;;                                                 compiled CO; travels
+;;                                                 inline with a copy of
+;;                                                 its instructions.
+;; Keyword keys match the P0.5 archive-entry format.
+;; Inline instructions may contain nested code-objects; ser/walk-instruction
+;; recursively rewrites them to %ser/co-ref or %ser/co-inline sexps so the
+;; outer value-serializer never sees a raw code-object.
+;; ─────────────────────────────────────────────────────────────────────────
+
+(define (ser/walk-instruction instr)
+  "Walk an instruction sexp, rewriting any code-object literal to a
+%ser/co-ref or %ser/co-inline form via ser/code-object->sexp. Leaves
+non-code-object atoms and sub-structure unchanged."
+  (cond
+   ((null? instr) instr)
+   ((code-object? instr) (ser/code-object->sexp instr))
+   ((not (pair? instr)) instr)
+   (else (cons (ser/walk-instruction (car instr))
+               (ser/walk-instruction (cdr instr))))))
+
+(define (ser/code-object->sexp co)
+  "Dispatch a code-object to its reader-safe sexp form. Returns either
+(%ser/co-ref stem index) when CO has an archive-key (O(1) lookup via
+the struct slot), or (%ser/co-inline ...) with name/arity/source-loc/
+labels/instructions copied from the struct otherwise."
+  (let ((key (code-object-archive-key co)))
+    (if key
+        (list '%ser/co-ref (car key) (cdr key))
+        (list '%ser/co-inline
+              ':name (code-object-name co)
+              ':arity (code-object-arity co)
+              ':source-loc (code-object-source-loc co)
+              ':labels (code-object-label-entries co)
+              ':instructions
+              (let* ((instrs (code-object-instructions co))
+                     (len    (code-object-length co)))
+                (let loop ((i 0) (acc '()))
+                  (if (>= i len) (reverse acc)
+                      (loop (+ i 1)
+                            (cons (ser/walk-instruction (vector-ref instrs i))
+                                  acc)))))))))
+
 (define (serialize-value value)
   "Serialize VALUE to an s-expression string. Handles all ECE types,
 shared structure, and global env sentinel."
