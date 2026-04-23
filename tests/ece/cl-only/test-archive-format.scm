@@ -7,9 +7,9 @@
   (let* ((co (mc-compile-to-code-object 42))
          (archive (code-object->archive-sexp co "scratch.scm")))
     ;; Sanity: version 2, file set, at least one entry.
-    (assert-equal 2 (archive/plist-get (cdr archive) 'version))
-    (assert-equal "scratch.scm" (archive/plist-get (cdr archive) 'file))
-    (assert-true (pair? (archive/plist-get (cdr archive) 'entries))))))
+    (assert-equal 2 (archive/plist-get (cdr archive) ':version))
+    (assert-equal "scratch.scm" (archive/plist-get (cdr archive) ':file))
+    (assert-true (pair? (archive/plist-get (cdr archive) ':entries))))))
 
 (test "archive: collect-reachable includes top then children (ordering)"
   (lambda ()
@@ -24,12 +24,12 @@
   ;; (define (f x) x) — outer init has a child code-object for f.
   (let* ((co (mc-compile-to-code-object '(define (f x) x)))
          (archive (code-object->archive-sexp co "scratch.scm"))
-         (entries (archive/plist-get (cdr archive) 'entries)))
+         (entries (archive/plist-get (cdr archive) ':entries)))
     ;; Should have at least 2 entries (init + lambda).
     (assert-true (>= (length entries) 2))
     ;; Init's instructions should reference (co-ref <N>) somewhere.
     (let* ((init (car entries))
-           (instructions (archive/plist-get (cdr init) 'instructions))
+           (instructions (archive/plist-get (cdr init) ':instructions))
            (found-co-ref #f))
       (let scan ((tree instructions))
         (cond
@@ -70,7 +70,7 @@
 (test "archive: version mismatch raises clear error" (lambda ()
   ;; Synthesize an archive with version 1 and confirm the error mentions
   ;; the version and `make bootstrap`.
-  (let* ((bad-archive '(ecec-archive :version 1 :file "x.scm" :entries ()))
+  (let* ((bad-archive '(:ecec-archive :version 1 :file "x.scm" :entries ()))
          (raised #f))
     (guard (e (#t (set! raised #t)))
       (archive-sexp->code-objects bad-archive))
@@ -110,7 +110,7 @@
     ;; And the emitted archive sexp records the source filename.
     (let* ((archive (code-object->archive-sexp top-co "rt-srcloc.scm"))
            (fields (cdr archive)))
-      (assert-equal "rt-srcloc.scm" (archive/plist-get fields 'file))))))
+      (assert-equal "rt-srcloc.scm" (archive/plist-get fields ':file))))))
 
 (test "archive: compile-system orders multiple files" (lambda ()
   ;; compile-system spec scenario: "Compile two files into an archive".
