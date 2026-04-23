@@ -1876,6 +1876,11 @@ return an empty list."
            (progn (setf (code-object-archive-key co)
                         (if (eq key *scheme-false*) nil key))
                   nil))))
+(unless (and (find-symbol "ECE-%ARCHIVE-CO-LOOKUP" :ece)
+             (fboundp (find-symbol "ECE-%ARCHIVE-CO-LOOKUP" :ece)))
+  (eval `(defun ,(intern "ECE-%ARCHIVE-CO-LOOKUP" :ece) (stem index)
+           (or (gethash (cons stem index) *archive-code-objects*)
+               *scheme-false*))))
 
 ;;; Now that all primitives and wrapper functions are defined, initialize
 ;;; the dispatch tables from the manifest, then build *global-env*.

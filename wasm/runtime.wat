@@ -5532,6 +5532,13 @@
           (call $arg2 (local.get $args)))
         (return (global.get $void))))
 
+    ;; 260 = %archive-co-lookup(stem, index) — WASM stub returns #f.
+    ;; The WASM archive loader doesn't populate a (stem . index) registry
+    ;; (archive-key stamping is a CL-only follow-up); by-reference
+    ;; deserialization falls back to the inline form on WASM.
+    (if (i32.eq (local.get $id) (i32.const 260))
+      (then (return (global.get $false))))
+
     ;; Unknown primitive — return void
     (global.get $void)
   )

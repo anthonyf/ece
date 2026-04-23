@@ -1012,6 +1012,100 @@ labels/instructions copied from the struct otherwise."
                             (cons (ser/walk-instruction (vector-ref instrs i))
                                   acc)))))))))
 
+;; ─────────────────────────────────────────────────────────────────────────
+;; Code-object deserialization helpers — inverse of ser/walk-instruction
+;; and ser/code-object->sexp. Invoked from deserialize-value's dispatch on
+;; %ser/co-ref / %ser/co-inline.
+;; ─────────────────────────────────────────────────────────────────────────
+
+(define (deser/plist-get plist key)
+  "Get KEY from a keyword plist. Returns #f when absent."
+  (cond
+   ((null? plist) #f)
+   ((null? (cdr plist)) #f)
+   ((eq? (car plist) key) (cadr plist))
+   (else (deser/plist-get (cddr plist) key))))
+
+(define (deser/walk-instruction instr)
+  "Walk an instruction sexp, reconstructing any nested (%ser/co-ref ...)
+or (%ser/co-inline ...) into a live code-object. Leaves everything else
+unchanged."
+  (cond
+   ((null? instr) instr)
+   ((not (pair? instr)) instr)
+   ((and (symbol? (car instr))
+         (string=? (symbol->string (car instr)) "%ser/co-ref"))
+    (deser/lookup-archive-co (cadr instr) (caddr instr)))
+   ((and (symbol? (car instr))
+         (string=? (symbol->string (car instr)) "%ser/co-inline"))
+    (deser/reconstruct-co-inline (cdr instr) deser/walk-instruction))
+   (else (cons (deser/walk-instruction (car instr))
+               (deser/walk-instruction (cdr instr))))))
+
+(define (deser/lookup-archive-co stem index)
+  "Resolve (stem . index) to the archive-registered code-object. Raises
+ece-deser-missing-archive-error when the key is absent (caller may catch
+and re-prompt the user to load the archive)."
+  (let ((co (%archive-co-lookup stem index)))
+    (if co
+        co
+        (raise-ece-deser-missing-archive-error stem index))))
+
+(define (deser/reconstruct-co-inline fields walk)
+  "Reconstruct a code-object from the plist FIELDS of a (%ser/co-inline
+...)  form. WALK is a per-instruction recursion (either deser/walk-
+instruction for top-level reconstruction, or the outer deser closure's
+entry-form walker for the initial call) so nested inline/by-ref code-
+objects resolve recursively."
+  (let ((co (%make-code-object))
+        (name       (deser/plist-get fields ':name))
+        (arity      (deser/plist-get fields ':arity))
+        (source-loc (deser/plist-get fields ':source-loc))
+        (labels     (deser/plist-get fields ':labels))
+        (instrs     (deser/plist-get fields ':instructions)))
+    (when name       (%code-object-set-name! co name))
+    (when arity      (%code-object-set-arity! co arity))
+    (when source-loc (%code-object-set-source-loc! co source-loc))
+    (when labels
+      (for-each (lambda (pair)
+                  (%code-object-set-label! co (car pair) (cdr pair)))
+                labels))
+    (when instrs
+      (for-each (lambda (instr)
+                  (%code-object-push-instruction! co (walk instr)))
+                instrs))
+    co))
+
+(define (deser/entry-form form deser)
+  "Deserialize a compiled-procedure / continuation entry operand. FORM is
+one of:
+  - (%ser/co-ref ...)          — by-reference CO, look up in archive
+  - (%ser/co-inline ...)       — inline CO, reconstruct struct
+  - ((co-sexp) . pc)           — dotted pair carrying the CO + PC
+  - (%ser/opaque-co [...])     — legacy placeholder (preserved)
+  - any other value            — passed through to DESER.
+DESER is the outer deserializer closure for deep reference resolution."
+  (cond
+   ;; Dotted (<co-sexp> . pc) — preserve pair, deser the car portion.
+   ((and (pair? form)
+         (pair? (car form))
+         (symbol? (caar form))
+         (or (string=? (symbol->string (caar form)) "%ser/co-ref")
+             (string=? (symbol->string (caar form)) "%ser/co-inline")))
+    (cons (deser (car form)) (cdr form)))
+   (else (deser form))))
+
+(define (raise-ece-deser-missing-archive-error stem idx)
+  "Task 4 placeholder: raise a generic error. Task 5 upgrades this to a
+dedicated record type (`ece-deser-missing-archive-error`) that callers
+can catch programmatically."
+  (error (string-append
+          "Can't deserialize continuation: code-object not loaded ("
+          (if (symbol? stem) (symbol->string stem) (write-to-string stem))
+          " index "
+          (if (number? idx) (number->string idx) (write-to-string idx))
+          "). Ensure the source archive is loaded in this process.")))
+
 (define (serialize-value value)
   "Serialize VALUE to an s-expression string. Handles all ECE types,
 shared structure, and global env sentinel."
@@ -1346,17 +1440,24 @@ Reconstructs tagged types and resolves #:def/#:ref references."
        ;; Opaque non-serializable object — replaced with #f
        ((string=? tag "%ser/opaque")
         #f)
-       ;; Code-object entry (bare) — emit a placeholder pair so the
-       ;; reconstructed procedure/continuation satisfies the standard
-       ;; predicates (`compiled-procedure?`, `continuation?`). The
-       ;; original code-object isn't reachable across processes; any
-       ;; attempt to invoke the deserialized object fails loudly.
+       ;; Code-object entry (bare) — legacy placeholder emitted before
+       ;; %ser/co-ref/%ser/co-inline landed. Still recognized for
+       ;; backward compatibility with older serialized blobs; the
+       ;; reconstructed placeholder pair satisfies continuation? /
+       ;; compiled-procedure? but is not invokable.
        ((string=? tag "%ser/opaque-co")
         (cons '%ser/opaque-co 0))
-       ;; Code-object entry paired with a PC — same placeholder shape
-       ;; as %ser/opaque-co but preserving the PC from the original.
+       ;; Legacy opaque-co-pc placeholder.
        ((string=? tag "%ser/opaque-co-pc")
         (cons '%ser/opaque-co (cdr form)))
+       ;; By-reference code-object: look up the archive-registered CO.
+       ((string=? tag "%ser/co-ref")
+        (let* ((stem (cadr form))
+               (idx  (caddr form)))
+          (deser/lookup-archive-co stem idx)))
+       ;; Inline code-object: reconstruct the struct from plist fields.
+       ((string=? tag "%ser/co-inline")
+        (deser/reconstruct-co-inline (cdr form) deser))
        ;; Env frame
        ((string=? tag "%ser/env-frame")
         (define names (deser (cadr form)))
@@ -1377,13 +1478,13 @@ Reconstructs tagged types and resolves #:def/#:ref references."
         (list 'parameter (cons val converter)))
        ;; Compiled procedure
        ((string=? tag "%ser/compiled-procedure")
-        (define entry (cadr form))
+        (define entry (deser/entry-form (cadr form) deser))
         (define env (deser (caddr form)))
         (%make-compiled-procedure entry env))
        ;; Continuation
        ((string=? tag "%ser/continuation")
         (define stack (deser (cadr form)))
-        (define cont (caddr form))
+        (define cont (deser/entry-form (caddr form) deser))
         (define raw-winds (if (null? (cdddr form)) '() (deser (car (cdddr form)))))
         ;; Filter out stripped wind frame sentinels
         (define winds

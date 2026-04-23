@@ -60,21 +60,11 @@
   (assert-equal (hash-ref loaded 'a) 1)
   (assert-equal (hash-ref loaded 'b) 2)))
 
-;; TODO(per-procedure-code-objects §G1): After mc-compile-and-go routes through
-;; code-objects, the closure's entry is a bare code-object. The serializer
-;; emits (%ser/opaque-co) as a placeholder (code-object identity is
-;; process-local; nothing reader-portable to write). The deserialized
-;; procedure can't be invoked — calling it switches the executor into a
-;; "space" named %ser/opaque-co which doesn't exist. Re-enable once the
-;; archive-format serializer can round-trip a full code-object (or once the
-;; serializer emits the full instruction/label shape instead of an opaque
-;; placeholder). See prelude.scm ser-entry and the plan's §7.1 note on
-;; opaque-co semantics.
-;; (test "round-trip compiled procedure" (lambda ()
-;;   (define (test-sq x) (* x x))
-;;   (test-save! ".tmp/ece-rt-fn.dat" test-sq)
-;;   (define loaded (test-load ".tmp/ece-rt-fn.dat"))
-;;   (assert-equal (loaded 7) 49)))
+(test "round-trip compiled procedure" (lambda ()
+  (define (test-sq x) (* x x))
+  (test-save! ".tmp/ece-rt-fn.dat" test-sq)
+  (define loaded (test-load ".tmp/ece-rt-fn.dat"))
+  (assert-equal (loaded 7) 49)))
 
 (test "serialize! writes without error" (lambda ()
   (test-save! ".tmp/ece-rt-ret.dat" 42)
@@ -154,33 +144,28 @@
 
 ;; --- Cyclic Serialization Tests ---
 
-;; TODO(per-procedure-code-objects §G1): Invoking deserialized procedures
-;; trips the %ser/opaque-co placeholder (see "round-trip compiled procedure"
-;; above). The cyclic-structure mechanics are independently tested by the
-;; other "round-trip *" suites that don't invoke the result.
-;; (test "round-trip letrec self-referencing closure" (lambda ()
-;;   (define f (letrec ((f (lambda (x) (if (= x 0) 1 (* x (f (- x 1))))))) f))
-;;   (test-save! ".tmp/ece-rt-letrec-self.dat" f)
-;;   (define loaded (test-load ".tmp/ece-rt-letrec-self.dat"))
-;;   (assert-equal (loaded 5) 120)
-;;   (assert-equal (loaded 0) 1)))
+(test "round-trip letrec self-referencing closure" (lambda ()
+  (define f (letrec ((f (lambda (x) (if (= x 0) 1 (* x (f (- x 1))))))) f))
+  (test-save! ".tmp/ece-rt-letrec-self.dat" f)
+  (define loaded (test-load ".tmp/ece-rt-letrec-self.dat"))
+  (assert-equal (loaded 5) 120)
+  (assert-equal (loaded 0) 1)))
 
-;; TODO(per-procedure-code-objects §G1): Same opaque-co limitation.
-;; (test "round-trip mutually recursive closures" (lambda ()
-;;   (define fns
-;;     (letrec ((even? (lambda (n) (if (= n 0) #t (odd? (- n 1)))))
-;;              (odd?  (lambda (n) (if (= n 0) #f (even? (- n 1))))))
-;;       (list even? odd?)))
-;;   (test-save! ".tmp/ece-rt-mutual.dat" fns)
-;;   (define loaded (test-load ".tmp/ece-rt-mutual.dat"))
-;;   (define loaded-even? (car loaded))
-;;   (define loaded-odd? (cadr loaded))
-;;   (assert-equal (loaded-even? 0) #t)
-;;   (assert-equal (loaded-even? 1) #f)
-;;   (assert-equal (loaded-even? 4) #t)
-;;   (assert-equal (loaded-odd? 0) #f)
-;;   (assert-equal (loaded-odd? 1) #t)
-;;   (assert-equal (loaded-odd? 5) #t)))
+(test "round-trip mutually recursive closures" (lambda ()
+  (define fns
+    (letrec ((even? (lambda (n) (if (= n 0) #t (odd? (- n 1)))))
+             (odd?  (lambda (n) (if (= n 0) #f (even? (- n 1))))))
+      (list even? odd?)))
+  (test-save! ".tmp/ece-rt-mutual.dat" fns)
+  (define loaded (test-load ".tmp/ece-rt-mutual.dat"))
+  (define loaded-even? (car loaded))
+  (define loaded-odd? (cadr loaded))
+  (assert-equal (loaded-even? 0) #t)
+  (assert-equal (loaded-even? 1) #f)
+  (assert-equal (loaded-even? 4) #t)
+  (assert-equal (loaded-odd? 0) #f)
+  (assert-equal (loaded-odd? 1) #t)
+  (assert-equal (loaded-odd? 5) #t)))
 
 (test "round-trip recursive define in let body via call/cc" (lambda ()
   (define k #f)
@@ -192,17 +177,13 @@
   (define loaded (test-load ".tmp/ece-rt-rec-cont.dat"))
   (assert (continuation? loaded) "loaded should be a continuation")))
 
-;; TODO(per-procedure-code-objects §G1): Same limitation as "round-trip
-;; compiled procedure" above — invoking a deserialized code-object-backed
-;; closure tries to switch to a space named %ser/opaque-co. Re-enable once
-;; the serializer can round-trip a full code-object.
-;; (test "non-cyclic shared structure still works" (lambda ()
-;;   ;; Verify existing non-cyclic round-trips still work
-;;   (define (test-sq x) (* x x))
-;;   (test-save! ".tmp/ece-rt-shared.dat" test-sq)
-;;   (define loaded (test-load ".tmp/ece-rt-shared.dat"))
-;;   (assert-equal (loaded 7) 49)
-;;   (assert-equal (loaded 3) 9)))
+(test "non-cyclic shared structure still works" (lambda ()
+  ;; Verify existing non-cyclic round-trips still work
+  (define (test-sq x) (* x x))
+  (test-save! ".tmp/ece-rt-shared.dat" test-sq)
+  (define loaded (test-load ".tmp/ece-rt-shared.dat"))
+  (assert-equal (loaded 7) 49)
+  (assert-equal (loaded 3) 9)))
 
 ;; --- Lexical State Pattern (game-like save/load) ---
 

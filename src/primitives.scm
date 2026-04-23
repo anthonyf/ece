@@ -619,6 +619,10 @@
                           (cl:if (cl:eq ,key *scheme-false*) cl:nil ,key))
                  cl:nil))
 
+(define-host-primitive (%archive-co-lookup stem index)
+  :cl `(cl:or (cl:gethash (cl:cons ,stem ,index) *archive-code-objects*)
+              *scheme-false*))
+
 ;;; ─────────────────────────────────────────────────────────────────────────
 ;;; Serialization (id 136)
 ;;; ─────────────────────────────────────────────────────────────────────────
