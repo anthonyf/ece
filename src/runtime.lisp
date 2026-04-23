@@ -237,7 +237,7 @@
 ;;;
 ;;; What stays here: helper functions referenced by templates (scheme-bool,
 ;;; hash-frame-p, ece-output-to-stream, ece-port-stream and related,
-;;; format-ece-proc, etc.), CL specials (*executing-space-id*, *global-env*,
+;;; format-ece-proc, etc.), CL specials (*executing-code-obj*, *global-env*,
 ;;; *traced-procedures*, ...), the code-object struct, the executor
 ;;; (execute-instructions), and the operation dispatch infrastructure.
 
@@ -984,7 +984,7 @@ non-code-object entries have no name — returns NIL."
               ;; §7.1: a bare code-object entry IS the closure's entry —
               ;; the body starts at its pc 0 implicitly. No cons wrapper.
               ((code-object-p entry) entry)
-              (t (cons *executing-space-id* entry)))
+              (t (cons *executing-code-obj* entry)))
         env))
 
 ;;; Space-qualified address helpers
@@ -1083,7 +1083,7 @@ A (code-obj . pc) pair returns the pc."
   (list '|continuation| (copy-list stack)
         (if (consp continue-reg)
             continue-reg
-            (cons *executing-space-id* continue-reg))
+            (cons *executing-code-obj* continue-reg))
         (or (cl-winding-stack) nil)))
 
 (defun do-continuation-winds (cont)
@@ -1223,11 +1223,11 @@ Uses the manifest-driven dispatch table via name→ID→function lookup."
 
 ;;; Instruction executor
 
-(defvar *executing-space-id* nil
-  "The current dispatch target in the executor — always a code-object
-after Phase F. Retained under the legacy name for continuity with external
-callers and until the post-F refactor renames it alongside the other
-space→code-object terminology cleanups.")
+(defvar *executing-code-obj* nil
+  "The current dispatch target in the executor — a live code-object
+struct. Dynamically bound on each executor entry and updated on every
+cross-procedure jump. Read by host-primitive templates (e.g. capture-
+continuation) that need to qualify PCs against the running code-object.")
 
 (defun execute-instructions (initial-code-obj initial-pc initial-env
                              &key initial-proc initial-argl initial-continue
@@ -1239,7 +1239,7 @@ variables inline."
   (let* ((code-obj initial-code-obj)
          (instrs (code-object-resolved-instructions initial-code-obj))
          (ltab (code-object-labels initial-code-obj))
-         (*executing-space-id* code-obj)
+         (*executing-code-obj* code-obj)
          (pc initial-pc)
          (flag nil)
          (val nil)
@@ -1280,7 +1280,7 @@ variables inline."
                (setf instrs (code-object-resolved-instructions target))
                (setf ltab (code-object-labels target))
                (setf len (length instrs))
-               (setf *executing-space-id* target)
+               (setf *executing-code-obj* target)
                ;; Mark "we just entered a (potentially compiled) dispatch
                ;; target". The actual hash lookup + dispatch happens in
                ;; loop-start AFTER pc has been updated by the caller (the

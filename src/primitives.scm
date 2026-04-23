@@ -22,7 +22,7 @@
 ;;;; Symbol conventions in templates:
 ;;;;   cl:foo      — Common Lisp built-in (resolved to common-lisp:foo)
 ;;;;   foo (bare)  — ECE-package helper or special var (e.g. scheme-bool,
-;;;;                 *executing-space-id*, *global-env*)
+;;;;                 *executing-code-obj*, *global-env*)
 ;;;;   ,name       — parameter substitution slot
 ;;;;   '|name|     — literal lowercase ECE symbol (case-preserved data tag)
 

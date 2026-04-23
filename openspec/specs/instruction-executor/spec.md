@@ -1,21 +1,20 @@
 ## Requirements
 
-### Requirement: executor uses symbol space IDs
-The executor's `space-id` local variable, `*executing-space-id*`, and `*current-space-id*` SHALL be symbols, not integers.
+### Requirement: executor dispatches on code-objects
+The executor's current dispatch target SHALL be a live `code-object` struct. `*executing-code-obj*` SHALL hold that struct; the executor's `code-obj`, `instrs`, and `ltab` locals SHALL be read from its fields. The `*space-registry*` / `*current-space-id*` / `space-id`-local model SHALL NOT be used (retired in per-procedure-code-objects).
 
-#### Scenario: Space switch with symbols
-- **WHEN** `(goto (reg continue))` targets `(prelude . 4523)`
-- **AND** the current space is `compiler`
-- **THEN** the executor SHALL compare symbols with `eq`
-- **AND** SHALL look up `prelude` in the symbol-keyed `*space-registry*`
-- **AND** SHALL update `instrs`, `ltab`, and `space-id` locals
+#### Scenario: Cross-procedure jump
+- **WHEN** `(goto (reg continue))` targets `(<code-obj> . 4523)`
+- **THEN** the executor SHALL compare code-objects with `eq`
+- **AND** SHALL set `code-obj` to the target code-object
+- **AND** SHALL update `instrs` and `ltab` from that code-object's fields
 
-### Requirement: assign label qualifies with symbol
-The `assign` instruction for `continue` with a `label` source SHALL qualify the resolved PC with the current space's symbol.
+### Requirement: assign label qualifies with code-object
+The `assign` instruction for `continue` with a `label` source SHALL qualify the resolved PC with the current code-object.
 
-#### Scenario: Label assignment in space
-- **WHEN** `(assign continue (label after-call-42))` executes in space `compiler`
-- **THEN** the `continue` register SHALL be set to `(compiler . <resolved-pc>)`
+#### Scenario: Label assignment
+- **WHEN** `(assign continue (label after-call-42))` executes inside code-object `<co>`
+- **THEN** the `continue` register SHALL be set to `(<co> . <resolved-pc>)`
 
 ### Requirement: extend-environment produces vector frames only
 `extend-environment` SHALL always produce vector frames (simple-vectors consed onto the base env). The 3-arg named-list frame path SHALL be removed.
