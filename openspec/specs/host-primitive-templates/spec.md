@@ -76,7 +76,7 @@ Symbols inside template bodies SHALL follow a package convention that unambiguou
 - **THEN** it SHALL use the `cl:` prefix (e.g., `cl:car`, `cl:equal`)
 
 #### Scenario: ECE helpers are bare
-- **WHEN** a template references an ECE-package helper (`scheme-bool`, `hash-frame-p`, `cl-winding-stack`, `compiled-procedure-p`, `*executing-space-id*`, `*global-env*`)
+- **WHEN** a template references an ECE-package helper (`scheme-bool`, `hash-frame-p`, `cl-winding-stack`, `compiled-procedure-p`, `*executing-code-obj*`, `*global-env*`)
 - **THEN** it SHALL use the bare name without a package prefix
 
 #### Scenario: Generated file resolves bare names in ECE package
@@ -158,7 +158,7 @@ The codegen SHALL validate inputs exhaustively before writing any output. Any va
 
 #### Scenario: Load position
 - **WHEN** CL boots and processes `src/runtime.lisp`
-- **THEN** the `(load "bootstrap/primitives-auto.lisp")` call SHALL occur after `scheme-bool`, `hash-frame-p`, `cl-winding-stack`, `*executing-space-id*`, `*global-env*`, and the `compilation-space` struct are defined
+- **THEN** the `(load "bootstrap/primitives-auto.lisp")` call SHALL occur after `scheme-bool`, `hash-frame-p`, `cl-winding-stack`, `*executing-code-obj*`, `*global-env*`, and the `code-object` struct are defined
 - **AND** SHALL occur before `(init-primitive-dispatch-tables)` is called
 
 #### Scenario: Dispatch resolution unchanged

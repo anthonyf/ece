@@ -733,12 +733,12 @@ still set pc so the dispatcher routes to the next chunk correctly."
             (cond
              ((code-object? space-id)
               ;; Code-object path: at zone-fn execution time,
-              ;; *executing-space-id* is dynamically bound to the CO
+              ;; *executing-code-obj* is dynamically bound to the CO
               ;; this zone was entered for. Reading it here produces the
               ;; same (code-object . local-pc) shape the interpreter's
               ;; eval-operand builds, so continuations captured in the
               ;; zone are portable back to the interpreter.
-              (write-string "*executing-space-id*" out))
+              (write-string "*executing-code-obj*" out))
              (else
               (write-cl-quoted-ece-symbol out space-id)))
             (write-char #\space out)
@@ -923,7 +923,7 @@ emit-zone-defun also use bare lowercase. Const operands of symbol type
 need pipe-wrapping to preserve case. Label operands resolve to the
 target's local PC at codegen time and emit as a bare integer — matching
 the executor's eval-operand which does (resolve-label) to get the local
-PC. The runtime then qualifies the PC via *executing-space-id* if needed
+PC. The runtime then qualifies the PC via *executing-code-obj* if needed
 (e.g., make-compiled-procedure)."
   (let ((tag (car operand)))
     (cond
