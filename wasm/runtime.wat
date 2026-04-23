@@ -5534,8 +5534,15 @@
 
     ;; 260 = %archive-co-lookup(stem, index) — WASM stub returns #f.
     ;; The WASM archive loader doesn't populate a (stem . index) registry
-    ;; (archive-key stamping is a CL-only follow-up); by-reference
-    ;; deserialization falls back to the inline form on WASM.
+    ;; (archive-key stamping is a CL-only follow-up), so:
+    ;;   - Serialization side: code-objects on WASM always have archive-key
+    ;;     null and serialize as (%ser/co-inline ...), never by-reference.
+    ;;   - Deserialization side: a (%ser/co-ref ...) blob produced elsewhere
+    ;;     (e.g. by CL) and deserialized on WASM traps with
+    ;;     ece-deser-missing-archive-error (the same error CL would raise
+    ;;     for an unloaded archive). Cross-host save/restore of by-reference
+    ;;     continuations therefore requires WASM archive-key stamping to
+    ;;     land first.
     (if (i32.eq (local.get $id) (i32.const 260))
       (then (return (global.get $false))))
 

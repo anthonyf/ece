@@ -15,7 +15,7 @@ Call/cc serialization is a shipped feature. The placeholder is a known-broken es
 
 1. Captured continuations serialize losslessly for the common case (code-objects registered in a loaded archive).
 2. Anonymous / REPL-compiled code-objects still serialize — they travel inline with their instructions.
-3. Deserialized continuations are `invokable — the three disabled tests in `test-serialization.scm` re-enable and pass.
+3. Deserialized continuations are invokable — the three disabled tests in `test-serialization.scm` re-enable and pass.
 4. The diagnostic when a by-reference lookup fails is clear and actionable.
 5. WASM and CL runtimes produce identical output for the same inputs (round-trippable across hosts if ever needed).
 

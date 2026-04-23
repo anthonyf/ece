@@ -1103,8 +1103,10 @@ DESER is the outer deserializer closure for deep reference resolution."
 
 (define (raise-ece-deser-missing-archive-error stem idx)
   "Raise a typed `ece-deser-missing-archive-error` record so callers can
-catch the specific class. The raised value stringifies with a clear
-English message when printed."
+`guard` on `ece-deser-missing-archive-error?` and retrieve the stem + index
+fields via the accessors. The record has no built-in English-message
+printer; UX layers that want a human-readable string should format it
+from the field values (e.g., via `format`)."
   (raise (make-ece-deser-missing-archive-error stem idx)))
 
 (define (serialize-value value)
