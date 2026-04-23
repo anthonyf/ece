@@ -1236,22 +1236,25 @@ Returns #f if it contains non-serializable objects (ports, CL streams, etc.)."
 Entry shapes:
   - (SPACE-ID . PC) pair where SPACE-ID is a symbol — legacy per-space
     format. Serializes inline as `(space-id . pc)`.
-  - (CODE-OBJECT . PC) pair — per-procedure format. The code-object
-    itself isn't readably serializable (no stable name space across
-    deserialization), so emit an opaque sentinel. Continuations built
-    from this form satisfy `continuation?` but can't be reinvoked.
-  - bare CODE-OBJECT — same as the pair case with pc=0.
+  - (CODE-OBJECT . PC) pair — per-procedure format. CO is rewritten
+    into (%ser/co-ref ...) or (%ser/co-inline ...) via
+    ser/code-object->sexp; the PC is preserved alongside.
+  - bare CODE-OBJECT — same dispatch as the pair case, emitted as the
+    plain co-ref/co-inline form (no PC wrapper).
   - bare integer — emit directly (rare, from older code paths).
 
-The opaque path is a pragmatic compromise: code-object identity is
-process-local, so there's nothing reader-portable to emit. Tests that
-don't invoke the deserialized continuation (just check the predicate)
-still pass; tests that invoke fail loudly rather than silently."
+The CO is walked lazily: the by-reference form only carries
+(archive-stem . index), so most archive-registered COs fit in a handful
+of bytes. Inline COs embed their full instruction vector — serializer
+recurses through `ser` so nested code-objects (and their operands,
+including any non-cyclic shared pairs) honor the same dispatch."
     (cond
      ((code-object? entry)
-      (emit "(%ser/opaque-co)"))
+      (ser (ser/code-object->sexp entry)))
      ((and (pair? entry) (code-object? (car entry)))
-      (emit "(%ser/opaque-co-pc . ")
+      (emit "(")
+      (ser (ser/code-object->sexp (car entry)))
+      (emit " . ")
       (emit (write-to-string-flat (cdr entry)))
       (emit ")"))
      ((pair? entry)
