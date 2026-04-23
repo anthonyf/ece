@@ -673,6 +673,16 @@ bootstrap/primitives-auto.lisp from a template in src/primitives.scm."
     ((eq x t) (write-string "#t" s))
     ((null x) (write-string "()" s))
     ((hash-table-p x) (write-string "(%ser/opaque)" s))
+    ;; ECE-package symbol whose name starts with #\: — emit bare (no pipes,
+    ;; no package prefix). Round-trip via CL read yields a :keyword-package
+    ;; symbol, which downcase-ece-symbols normalizes back to :ece-package.
+    ((and (symbolp x)
+          (not (null x))
+          (eq (symbol-package x) (find-package :ece))
+          (let ((name (symbol-name x)))
+            (and (> (length name) 0)
+                 (char= (char name 0) #\:))))
+     (write-string (symbol-name x) s))
     ((consp x)
      (write-char #\( s)
      (ece-print-flat (car x) s)
@@ -1582,11 +1592,25 @@ co-key at codegen time."
 ;;; ─────────────────────────────────────────────────────────────────────────
 
 (defun archive-plist-get (plist key)
-  "Walk a plain-symbol-keyed plist, return value after KEY or NIL."
+  "Walk a keyword-keyed archive plist, return value after KEY or NIL.
+During the keyword-format transition this also matches a plain-symbol
+key whose name is KEY minus the leading colon, so old-format
+bootstrap.ecec files continue to load while new-format files become the
+norm. Can be simplified to a strict eq match once every on-disk .ecec
+is in the keyword format."
   (cond
     ((null plist) nil)
     ((null (cdr plist)) nil)
     ((eq (car plist) key) (cadr plist))
+    ;; Transition fallback: match plain-symbol form of KEY (e.g., |version|
+    ;; when KEY is :ece ":version"). Only fires when KEY starts with #\:.
+    ((and (symbolp (car plist))
+          (let ((kn (symbol-name key))
+                (pn (symbol-name (car plist))))
+            (and (> (length kn) 0)
+                 (char= (char kn 0) #\:)
+                 (string= pn (subseq kn 1)))))
+     (cadr plist))
     (t (archive-plist-get (cddr plist) key))))
 
 (defun archive-patch-co-refs (tree cos-vec)
@@ -1607,8 +1631,8 @@ co-key at codegen time."
 The shape matches the ECE-side archive-sexp->code-objects output: entry 0 is
 the file init; entries 1..N-1 are nested hoisted code-objects. Signals an
 ece-runtime-error on version mismatch."
-  (let* ((version (archive-plist-get (cdr archive) '|version|))
-         (entries (archive-plist-get (cdr archive) '|entries|)))
+  (let* ((version (archive-plist-get (cdr archive) (intern ":version" :ece)))
+         (entries (archive-plist-get (cdr archive) (intern ":entries" :ece))))
     (unless (eql version 2)
       (error 'ece-runtime-error
              :procedure nil
@@ -1628,20 +1652,20 @@ ece-runtime-error on version mismatch."
         (let* ((entry (aref entries-vec i))
                (fields (cdr entry))
                (co (make-code-object)))
-          (let ((name (archive-plist-get fields '|name|)))
+          (let ((name (archive-plist-get fields (intern ":name" :ece))))
             (when name (setf (code-object-name co) name)))
-          (let ((arity (archive-plist-get fields '|arity|)))
+          (let ((arity (archive-plist-get fields (intern ":arity" :ece))))
             (when arity (setf (code-object-arity co) arity)))
-          (let ((src-loc (archive-plist-get fields '|source-loc|)))
+          (let ((src-loc (archive-plist-get fields (intern ":source-loc" :ece))))
             (when src-loc (setf (code-object-source-loc co) src-loc)))
-          (dolist (pair (archive-plist-get fields '|labels|))
+          (dolist (pair (archive-plist-get fields (intern ":labels" :ece)))
             (setf (gethash (car pair) (code-object-labels co)) (cdr pair)))
           (setf (aref cos i) co)))
       ;; Pass 2: push instructions (with (co-ref N) patched to code-objects).
       (dotimes (i n)
         (let* ((entry (aref entries-vec i))
                (co (aref cos i))
-               (raw-instrs (archive-plist-get (cdr entry) '|instructions|)))
+               (raw-instrs (archive-plist-get (cdr entry) (intern ":instructions" :ece))))
           (dolist (instr raw-instrs)
             (let ((patched (archive-patch-co-refs instr cos)))
               (vector-push-extend patched (code-object-source-instructions co))
@@ -1879,11 +1903,19 @@ Iterative on the cdr spine so very long lists don't overflow the stack."
     ((eq form t) form)
     ((symbolp form)
      (let ((pkg (symbol-package form)))
-       (if (or (null pkg)
-               (and (not (eq pkg (find-package :ece)))
-                    (not (eq pkg (find-package :cl)))))
-           form
-           (intern (string-downcase (symbol-name form)) :ece))))
+       (cond
+         ;; CL keyword-package symbols (result of CL:READ-ing bare :foo
+         ;; tokens in the new keyword archive format). Convert to
+         ;; :ece-package symbol named ":foo" — matches what the ECE
+         ;; reader produces for :foo source tokens.
+         ((eq pkg (find-package :keyword))
+          (intern (format nil ":~A" (string-downcase (symbol-name form)))
+                  :ece))
+         ((or (null pkg)
+              (and (not (eq pkg (find-package :ece)))
+                   (not (eq pkg (find-package :cl)))))
+          form)
+         (t (intern (string-downcase (symbol-name form)) :ece)))))
     ((consp form)
      (let* ((head (cons nil nil))
             (tail head)
@@ -1949,17 +1981,22 @@ signals an error pointing at `make bootstrap` for regeneration."
     (when (eq raw-head :eof) (return-from load-ecec-section nil))
     (unless (and (consp raw-head)
                  (symbolp (car raw-head))
-                 (string-equal (symbol-name (car raw-head)) "ecec-archive"))
+                 (let ((n (symbol-name (car raw-head))))
+                   ;; Accept both the new keyword head (:ecec-archive) and
+                   ;; the legacy plain-symbol head (ecec-archive) so we can
+                   ;; boot from either format during the transition.
+                   (or (string-equal n ":ecec-archive")
+                       (string-equal n "ecec-archive"))))
       (error 'ece-runtime-error
              :procedure nil :arguments nil :environment *global-env*
              :instruction nil :backtrace nil
              :original-error
              (make-condition 'simple-error
-                             :format-control "load-ecec-section: expected (ecec-archive ...), got ~A. Run `make bootstrap` to regenerate."
+                             :format-control "load-ecec-section: expected (:ecec-archive ...), got ~A. Run `make bootstrap` to regenerate."
                              :format-arguments (list (if (consp raw-head) (car raw-head) raw-head)))))
     (when skip
       (let* ((archive (downcase-ece-symbols raw-head))
-             (file (archive-plist-get (cdr archive) '|file|)))
+             (file (archive-plist-get (cdr archive) (intern ":file" :ece))))
         (when (and file (member file skip :test #'string=))
           (return-from load-ecec-section t))))
     (load-ecec-archive-section raw-head)
@@ -2006,7 +2043,7 @@ order is corrected, every reachable code-object gets a zone fn here."
 stripping any extension. Returns NIL when the archive has no |file|
 field (shouldn't happen for well-formed archives, but we degrade
 gracefully — callers skip registration rather than erroring)."
-  (let ((file-str (archive-plist-get (cdr archive) '|file|)))
+  (let ((file-str (archive-plist-get (cdr archive) (intern ":file" :ece))))
     (when (stringp file-str)
       (let ((dot (position #\. file-str :from-end t)))
         (intern (if dot (subseq file-str 0 dot) file-str) :ece)))))

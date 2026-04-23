@@ -400,60 +400,69 @@
         (array.new_fixed $string 6
           (i32.const 99) (i32.const 111) (i32.const 45)
           (i32.const 114) (i32.const 101) (i32.const 102)))))
-    ;; "ecec-archive" (12 chars)
+    ;; ":ecec-archive" (13 chars) — keyword-format archive head
     (global.set $sym-id-ecec-archive
       (struct.get $symbol $id (call $intern
-        (array.new_fixed $string 12
+        (array.new_fixed $string 13
+          (i32.const 58)
           (i32.const 101) (i32.const 99) (i32.const 101) (i32.const 99)
           (i32.const 45) (i32.const 97) (i32.const 114) (i32.const 99)
           (i32.const 104) (i32.const 105) (i32.const 118) (i32.const 101)))))
-    ;; "ecec-header" (11 chars)
+    ;; "ecec-header" (11 chars) — legacy (pre-§9.3) header; kept only to
+    ;; detect and report stale archives.
     (global.set $sym-id-ecec-header
       (struct.get $symbol $id (call $intern
         (array.new_fixed $string 11
           (i32.const 101) (i32.const 99) (i32.const 101) (i32.const 99)
           (i32.const 45) (i32.const 104) (i32.const 101) (i32.const 97)
           (i32.const 100) (i32.const 101) (i32.const 114)))))
-    ;; "version" (7 chars)
+    ;; ":version" (8 chars)
     (global.set $sym-id-version
       (struct.get $symbol $id (call $intern
-        (array.new_fixed $string 7
+        (array.new_fixed $string 8
+          (i32.const 58)
           (i32.const 118) (i32.const 101) (i32.const 114) (i32.const 115)
           (i32.const 105) (i32.const 111) (i32.const 110)))))
-    ;; "entries" (7 chars)
+    ;; ":entries" (8 chars)
     (global.set $sym-id-entries
       (struct.get $symbol $id (call $intern
-        (array.new_fixed $string 7
+        (array.new_fixed $string 8
+          (i32.const 58)
           (i32.const 101) (i32.const 110) (i32.const 116) (i32.const 114)
           (i32.const 105) (i32.const 101) (i32.const 115)))))
-    ;; "name" (4 chars)
+    ;; ":name" (5 chars)
     (global.set $sym-id-arch-name
       (struct.get $symbol $id (call $intern
-        (array.new_fixed $string 4
+        (array.new_fixed $string 5
+          (i32.const 58)
           (i32.const 110) (i32.const 97) (i32.const 109) (i32.const 101)))))
-    ;; "arity" (5 chars)
+    ;; ":arity" (6 chars)
     (global.set $sym-id-arch-arity
       (struct.get $symbol $id (call $intern
-        (array.new_fixed $string 5
+        (array.new_fixed $string 6
+          (i32.const 58)
           (i32.const 97) (i32.const 114) (i32.const 105) (i32.const 116)
           (i32.const 121)))))
-    ;; "source-loc" (10 chars)
+    ;; ":source-loc" (11 chars)
     (global.set $sym-id-source-loc
       (struct.get $symbol $id (call $intern
-        (array.new_fixed $string 10
+        (array.new_fixed $string 11
+          (i32.const 58)
           (i32.const 115) (i32.const 111) (i32.const 117) (i32.const 114)
           (i32.const 99) (i32.const 101) (i32.const 45) (i32.const 108)
           (i32.const 111) (i32.const 99)))))
-    ;; "labels" (6 chars)
+    ;; ":labels" (7 chars)
     (global.set $sym-id-labels
       (struct.get $symbol $id (call $intern
-        (array.new_fixed $string 6
+        (array.new_fixed $string 7
+          (i32.const 58)
           (i32.const 108) (i32.const 97) (i32.const 98) (i32.const 101)
           (i32.const 108) (i32.const 115)))))
-    ;; "instructions" (12 chars)
+    ;; ":instructions" (13 chars)
     (global.set $sym-id-instructions
       (struct.get $symbol $id (call $intern
-        (array.new_fixed $string 12
+        (array.new_fixed $string 13
+          (i32.const 58)
           (i32.const 105) (i32.const 110) (i32.const 115) (i32.const 116)
           (i32.const 114) (i32.const 117) (i32.const 99) (i32.const 116)
           (i32.const 105) (i32.const 111) (i32.const 110) (i32.const 115)))))

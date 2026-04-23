@@ -1259,12 +1259,12 @@ share a single zone fn. Must match the key the archive loader derives
   "Derive the file-stem symbol from ARCHIVE's |file| plist field (minus
 extension). Matches the key the CL archive loader uses to attach
 native-fn — see archive-file-stem-symbol in src/runtime.lisp."
-  (let ((file-str (archive/plist-get (cdr archive) 'file)))
+  (let ((file-str (archive/plist-get (cdr archive) ':file)))
     (if (string? file-str)
         (string->symbol (filename-strip-extension
                          (filename-basename file-str) ".scm"))
         (%raw-error
-         "archive-file-stem: archive has no |file| field"))))
+         "archive-file-stem: archive has no :file field"))))
 
 (define (generate-zones-for-archive-section! archive output-dir)
   "Emit one zone file per code-object in ARCHIVE (a single parsed
@@ -1319,10 +1319,14 @@ in archive order (init first, then nested lambdas BFS)."
         (cond
          ((eof? archive)
           (close-input-port port))
-         ((and (pair? archive) (eq? (car archive) 'ecec-archive))
+         ;; Accept both new (:ecec-archive) and legacy (ecec-archive)
+         ;; during the transition.
+         ((and (pair? archive)
+               (or (eq? (car archive) ':ecec-archive)
+                   (eq? (car archive) 'ecec-archive)))
           (generate-zones-for-archive-section! archive output-dir)
           (loop))
          (else
           (close-input-port port)
           (%raw-error
-           "generate-all-zones-from-archive!: expected (ecec-archive ...) section")))))))
+           "generate-all-zones-from-archive!: expected (:ecec-archive ...) section")))))))

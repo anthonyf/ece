@@ -280,10 +280,14 @@ signals an error pointing at `make bootstrap` for regeneration."
   (let ((head (ece-scheme-read port)))
     (cond
      ((eof? head) head)
-     ((and (pair? head) (eq? (car head) 'ecec-archive))
+     ;; Accept both new (:ecec-archive) and legacy (ecec-archive) during
+     ;; the transition.
+     ((and (pair? head)
+           (or (eq? (car head) ':ecec-archive)
+               (eq? (car head) 'ecec-archive)))
       (load-archive-section-form head))
      (else
-      (error "load-section-from-port: expected (ecec-archive ...). Run `make bootstrap` to regenerate.")))))
+      (error "load-section-from-port: expected (:ecec-archive ...). Run `make bootstrap` to regenerate.")))))
 
 (define (load-archive-section-form archive)
   "Archive-format path: ARCHIVE is the parsed (ecec-archive ...) form.
@@ -341,12 +345,28 @@ Returns the result of the last section."
 ;;; ─────────────────────────────────────────────────────────────────────────
 
 (define (archive/plist-get plist key)
-  "Walk a keyword-tagged plist, return value after KEY or #f."
+  "Walk a keyword-tagged plist, return value after KEY or #f.
+During the keyword-format transition this also accepts the legacy
+plain-symbol form of KEY (KEY minus the leading colon) so old-format
+archives still load. Simplify to a strict eq? once every .ecec is in
+the keyword format."
   (cond
    ((null? plist) #f)
    ((null? (cdr plist)) #f)
    ((eq? (car plist) key) (cadr plist))
+   ((archive/key-matches-legacy? (car plist) key) (cadr plist))
    (else (archive/plist-get (cddr plist) key))))
+
+(define (archive/key-matches-legacy? sym key)
+  "Return #t when SYM is the plain-symbol form of a keyword KEY (KEY minus
+the leading colon). Only fires when KEY starts with #\\:."
+  (and (symbol? sym)
+       (symbol? key)
+       (let ((kn (symbol->string key)))
+         (and (> (string-length kn) 0)
+              (char=? (string-ref kn 0) #\:)
+              (string=? (symbol->string sym)
+                        (substring kn 1 (string-length kn)))))))
 
 (define (archive/rewrite-co-refs tree co-map)
   "Walk TREE, replacing each `(const <code-object>)` with
@@ -424,12 +444,12 @@ nested code-object constants to (co-ref N) via CO-MAP."
                       (cons (archive/rewrite-co-refs
                              (vector-ref instrs i) co-map)
                             acc))))))
-    (list 'code-object
-          'name (code-object-name co)
-          'arity (code-object-arity co)
-          'source-loc (code-object-source-loc co)
-          'labels (code-object-label-entries co)
-          'instructions rewritten)))
+    (list ':code-object
+          ':name (code-object-name co)
+          ':arity (code-object-arity co)
+          ':source-loc (code-object-source-loc co)
+          ':labels (code-object-label-entries co)
+          ':instructions rewritten)))
 
 (define (code-object->archive-sexp top-co filename)
   "Build the full archive s-expression from TOP-CO (and all reachable
@@ -440,10 +460,10 @@ code-objects) for FILENAME."
       (when (pair? cos)
         (hash-set! co-map (car cos) idx)
         (loop (cdr cos) (+ idx 1))))
-    (list 'ecec-archive
-          'version 2
-          'file filename
-          'entries
+    (list ':ecec-archive
+          ':version 2
+          ':file filename
+          ':entries
           (let loop ((cos all-cos) (acc '()))
             (if (null? cos) (reverse acc)
                 (loop (cdr cos)
@@ -453,8 +473,8 @@ code-objects) for FILENAME."
   "Parse an archive s-expression (as read from disk). Returns the vector
 of code-objects. Entry 0 is the init code-object. Raises on version
 mismatch."
-  (let* ((version (archive/plist-get (cdr archive) 'version))
-         (entries (archive/plist-get (cdr archive) 'entries)))
+  (let* ((version (archive/plist-get (cdr archive) ':version))
+         (entries (archive/plist-get (cdr archive) ':entries)))
     (when (not (equal? version 2))
       (error (string-append
               "Unsupported .ecec archive version: "
@@ -469,15 +489,15 @@ mismatch."
           (let* ((entry (vector-ref entries-vec i))
                  (fields (cdr entry))
                  (co (%make-code-object)))
-            (when (archive/plist-get fields 'name)
-              (%code-object-set-name! co (archive/plist-get fields 'name)))
-            (when (archive/plist-get fields 'arity)
-              (%code-object-set-arity! co (archive/plist-get fields 'arity)))
-            (when (archive/plist-get fields 'source-loc)
-              (%code-object-set-source-loc! co (archive/plist-get fields 'source-loc)))
+            (when (archive/plist-get fields ':name)
+              (%code-object-set-name! co (archive/plist-get fields ':name)))
+            (when (archive/plist-get fields ':arity)
+              (%code-object-set-arity! co (archive/plist-get fields ':arity)))
+            (when (archive/plist-get fields ':source-loc)
+              (%code-object-set-source-loc! co (archive/plist-get fields ':source-loc)))
             (for-each (lambda (pair)
                         (%code-object-set-label! co (car pair) (cdr pair)))
-                      (archive/plist-get fields 'labels))
+                      (archive/plist-get fields ':labels))
             (vector-set! cos i co))
           (loop (+ i 1))))
       ;; Pass 2: push instructions (with (co-ref N) patched to code-objects).
@@ -485,7 +505,7 @@ mismatch."
         (when (< i n)
           (let* ((entry (vector-ref entries-vec i))
                  (co (vector-ref cos i))
-                 (raw-instrs (archive/plist-get (cdr entry) 'instructions)))
+                 (raw-instrs (archive/plist-get (cdr entry) ':instructions)))
             (for-each (lambda (instr)
                         (%code-object-push-instruction!
                          co (archive/patch-co-refs instr cos)))
