@@ -287,3 +287,22 @@
   (assert-equal (car loaded) "dungeon")
   (assert-equal (cadr loaded) 50)
   (assert (continuation? (caddr loaded)))))
+
+(test "%ser/co-ref fails with typed error when archive absent" (lambda ()
+  ;; Fabricate a blob that references an archive stem that isn't
+  ;; registered. The deserializer must surface this via the typed
+  ;; ece-deser-missing-archive-error record so callers can catch the
+  ;; specific class (not a generic error) and prompt the user.
+  (define blob "(%ser/co-ref fake-archive-xyz 0)")
+  (define raised #f)
+  (define stem #f)
+  (define idx #f)
+  (guard (e ((ece-deser-missing-archive-error? e)
+             (set! raised #t)
+             (set! stem (ece-deser-missing-archive-error-stem e))
+             (set! idx (ece-deser-missing-archive-error-index e))))
+    (let ((port (open-input-string blob)))
+      (deserialize port)))
+  (assert-equal raised #t)
+  (assert-equal stem 'fake-archive-xyz)
+  (assert-equal idx 0)))

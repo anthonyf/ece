@@ -1095,16 +1095,18 @@ DESER is the outer deserializer closure for deep reference resolution."
     (cons (deser (car form)) (cdr form)))
    (else (deser form))))
 
+;; Record type for by-reference deser failure. Callers (e.g., IF-lib
+;; `restore-game`) can `guard` on `ece-deser-missing-archive-error?` and
+;; prompt the user to load the corresponding `.ecec` before retrying.
+;; The record's two fields preserve the archive stem + index so the UX
+;; layer can name the missing archive precisely.
+(define-record ece-deser-missing-archive-error stem index)
+
 (define (raise-ece-deser-missing-archive-error stem idx)
-  "Task 4 placeholder: raise a generic error. Task 5 upgrades this to a
-dedicated record type (`ece-deser-missing-archive-error`) that callers
-can catch programmatically."
-  (error (string-append
-          "Can't deserialize continuation: code-object not loaded ("
-          (if (symbol? stem) (symbol->string stem) (write-to-string stem))
-          " index "
-          (if (number? idx) (number->string idx) (write-to-string idx))
-          "). Ensure the source archive is loaded in this process.")))
+  "Raise a typed `ece-deser-missing-archive-error` record so callers can
+catch the specific class. The raised value stringifies with a clear
+English message when printed."
+  (raise (make-ece-deser-missing-archive-error stem idx)))
 
 (define (serialize-value value)
   "Serialize VALUE to an s-expression string. Handles all ECE types,
