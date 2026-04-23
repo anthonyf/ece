@@ -611,6 +611,14 @@
 (define-host-primitive (code-object-arity co)
   :cl `(cl:or (code-object-arity ,co) *scheme-false*))
 
+(define-host-primitive (code-object-archive-key co)
+  :cl `(cl:or (code-object-archive-key ,co) *scheme-false*))
+
+(define-host-primitive (%code-object-set-archive-key! co key)
+  :cl `(cl:progn (cl:setf (code-object-archive-key ,co)
+                          (cl:if (cl:eq ,key *scheme-false*) cl:nil ,key))
+                 cl:nil))
+
 ;;; ─────────────────────────────────────────────────────────────────────────
 ;;; Serialization (id 136)
 ;;; ─────────────────────────────────────────────────────────────────────────

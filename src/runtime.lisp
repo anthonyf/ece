@@ -182,6 +182,7 @@
            #:code-object-arity
            #:code-object-source-loc
            #:code-object-native-fn
+           #:code-object-archive-key
            #:disassemble
            #:extend-environment
            #:ece-runtime-error
@@ -1484,7 +1485,8 @@ variables inline."
   (name nil)
   (arity nil)
   (source-loc nil)
-  (native-fn nil))
+  (native-fn nil)
+  (archive-key nil))
 
 (defmethod print-object ((obj code-object) stream)
   (print-unreadable-object (obj stream :type nil :identity t)
@@ -1860,6 +1862,21 @@ return an empty list."
               or `git checkout bootstrap/primitives-auto.lisp` to restore."
              primitives-auto-path e))))
 
+;;; Fallback defuns for primitives added to primitives.def after the current
+;;; bootstrap/primitives-auto.lisp was generated. Defined here so boot can
+;;; complete even with a stale bootstrap file; `make bootstrap` regenerates
+;;; primitives-auto.lisp with the canonical codegen.
+(unless (and (find-symbol "ECE-CODE-OBJECT-ARCHIVE-KEY" :ece)
+             (fboundp (find-symbol "ECE-CODE-OBJECT-ARCHIVE-KEY" :ece)))
+  (eval `(defun ,(intern "ECE-CODE-OBJECT-ARCHIVE-KEY" :ece) (co)
+           (or (code-object-archive-key co) *scheme-false*))))
+(unless (and (find-symbol "ECE-%CODE-OBJECT-SET-ARCHIVE-KEY!" :ece)
+             (fboundp (find-symbol "ECE-%CODE-OBJECT-SET-ARCHIVE-KEY!" :ece)))
+  (eval `(defun ,(intern "ECE-%CODE-OBJECT-SET-ARCHIVE-KEY!" :ece) (co key)
+           (progn (setf (code-object-archive-key co)
+                        (if (eq key *scheme-false*) nil key))
+                  nil))))
+
 ;;; Now that all primitives and wrapper functions are defined, initialize
 ;;; the dispatch tables from the manifest, then build *global-env*.
 (init-primitive-dispatch-tables)
@@ -2069,8 +2086,12 @@ the CO in hand and passing it matches the helper's positional shape."
 lambda (const <co>) operands at execution time."
   (dotimes (i (length cos))
     (let* ((co (aref cos i))
-           (co-key (archive-co-key co i)))
-      (setf (gethash (cons file-stem co-key) *archive-code-objects*) co))))
+           (co-key (archive-co-key co i))
+           (key (cons file-stem co-key)))
+      (setf (gethash key *archive-code-objects*) co)
+      ;; Stamp the archive-key on the code-object for O(1) serialization
+      ;; dispatch (ser/code-object reads this to decide by-ref vs inline).
+      (setf (code-object-archive-key co) key))))
 
 (defun attach-archive-native-fns (cos file-stem)
   "For each code-object in COS, look up its zone fn in *archive-zone-fns*

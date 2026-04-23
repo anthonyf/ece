@@ -365,3 +365,5 @@
 (255 %code-object-set-source-loc!     2  core   "Set the source-loc metadata field of a code object")
 (256 execute-code-object             -1  core   "Execute a code object from pc 0 (optional env); returns val")
 (257 code-object-arity                1  core   "Arity metadata of a code object (or #f)")
+(258 code-object-archive-key          1  core   "Archive-key metadata of a code object (#f for REPL-compiled/anonymous)")
+(259 %code-object-set-archive-key!    2  core   "Set the archive-key slot on a code object")
