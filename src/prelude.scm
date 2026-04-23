@@ -1082,7 +1082,6 @@ one of:
   - (%ser/co-ref ...)          — by-reference CO, look up in archive
   - (%ser/co-inline ...)       — inline CO, reconstruct struct
   - ((co-sexp) . pc)           — dotted pair carrying the CO + PC
-  - (%ser/opaque-co [...])     — legacy placeholder (preserved)
   - any other value            — passed through to DESER.
 DESER is the outer deserializer closure for deep reference resolution."
   (cond
@@ -1442,16 +1441,6 @@ Reconstructs tagged types and resolves #:def/#:ref references."
        ;; Opaque non-serializable object — replaced with #f
        ((string=? tag "%ser/opaque")
         #f)
-       ;; Code-object entry (bare) — legacy placeholder emitted before
-       ;; %ser/co-ref/%ser/co-inline landed. Still recognized for
-       ;; backward compatibility with older serialized blobs; the
-       ;; reconstructed placeholder pair satisfies continuation? /
-       ;; compiled-procedure? but is not invokable.
-       ((string=? tag "%ser/opaque-co")
-        (cons '%ser/opaque-co 0))
-       ;; Legacy opaque-co-pc placeholder.
-       ((string=? tag "%ser/opaque-co-pc")
-        (cons '%ser/opaque-co (cdr form)))
        ;; By-reference code-object: look up the archive-registered CO.
        ((string=? tag "%ser/co-ref")
         (let* ((stem (cadr form))
