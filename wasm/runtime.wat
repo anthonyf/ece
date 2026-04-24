@@ -2725,13 +2725,6 @@
     ;; 19 = do-continuation-winds(proc) — transition winding stack before resuming.
     ;; If the continuation's saved winds differ from the current *winding-stack*,
     ;; look up do-winds! and call it to run before/after thunks.
-    ;;
-    ;; TODO (archive-loader follow-up): yield/resume tests in wasm/test.js
-    ;; were disabled here because they hit an "illegal cast" under the new
-    ;; 2-param $execute signature. The fix likely involves double-checking
-    ;; that the continuation's $conts pair always holds a $code-object (not
-    ;; a legacy (space-id . pc) pair) and that do-winds! itself has a
-    ;; non-null $code-obj. Re-enable once that's diagnosed.
     (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 19))
       (then
         ;; $a = continuation's saved winds
