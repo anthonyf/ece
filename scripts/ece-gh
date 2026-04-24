@@ -197,11 +197,18 @@ cmd_pr_view() {
   fi
 }
 
-# gh pr create --base X --head Y --title T --body B
+# gh pr create --base X --head Y --title T --body B [--no-copilot]
+#
+# After a successful PR create, the wrapper auto-requests a review from
+# copilot-pull-request-reviewer so Copilot's diagnostic comments appear
+# without a separate manual step. Pass --no-copilot to opt out (useful
+# for repos where Copilot isn't enabled as a collaborator; the wrapper
+# will warn rather than fail, but skipping avoids the warning noise).
 cmd_pr_create() {
   local repo="$1"; shift
   local base="" head="" title="" body=""
   local draft_flag="false"
+  local request_copilot="true"
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --base)  base="$2";  shift 2 ;;
@@ -209,6 +216,7 @@ cmd_pr_create() {
       --title) title="$2"; shift 2 ;;
       --body)  body="$2";  shift 2 ;;
       --draft) draft_flag="true"; shift ;;
+      --no-copilot) request_copilot="false"; shift ;;
       *) echo "ece-gh pr create: unsupported flag: $1" >&2; exit 2 ;;
     esac
   done
@@ -223,14 +231,27 @@ cmd_pr_create() {
   local resp
   resp="$(api POST "repos/$repo/pulls" -H "Content-Type: application/json" -d "$payload")"
   # gh prints the PR URL on create success; mirror that.
-  local url
+  local url pr_num
   url="$(printf '%s' "$resp" | jq -r '.html_url // empty')"
+  pr_num="$(printf '%s' "$resp" | jq -r '.number // empty')"
   if [[ -z "$url" ]]; then
     echo "ece-gh pr create: failed; response:" >&2
     printf '%s\n' "$resp" >&2
     exit 1
   fi
   printf '%s\n' "$url"
+  # Auto-request Copilot review unless opted out. Reviewer login is
+  # "Copilot" (GitHub's bot account name for the PR reviewer, as of the
+  # 2026 rebrand from "copilot-pull-request-reviewer"). Failure to
+  # request is a warning, not a fatal error — the PR was still created.
+  if [[ "$request_copilot" == "true" && -n "$pr_num" ]]; then
+    local reviewer_body
+    reviewer_body='{"reviewers":["Copilot"]}'
+    if ! api POST "repos/$repo/pulls/$pr_num/requested_reviewers" \
+         -H "Content-Type: application/json" -d "$reviewer_body" >/dev/null 2>&1; then
+      echo "ece-gh pr create: warning — could not request Copilot review on $repo#$pr_num; PR was still created" >&2
+    fi
+  fi
 }
 
 # gh pr merge N --merge --delete-branch

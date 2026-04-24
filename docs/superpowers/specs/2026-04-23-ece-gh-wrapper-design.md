@@ -83,7 +83,7 @@ esac
 | `ece-gh api <path> -f key=value` | JSON body `{"key": "value"}` |
 | `ece-gh api <path> --jq <filter>` | response piped through `jq <filter>` |
 | `ece-gh pr view N --json fields` | `GET /repos/OWNER/REPO/pulls/N` → `jq '{<fields>}'` |
-| `ece-gh pr create --base X --head Y --title T --body B` | `POST /repos/OWNER/REPO/pulls` with JSON body |
+| `ece-gh pr create --base X --head Y --title T --body B [--no-copilot]` | `POST /repos/OWNER/REPO/pulls` with JSON body, then `POST /repos/OWNER/REPO/pulls/:N/requested_reviewers` with `{"reviewers":["Copilot"]}` unless `--no-copilot`. Review-request failure warns but does not fail the command — the PR was still created. |
 | `ece-gh pr merge N --merge --delete-branch` | `PUT /repos/OWNER/REPO/pulls/N/merge` then `DELETE /repos/OWNER/REPO/git/refs/heads/<head-branch>` |
 | `ece-gh run view ID --json fields` | `GET /repos/OWNER/REPO/actions/runs/ID` → `jq '{<fields>}'` |
 
