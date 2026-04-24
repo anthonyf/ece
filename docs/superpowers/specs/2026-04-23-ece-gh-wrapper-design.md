@@ -25,13 +25,13 @@ The current workaround — pass `dangerouslyDisableSandbox: true` on every `gh` 
 ## Goals
 
 1. The common `gh` operations used in this project's dev loop (`api`, `pr view`, `pr create`, `pr merge`, `run view`) work in-sandbox without `dangerouslyDisableSandbox: true`.
-2. The workaround is clearly marked as temporary: header in the script, explicit removal plan, and a tracked upstream bug so we know when to delete it.
+2. The workaround is clearly marked as temporary: header in the script plus an explicit removal plan (three test commands that must succeed against native `gh` in-sandbox before we delete the wrapper).
 3. Assistant memory steers to the wrapper by default.
 
 ## Non-goals
 
 - Full gh-CLI compatibility. Only the subset this project uses.
-- Fixing `gh` upstream. A bug report is filed but that's not blocking.
+- Fixing `gh` upstream. Not filed; the wrapper is sufficient for our dev-loop needs, and the bug primarily affects sandbox contexts that are unusual outside this project.
 - Binary / compiled solution. Shell script is sufficient for a macOS dev machine.
 - Automated tests. The wrapper is dev-environment tooling; manual verification suffices.
 
@@ -99,7 +99,7 @@ OWNER/REPO inferred from `git remote get-url origin`. Head-branch for `pr merge 
 
 ### 4. Documentation
 
-**Header comment in `scripts/ece-gh`:** 12-15 lines explaining why the wrapper exists, what it does, and when to delete it. Points to this design doc and (once filed) the upstream gh bug report.
+**Header comment in `scripts/ece-gh`:** 12-15 lines explaining why the wrapper exists, what it does, and when to delete it. Points to this design doc.
 
 **Removal plan (in this spec):** when native `gh` starts working in sandbox, these three commands succeed without `dangerouslyDisableSandbox: true`:
 
