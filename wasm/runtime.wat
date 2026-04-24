@@ -321,6 +321,53 @@
       (i32.const 111)(i32.const 116)(i32.const 115)(i32.const 116)(i32.const 114)(i32.const 97)
       (i32.const 112)))
 
+  ;; Type-tag strings for $write-to-string-impl's fallback. Each is
+  ;; "#<TYPENAME>" in UTF-16, pre-interned as a $string constant.
+  ;; When the fallback sees a value that isn't one of the well-known
+  ;; primitives (fixnum/float/string/symbol/boolean/null/char/pair/vector),
+  ;; it does ref.test against each tagged struct type and returns the
+  ;; matching tag. Unknown types fall through to $type-tag-unknown so
+  ;; new struct types remain diagnosable.
+  (global $type-tag-hash-table (ref $string)
+    (array.new_fixed $string 13
+      (i32.const 35) (i32.const 60) (i32.const 104) (i32.const 97) (i32.const 115) (i32.const 104) (i32.const 45) (i32.const 116) (i32.const 97) (i32.const 98) (i32.const 108) (i32.const 101) (i32.const 62)))
+  (global $type-tag-code-object (ref $string)
+    (array.new_fixed $string 14
+      (i32.const 35) (i32.const 60) (i32.const 99) (i32.const 111) (i32.const 100) (i32.const 101) (i32.const 45) (i32.const 111) (i32.const 98) (i32.const 106) (i32.const 101) (i32.const 99) (i32.const 116) (i32.const 62)))
+  (global $type-tag-compiled-proc (ref $string)
+    (array.new_fixed $string 16
+      (i32.const 35) (i32.const 60) (i32.const 99) (i32.const 111) (i32.const 109) (i32.const 112) (i32.const 105) (i32.const 108) (i32.const 101) (i32.const 100) (i32.const 45) (i32.const 112) (i32.const 114) (i32.const 111) (i32.const 99) (i32.const 62)))
+  (global $type-tag-continuation (ref $string)
+    (array.new_fixed $string 15
+      (i32.const 35) (i32.const 60) (i32.const 99) (i32.const 111) (i32.const 110) (i32.const 116) (i32.const 105) (i32.const 110) (i32.const 117) (i32.const 97) (i32.const 116) (i32.const 105) (i32.const 111) (i32.const 110) (i32.const 62)))
+  (global $type-tag-primitive (ref $string)
+    (array.new_fixed $string 12
+      (i32.const 35) (i32.const 60) (i32.const 112) (i32.const 114) (i32.const 105) (i32.const 109) (i32.const 105) (i32.const 116) (i32.const 105) (i32.const 118) (i32.const 101) (i32.const 62)))
+  (global $type-tag-parameter (ref $string)
+    (array.new_fixed $string 12
+      (i32.const 35) (i32.const 60) (i32.const 112) (i32.const 97) (i32.const 114) (i32.const 97) (i32.const 109) (i32.const 101) (i32.const 116) (i32.const 101) (i32.const 114) (i32.const 62)))
+  (global $type-tag-port (ref $string)
+    (array.new_fixed $string 7
+      (i32.const 35) (i32.const 60) (i32.const 112) (i32.const 111) (i32.const 114) (i32.const 116) (i32.const 62)))
+  (global $type-tag-error-sentinel (ref $string)
+    (array.new_fixed $string 17
+      (i32.const 35) (i32.const 60) (i32.const 101) (i32.const 114) (i32.const 114) (i32.const 111) (i32.const 114) (i32.const 45) (i32.const 115) (i32.const 101) (i32.const 110) (i32.const 116) (i32.const 105) (i32.const 110) (i32.const 101) (i32.const 108) (i32.const 62)))
+  (global $type-tag-js-ref (ref $string)
+    (array.new_fixed $string 9
+      (i32.const 35) (i32.const 60) (i32.const 106) (i32.const 115) (i32.const 45) (i32.const 114) (i32.const 101) (i32.const 102) (i32.const 62)))
+  (global $type-tag-env-frame (ref $string)
+    (array.new_fixed $string 12
+      (i32.const 35) (i32.const 60) (i32.const 101) (i32.const 110) (i32.const 118) (i32.const 45) (i32.const 102) (i32.const 114) (i32.const 97) (i32.const 109) (i32.const 101) (i32.const 62)))
+  (global $type-tag-eof (ref $string)
+    (array.new_fixed $string 6
+      (i32.const 35) (i32.const 60) (i32.const 101) (i32.const 111) (i32.const 102) (i32.const 62)))
+  (global $type-tag-void (ref $string)
+    (array.new_fixed $string 7
+      (i32.const 35) (i32.const 60) (i32.const 118) (i32.const 111) (i32.const 105) (i32.const 100) (i32.const 62)))
+  (global $type-tag-unknown (ref $string)
+    (array.new_fixed $string 10
+      (i32.const 35) (i32.const 60) (i32.const 117) (i32.const 110) (i32.const 107) (i32.const 110) (i32.const 111) (i32.const 119) (i32.const 110) (i32.const 62)))
+
 
   ;; ═══════════════════════════════════════════════════════════════════
   ;; Section 3: Value Constructors and Accessors
@@ -3467,8 +3514,36 @@
     ;; Vectors
     (if (call $is-vector (local.get $v))
       (then (return (call $wts-vector (local.get $v)))))
-    ;; Fallback
-    (call $make-static-string (i32.const 35) (i32.const 63))  ;; "#?"
+    ;; Fallback — identify tagged struct types via ref.test and return
+    ;; "#<TYPENAME>" so errors that format unknown values (e.g. mc-compile's
+    ;; "Unknown expression type" path) remain diagnosable instead of opaque.
+    ;; Ordered by estimated frequency; final $type-tag-unknown catches any
+    ;; struct type we haven't explicitly listed so new types stay diagnosable.
+    (if (ref.test (ref $hash-table) (local.get $v))
+      (then (return (global.get $type-tag-hash-table))))
+    (if (ref.test (ref $code-object) (local.get $v))
+      (then (return (global.get $type-tag-code-object))))
+    (if (ref.test (ref $compiled-proc) (local.get $v))
+      (then (return (global.get $type-tag-compiled-proc))))
+    (if (ref.test (ref $continuation) (local.get $v))
+      (then (return (global.get $type-tag-continuation))))
+    (if (ref.test (ref $primitive) (local.get $v))
+      (then (return (global.get $type-tag-primitive))))
+    (if (ref.test (ref $parameter) (local.get $v))
+      (then (return (global.get $type-tag-parameter))))
+    (if (ref.test (ref $port) (local.get $v))
+      (then (return (global.get $type-tag-port))))
+    (if (ref.test (ref $error-sentinel) (local.get $v))
+      (then (return (global.get $type-tag-error-sentinel))))
+    (if (ref.test (ref $js-ref) (local.get $v))
+      (then (return (global.get $type-tag-js-ref))))
+    (if (ref.test (ref $env-frame) (local.get $v))
+      (then (return (global.get $type-tag-env-frame))))
+    (if (call $is-eof (local.get $v))
+      (then (return (global.get $type-tag-eof))))
+    (if (ref.test (ref $void-type) (local.get $v))
+      (then (return (global.get $type-tag-void))))
+    (global.get $type-tag-unknown)
   )
 
   ;; Write-to-string for lists

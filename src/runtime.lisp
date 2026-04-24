@@ -667,6 +667,17 @@ bootstrap/primitives-auto.lisp from a template in src/primitives.scm."
   "Cached readtable with :preserve case for write-to-string-flat.")
 
 
+(defun ece-type-tag (x)
+  "Return a `#<type-name>` string identifying X's tagged type, or nil if
+X is a type (number, string, character, regular symbol, etc.) that
+prin1 handles correctly. Mirrors WAT's $write-to-string-impl fallback
+for the struct types that WAT identifies via ref.test, so CL and WASM
+errors formatting unknown tagged values produce the same output shape."
+  (cond
+    ((typep x 'code-object) "#<code-object>")
+    ((typep x 'ece-error-sentinel) "#<error-sentinel>")
+    (t nil)))
+
 (defun ece-print-flat (x s)
   "Recursively print X to S using ECE-readable syntax."
   (cond
@@ -698,7 +709,8 @@ bootstrap/primitives-auto.lisp from a template in src/primitives.scm."
               (ece-print-flat cur s)
               (setf cur nil))))
      (write-char #\) s))
-    (t (prin1 x s))))
+    (t (let ((tag (ece-type-tag x)))
+         (if tag (write-string tag s) (prin1 x s))))))
 
 
 
