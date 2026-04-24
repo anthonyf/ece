@@ -27,18 +27,18 @@ Working with Claude on this project has been leaking sandbox-permission prompts 
 
 ### 1. Makefile change
 
-Add a file-target sentinel for the qlot-installed state:
+Add a file-target sentinel for the qlot-installed state. Sentinel path is `.qlot/qlot.conf` — qlot produces it on every install and it stays put. No normal prerequisites: make runs the recipe only when the target is missing (fresh clone/worktree). If `qlfile.lock` is bumped, the user explicitly `rm -rf .qlot && make setup` (matches how most projects treat package-manager lockfiles):
 
 ```makefile
-# qlot install marker. Re-runs whenever qlfile.lock changes, otherwise
-# a no-op. Lives under project-local .qlot/ so sandbox-writable, and
-# inherits the exported ASDF_OUTPUT_TRANSLATIONS so any SBCL invocation
-# qlot makes during install uses project-local .fasl-cache/ too.
-.qlot/setup.lisp: qlfile.lock
+# qlot-install marker. Lives under project-local .qlot/ (sandbox-
+# writable); the exported ASDF_OUTPUT_TRANSLATIONS ensures any SBCL
+# invocation qlot makes during install writes FASLs to .fasl-cache/.
+.qlot/qlot.conf:
 	qlot install
+	@test -f $@ || { echo "error: qlot install did not create $@"; exit 1; }
 ```
 
-Make it a prerequisite of every target that invokes `qlot exec sbcl`:
+Make it an **order-only** prerequisite of every target that invokes `qlot exec sbcl` (using the `|` syntax — the sentinel gates build order, not rebuild decisions). Without order-only, the sentinel's mtime could force unrelated rebuilds:
 
 - `bin/ece` (the file target behind `ece:`)
 - `bootstrap/bootstrap.ecec` (the file target behind `bootstrap:`)
@@ -47,15 +47,13 @@ Make it a prerequisite of every target that invokes `qlot exec sbcl`:
 - `repl`, `run`, `run-lisp`
 - The zone-regeneration sentinel under `bootstrap:`
 
-Extend the existing `setup` target so explicit `make setup` is the canonical "prepare this worktree" call:
+Extend the existing `setup` target so explicit `make setup` is the canonical "prepare this worktree" call (order-only):
 
 ```makefile
-setup: .qlot/setup.lisp
+setup: | .qlot/qlot.conf
 	ln -sf ../../scripts/pre-commit .git/hooks/pre-commit
 	@echo "Pre-commit hook installed."
 ```
-
-The `.qlot/setup.lisp` sentinel is a path that qlot creates during install (verified from prior session: qlot writes `.qlot/setup.lisp` and the assistant saw this file in an error message). If the chosen filename turns out wrong during implementation, swap for whatever file qlot reliably produces.
 
 ### 2. Assistant-memory change
 

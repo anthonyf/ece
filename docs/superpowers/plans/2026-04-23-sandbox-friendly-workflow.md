@@ -44,13 +44,17 @@ Insert just after the `export ASDF_OUTPUT_TRANSLATIONS` line:
 ```makefile
 
 # qlot-install marker. `.qlot/qlot.conf` is produced by `qlot install`
-# and stays put across runs, so it's a reliable sentinel. Re-runs
-# whenever qlfile.lock changes (e.g. after a dep bump), otherwise it's
-# a no-op. Lives under project-local .qlot/ (sandbox-writable); the
-# exported ASDF_OUTPUT_TRANSLATIONS above ensures any SBCL invocation
-# qlot makes during install writes FASLs to .fasl-cache/ too.
-.qlot/qlot.conf: qlfile.lock
+# and stays put across runs, so it's a reliable sentinel. No normal
+# prereqs: make only runs the recipe when the target file is missing
+# (i.e., on a fresh clone/worktree). If qlfile.lock is bumped, the
+# user runs `rm -rf .qlot && make setup` explicitly, consistent with
+# how most projects treat package-manager lockfiles. Lives under
+# project-local .qlot/ (sandbox-writable); the exported
+# ASDF_OUTPUT_TRANSLATIONS above ensures any SBCL invocation qlot
+# makes during install writes FASLs to .fasl-cache/ too.
+.qlot/qlot.conf:
 	qlot install
+	@test -f $@ || { echo "error: qlot install did not create $@"; exit 1; }
 ```
 
 ### Step 1.3: Verify sentinel is a real post-install file
@@ -104,17 +108,17 @@ Record the full list — you'll add a prerequisite to each.
 
 ### Step 2.2: Add `.qlot/qlot.conf` as a prereq to each target
 
-For each target whose recipe invokes `qlot exec sbcl`, add `.qlot/qlot.conf` to its prerequisite list.
+For each target whose recipe invokes `qlot exec sbcl`, add `.qlot/qlot.conf` as an **order-only** prerequisite (GNU make `|` syntax — the sentinel gates build order without influencing rebuild decisions).
 
 Patterns to apply:
 
-- **Targets with existing prerequisites** (e.g., `bin/ece: scripts/build-ece-binary.lisp bootstrap/bootstrap.ecec share/ece/ece-main.ecec`): append `.qlot/qlot.conf` to the list:
+- **Targets with existing prerequisites** (e.g., `bin/ece: scripts/build-ece-binary.lisp bootstrap/bootstrap.ecec share/ece/ece-main.ecec`): append `| .qlot/qlot.conf` to the list:
   ```makefile
-  bin/ece: scripts/build-ece-binary.lisp bootstrap/bootstrap.ecec share/ece/ece-main.ecec .qlot/qlot.conf
+  bin/ece: scripts/build-ece-binary.lisp bootstrap/bootstrap.ecec share/ece/ece-main.ecec | .qlot/qlot.conf
   ```
-- **Targets with no prerequisites** (e.g., `test-rove:`): add one:
+- **Targets with no prerequisites** (e.g., `test-rove:`): add one as order-only:
   ```makefile
-  test-rove: .qlot/qlot.conf
+  test-rove: | .qlot/qlot.conf
   ```
 - **`.PHONY` list**: already includes `setup` — no change needed.
 
@@ -133,7 +137,7 @@ setup:
 
 Replace with:
 ```makefile
-setup: .qlot/qlot.conf
+setup: | .qlot/qlot.conf
 	ln -sf ../../scripts/pre-commit .git/hooks/pre-commit
 	@echo "Pre-commit hook installed."
 ```

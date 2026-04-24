@@ -17,7 +17,7 @@ all: ece
 # symlinks, and stage share/ece/ so ece-home resolution works in-tree.
 ece: bootstrap wasm bin/ece
 
-bin/ece: scripts/build-ece-binary.lisp bootstrap/bootstrap.ecec share/ece/ece-main.ecec .qlot/qlot.conf
+bin/ece: scripts/build-ece-binary.lisp bootstrap/bootstrap.ecec share/ece/ece-main.ecec | .qlot/qlot.conf
 	@mkdir -p bin
 	qlot exec sbcl --dynamic-space-size 4096 --non-interactive --load scripts/build-ece-binary.lisp
 	@ln -sf ece bin/ece-repl
@@ -26,7 +26,7 @@ bin/ece: scripts/build-ece-binary.lisp bootstrap/bootstrap.ecec share/ece/ece-ma
 	@ln -sf ece bin/ece-serve
 	@echo "Built bin/ece + symlinks (ece-repl, ece-build, ece-test, ece-serve)"
 
-share/ece/ece-main.ecec: src/sdk-lib.scm src/ece-main.scm src/ece-unit.scm src/base64.scm src/sha1.scm src/scheduler.scm src/http-codec.scm src/websocket-codec.scm src/json.scm src/ece-build.scm src/ece-test.scm src/ece-serve.scm src/geiser-ece.scm bootstrap/bootstrap.ecec .qlot/qlot.conf
+share/ece/ece-main.ecec: src/sdk-lib.scm src/ece-main.scm src/ece-unit.scm src/base64.scm src/sha1.scm src/scheduler.scm src/http-codec.scm src/websocket-codec.scm src/json.scm src/ece-build.scm src/ece-test.scm src/ece-serve.scm src/geiser-ece.scm bootstrap/bootstrap.ecec | .qlot/qlot.conf
 	@mkdir -p share/ece/templates
 	qlot exec sbcl --dynamic-space-size 4096 --non-interactive --disable-debugger \
 	  --eval '(asdf:load-system :ece)' \
@@ -93,6 +93,7 @@ export ASDF_OUTPUT_TRANSLATIONS = (:output-translations ("$(CURDIR)/" "$(CURDIR)
 # makes during install writes FASLs to .fasl-cache/ too.
 .qlot/qlot.conf:
 	qlot install
+	@test -f $@ || { echo "error: qlot install did not create $@"; exit 1; }
 
 # WASM test bundle: framework + reusable utilities + common/ (platform-independent) tests + runner.
 # base64.scm and sha1.scm must come before the test files so their exports
@@ -112,13 +113,13 @@ test: test-rove test-ece test-wasm test-conformance test-golden test-web-server 
 
 # Note: rove:run doesn't discover suites from FASL-cached files, so we use
 # call-with-suite/all-suites/run-suite which work after asdf:load-system.
-test-rove: .qlot/qlot.conf
+test-rove: | .qlot/qlot.conf
 	@mkdir -p $(TEST_OUTPUT_DIR)
 	@bash -o pipefail -c 'qlot exec sbcl --dynamic-space-size 4096 --disable-debugger --eval "(asdf:load-system :ece)" --eval "(asdf:load-system :ece/tests)" \
 	  --eval "(let ((passedp (funcall (find-symbol \"CALL-WITH-SUITE\" :rove/core/suite) (lambda () (dolist (s (funcall (find-symbol \"ALL-SUITES\" :rove/core/suite/package))) (funcall (find-symbol \"RUN-SUITE\" :rove/core/suite/package) s)))))) (unless passedp (uiop:quit 1)))" \
 	  --quit 2>&1 | tee $(TEST_OUTPUT_DIR)/test-rove.txt'
 
-test-ece: .qlot/qlot.conf
+test-ece: | .qlot/qlot.conf
 	@mkdir -p .tmp $(TEST_OUTPUT_DIR)
 	@qlot exec sbcl --dynamic-space-size 4096 --disable-debugger \
 	  --eval '(asdf:load-system :ece)' \
@@ -137,7 +138,7 @@ test-ece: .qlot/qlot.conf
 	  --quit 2>&1 | tee $(TEST_OUTPUT_DIR)/test-ece.txt
 	@grep -q "0 failed" $(TEST_OUTPUT_DIR)/test-ece.txt
 
-test-conformance: .qlot/qlot.conf
+test-conformance: | .qlot/qlot.conf
 	@mkdir -p $(TEST_OUTPUT_DIR)
 	@qlot exec sbcl --dynamic-space-size 4096 --disable-debugger --eval '(asdf:load-system :ece)' \
 	  --eval '(handler-case (ece:evaluate (list (quote load) "tests/conformance/run-conformance.scm")) (error (c) (format t "Error: ~A~%" c) (sb-ext:exit :code 1)))' \
@@ -146,7 +147,7 @@ test-conformance: .qlot/qlot.conf
 	@grep -q "Conformance results:" $(TEST_OUTPUT_DIR)/test-conformance.txt
 	@! grep -q "[1-9][0-9]* failed" $(TEST_OUTPUT_DIR)/test-conformance.txt
 
-test-wasm: wasm .qlot/qlot.conf
+test-wasm: wasm | .qlot/qlot.conf
 	@mkdir -p .tmp $(TEST_OUTPUT_DIR)
 	@echo "Compiling WASM test suite..."
 	@cat $(WASM_TEST_SRCS) > .tmp/ece-wasm-tests.scm
@@ -157,7 +158,7 @@ test-wasm: wasm .qlot/qlot.conf
 	@node --max-old-space-size=4096 wasm/test.js .tmp/ece-wasm-tests.ecec 2>&1 | tee $(TEST_OUTPUT_DIR)/test-wasm.txt
 	@grep -q "0 failed" $(TEST_OUTPUT_DIR)/test-wasm.txt
 
-test-golden: .qlot/qlot.conf
+test-golden: | .qlot/qlot.conf
 	@echo "Running golden compiler output tests..."
 	@mkdir -p .tmp
 	@FAIL=0; \
@@ -184,7 +185,7 @@ test-golden: .qlot/qlot.conf
 	done; \
 	[ $$FAIL -eq 0 ] && echo "All golden tests passed." || (echo "Golden tests FAILED." && exit 1)
 
-update-golden: .qlot/qlot.conf
+update-golden: | .qlot/qlot.conf
 	@echo "Updating golden expected files..."
 	@for src in $(GOLDEN_SRCS); do \
 	  base=$$(basename "$$src" .scm); \
@@ -225,14 +226,14 @@ test-web-apps: sandbox
 	@echo "Running web apps smoke test..."
 	@node wasm/test-web-apps.js
 
-repl: share/ece/ece-main.ecec .qlot/qlot.conf
+repl: share/ece/ece-main.ecec | .qlot/qlot.conf
 	qlot exec sbcl --dynamic-space-size 4096 --load ece.asd --eval '(asdf:load-system :ece)' \
 	  --eval '(in-package :ece)' \
 	  --eval '(evaluate (quote (begin (load-bundle "share/ece/ece-main.ecec") (repl))))'
 
 # Run SBCL with ECE loaded — use for ad-hoc evaluation via --eval
 # Example: make run-lisp ARGS="--eval '(ece:evaluate 42)' --quit"
-run-lisp: .qlot/qlot.conf
+run-lisp: | .qlot/qlot.conf
 	qlot exec sbcl --dynamic-space-size 4096 --disable-debugger --eval '(asdf:load-system :ece)' $(ARGS)
 
 # Per-code-object codegen produces ~1000 zone files named
@@ -249,7 +250,7 @@ bootstrap: $(BOOTSTRAP_DIR)/primitives-auto.lisp $(BOOTSTRAP_DIR)/bootstrap.ecec
 # Bootstrap bundle: compiled-system output for all .scm modules. Must be
 # regenerated whenever any .scm source changes (so the assembler space's
 # instruction vector reflects current src/assembler.scm).
-$(BOOTSTRAP_DIR)/bootstrap.ecec: $(BOOTSTRAP_SRCS) $(BOOTSTRAP_DIR)/primitives-auto.lisp .qlot/qlot.conf
+$(BOOTSTRAP_DIR)/bootstrap.ecec: $(BOOTSTRAP_SRCS) $(BOOTSTRAP_DIR)/primitives-auto.lisp | .qlot/qlot.conf
 	@mkdir -p $(BOOTSTRAP_DIR)
 	qlot exec sbcl --dynamic-space-size 4096 --eval '(asdf:load-system :ece)' \
 	  --eval '(in-package :ece)' \
@@ -265,7 +266,7 @@ $(BOOTSTRAP_DIR)/bootstrap.ecec: $(BOOTSTRAP_SRCS) $(BOOTSTRAP_DIR)/primitives-a
 # Auto-generated CL primitive defuns. Source of truth: src/primitives.scm.
 # The codegen tool (src/codegen-cl.scm) is itself an ECE program that runs
 # through the existing ECE interpreter. The generated file is checked in.
-$(BOOTSTRAP_DIR)/primitives-auto.lisp: primitives.def src/primitives.scm src/codegen-cl.scm .qlot/qlot.conf
+$(BOOTSTRAP_DIR)/primitives-auto.lisp: primitives.def src/primitives.scm src/codegen-cl.scm | .qlot/qlot.conf
 	@mkdir -p $(BOOTSTRAP_DIR)
 	@echo "Regenerating $(BOOTSTRAP_DIR)/primitives-auto.lisp from src/primitives.scm..."
 	qlot exec sbcl --dynamic-space-size 4096 --non-interactive --disable-debugger \
@@ -282,7 +283,7 @@ $(BOOTSTRAP_DIR)/primitives-auto.lisp: primitives.def src/primitives.scm src/cod
 # assembler-0-zone.lisp stands in for the whole set: index 0 of the
 # assembler section is always emitted when the recipe runs, so its mtime
 # is a reliable signal that regeneration has happened.
-$(ZONE_SENTINEL): primitives.def src/primitives.scm src/codegen-cl.scm src/codegen-cl-inline.scm $(BOOTSTRAP_SRCS) $(BOOTSTRAP_DIR)/bootstrap.ecec .qlot/qlot.conf
+$(ZONE_SENTINEL): primitives.def src/primitives.scm src/codegen-cl.scm src/codegen-cl-inline.scm $(BOOTSTRAP_SRCS) $(BOOTSTRAP_DIR)/bootstrap.ecec | .qlot/qlot.conf
 	@mkdir -p $(BOOTSTRAP_DIR)
 	@echo "Regenerating all compiled zones in $(BOOTSTRAP_DIR)/..."
 	qlot exec sbcl --dynamic-space-size 4096 --non-interactive --disable-debugger \
@@ -364,7 +365,7 @@ check-fmt: fmt
 		exit 1; \
 	fi
 
-setup: .qlot/qlot.conf
+setup: | .qlot/qlot.conf
 	ln -sf ../../scripts/pre-commit .git/hooks/pre-commit
 	@echo "Pre-commit hook installed."
 
