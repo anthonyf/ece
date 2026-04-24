@@ -469,12 +469,29 @@ code-objects) for FILENAME."
                 (loop (cdr cos)
                       (cons (archive/code-object->entry (car cos) co-map) acc)))))))
 
+(define (archive/file-stem-from-field file-field)
+  "Derive the archive stem symbol from the FILE-FIELD string in the
+archive wrapper. Returns #f when absent or not a string. Strips any
+extension (matches CL archive-file-stem-symbol)."
+  (if (string? file-field)
+      (let ((len (string-length file-field)))
+        (let loop ((i (- len 1)))
+          (cond
+           ((< i 0) (string->symbol file-field))
+           ((char=? (string-ref file-field i) #\.)
+            (string->symbol (substring file-field 0 i)))
+           (else (loop (- i 1))))))
+      #f))
+
 (define (archive-sexp->code-objects archive)
   "Parse an archive s-expression (as read from disk). Returns the vector
 of code-objects. Entry 0 is the init code-object. Raises on version
-mismatch."
+mismatch. Stamps archive-key = (cons stem index) on each code-object so
+the serializer can emit by-reference forms."
   (let* ((version (archive/plist-get (cdr archive) ':version))
-         (entries (archive/plist-get (cdr archive) ':entries)))
+         (entries (archive/plist-get (cdr archive) ':entries))
+         (file-field (archive/plist-get (cdr archive) ':file))
+         (file-stem (archive/file-stem-from-field file-field)))
     (when (not (equal? version 2))
       (error (string-append
               "Unsupported .ecec archive version: "
@@ -498,6 +515,8 @@ mismatch."
             (for-each (lambda (pair)
                         (%code-object-set-label! co (car pair) (cdr pair)))
                       (archive/plist-get fields ':labels))
+            (when file-stem
+              (%code-object-set-archive-key! co (cons file-stem i)))
             (vector-set! cos i co))
           (loop (+ i 1))))
       ;; Pass 2: push instructions (with (co-ref N) patched to code-objects).

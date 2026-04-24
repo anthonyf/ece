@@ -1582,7 +1582,8 @@
     (field $name       (mut (ref null eq))) ;; symbol or null
     (field $arity      (mut (ref null eq))) ;; fixnum or null
     (field $source-loc (mut (ref null eq))) ;; list or null
-    (field $native-fn  (mut (ref null eq))))) ;; procedure or null
+    (field $native-fn  (mut (ref null eq))) ;; procedure or null
+    (field $archive-key (mut (ref null eq))))) ;; (cons stem index) when archive-registered, else null
 
   ;; Vector of code-objects, used by the archive loader for co-ref patching.
   (type $co-vec (array (mut (ref null eq))))
@@ -5410,6 +5411,7 @@
         (ref.null eq)
         (ref.null eq)
         (ref.null eq)
+        (ref.null eq)
         (ref.null eq)))))
 
     ;; 251 = %code-object-push-instruction!(co, source-instr)
@@ -5508,6 +5510,41 @@
         (return (if (result (ref null eq)) (ref.is_null (local.get $lbl-result))
           (then (global.get $false))
           (else (local.get $lbl-result))))))
+
+    ;; 258 = code-object-archive-key(co)
+    (if (i32.eq (local.get $id) (i32.const 258))
+      (then
+        (local.set $co-for-labels
+          (ref.cast (ref $code-object) (call $arg1 (local.get $args))))
+        (local.set $lbl-result (struct.get $code-object $archive-key
+                                 (ref.as_non_null (local.get $co-for-labels))))
+        (return (if (result (ref null eq)) (ref.is_null (local.get $lbl-result))
+          (then (global.get $false))
+          (else (local.get $lbl-result))))))
+
+    ;; 259 = %code-object-set-archive-key!(co, key)
+    (if (i32.eq (local.get $id) (i32.const 259))
+      (then
+        (local.set $co-for-labels
+          (ref.cast (ref $code-object) (call $arg1 (local.get $args))))
+        (struct.set $code-object $archive-key
+          (ref.as_non_null (local.get $co-for-labels))
+          (call $arg2 (local.get $args)))
+        (return (global.get $void))))
+
+    ;; 260 = %archive-co-lookup(stem, index) — WASM stub returns #f.
+    ;; The WASM archive loader doesn't populate a (stem . index) registry
+    ;; (archive-key stamping is a CL-only follow-up), so:
+    ;;   - Serialization side: code-objects on WASM always have archive-key
+    ;;     null and serialize as (%ser/co-inline ...), never by-reference.
+    ;;   - Deserialization side: a (%ser/co-ref ...) blob produced elsewhere
+    ;;     (e.g. by CL) and deserialized on WASM traps with
+    ;;     ece-deser-missing-archive-error (the same error CL would raise
+    ;;     for an unloaded archive). Cross-host save/restore of by-reference
+    ;;     continuations therefore requires WASM archive-key stamping to
+    ;;     land first.
+    (if (i32.eq (local.get $id) (i32.const 260))
+      (then (return (global.get $false))))
 
     ;; Unknown primitive — return void
     (global.get $void)
@@ -6211,6 +6248,7 @@
       (local.set $co (struct.new $code-object
         (array.new_default $instr-vec (i32.const 32))
         (i32.const 0)
+        (ref.null eq)
         (ref.null eq)
         (ref.null eq)
         (ref.null eq)

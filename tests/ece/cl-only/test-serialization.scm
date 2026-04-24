@@ -60,21 +60,11 @@
   (assert-equal (hash-ref loaded 'a) 1)
   (assert-equal (hash-ref loaded 'b) 2)))
 
-;; TODO(per-procedure-code-objects §G1): After mc-compile-and-go routes through
-;; code-objects, the closure's entry is a bare code-object. The serializer
-;; emits (%ser/opaque-co) as a placeholder (code-object identity is
-;; process-local; nothing reader-portable to write). The deserialized
-;; procedure can't be invoked — calling it switches the executor into a
-;; "space" named %ser/opaque-co which doesn't exist. Re-enable once the
-;; archive-format serializer can round-trip a full code-object (or once the
-;; serializer emits the full instruction/label shape instead of an opaque
-;; placeholder). See prelude.scm ser-entry and the plan's §7.1 note on
-;; opaque-co semantics.
-;; (test "round-trip compiled procedure" (lambda ()
-;;   (define (test-sq x) (* x x))
-;;   (test-save! ".tmp/ece-rt-fn.dat" test-sq)
-;;   (define loaded (test-load ".tmp/ece-rt-fn.dat"))
-;;   (assert-equal (loaded 7) 49)))
+(test "round-trip compiled procedure" (lambda ()
+  (define (test-sq x) (* x x))
+  (test-save! ".tmp/ece-rt-fn.dat" test-sq)
+  (define loaded (test-load ".tmp/ece-rt-fn.dat"))
+  (assert-equal (loaded 7) 49)))
 
 (test "serialize! writes without error" (lambda ()
   (test-save! ".tmp/ece-rt-ret.dat" 42)
@@ -95,18 +85,20 @@
   (define k #f)
   (%raw-call/cc (lambda (cont) (set! k cont) 0))
   (define size (string-length (serialize-value k)))
-  ;; Continuation captures the whole test-framework dynamic chain, which
-  ;; includes the outer ece-test-main accumulator of per-file results.
-  ;; Size scales with the number of test files discovered before this one,
-  ;; so the threshold is framework overhead, not a serializer property.
-  (assert (< size 50000) (string-append "continuation too large: " (number->string size) " bytes"))))
+  ;; Continuation captures the whole test-framework dynamic chain, plus
+  ;; any inline code-objects for REPL/test-scope lambdas (the test file
+  ;; itself isn't loaded as an archive, so its code-objects lack an
+  ;; archive-key and travel inline). The threshold is sized to catch
+  ;; pathological blowups (e.g., pulling in the entire prelude), not to
+  ;; enforce a tight bound on expected framework overhead.
+  (assert (< size 2000000) (string-append "continuation too large: " (number->string size) " bytes"))))
 
 (test "continuation with state is compact" (lambda ()
   (define state (hash-table 'room "kitchen" 'inventory (list "key" "torch") 'health 100))
   (define k #f)
   (%raw-call/cc (lambda (cont) (set! k cont) 0))
   (define size (string-length (serialize-value k)))
-  (assert (< size 50000) (string-append "continuation+state too large: " (number->string size) " bytes"))))
+  (assert (< size 2000000) (string-append "continuation+state too large: " (number->string size) " bytes"))))
 
 (test "round-trip parameter value" (lambda ()
   (define p (make-parameter 42))
@@ -152,33 +144,28 @@
 
 ;; --- Cyclic Serialization Tests ---
 
-;; TODO(per-procedure-code-objects §G1): Invoking deserialized procedures
-;; trips the %ser/opaque-co placeholder (see "round-trip compiled procedure"
-;; above). The cyclic-structure mechanics are independently tested by the
-;; other "round-trip *" suites that don't invoke the result.
-;; (test "round-trip letrec self-referencing closure" (lambda ()
-;;   (define f (letrec ((f (lambda (x) (if (= x 0) 1 (* x (f (- x 1))))))) f))
-;;   (test-save! ".tmp/ece-rt-letrec-self.dat" f)
-;;   (define loaded (test-load ".tmp/ece-rt-letrec-self.dat"))
-;;   (assert-equal (loaded 5) 120)
-;;   (assert-equal (loaded 0) 1)))
+(test "round-trip letrec self-referencing closure" (lambda ()
+  (define f (letrec ((f (lambda (x) (if (= x 0) 1 (* x (f (- x 1))))))) f))
+  (test-save! ".tmp/ece-rt-letrec-self.dat" f)
+  (define loaded (test-load ".tmp/ece-rt-letrec-self.dat"))
+  (assert-equal (loaded 5) 120)
+  (assert-equal (loaded 0) 1)))
 
-;; TODO(per-procedure-code-objects §G1): Same opaque-co limitation.
-;; (test "round-trip mutually recursive closures" (lambda ()
-;;   (define fns
-;;     (letrec ((even? (lambda (n) (if (= n 0) #t (odd? (- n 1)))))
-;;              (odd?  (lambda (n) (if (= n 0) #f (even? (- n 1))))))
-;;       (list even? odd?)))
-;;   (test-save! ".tmp/ece-rt-mutual.dat" fns)
-;;   (define loaded (test-load ".tmp/ece-rt-mutual.dat"))
-;;   (define loaded-even? (car loaded))
-;;   (define loaded-odd? (cadr loaded))
-;;   (assert-equal (loaded-even? 0) #t)
-;;   (assert-equal (loaded-even? 1) #f)
-;;   (assert-equal (loaded-even? 4) #t)
-;;   (assert-equal (loaded-odd? 0) #f)
-;;   (assert-equal (loaded-odd? 1) #t)
-;;   (assert-equal (loaded-odd? 5) #t)))
+(test "round-trip mutually recursive closures" (lambda ()
+  (define fns
+    (letrec ((even? (lambda (n) (if (= n 0) #t (odd? (- n 1)))))
+             (odd?  (lambda (n) (if (= n 0) #f (even? (- n 1))))))
+      (list even? odd?)))
+  (test-save! ".tmp/ece-rt-mutual.dat" fns)
+  (define loaded (test-load ".tmp/ece-rt-mutual.dat"))
+  (define loaded-even? (car loaded))
+  (define loaded-odd? (cadr loaded))
+  (assert-equal (loaded-even? 0) #t)
+  (assert-equal (loaded-even? 1) #f)
+  (assert-equal (loaded-even? 4) #t)
+  (assert-equal (loaded-odd? 0) #f)
+  (assert-equal (loaded-odd? 1) #t)
+  (assert-equal (loaded-odd? 5) #t)))
 
 (test "round-trip recursive define in let body via call/cc" (lambda ()
   (define k #f)
@@ -190,17 +177,13 @@
   (define loaded (test-load ".tmp/ece-rt-rec-cont.dat"))
   (assert (continuation? loaded) "loaded should be a continuation")))
 
-;; TODO(per-procedure-code-objects §G1): Same limitation as "round-trip
-;; compiled procedure" above — invoking a deserialized code-object-backed
-;; closure tries to switch to a space named %ser/opaque-co. Re-enable once
-;; the serializer can round-trip a full code-object.
-;; (test "non-cyclic shared structure still works" (lambda ()
-;;   ;; Verify existing non-cyclic round-trips still work
-;;   (define (test-sq x) (* x x))
-;;   (test-save! ".tmp/ece-rt-shared.dat" test-sq)
-;;   (define loaded (test-load ".tmp/ece-rt-shared.dat"))
-;;   (assert-equal (loaded 7) 49)
-;;   (assert-equal (loaded 3) 9)))
+(test "non-cyclic shared structure still works" (lambda ()
+  ;; Verify existing non-cyclic round-trips still work
+  (define (test-sq x) (* x x))
+  (test-save! ".tmp/ece-rt-shared.dat" test-sq)
+  (define loaded (test-load ".tmp/ece-rt-shared.dat"))
+  (assert-equal (loaded 7) 49)
+  (assert-equal (loaded 3) 9)))
 
 ;; --- Lexical State Pattern (game-like save/load) ---
 
@@ -230,9 +213,11 @@
   (assert-equal (car result) "dungeon")
   (assert-equal (cadr result) 70)
   (assert-equal (caddr result) (list "key" "torch"))
-  ;; Continuation includes parameterize overhead from test runner
+  ;; Continuation includes parameterize overhead from test runner plus
+  ;; any inline code-objects for REPL/test-scope lambdas (see
+  ;; "continuation serialization is compact" for the threshold rationale).
   (define k (cadddr result))
-  (assert (< (string-length (serialize-value k)) 50000)
+  (assert (< (string-length (serialize-value k)) 2000000)
           "lexical state continuation should be compact")))
 
 (test "lexical state pattern: save and load preserves all state" (lambda ()
@@ -302,3 +287,22 @@
   (assert-equal (car loaded) "dungeon")
   (assert-equal (cadr loaded) 50)
   (assert (continuation? (caddr loaded)))))
+
+(test "%ser/co-ref fails with typed error when archive absent" (lambda ()
+  ;; Fabricate a blob that references an archive stem that isn't
+  ;; registered. The deserializer must surface this via the typed
+  ;; ece-deser-missing-archive-error record so callers can catch the
+  ;; specific class (not a generic error) and prompt the user.
+  (define blob "(%ser/co-ref fake-archive-xyz 0)")
+  (define raised #f)
+  (define stem #f)
+  (define idx #f)
+  (guard (e ((ece-deser-missing-archive-error? e)
+             (set! raised #t)
+             (set! stem (ece-deser-missing-archive-error-stem e))
+             (set! idx (ece-deser-missing-archive-error-index e))))
+    (let ((port (open-input-string blob)))
+      (deserialize port)))
+  (assert-equal raised #t)
+  (assert-equal stem 'fake-archive-xyz)
+  (assert-equal idx 0)))

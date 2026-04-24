@@ -57,20 +57,37 @@ Matches idiomatic Scheme and makes named parameters read as named parameters.
 
 **Estimate:** one sitting. Brainstorm → plan → execute in a single session, no subagent decomposition needed.
 
-## P2 — Continuation serialization for code-objects
+## P2 — Continuation serialization for code-objects — **Shipped**
 
-**Current state:** `src/prelude.scm:1202` emits `(%ser/opaque-co)` as a placeholder for code-object operands in captured continuations. Deserialization rebuilds closures pointing at an `opaque-co` space that doesn't exist. Three tests in `test-serialization.scm` are commented out under a `TODO(per-procedure-code-objects §G1)` marker.
+**Status:** Landed on branch `codeobj-serialization`. Design:
+`docs/superpowers/specs/2026-04-22-codeobj-serialization-design.md`.
+Plan: `docs/superpowers/plans/2026-04-22-codeobj-serialization.md`.
 
-**Why P2 and not P1:** this is a semantics decision, not mechanical cleanup. Two broad approaches will surface in its own brainstorm:
+**What shipped:**
 
-1. **Serialize by reference** — `(%ser/co-ref <archive-file-stem> <index>)`. Deserialization looks up the registered archive in `*archive-code-objects*`. Cheap, small payload. Fails if the source archive is missing at deserialize time.
-2. **Serialize inline** — emit the full instruction vector + labels + metadata inside the continuation blob. Self-contained. Heavier payload (continuations blow up in size) and re-introduces the archive-inlining problem the archive format was designed to avoid.
-
-A hybrid is likely: reference by default, inline for anonymous / REPL-compiled code. Needs its own brainstorm because the choice interacts with save-game / save-world UX.
-
-**Why P2 and not deferred indefinitely:** call/cc serialization is a shipped feature (PR #163's §G1 "done" column notwithstanding). The `%ser/opaque-co` placeholder is a known-broken escape hatch, not a feature. Users calling `save-continuation!` on a CL-side continuation today will silently get an un-invokable closure back.
-
-**Prerequisite:** P0 merged. With WASM code-object infra in place, any serialization format designed here will work on both hosts.
+- Hybrid dispatch: archive-registered code-objects serialize as
+  `(%ser/co-ref <stem> <index>)`; anonymous/REPL-compiled code-objects
+  serialize as `(%ser/co-inline :name ... :instructions ...)`.
+- O(1) dispatch via a new `archive-key` field on the `code-object`
+  struct (CL defstruct + WAT struct), populated by
+  `register-archive-code-objects` (CL) and `archive-sexp->code-objects`
+  (ECE). WASM archive loader leaves it null — inline fallback is the
+  documented degradation until the WASM loader ports the stem parser.
+- Deserialization via `deser/lookup-archive-co` (by-reference) and
+  `deser/reconstruct-co-inline` (inline); nested code-objects in
+  instruction operands resolve recursively through
+  `deser/walk-instruction`.
+- Typed error `ece-deser-missing-archive-error` raised when a by-
+  reference lookup hits an unregistered stem — callers can `guard` on
+  the specific class and prompt the user to load the archive.
+- New primitives: 258 `code-object-archive-key`, 259
+  `%code-object-set-archive-key!`, 260 `%archive-co-lookup`.
+- Re-enabled the four `TODO(per-procedure-code-objects §G1)` tests in
+  `tests/ece/cl-only/test-serialization.scm`. Added one new UX test
+  for the typed-error path. Test count: 1305 → 1319 passed.
+- Removed the `%ser/opaque-co` placeholder — both serializer and
+  deserializer. Only archived proposals and this roadmap doc retain
+  historical references.
 
 ## Out of scope for this roadmap
 
@@ -80,4 +97,5 @@ A hybrid is likely: reference by default, inline for anonymous / REPL-compiled c
 
 ## Ordering
 
-P0 → P0.5 → P1. P2 needs its own brainstorm before design; no hard blocker after P1 but pairing them in the same quarter keeps the code-object model in working memory.
+P0 → P0.5 → P1 → P2. All four shipped; see individual section headers
+for status + artifacts.

@@ -12,11 +12,17 @@
 
 (in-package :ece)
 
+(defun ece-%archive-co-lookup (stem index)
+  (cl:or (cl:gethash (cl:cons stem index) *archive-code-objects*) *scheme-false*))
+
 (defun ece-%chmod (path mode)
   (let* ((pkg (cl:find-package "SB-POSIX")) (chmod-fn (cl:and pkg (cl:find-symbol "CHMOD" pkg)))) (cl:when (cl:and chmod-fn (cl:fboundp chmod-fn)) (cl:funcall chmod-fn path mode)) cl:nil))
 
 (defun ece-%code-object-push-instruction! (co source-instr)
   (cl:progn (cl:vector-push-extend source-instr (code-object-source-instructions co)) (cl:vector-push-extend (resolve-operations source-instr) (code-object-resolved-instructions co)) cl:nil))
+
+(defun ece-%code-object-set-archive-key! (co key)
+  (cl:progn (cl:setf (code-object-archive-key co) (cl:if (cl:eq key *scheme-false*) cl:nil key)) cl:nil))
 
 (defun ece-%code-object-set-arity! (co arity)
   (cl:progn (cl:setf (code-object-arity co) arity) cl:nil))
@@ -257,6 +263,9 @@
 
 (defun ece-close-output-port (port)
   (cl:progn (cl:close (ece-port-stream port)) cl:nil))
+
+(defun ece-code-object-archive-key (co)
+  (cl:or (code-object-archive-key co) *scheme-false*))
 
 (defun ece-code-object-arity (co)
   (cl:or (code-object-arity co) *scheme-false*))
