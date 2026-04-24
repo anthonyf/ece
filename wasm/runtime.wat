@@ -466,6 +466,12 @@
           (i32.const 105) (i32.const 110) (i32.const 115) (i32.const 116)
           (i32.const 114) (i32.const 117) (i32.const 99) (i32.const 116)
           (i32.const 105) (i32.const 111) (i32.const 110) (i32.const 115)))))
+    ;; ":file" (5 chars)
+    (global.set $sym-id-file
+      (struct.get $symbol $id (call $intern
+        (array.new_fixed $string 5
+          (i32.const 58)
+          (i32.const 102) (i32.const 105) (i32.const 108) (i32.const 101)))))
   )
 
   ;; --- Pair ---
@@ -1602,6 +1608,14 @@
   (global $sym-id-source-loc   (mut i32) (i32.const 0))
   (global $sym-id-labels       (mut i32) (i32.const 0))
   (global $sym-id-instructions (mut i32) (i32.const 0))
+  (global $sym-id-file         (mut i32) (i32.const 0))
+
+  ;; Archive registry: outer $hash-table keyed by file-stem symbol ref
+  ;; mapping to inner $hash-tables keyed by index-fixnum mapping to
+  ;; $code-object refs. Null until first registration; lazy-initialized
+  ;; by $archive-registry-put. Populated per-archive by
+  ;; $load-archive-impl; read by primitive 260 (%archive-co-lookup).
+  (global $archive-registry (mut (ref null eq)) (ref.null eq))
 
   ;; --- Compile-time macro table (symbol → transformer) ---
   (global $macro-table (mut (ref null eq)) (ref.null eq))
@@ -5532,19 +5546,16 @@
           (call $arg2 (local.get $args)))
         (return (global.get $void))))
 
-    ;; 260 = %archive-co-lookup(stem, index) — WASM stub returns #f.
-    ;; The WASM archive loader doesn't populate a (stem . index) registry
-    ;; (archive-key stamping is a CL-only follow-up), so:
-    ;;   - Serialization side: code-objects on WASM always have archive-key
-    ;;     null and serialize as (%ser/co-inline ...), never by-reference.
-    ;;   - Deserialization side: a (%ser/co-ref ...) blob produced elsewhere
-    ;;     (e.g. by CL) and deserialized on WASM traps with
-    ;;     ece-deser-missing-archive-error (the same error CL would raise
-    ;;     for an unloaded archive). Cross-host save/restore of by-reference
-    ;;     continuations therefore requires WASM archive-key stamping to
-    ;;     land first.
+    ;; 260 = %archive-co-lookup(stem, index) — resolve to code-object.
+    ;; Reads $archive-registry (populated by $load-archive-impl Pass 1).
+    ;; Returns #f on any miss (uninitialized registry, unknown stem, or
+    ;; unknown index within a known stem) — matches CL's gethash miss
+    ;; semantics; deser/lookup-archive-co then raises
+    ;; ece-deser-missing-archive-error with the specific stem+index.
     (if (i32.eq (local.get $id) (i32.const 260))
-      (then (return (global.get $false))))
+      (then (return (call $archive-registry-get
+        (call $arg1 (local.get $args))
+        (call $arg2 (local.get $args))))))
 
     ;; Unknown primitive — return void
     (global.get $void)
@@ -6154,6 +6165,131 @@
   ;; §6.6's code-object-based label store. $ece-instr-to-wasm-instr always
   ;; returns a non-null $instr, so we skip bare-symbol "label" rows
   ;; (archives don't emit them, but we guard anyway) before calling.
+
+  ;; Extract the archive's file-stem as an interned symbol.
+  ;; Mirrors CL's archive-file-stem-symbol in src/runtime.lisp.
+  ;;
+  ;; Reads :file from the archive (expected to be a string like
+  ;; "boot-env.scm"), strips any trailing dotted extension
+  ;; (everything from the last `.` onward), and interns the prefix.
+  ;;
+  ;; Returns (ref.null eq) if :file is missing or not a string, so
+  ;; callers can skip registration rather than erroring — matches CL's
+  ;; graceful-degrade behavior.
+  (func $archive-file-stem-symbol (param $archive (ref null eq))
+                                  (result (ref null eq))
+    (local $file (ref null eq))
+    (local $name (ref $string))
+    (local $len i32)
+    (local $last-dot i32)
+    (local $i i32)
+    (local $stem-len i32)
+    (local $stem (ref $string))
+    (local.set $file
+      (call $archive-plist-get-by-id
+        (call $xcdr (local.get $archive))
+        (global.get $sym-id-file)))
+    ;; Missing or non-string → null.
+    (if (ref.is_null (local.get $file)) (then (return (ref.null eq))))
+    (if (i32.eqz (call $is-string (local.get $file)))
+      (then (return (ref.null eq))))
+    (local.set $name (ref.cast (ref $string) (local.get $file)))
+    (local.set $len (array.len (local.get $name)))
+    ;; Scan for the last `.` (char code 46).
+    (local.set $last-dot (i32.const -1))
+    (local.set $i (i32.const 0))
+    (block $scan-done (loop $scan
+      (br_if $scan-done (i32.ge_u (local.get $i) (local.get $len)))
+      (if (i32.eq
+            (array.get_u $string (local.get $name) (local.get $i))
+            (i32.const 46))
+        (then (local.set $last-dot (local.get $i))))
+      (local.set $i (i32.add (local.get $i) (i32.const 1)))
+      (br $scan)))
+    ;; Choose stem length: up to last-dot, or full length if no dot.
+    (local.set $stem-len
+      (if (result i32) (i32.lt_s (local.get $last-dot) (i32.const 0))
+        (then (local.get $len))
+        (else (local.get $last-dot))))
+    ;; Build the stem string by copying $stem-len chars.
+    (local.set $stem (array.new_default $string (local.get $stem-len)))
+    (local.set $i (i32.const 0))
+    (block $copy-done (loop $copy
+      (br_if $copy-done (i32.ge_u (local.get $i) (local.get $stem-len)))
+      (array.set $string (local.get $stem) (local.get $i)
+        (array.get_u $string (local.get $name) (local.get $i)))
+      (local.set $i (i32.add (local.get $i) (i32.const 1)))
+      (br $copy)))
+    ;; Intern and return.
+    (call $intern (local.get $stem)))
+
+  ;; Put a (stem, index) → co mapping into $archive-registry.
+  ;; Lazy-creates the outer hash and per-stem inner hash on first use.
+  ;; On re-registration (same stem), reuses the existing inner hash and
+  ;; overwrites matching index entries via $hash-set-impl's key-scan.
+  ;; Stale entries for indices absent in the re-loaded archive are NOT
+  ;; purged — safe for current use (each archive's index space is fixed
+  ;; at compile time; archives are loaded once at boot), but a future
+  ;; explicit-reload path should clear the inner hash first.
+  (func $archive-registry-put (param $stem (ref null eq))
+                              (param $index-fx (ref null eq))
+                              (param $co (ref $code-object))
+    (local $outer (ref null $hash-table))
+    (local $inner (ref null eq))
+    (local $inner-ht (ref null $hash-table))
+    ;; Lazy-create outer.
+    (if (ref.is_null (global.get $archive-registry))
+      (then
+        (global.set $archive-registry
+          (struct.new $hash-table
+            (array.new_default $hash-keys (i32.const 32))
+            (array.new_default $hash-vals (i32.const 32))
+            (i32.const 0)))))
+    (local.set $outer
+      (ref.cast (ref $hash-table) (global.get $archive-registry)))
+    ;; Look up existing inner. $hash-ref-impl returns $false (a boolean
+    ;; singleton, not a hash-table) if missing — test by ref.test.
+    (local.set $inner
+      (call $hash-ref-impl (ref.as_non_null (local.get $outer)) (local.get $stem)))
+    (if (i32.eqz (ref.test (ref $hash-table) (local.get $inner)))
+      (then
+        ;; Missing — create an inner hash and insert.
+        (local.set $inner-ht
+          (struct.new $hash-table
+            (array.new_default $hash-keys (i32.const 32))
+            (array.new_default $hash-vals (i32.const 32))
+            (i32.const 0)))
+        (call $hash-set-impl (ref.as_non_null (local.get $outer))
+          (local.get $stem) (ref.as_non_null (local.get $inner-ht))))
+      (else
+        (local.set $inner-ht
+          (ref.cast (ref $hash-table) (local.get $inner)))))
+    ;; Insert (index → co) into inner. $hash-set-impl overwrites on
+    ;; matching key per its existing semantics.
+    (call $hash-set-impl (ref.as_non_null (local.get $inner-ht))
+      (local.get $index-fx) (local.get $co)))
+
+  ;; Look up (stem, index) in $archive-registry.
+  ;; Returns $false on any miss (uninitialized registry, unknown stem,
+  ;; or unknown index within a known stem). Matches CL's gethash
+  ;; miss behavior.
+  (func $archive-registry-get (param $stem (ref null eq))
+                              (param $index-fx (ref null eq))
+                              (result (ref null eq))
+    (local $outer (ref null $hash-table))
+    (local $inner (ref null eq))
+    (if (ref.is_null (global.get $archive-registry))
+      (then (return (global.get $false))))
+    (local.set $outer
+      (ref.cast (ref $hash-table) (global.get $archive-registry)))
+    (local.set $inner
+      (call $hash-ref-impl (ref.as_non_null (local.get $outer)) (local.get $stem)))
+    (if (i32.eqz (ref.test (ref $hash-table) (local.get $inner)))
+      (then (return (global.get $false))))
+    (call $hash-ref-impl
+      (ref.cast (ref $hash-table) (local.get $inner))
+      (local.get $index-fx)))
+
   (func $load-archive-impl (result (ref $code-object))
     (local $archive (ref null eq))
     (local $head (ref null eq))
@@ -6173,6 +6309,7 @@
     (local $patched (ref null eq))
     (local $parsed-instr (ref $instr))
     (local $entries-iter (ref null eq))
+    (local $stem (ref null eq))
 
     ;; Read archive sexp.
     (local.set $archive (call $ecec-read-sexp))
@@ -6234,6 +6371,10 @@
         (call $signal-error-str (global.get $err-empty-entries))
         (unreachable)))
 
+    ;; Extract archive file-stem once for archive-key stamping + registry.
+    ;; Null when :file is missing/non-string → Pass 1 below skips stamping.
+    (local.set $stem (call $archive-file-stem-symbol (local.get $archive)))
+
     ;; Allocate code-object vector.
     (local.set $cos (array.new $co-vec (ref.null eq) (local.get $count)))
 
@@ -6287,6 +6428,19 @@
         (local.set $labels-alist (call $xcdr (local.get $labels-alist)))
         (br $lwalk)))
       (array.set $co-vec (local.get $cos) (local.get $i) (local.get $co))
+      ;; Stamp archive-key = (stem . index-fixnum) and register in the
+      ;; archive registry. Skip when stem is null (archive missing :file)
+      ;; — matches CL's skip-registration semantics.
+      (if (i32.eqz (ref.is_null (local.get $stem)))
+        (then
+          (struct.set $code-object $archive-key (local.get $co)
+            (call $cons
+              (local.get $stem)
+              (call $make-fixnum (local.get $i))))
+          (call $archive-registry-put
+            (local.get $stem)
+            (call $make-fixnum (local.get $i))
+            (local.get $co))))
       (local.set $entries-iter (call $xcdr (local.get $entries-iter)))
       (local.set $i (i32.add (local.get $i) (i32.const 1)))
       (br $pass1)))
