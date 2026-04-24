@@ -8,19 +8,19 @@
 
 PR #163 (`per-procedure-code-objects`) retired `compilation-space` on the CL side: the `compilation-space` struct, `*space-registry*`, `%space-*` primitives, and `(symbol . pc)` qualified-address closures are gone. Code objects are the sole dispatch unit in the CL runtime. WASM got code-object *primitives* (ids 241–257) and a code-object-aware executor branch, but the bootstrap loader and the comp-space infrastructure on WASM did not migrate.
 
-Three items remain before "code-objects" is fully done on both hosts.
+Four numbered items (P0 / P0.5 / P1 / P2) were identified to finish "code-objects" on both hosts. All four have shipped. Three smaller loose ends surfaced during implementation; they're documented under "Known follow-ups" below.
 
-## P0 — WASM archive loader + `$comp-space` retirement
+## P0 — WASM archive loader + `$comp-space` retirement — **Shipped**
 
-**Status:** designed. See `2026-04-20-wasm-archive-loader-design.md`.
+**Status:** Shipped via PRs #164 + #165. Design: `2026-04-20-wasm-archive-loader-design.md`.
 
 Port `parse-archive-sexp` to WAT, migrate JS glue to `loadArchiveText` / `runCodeObject`, retire `$comp-space` / `$register-space` / `$get-space` / the legacy executor branch, delete trapped `%space-*` primitive IDs, restore `make test` as the CI single-step gate. Structural parity with the CL side.
 
 **Why P0:** unblocks `test-wasm`, `test-web-server`, `test-web-apps` from CI `continue-on-error`; removes the longest-lived dead-code path in the codebase.
 
-## P0.5 — Keywordize archive format
+## P0.5 — Keywordize archive format — **Shipped**
 
-**Status:** roadmap bullet; spec to be written after P0 merges.
+**Status:** Shipped via PR #168.
 
 **Scope:** flip the archive shape from plain symbols to `:keyword` tags:
 
@@ -43,7 +43,9 @@ Matches idiomatic Scheme and makes named parameters read as named parameters.
 
 **Why P0.5 and not deferred indefinitely:** the archive format is young enough that flipping once is cheap; flipping after years of accumulated `.ecec` files in the wild is expensive. Doing it now, between P0 and P1, costs one bootstrap regen.
 
-## P1 — CL rename `*executing-space-id*` → `*executing-code-obj*`
+## P1 — CL rename `*executing-space-id*` → `*executing-code-obj*` — **Shipped**
+
+**Status:** Shipped via PR #166.
 
 **Scope (CL side):**
 - `src/runtime.lisp` — rename the defvar (line 1226), the binding in `$execute` equivalent (line 1242), and the cross-procedure assignment (line 1283). Rename references in `capture-continuation` paths (lines 987, 1086).
@@ -88,6 +90,16 @@ Plan: `docs/superpowers/plans/2026-04-22-codeobj-serialization.md`.
 - Removed the `%ser/opaque-co` placeholder — both serializer and
   deserializer. Only archived proposals and this roadmap doc retain
   historical references.
+
+## Known follow-ups
+
+Code-object-related loose ends surfaced during P0/P2 implementation but not covered by the four numbered items above. Not currently blocking anything; documented here so they're tracked in one place.
+
+- **Three disabled WASM yield tests.** `yield single frame`, `yield multi-frame (3 cycles)`, and `handle table stable over 100 yield cycles` in `wasm/test.js` are commented out; see the `TODO (archive-loader follow-up)` at `wasm/test.js:55`. Disabled during P0 because they depended on the source-map infrastructure retired alongside `$comp-space`. Re-enable requires either a smaller regression test that exercises `do-continuation-winds` through the code-object path without yield-loop specifics, or fixing the underlying `do-continuation-winds` + code-object interaction so the original assertions hold. The op 19 handler in `wasm/runtime.wat:2711` carries the matching `TODO (archive-loader follow-up)` marker.
+
+- **`CRASH: Unknown expression type -- MC-COMPILE: #?` diagnostic from the WASM test harness.** Seen locally during `make test-wasm` runs across this session; `wasm/test.js` does exit non-zero on `eceCrash` (see line 224), so if this actually fires in CI the suite should fail — the behavior on this machine's merged-main may reflect a stale local state that CI doesn't hit. Worth reproducing cleanly before diagnosing. Note that `MC-COMPILE` errors format via `write-to-string` of the offending expression, so the literal `#?` in the message is likely the writer's fallback for an unprintable value (not a reader literal the user wrote), meaning the real bug is upstream of the compile call — whatever expression reached `mc-compile` was already malformed.
+
+- **WASM archive-key population.** P2's hybrid serializer relies on an `archive-key` field on each code-object to dispatch between `(%ser/co-ref …)` and `(%ser/co-inline …)`. The CL archive loader populates the field during `register-archive-code-objects`; the WASM archive loader does not (documented as a TODO in `wasm/runtime.wat` at primitive 260). Consequence: code-objects loaded on WASM always serialize inline, inflating continuation-blob sizes and preventing cross-host `(%ser/co-ref …)` round-trips — a CL save-game with by-reference entries can't be deserialized on WASM even if the same archive is loaded there. Fully closing this requires the WASM loader to parse the archive's `:file` wrapper and stamp `(stem . index)` onto each code-object as it's constructed, mirroring what `register-archive-code-objects` does on CL.
 
 ## Out of scope for this roadmap
 
