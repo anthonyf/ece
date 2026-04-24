@@ -1,8 +1,8 @@
 # ece-gh Wrapper for Sandboxed `gh`
 
 **Date:** 2026-04-23
-**Status:** Designed, ready for implementation plan
-**Scope:** small — one shell script + two memory-file edits + one spec (this file)
+**Status:** Implemented (PR #170)
+**Scope:** small — one shell script + two memory-file edits + one spec (this file) + one implementation plan
 
 ## Context
 
@@ -126,7 +126,7 @@ If all three succeed → delete `scripts/ece-gh`, remove `feedback_use_ece_gh.md
 Manual verification after install:
 
 1. `scripts/ece-gh api user | jq .login` → prints GitHub login.
-2. `scripts/ece-gh pr view 169 --json state` → `{"state":"MERGED"}`.
+2. `scripts/ece-gh pr view 169 --json state,merged` → `{"state":"closed","merged":true}`. (REST `state` is `open|closed`; the separate `merged` field distinguishes a merged PR from one closed without merge.)
 3. `scripts/ece-gh run view <recent-run-id> --json status,conclusion` → `{"status":"completed","conclusion":"success"}`.
 4. From sandbox context (i.e., the next assistant session) — run each without `dangerouslyDisableSandbox: true`; should succeed.
 

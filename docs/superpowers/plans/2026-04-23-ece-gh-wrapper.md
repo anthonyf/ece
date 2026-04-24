@@ -365,7 +365,7 @@ If it fails with "no gh token in keychain": user needs to `gh auth login` in a n
 cd /Users/anthonyfairchild/git/ece && scripts/ece-gh pr view 169 --json state 2>&1 | head -3
 ```
 
-Expected: `{ "state": "MERGED" }` (PR #169 merged earlier in this session).
+Expected: `{ "state": "closed", "merged": true }` (PR #169 merged earlier in this session — REST `state` is `open|closed`, separate `merged` bool distinguishes merged-vs-closed-without-merge).
 
 ### Step 1.7: Smoke-test `run view`
 
@@ -575,7 +575,7 @@ in-sandbox, delete the script and revert callers.
 ## Test plan
 
 - [x] \`scripts/ece-gh api user\` returns the user JSON.
-- [x] \`scripts/ece-gh pr view 169 --json state\` returns \`{"state":"MERGED"}\`.
+- [x] \`scripts/ece-gh pr view 169 --json state,merged\` returns \`{"state":"closed","merged":true}\`.
 - [x] \`scripts/ece-gh run view <id> --json status,conclusion\` returns the job state.
 
 ## Specs

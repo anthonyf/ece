@@ -26,7 +26,15 @@ set -euo pipefail
 # ── Helpers ───────────────────────────────────────────────────────────
 
 gh_token() {
-  security find-generic-password -s "gh:github.com" -a anthonyf -w 2>/dev/null \
+  # Account defaults to $ECE_GH_USER, then $(git config user.name),
+  # then the gh config's active user, then a last-resort hardcoded
+  # "anthonyf" for this machine's original dev setup.
+  local acct="${ECE_GH_USER:-}"
+  if [[ -z "$acct" ]] && [[ -f "$HOME/.config/gh/hosts.yml" ]]; then
+    acct="$(awk '/^[[:space:]]+user:[[:space:]]+/{print $2; exit}' "$HOME/.config/gh/hosts.yml")"
+  fi
+  acct="${acct:-anthonyf}"
+  security find-generic-password -s "gh:github.com" -a "$acct" -w 2>/dev/null \
     | sed 's/^go-keyring-base64://' | base64 -d
 }
 
@@ -41,6 +49,13 @@ require_jq() {
 }
 
 api() {
+  # `-k` (skip TLS verify) is intentional: under Claude's sandbox, macOS
+  # Security framework returns OSStatus -26276 and breaks every TLS call
+  # that goes through Secure Transport. curl with `-k` sidesteps that.
+  # The tradeoff (MITM risk) is acceptable because this wrapper is a
+  # single-user dev tool, and the sandbox already isolates the process.
+  # Token is written to a curl config file (mode 600) rather than the
+  # command line so it doesn't appear in `ps aux` listings.
   local method="${1:-GET}"; shift
   local path="$1"; shift
   local token
@@ -49,11 +64,40 @@ api() {
     echo "ece-gh: no gh token in keychain; run 'gh auth login' in a non-sandbox shell first" >&2
     exit 1
   fi
-  curl -sk -X "$method" \
-    -H "Authorization: token $token" \
-    -H "Accept: application/vnd.github+json" \
-    -H "X-GitHub-Api-Version: 2022-11-28" \
-    "https://api.github.com/$path" "$@"
+  local cfg body status rc tmpdir
+  # $TMPDIR under Claude's sandbox is mapped to a sandbox-writable path
+  # (e.g. /tmp/claude-$uid/); mktemp's default `/var/folders/...` is
+  # blocked. Honor $TMPDIR explicitly so the script works in and out of
+  # sandbox contexts.
+  tmpdir="${TMPDIR:-/tmp}"
+  umask 077
+  cfg="$(mktemp "$tmpdir/ece-gh-cfg.XXXXXX")"
+  body="$(mktemp "$tmpdir/ece-gh-body.XXXXXX")"
+  cat >"$cfg" <<EOF
+header = "Authorization: token $token"
+header = "Accept: application/vnd.github+json"
+header = "X-GitHub-Api-Version: 2022-11-28"
+EOF
+  set +e
+  status="$(curl -sk -o "$body" -w '%{http_code}' -X "$method" \
+    --config "$cfg" "https://api.github.com/$path" "$@")"
+  rc=$?
+  set -e
+  rm -f "$cfg"
+  if [[ "$rc" -ne 0 ]]; then
+    echo "ece-gh: curl failed (exit $rc)" >&2
+    [[ -s "$body" ]] && cat "$body" >&2
+    rm -f "$body"
+    return "$rc"
+  fi
+  if [[ ! "$status" =~ ^2[0-9][0-9]$ ]]; then
+    echo "ece-gh: HTTP $status from $method $path" >&2
+    [[ -s "$body" ]] && cat "$body" >&2
+    rm -f "$body"
+    return 1
+  fi
+  cat "$body"
+  rm -f "$body"
 }
 
 # ── api subcommand: passthrough, with -X/-f/--jq ──────────────────────
@@ -87,6 +131,7 @@ cmd_api() {
   fi
   local body=""
   if [[ ${#body_args[@]} -gt 0 ]]; then
+    require_jq
     body="$(printf '%s\n' "${body_args[@]}" | jq -R 'split("=") | {(.[0]): (.[1:] | join("="))}' | jq -s 'add')"
   fi
   local resp
@@ -244,6 +289,10 @@ cmd_run() {
   local sub="$1"; shift
   local repo
   repo="$(infer_repo)"
+  if [[ -z "$repo" ]]; then
+    echo "ece-gh run: could not infer GitHub repo from 'origin' remote" >&2
+    exit 1
+  fi
   case "$sub" in
     view) cmd_run_view "$repo" "$@" ;;
     *) echo "ece-gh run: unsupported subcommand: $sub" >&2; exit 2 ;;
