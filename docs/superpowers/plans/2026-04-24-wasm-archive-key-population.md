@@ -272,9 +272,13 @@ Find the end of `$archive-file-stem-symbol` (the closing `)` just before `(func 
     (call $intern (local.get $stem)))
 
   ;; Put a (stem, index) → co mapping into $archive-registry.
-  ;; Lazy-creates the outer hash and per-stem inner hashes on first use.
-  ;; Re-registering a stem overwrites the inner-hash reference wholesale
-  ;; so a reloaded archive fully replaces the previous registration.
+  ;; Lazy-creates the outer hash and per-stem inner hash on first use.
+  ;; On re-registration (same stem), reuses the existing inner hash and
+  ;; overwrites matching index entries via $hash-set-impl's key-scan.
+  ;; Stale entries for indices absent in the re-loaded archive are NOT
+  ;; purged — safe for current use (each archive's index space is fixed
+  ;; at compile time; archives are loaded once at boot), but a future
+  ;; explicit-reload path should clear the inner hash first.
   (func $archive-registry-put (param $stem (ref null eq))
                               (param $index-fx (ref null eq))
                               (param $co (ref $code-object))

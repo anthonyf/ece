@@ -66,7 +66,7 @@ CL semantics to match: strips *any* trailing dotted extension (not specifically 
 - Look up `stem` in outer. If missing, allocate an inner `$hash-table` (initial capacity 32) and insert into outer via `$hash-set-impl`.
 - Insert `(index → co)` into the inner hash via `$hash-set-impl` (overwrites on matching key per existing semantics).
 
-Re-load of an archive: inserts with the same stem → outer-hash overwrites the inner-hash-reference → new inner hash has all the new archive's cos. Old inner hash becomes unreachable (GC-managed). Code-objects from the previous load remain reachable only through external references (existing closures, captured continuations). Matches CL exactly.
+Re-load of an archive under the shipped implementation: same stem re-uses the existing inner hash; indices present in the re-load overwrite their matching keys via `$hash-set-impl`. Indices from an earlier load that are NOT re-inserted remain reachable through the registry — they are not purged. Safe for current use because each archive's index space is fixed at compile time and archives are loaded once at boot; a future explicit-reload path that expects wholesale replacement would need to clear the inner hash first. (CL's behavior matches: `register-archive-code-objects` uses `setf gethash` per key; the outer cons-keyed hash also accumulates rather than purging, so the semantics align.)
 
 **`$archive-registry-get(stem, index) → (ref null eq)`:**
 
@@ -124,7 +124,7 @@ Also delete the stale comment block at primitive 260 that says "The WASM archive
 
 ### 5. New sym-id global (if not present)
 
-Check whether `$sym-id-file` already exists (looked up elsewhere). If not, add it to the existing sym-id-initialization block in `$init-ascii-chars`, mirroring `$sym-id-version` / `$sym-id-entries` / etc. Initial value interned from the 4-byte string `"file"`.
+Check whether `$sym-id-file` already exists (looked up elsewhere). If not, add it to the existing sym-id-initialization block in `$init-ascii-chars`, mirroring `$sym-id-version` / `$sym-id-entries` / etc. Initial value interned from the 5-character string `":file"` (the archive plist uses keyword-style keys post-P0.5, so the leading colon is part of the symbol name).
 
 ## Testing
 
