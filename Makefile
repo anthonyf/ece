@@ -82,6 +82,15 @@ uninstall:
 # FASL output goes to project-local .fasl-cache/ (sandbox-friendly, portable)
 export ASDF_OUTPUT_TRANSLATIONS = (:output-translations ("$(CURDIR)/" "$(CURDIR)/.fasl-cache/") :inherit-configuration)
 
+# qlot-install marker. `.qlot/qlot.conf` is produced by `qlot install`
+# and stays put across runs, so it's a reliable sentinel. Re-runs
+# whenever qlfile.lock changes (e.g. after a dep bump), otherwise it's
+# a no-op. Lives under project-local .qlot/ (sandbox-writable); the
+# exported ASDF_OUTPUT_TRANSLATIONS above ensures any SBCL invocation
+# qlot makes during install writes FASLs to .fasl-cache/ too.
+.qlot/qlot.conf: qlfile.lock
+	qlot install
+
 # WASM test bundle: framework + reusable utilities + common/ (platform-independent) tests + runner.
 # base64.scm and sha1.scm must come before the test files so their exports
 # are defined when test-base64 / test-sha1 run. Both run on CL and WASM now
