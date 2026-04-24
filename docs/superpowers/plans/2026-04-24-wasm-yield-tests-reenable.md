@@ -6,6 +6,17 @@
 
 **Architecture:** Two-phase single-PR work. Phase 1 restores tests and reproduces the trap uncommitted; diagnoses the root cause from the concrete trap location. Phase 2 applies a surgical WAT fix identified by the diagnosis, verifies, commits. An explicit decision point between phases aborts cleanly if the fix turns out to be structural.
 
+---
+
+> **OUTCOME NOTE (added post-execution, PR #175):** Phase 1's repro (Task 1 + Task 2) revealed the illegal-cast trap does NOT reproduce today — `make test-wasm` shows 1011/0 on the restored tests without any WAT change. The trap was incidentally resolved by subsequent code-object work in PRs #164/#165 and #174. The executed path was:
+>
+> - Tasks 1 + 2: restore tests, run test-wasm → unexpectedly passing.
+> - Task 7 (Step 7.3 stability 3×): all green.
+> - Task 8 Step 8.3: removed the stale TODO near op 19 in `wasm/runtime.wat`.
+> - Tasks 8 + 9 + 10: commit, roadmap update, push + PR.
+>
+> Tasks 3 (map function indices), 4 (diagnose), 5 (decision point), 6 (apply WAT fix) were skipped because they assumed a trap that didn't materialize. The plan below is retained as historical context for what Phase 1 would have done if the trap had reproduced.
+
 **Tech Stack:** WebAssembly Text (WAT) with GC proposal, JavaScript (ES2020 Node), Binaryen toolchain (`wasm-as`, `wasm-objdump`), Make.
 
 **Spec:** `docs/superpowers/specs/2026-04-24-wasm-yield-tests-reenable-design.md`

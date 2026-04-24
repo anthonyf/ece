@@ -54,11 +54,7 @@ function runIntegrationTests(w, envH) {
 
   // ── Yield/resume: single frame ──
   iTest("yield single frame", () => {
-    const output = [];
-    // Temporarily capture display output
-    const origDisplay = ECE.io.display_string;
-    const origNumber = ECE.io.display_number;
-    // We can't easily redirect — use eval-string and check yield cont
+    // Execute via eval-string and verify yield/resume through the captured continuation.
     const evalStr = w.env_lookup(envH, ECE.internSym("eval-string"));
     const src = '(begin (define (test-yield-1) (display "A") (yield) (display "B")) (test-yield-1))';
     w.call_ece_proc(evalStr, w.h_cons(ECE.makeString(src), w.h_nil()));
@@ -68,7 +64,7 @@ function runIntegrationTests(w, envH) {
     const contType = w.dbg_type(contH);
     assert(contType === 6 || contType === 7, `expected compiled-proc (6) or continuation (7), got type ${contType}`);
 
-    // Resume
+    // Resume — runs to completion (no further yield inside test-yield-1).
     w.clear_yield_cont();
     if (contType === 7)
       w.call_continuation(contH, w.h_void());
@@ -97,6 +93,11 @@ function runIntegrationTests(w, envH) {
     const ycH = w.env_lookup(envH, ECE.internSym("*yc*"));
     const ycVal = w.h_fixnum_val(ycH);
     assert(ycVal === 4, `expected *yc* = 4, got ${ycVal}`);
+
+    // The test-yield-loop always yields again after incrementing; the final
+    // iteration leaves a yield continuation set. Clear it so later tests in
+    // this suite don't inherit stale yield state.
+    w.clear_yield_cont();
   });
 
   // ── Handle stability: reset_handles keeps handles bounded ──
@@ -110,6 +111,7 @@ function runIntegrationTests(w, envH) {
       ECE._symCache = {};
       const contH = w.get_yield_cont();
       const contType = w.dbg_type(contH);
+      assert(contType === 6 || contType === 7, `frame ${frame}: expected compiled-proc (6) or continuation (7), got type ${contType}`);
       w.clear_yield_cont();
       if (contType === 7)
         w.call_continuation(contH, w.h_void());
@@ -121,6 +123,10 @@ function runIntegrationTests(w, envH) {
     const hcH = w.env_lookup(envH, ECE.internSym("*hc*"));
     const hcVal = w.h_fixnum_val(hcH);
     assert(hcVal === 101, `expected *hc* = 101, got ${hcVal}`);
+
+    // test-handle-loop always yields again after incrementing; clear the
+    // trailing yield state so later tests don't inherit it.
+    w.clear_yield_cont();
   });
 
   // ── runtime_error import fires with clear message ──

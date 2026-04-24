@@ -1,29 +1,35 @@
 # Re-enable WASM Yield Tests
 
 **Date:** 2026-04-24
-**Status:** Designed, ready for implementation plan
-**Scope:** small — WAT surgical fix + three test bodies restored + TODO cleanup
+**Status:** Completed — tests restored, TODOs removed, no runtime change required (PR #175)
+**Scope:** small — three test bodies restored + TODO cleanup; no WAT/runtime changes
 **Closes:** "Known follow-up" #1 in `docs/superpowers/specs/2026-04-20-code-objects-completion-roadmap.md`
+
+## Outcome
+
+Phase 1 repro (restore tests, run `make test-wasm` expecting the illegal-cast trap) passed 1011/0 on the first run and across 3× stability checks. No WAT change needed. The original trap was incidentally resolved by subsequent code-object work (likely `$comp-space` retirement propagating code-objects through cross-procedure dispatch in PRs #164/#165, and/or archive-key stamping in PR #174).
+
+The sections below preserve the original design intent (which assumed a WAT fix would be needed); they are retained as historical context for why the tests were disabled and what would have been done if Phase 1 had reproduced the trap.
 
 ## Context
 
-Three WASM yield tests were removed from `wasm/test.js` in commit `7403276` (the P0 `$comp-space` retirement): `yield single frame`, `yield multi-frame (3 cycles)`, `handle table stable over 100 yield cycles`. They traced an `illegal cast` trap through `do-continuation-winds` (op 19 in `wasm/runtime.wat`) under the then-new 2-param `$execute` signature. The TODO at `wasm/runtime.wat:2711` hypothesizes the root cause: the continuation's `$conts` field may still hold a legacy `(space-id . pc)` pair instead of a `$code-object`, OR `do-winds!` is being invoked with a null `$code-obj`.
+Three WASM yield tests were removed from `wasm/test.js` in commit `7403276` (the P0 `$comp-space` retirement): `yield single frame`, `yield multi-frame (3 cycles)`, `handle table stable over 100 yield cycles`. At the time, they traced an `illegal cast` trap through `do-continuation-winds` (op 19 in `wasm/runtime.wat`) under the then-new 2-param `$execute` signature. The TODO at `wasm/runtime.wat:2711` hypothesized the root cause: the continuation's `$conts` field might still hold a legacy `(space-id . pc)` pair instead of a `$code-object`, OR `do-winds!` might be invoked with a null `$code-obj`.
 
-ECE-level `call/cc` + `dynamic-wind` tests (`test-callcc.scm`, `test-dynamic-wind.scm`) pass on WASM today (part of the 1008/0 baseline), which means the bug is narrow — specific to the `%yield!` path or to how continuations captured via yield get resumed from the JS host. Not a structural issue with continuations generally.
+ECE-level `call/cc` + `dynamic-wind` tests (`test-callcc.scm`, `test-dynamic-wind.scm`) passed on WASM at disable time (part of the 1008/0 baseline), which meant the bug was narrow — specific to the `%yield!` path or to how continuations captured via yield get resumed from the JS host. Not a structural issue with continuations generally.
 
-## Goals
+## Goals (actual outcome)
 
-1. Restore the three yield tests in `wasm/test.js` — full original bodies, not simplified stand-ins.
-2. Diagnose the underlying `illegal cast` from a real trap location (not from a priori hypothesis).
-3. Apply a narrow WAT fix at the site identified by the diagnosis.
-4. `make test-wasm` shows `1011 passed, 0 failed` (previous 1008 baseline + 3 re-enabled).
+1. ✅ Restore the three yield tests in `wasm/test.js` — full original bodies, not simplified stand-ins.
+2. ✅ Verify from a real Phase 1 repro whether the illegal-cast still reproduces (or if it has been incidentally fixed).
+3. ✅ Remove stale WASM-yield TODOs that assumed a remaining runtime bug.
+4. ✅ `make test-wasm` shows `1011 passed, 0 failed` (previous 1008 baseline + 3 re-enabled).
 
 ## Non-goals
 
 - **Moving tests to ECE-level `.scm`.** These validate the JS↔WASM yield-resume boundary: ECE calls `(yield)` → executor returns to JS → JS calls `get_yield_cont()` + `call_continuation()` to resume. After `(yield)` the executor isn't running, so an ECE-only version can't orchestrate the resume. ECE-level `call/cc` + `dynamic-wind` coverage already exists.
-- **Restructuring continuation representation.** The diagnosis will dictate a surgical edit; if Phase 1 reveals a structural fix, this spec aborts with a follow-up note and the tests stay disabled.
+- **Restructuring continuation representation.** This follow-up does not change continuation layout or introduce any new runtime behavior; if a future regression reproduces, it should be handled in a separate follow-up.
 - **New WASM test infrastructure.** The three existing tests are the deliverable; no extensions or refactors.
-- **Addressing the `CRASH: MC-COMPILE: #?` diagnostic** (Known follow-up #2). That's separately tracked. If the yield-tests fix happens to eliminate it, note in the commit message; otherwise leave it.
+- **Addressing the `CRASH: MC-COMPILE: #?` diagnostic** (Known follow-up #2). Separately tracked; the yield-tests restoration did not eliminate it.
 
 ## Design
 
