@@ -667,6 +667,19 @@ bootstrap/primitives-auto.lisp from a template in src/primitives.scm."
   "Cached readtable with :preserve case for write-to-string-flat.")
 
 
+(defun ece-type-tag (x)
+  "Return a `#<type-name>` string identifying X's tagged type, or nil if
+X is a type (number, string, character, regular symbol, etc.) that
+prin1 handles correctly. Used by `ece-print-flat` (the implementation
+of `write-to-string-flat`) so flat-serialized output for ECE struct
+types matches WAT's `$write-to-string-impl` fallback shape. The
+non-flat `write-to-string` host primitive at primitives.scm has its
+own catch-all (princ-to-string) and is not affected by this helper."
+  (cond
+    ((typep x 'code-object) "#<code-object>")
+    ((typep x 'ece-error-sentinel) "#<error-sentinel>")
+    (t nil)))
+
 (defun ece-print-flat (x s)
   "Recursively print X to S using ECE-readable syntax."
   (cond
@@ -698,7 +711,8 @@ bootstrap/primitives-auto.lisp from a template in src/primitives.scm."
               (ece-print-flat cur s)
               (setf cur nil))))
      (write-char #\) s))
-    (t (prin1 x s))))
+    (t (let ((tag (ece-type-tag x)))
+         (if tag (write-string tag s) (prin1 x s))))))
 
 
 
