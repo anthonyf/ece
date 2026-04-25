@@ -18,7 +18,7 @@
 - [ ] **Step 1: Verify baseline**
 
 ```
-cd /Users/anthonyfairchild/git/ece
+cd "$(git rev-parse --show-toplevel)"
 git log --oneline -3
 make test-wasm 2>&1 | tail -5
 ```
@@ -41,7 +41,7 @@ Baseline: `1011 passed, 0 failed (977 ECE + 34 integration)`. Both phases must p
 ### Task 1: Declare tag-string globals in WAT
 
 **Files:**
-- Modify: `/Users/anthonyfairchild/git/ece/wasm/runtime.wat`
+- Modify: `wasm/runtime.wat`
 
 Tag strings go with the other string globals near the top of the module. There are 12 tags to add — one per user-visible struct type not already handled by the existing write-to-string branches.
 
@@ -179,7 +179,7 @@ Use that output as the authoritative block — paste it verbatim in place of the
 ### Step 1.3: Rebuild and verify WAT parses
 
 ```
-cd /Users/anthonyfairchild/git/ece
+cd "$(git rev-parse --show-toplevel)"
 make wasm 2>&1 | tail -3
 ```
 
@@ -192,12 +192,12 @@ Expected: clean build. If `array.new_fixed` errors on argument count, re-check t
 ### Task 2: Rewrite the fallback in `$write-to-string-impl`
 
 **Files:**
-- Modify: `/Users/anthonyfairchild/git/ece/wasm/runtime.wat` at `$write-to-string-impl`'s fallback (around line 3470)
+- Modify: `wasm/runtime.wat` at `$write-to-string-impl`'s fallback (around line 3470)
 
 ### Step 2.1: Locate the fallback
 
 ```
-cd /Users/anthonyfairchild/git/ece
+cd "$(git rev-parse --show-toplevel)"
 grep -n 'Fallback' wasm/runtime.wat | head
 ```
 
@@ -276,7 +276,7 @@ If `<SOMETYPE>` is `unknown`, a new struct type has surfaced that isn't in our l
 ### Task 3: CL parity — update `ece-print-flat` fallback
 
 **Files:**
-- Modify: `/Users/anthonyfairchild/git/ece/src/runtime.lisp` at `ece-print-flat` (around line 670-701)
+- Modify: `src/runtime.lisp` at `ece-print-flat` (around line 670-701)
 
 ### Step 3.1: Find the current fallback
 
@@ -347,7 +347,7 @@ For any type that has no defstruct (e.g. `$port` might be represented as a CLOS 
 ### Step 3.5: Load the CL side and verify syntax
 
 ```
-cd /Users/anthonyfairchild/git/ece
+cd "$(git rev-parse --show-toplevel)"
 qlot exec sbcl --dynamic-space-size 4096 --non-interactive --disable-debugger \
   --eval '(asdf:load-system :ece)' --quit 2>&1 | tail -5
 ```
@@ -379,7 +379,7 @@ If any ECE tests now fail (e.g. because a test was implicitly depending on `prin
 - [ ] **Step 4.3: Commit Phase 1**
 
 ```
-cd /Users/anthonyfairchild/git/ece
+cd "$(git rev-parse --show-toplevel)"
 git add wasm/runtime.wat src/runtime.lisp
 git commit -m "wasm+cl: identify tagged struct types in write-to-string fallback
 
@@ -531,7 +531,7 @@ The CRASH will still print, but with an informative type. Update the roadmap's K
 ## Task 10: Update the roadmap
 
 **Files:**
-- Modify: `/Users/anthonyfairchild/git/ece/docs/superpowers/specs/2026-04-20-code-objects-completion-roadmap.md`
+- Modify: `docs/superpowers/specs/2026-04-20-code-objects-completion-roadmap.md`
 
 ### Step 10.1: Locate Known follow-up #2
 
@@ -577,7 +577,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 ### Step 11.1: Confirm commits
 
 ```
-cd /Users/anthonyfairchild/git/ece
+cd "$(git rev-parse --show-toplevel)"
 git log --oneline main..HEAD
 ```
 

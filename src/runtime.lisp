@@ -670,9 +670,11 @@ bootstrap/primitives-auto.lisp from a template in src/primitives.scm."
 (defun ece-type-tag (x)
   "Return a `#<type-name>` string identifying X's tagged type, or nil if
 X is a type (number, string, character, regular symbol, etc.) that
-prin1 handles correctly. Mirrors WAT's $write-to-string-impl fallback
-for the struct types that WAT identifies via ref.test, so CL and WASM
-errors formatting unknown tagged values produce the same output shape."
+prin1 handles correctly. Used by `ece-print-flat` (the implementation
+of `write-to-string-flat`) so flat-serialized output for ECE struct
+types matches WAT's `$write-to-string-impl` fallback shape. The
+non-flat `write-to-string` host primitive at primitives.scm has its
+own catch-all (princ-to-string) and is not affected by this helper."
   (cond
     ((typep x 'code-object) "#<code-object>")
     ((typep x 'ece-error-sentinel) "#<error-sentinel>")

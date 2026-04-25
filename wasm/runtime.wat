@@ -324,10 +324,11 @@
   ;; Type-tag strings for $write-to-string-impl's fallback. Each is
   ;; "#<TYPENAME>" in UTF-16, pre-interned as a $string constant.
   ;; When the fallback sees a value that isn't one of the well-known
-  ;; primitives (fixnum/float/string/symbol/boolean/null/char/pair/vector),
-  ;; it does ref.test against each tagged struct type and returns the
-  ;; matching tag. Unknown types fall through to $type-tag-unknown so
-  ;; new struct types remain diagnosable.
+  ;; primitives handled by the dispatch above (fixnum, float, string,
+  ;; symbol, boolean, null, char, pair, vector, etc.), it does ref.test
+  ;; against each tagged struct type — including singletons like eof and
+  ;; void — and returns the matching tag. Unknown types fall through to
+  ;; $type-tag-unknown so new struct types remain diagnosable.
   (global $type-tag-hash-table (ref $string)
     (array.new_fixed $string 13
       (i32.const 35) (i32.const 60) (i32.const 104) (i32.const 97) (i32.const 115) (i32.const 104) (i32.const 45) (i32.const 116) (i32.const 97) (i32.const 98) (i32.const 108) (i32.const 101) (i32.const 62)))
