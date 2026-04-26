@@ -54,7 +54,7 @@ Hash-table literals, string interpolation, and record generation are nonstandard
 
 **Continuation serialization depends on archive registry state.** Code objects can serialize by reference as `(stem . index)`. This is compact, but deserialization requires the relevant archive to already be loaded. That coupling is acceptable for a controlled app bundle, but it needs user-facing failure handling for save files, especially when code changes between save and restore.
 
-**`dynamic-wind` serialization strips non-serializable frames.** The serializer replaces non-serializable wind frames with a sentinel. That is pragmatic for ports and host objects, but restoring a continuation with stripped wind frames can change before/after behavior. This should be documented as a semantic limitation of save/restore, not just an implementation detail.
+**Continuation serialization now rejects non-serializable wind frames.** The serializer preserves `dynamic-wind` frames when their before/after closures and captured environments are serializable, and raises a typed error for host-only state such as ports. That removes the silent semantic change from stripped frames, but it leaves a product decision for future work: whether ECE should add explicit serialization policies for string/file ports or a manager/reference system for native resources.
 
 **Source-location support is transitional.** The reader records source locations and older flat compilation code can extract source maps, but archive compilation intentionally does not stamp per-code-object source locations in the same way. Error reporting and disassembly will remain uneven until archive-era source maps are restored.
 
@@ -76,6 +76,6 @@ Compared with CHICKEN, ECE chooses explicit register-machine interpretation over
 4. Audit `syntax-rules` hygiene against R7RS examples that exercise free identifiers outside operator position, nested syntax-rules, and local macro scopes.
 5. Add a parity matrix for CL and WASM primitives, especially code-object introspection, filesystem/process behavior, and error bridging.
 6. Add a native-zone stale-artifact test that intentionally mismatches archive/zone keys and verifies the failure mode is loud.
-7. Specify continuation save/restore compatibility: what happens when the archive stem/index is missing, when code changes, and when wind frames are stripped.
+7. Specify a broader save/restore compatibility policy: archive stem/index requirements, code-version changes, and whether host resources such as ports should ever be restored by value or by external reference.
 8. Restore or redesign archive-era source maps so code-object errors can report file/line/column consistently on CL and WASM.
 9. Measure bootstrap archive parse time on CL and WASM before deciding whether a binary archive format is warranted.
