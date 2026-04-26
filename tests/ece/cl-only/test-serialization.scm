@@ -322,7 +322,7 @@
    #f)))
 
 (test "%ser/co-ref fails with typed error when archive absent" (lambda ()
-  ;; Fabricate a blob that references an archive stem that isn't
+  ;; Fabricate a blob that references an archive unit-id that isn't
   ;; registered. The deserializer must surface this via the typed
   ;; ece-deser-missing-archive-error record so callers can catch the
   ;; specific class (not a generic error) and prompt the user.

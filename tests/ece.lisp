@@ -3490,7 +3490,7 @@ during a clean run, which is by design."
 
 (defun build-archive-zone-fn-inverse ()
   "Invert *archive-zone-fns* to a (make-hash-table :test 'eq) keyed on the
-function value, mapping back to the original (file-stem . co-key) cons.
+function value, mapping back to the original (unit-id . co-key) cons.
 Used by test-shipped-zone-files-load-and-register to look up each zone
 defun's archive key in O(1) instead of O(N) per lookup (N ~= 1000)."
   (let ((inv (make-hash-table :test 'eq)))
@@ -3514,12 +3514,13 @@ defun's archive key in O(1) instead of O(N) per lookup (N ~= 1000)."
                  ;; Post-Phase-D naming: filenames look like
                  ;; <file-stem>-<co-name?>-<index>-zone.lisp, and the emitted
                  ;; defun is named `zone-<file-stem>-<co-name?>-<index>`.
-                 ;; The file registers under (file-stem . index) in
+                 ;; The file registers under (unit-id . index) in
                  ;; *archive-zone-fns* (NOT *compiled-zone-functions* — that
                  ;; registry is reserved for the legacy space-keyed path).
-                 ;; Since file-stem may itself contain hyphens (boot-env,
+                 ;; Current file archives synthesize unit-id from file-stem,
+                 ;; which may itself contain hyphens (boot-env,
                  ;; browser-lib, compilation-unit), we can't cleanly split
-                 ;; the filename into (file-stem . index) — instead we
+                 ;; the filename into (unit-id . index) — instead we
                  ;; derive the defun from the filename stem and confirm the
                  ;; registered function is (eq) to it.
                  (let* ((base (pathname-name file))
@@ -3541,7 +3542,7 @@ defun's archive key in O(1) instead of O(N) per lookup (N ~= 1000)."
                                     (symbolp (car key))
                                     (integerp (cdr key)))
                                (format nil
-                                       "~A key has (file-stem-symbol . index-integer) shape"
+                                       "~A key has current file archive (unit-id-symbol . index-integer) shape"
                                        zone-stem)))))))))))
 
 (deftest test-shipped-zone-files-determinism

@@ -619,8 +619,8 @@
                           (cl:if (cl:eq ,key *scheme-false*) cl:nil ,key))
                  cl:nil))
 
-(define-host-primitive (%archive-co-lookup stem index)
-  :cl `(cl:or (cl:gethash (cl:cons ,stem ,index) *archive-code-objects*)
+(define-host-primitive (%archive-co-lookup unit-id index)
+  :cl `(cl:or (cl:gethash (cl:cons ,unit-id ,index) *archive-code-objects*)
               *scheme-false*))
 
 ;;; ─────────────────────────────────────────────────────────────────────────

@@ -12,8 +12,8 @@
 
 (in-package :ece)
 
-(defun ece-%archive-co-lookup (stem index)
-  (cl:or (cl:gethash (cl:cons stem index) *archive-code-objects*) *scheme-false*))
+(defun ece-%archive-co-lookup (unit-id index)
+  (cl:or (cl:gethash (cl:cons unit-id index) *archive-code-objects*) *scheme-false*))
 
 (defun ece-%chmod (path mode)
   (let* ((pkg (cl:find-package "SB-POSIX")) (chmod-fn (cl:and pkg (cl:find-symbol "CHMOD" pkg)))) (cl:when (cl:and chmod-fn (cl:fboundp chmod-fn)) (cl:funcall chmod-fn path mode)) cl:nil))

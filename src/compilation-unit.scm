@@ -239,7 +239,7 @@ in the §8 archive format. Returns the output filename."
 OUTPUT-PATH. Each file is compiled to a code-object archive (§8 format);
 the bundle is the concatenation of those archives. Loaders iterate
 sections via load-section-from-port, dispatching on each section's head
-symbol (ecec-archive). Returns OUTPUT-PATH."
+symbol (:ecec-archive). Returns OUTPUT-PATH."
   (let ((out (open-output-file output-path)))
     (let loop ((files filenames))
       (when (pair? files)
@@ -273,7 +273,7 @@ SPACE-NAME is a symbol, SOURCE-MAP-FIELD is (filename (pc line col) ...)."
         #f)))
 
 (define (load-section-from-port port)
-  "Load one ecec archive section from PORT. Expects (ecec-archive ...).
+  "Load one ecec archive section from PORT. Expects (:ecec-archive ...).
 Returns the init's result, or eof if no more sections. Legacy
 (ecec-header ...) files were retired in §9.3 — if one is encountered,
 signals an error pointing at `make bootstrap` for regeneration."
@@ -290,7 +290,7 @@ signals an error pointing at `make bootstrap` for regeneration."
       (error "load-section-from-port: expected (:ecec-archive ...). Run `make bootstrap` to regenerate.")))))
 
 (define (load-archive-section-form archive)
-  "Archive-format path: ARCHIVE is the parsed (ecec-archive ...) form.
+  "Archive-format path: ARCHIVE is the parsed (:ecec-archive ...) form.
 Rebuild code-objects and execute the init."
   (let* ((cos (archive-sexp->code-objects archive))
          (init (vector-ref cos 0)))
@@ -320,22 +320,17 @@ Returns the result of the last section."
 ;;; §8: .ecec archive format (version 2)
 ;;;
 ;;; Shape:
-;;;   (ecec-archive
-;;;     version 2
-;;;     file "foo.scm"
-;;;     entries ((code-object name %init instructions (...) ...)
-;;;              (code-object name add1 instructions (...) ...)
+;;;   (:ecec-archive
+;;;     :version 2
+;;;     :file "foo.scm"
+;;;     :unit-id <optional-explicit-unit-id>
+;;;     :entries ((:code-object :name %init :instructions (...) ...)
+;;;               (:code-object :name add1 :instructions (...) ...)
 ;;;              ...))
 ;;;
-;;; Tag symbols are plain (no `:` prefix). A `:keyword` style would be
-;;; cleaner visually but doesn't round-trip cleanly through the existing
-;;; writer+reader pair: write-to-string-flat escapes ECE `:foo` symbols
-;;; with pipes (CL reader rules), and re-reading via CL's read produces
-;;; a CL keyword in the :keyword package instead of the ECE-package
-;;; symbol the ECE reader would have produced from source. Fixing that
-;;; requires coordinated changes to ece-print-flat + downcase-ece-symbols
-;;; and is tracked separately; until then, plain symbols avoid the
-;;; ambiguity.
+;;; Tag symbols use the ECE keyword spelling (`:foo`). During the keyword-
+;;; format transition, readers still accept legacy plain-symbol tags via
+;;; archive/plist-get and load-section-from-port.
 ;;;
 ;;; - Entry 0 is the file's init code-object (top-level forms, merged).
 ;;; - Entries 1..N are nested lambdas hoisted to archive level.
@@ -483,15 +478,31 @@ extension (matches CL archive-file-stem-symbol)."
            (else (loop (- i 1))))))
       #f))
 
+(define (archive/unit-id archive)
+  "Return ARCHIVE's semantic unit identity. Current version-2 file
+archives synthesize this from :file; future module archives can provide
+:unit-id explicitly without changing code-object registry mechanics.
+String unit ids are treated as legacy file stems and normalized to symbols."
+  (let ((unit-id (archive/plist-get (cdr archive) ':unit-id)))
+    (cond
+     ((string? unit-id) (string->symbol unit-id))
+     (unit-id unit-id)
+     (else
+      (archive/file-stem-from-field
+       (archive/plist-get (cdr archive) ':file))))))
+
+(define (archive/code-object-key unit-id index)
+  "Return the registry key for code-object INDEX in UNIT-ID."
+  (cons unit-id index))
+
 (define (archive-sexp->code-objects archive)
   "Parse an archive s-expression (as read from disk). Returns the vector
 of code-objects. Entry 0 is the init code-object. Raises on version
-mismatch. Stamps archive-key = (cons stem index) on each code-object so
+mismatch. Stamps archive-key = (unit-id . index) on each code-object so
 the serializer can emit by-reference forms."
   (let* ((version (archive/plist-get (cdr archive) ':version))
          (entries (archive/plist-get (cdr archive) ':entries))
-         (file-field (archive/plist-get (cdr archive) ':file))
-         (file-stem (archive/file-stem-from-field file-field)))
+         (unit-id (archive/unit-id archive)))
     (when (not (equal? version 2))
       (error (string-append
               "Unsupported .ecec archive version: "
@@ -515,8 +526,9 @@ the serializer can emit by-reference forms."
             (for-each (lambda (pair)
                         (%code-object-set-label! co (car pair) (cdr pair)))
                       (archive/plist-get fields ':labels))
-            (when file-stem
-              (%code-object-set-archive-key! co (cons file-stem i)))
+            (when unit-id
+              (%code-object-set-archive-key!
+               co (archive/code-object-key unit-id i)))
             (vector-set! cos i co))
           (loop (+ i 1))))
       ;; Pass 2: push instructions (with (co-ref N) patched to code-objects).

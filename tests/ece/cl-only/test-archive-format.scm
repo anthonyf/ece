@@ -11,6 +11,44 @@
     (assert-equal "scratch.scm" (archive/plist-get (cdr archive) ':file))
     (assert-true (pair? (archive/plist-get (cdr archive) ':entries))))))
 
+(test "archive: unit-id defaults to file stem" (lambda ()
+  (let* ((co (mc-compile-to-code-object 42))
+         (archive (code-object->archive-sexp co "scratch.scm")))
+    (assert-equal 'scratch (archive/unit-id archive)))))
+
+(test "archive: explicit unit-id stamps code-object keys" (lambda ()
+  (let* ((co (mc-compile-to-code-object 42))
+         (archive (code-object->archive-sexp co "scratch.scm"))
+         (entries (archive/plist-get (cdr archive) ':entries))
+         (unit-id '(module (game inventory) 0))
+         (with-unit (list ':ecec-archive
+                          ':version 2
+                          ':file "scratch.scm"
+                          ':unit-id unit-id
+                          ':entries entries))
+         (cos (archive-sexp->code-objects with-unit))
+         (key (code-object-archive-key (vector-ref cos 0)))
+         (ref (ser/code-object->sexp (vector-ref cos 0))))
+    (assert-equal unit-id (car key))
+    (assert-equal 0 (cdr key))
+    (assert-equal '%ser/co-ref (car ref))
+    (assert-equal unit-id (cadr ref))
+    (assert-equal 0 (caddr ref)))))
+
+(test "archive: string unit-id normalizes to legacy symbol key" (lambda ()
+  (let* ((co (mc-compile-to-code-object 42))
+         (archive (code-object->archive-sexp co "scratch.scm"))
+         (entries (archive/plist-get (cdr archive) ':entries))
+         (with-unit (list ':ecec-archive
+                          ':version 2
+                          ':file "scratch.scm"
+                          ':unit-id "scratch"
+                          ':entries entries))
+         (cos (archive-sexp->code-objects with-unit))
+         (key (code-object-archive-key (vector-ref cos 0))))
+    (assert-equal 'scratch (car key))
+    (assert-equal 0 (cdr key)))))
+
 (test "archive: collect-reachable includes top then children (ordering)"
   (lambda ()
     (let* ((co (mc-compile-to-code-object '(lambda (x) (lambda (y) (+ x y)))))

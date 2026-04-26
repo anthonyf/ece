@@ -67,11 +67,12 @@
 ;;;
 ;;; Threaded via `parameterize` from the code-object entry point so that
 ;;; deeply-nested emitters (emit-const, emit-assign's label branch, etc.)
-;;; can reach the archive's file-stem and the per-archive code-object
+;;; can reach the archive's unit identity and the per-archive code-object
 ;;; index map without dragging them through every call signature.
 ;;;
-;;; - *emit-file-stem* — string naming the archive file-stem (no extension).
-;;;   Emitted into generated CL forms as the first half of (file-stem . co-key)
+;;; - *emit-unit-id* — unit identity for the archive section. For current
+;;;   file archives this is the file-stem symbol.
+;;;   Emitted into generated CL forms as the first half of (unit-id . co-key)
 ;;;   lookup keys.
 ;;; - *emit-co-index-map* — a hash-table-or-#f mapping nested code-objects
 ;;;   (eq-keyed) to their co-key (either the co's name symbol or its archive
@@ -79,19 +80,20 @@
 ;;;   generate-all-zones-from-archive!; used by emit-const to find the key
 ;;;   for a (const <inner-co>) operand.
 
-(define *emit-file-stem* (make-parameter #f))
+(define *emit-unit-id* (make-parameter #f))
 (define *emit-co-index-map* (make-parameter #f))
 
 ;;; Code-object-oriented entry point. Takes a code-object directly.
 ;;; Used by Phase D's archive codegen driver.
 (define (generate-zone-cl-for-code-object! co zone-name output-path
-                                           file-stem co-key)
+                                           unit-id co-key)
   "Emit one (defun zone-NAME ...) for CO. ZONE-NAME is the string used as
 the function name suffix. OUTPUT-PATH is the destination .lisp file.
-FILE-STEM is the archive's base name (no extension) as a string — emitted
-into the self-registration form and used for inner-co constant lookups.
+UNIT-ID is the archive unit identity — emitted into the self-registration
+form and used for inner-co constant lookups. Current callers usually pass the
+archive's file-stem string, which is emitted as the historic file-stem symbol.
 CO-KEY is the zero-based archive index as an integer — used as the
-second half of the (FILE-STEM . CO-KEY) registry key.
+second half of the (UNIT-ID . CO-KEY) registry key.
 
 If *emit-co-index-map* is already bound (caller is the archive-driven
 generate-all-zones-from-archive!), we reuse it so anonymous lambdas
@@ -108,10 +110,10 @@ Returns OUTPUT-PATH."
                       zone-name)))
     (let ((local-index-map (or (*emit-co-index-map*)
                                (build-reachable-co-index-map co))))
-      (parameterize ((*emit-file-stem* file-stem)
+      (parameterize ((*emit-unit-id* unit-id)
                      (*emit-co-index-map* local-index-map))
         (let ((out (open-output-file output-path))
-              (reg-mode (list 'co file-stem co-key)))
+              (reg-mode (list 'co unit-id co-key)))
           (emit-zone-header out zone-name 'code-object)
           (if (needs-splitting? count)
               (emit-zone-defun-split out zone-name co count reg-mode)
@@ -181,7 +183,7 @@ stays stable for future modes."
     (write-string "-zone.lisp" out) (newline out)
     (write-string ";;;;" out) (newline out)
     (write-string ";;;; The CL runtime loads this file at boot and registers the defun" out) (newline out)
-    (write-string ";;;; below under (file-stem . co-key) in *archive-zone-fns*; archive" out) (newline out)
+    (write-string ";;;; below under (unit-id . co-key) in *archive-zone-fns*; archive" out) (newline out)
     (write-string ";;;; loaders then attach it to the code-object's native-fn slot." out) (newline out)
     (newline out)
     (write-string "(in-package :ece)" out) (newline out)
@@ -238,8 +240,8 @@ stays stable for future modes."
   "Emit the load-time effect that registers this zone. REG-MODE selects
 the target registry:
    (space SPACE-ID)          → *compiled-zone-functions* keyed on SPACE-ID
-   (co FILE-STEM CO-KEY)     → *archive-zone-fns* keyed on
-                                (cons FILE-STEM CO-KEY)
+   (co UNIT-ID CO-KEY)       → *archive-zone-fns* keyed on
+                                (cons UNIT-ID CO-KEY)
 Runs once per file load and is idempotent — re-loading the file just
 overwrites the entry with the same function."
   (let ((mode (car reg-mode)))
@@ -270,25 +272,35 @@ entry to that space."
   (write-string name-str out)
   (write-string "))" out) (newline out))
 
-(define (emit-zone-registration-for-co out name-str file-stem co-key)
+(define (emit-zone-registration-for-co out name-str unit-id co-key)
   "Archive path: register under *archive-zone-fns* keyed on
-(file-stem . co-key). FILE-STEM is a string (the archive's base name).
+(unit-id . co-key). UNIT-ID is the archive section identity.
 CO-KEY is an archive index integer (see co-key-for-archive-entry) —
 emitted literally so the key round-trips through cl:read back into the
 same EQUAL hash key the archive loader constructs in
 runtime.lisp:archive-co-key."
   (write-string ";;; Self-registration: install zone-" out)
   (write-string name-str out)
-  (write-string " under (file-stem . co-key) so the" out) (newline out)
+  (write-string " under (unit-id . co-key) so the" out) (newline out)
   (write-string ";;; archive loader can attach native-fn at load time." out) (newline out)
   (write-string "(cl:setf (cl:gethash (cl:cons " out)
-  (emit-file-stem-symbol out file-stem)
+  (emit-archive-unit-id out unit-id)
   (write-char #\space out)
   (write-string (number->string co-key) out)
   (write-string ") *archive-zone-fns*)" out) (newline out)
   (write-string "         (cl:function zone-" out)
   (write-string name-str out)
   (write-string "))" out) (newline out))
+
+(define (emit-archive-unit-id out unit-id)
+  "Emit UNIT-ID as a quoted CL datum for archive registry keys. Strings
+preserve the historic file-stem behavior by emitting an ECE symbol; symbols
+and structured future unit IDs emit as quoted ECE data."
+  (cond
+   ((string? unit-id) (emit-file-stem-symbol out unit-id))
+   (else
+    (write-char #\' out)
+    (emit-quoted-datum out unit-id))))
 
 (define (emit-file-stem-symbol out file-stem)
   "Emit FILE-STEM (a string) as a pipe-quoted symbol literal `'|stem|`.
@@ -298,7 +310,7 @@ with `(in-package :ece)` (see emit-zone-header). Pipe syntax preserves
 lowercase under CL's default upcasing reader. The archive loader in
 src/runtime.lisp derives its matching key via
 `(intern STEM :ece)` (see archive-file-stem-symbol), so both sides
-land on the same `eq` symbol and the (FILE-STEM . CO-KEY) registry key
+land on the same `eq` symbol and the (UNIT-ID . CO-KEY) registry key
 round-trips without a runtime intern call here."
   (write-char #\' out)
   (write-char #\| out)
@@ -946,11 +958,11 @@ Bottom-up emission (mc-compile-lambda-as-code-object) places a nested
 code-object as the const arg to make-compiled-procedure. For the archive
 path (code-object zone), we emit a runtime lookup into
 *archive-code-objects* so each call site dereferences the live code-
-object after the archive loader has populated the registry. The file-
-stem and co-key are known at codegen time (the zone file is emitted
+object after the archive loader has populated the registry. The unit id
+and co-key are known at codegen time (the zone file is emitted
 for one specific archive) and baked into the emitted form.
 
-If *emit-co-index-map* / *emit-file-stem* are unset (legacy space path),
+If *emit-co-index-map* / *emit-unit-id* are unset (legacy space path),
 emitting a code-object constant is unsupported — it shouldn't happen,
 since spaces don't have per-procedure identities. We raise at codegen
 time rather than emit a form that would crash at runtime."
@@ -985,19 +997,19 @@ time rather than emit a form that would crash at runtime."
   "Emit a CL form that at zone-execution time resolves CO via
 archive-co-lookup into the live code-object struct from
 *archive-code-objects*. CO is a code-object value baked into the
-instruction by bottom-up compilation; its archive identity (file-stem +
-archive-index) is known at codegen time through *emit-file-stem* and
+instruction by bottom-up compilation; its archive identity (unit-id +
+archive-index) is known at codegen time through *emit-unit-id* and
 *emit-co-index-map*.
 
 Keys are always archive indices (integers) — names are not unique
 (prelude has 7 distinct `iter` code-objects), so keying on name would
 make every same-named code-object route to the same zone fn. Must match
 the key the archive loader derives (runtime.lisp: archive-co-key)."
-  (let ((file-stem (*emit-file-stem*))
+  (let ((unit-id (*emit-unit-id*))
         (index-map (*emit-co-index-map*)))
-    (when (not file-stem)
+    (when (not unit-id)
       (%raw-error
-       "emit-inner-co-lookup: no *emit-file-stem* bound. Code-object constants are only valid in archive zones."))
+       "emit-inner-co-lookup: no *emit-unit-id* bound. Code-object constants are only valid in archive zones."))
     (when (not index-map)
       (%raw-error
        "emit-inner-co-lookup: no *emit-co-index-map* bound. Archive codegen must seed the index map."))
@@ -1006,7 +1018,7 @@ the key the archive loader derives (runtime.lisp: archive-co-key)."
         (%raw-error
          "emit-inner-co-lookup: code-object is not in the archive index map."))
       (write-string "(archive-co-lookup " out)
-      (emit-file-stem-symbol out file-stem)
+      (emit-archive-unit-id out unit-id)
       (write-char #\space out)
       (write-string (number->string co-key) out)
       (write-char #\) out))))
@@ -1237,7 +1249,7 @@ to its zero-based archive index. emit-inner-co-lookup consults this map
 for every code-object operand (named or anonymous) — keys are always
 archive indices, so all same-named code-objects resolve to distinct
 entries. Must be seeded before emitting a zone file so (const <co>)
-operands can be rewritten to (archive-co-lookup STEM INDEX)."
+operands can be rewritten to (archive-co-lookup UNIT-ID INDEX)."
   (let ((h (%make-hash-table)))
     (let loop ((i 0))
       (when (< i n)
@@ -1257,8 +1269,8 @@ share a single zone fn. Must match the key the archive loader derives
 
 (define (archive-file-stem archive)
   "Derive the file-stem symbol from ARCHIVE's |file| plist field (minus
-extension). Matches the key the CL archive loader uses to attach
-native-fn — see archive-file-stem-symbol in src/runtime.lisp."
+extension). Used for generated zone filenames and as the fallback unit id for
+current file archives."
   (let ((file-str (archive/plist-get (cdr archive) ':file)))
     (if (string? file-str)
         (string->symbol (filename-strip-extension
@@ -1266,15 +1278,25 @@ native-fn — see archive-file-stem-symbol in src/runtime.lisp."
         (%raw-error
          "archive-file-stem: archive has no :file field"))))
 
+(define (archive-unit-id archive)
+  "Return ARCHIVE's semantic unit identity. Current version-2 file archives
+synthesize this from :file; future module archives can provide :unit-id.
+String unit ids are treated as legacy file stems and normalized to symbols."
+  (let ((unit-id (archive/plist-get (cdr archive) ':unit-id)))
+    (cond
+     ((string? unit-id) (string->symbol unit-id))
+     (unit-id unit-id)
+     (else (archive-file-stem archive)))))
+
 (define (generate-zones-for-archive-section! archive output-dir)
   "Emit one zone file per code-object in ARCHIVE (a single parsed
 (ecec-archive ...) section) under OUTPUT-DIR. Used internally by
 generate-all-zones-from-archive! which loops over concatenated archive
 sections in a bundle.
 
-File-stem comes from the archive's |file| field so the zone's registry
-key matches what the CL archive loader constructs at boot time. Output
-filenames are `<file-stem>-<co-name-or-index>-zone.lisp`.
+File-stem comes from the archive's |file| field for readable output filenames.
+Registry keys use the archive unit id so future module archives can decouple
+code identity from source filenames.
 
 Threads *emit-co-index-map* so emit-inner-co-lookup can resolve (const
 <anonymous-co>) operands inside nested-lambda bodies."
@@ -1282,6 +1304,7 @@ Threads *emit-co-index-map* so emit-inner-co-lookup can resolve (const
          (n (vector-length cos))
          (file-stem-sym (archive-file-stem archive))
          (file-stem (symbol->string file-stem-sym))
+         (unit-id (archive-unit-id archive))
          (index-map (build-archive-co-index-map cos n)))
     (when (= n 0)
       (%raw-error
@@ -1298,7 +1321,7 @@ Threads *emit-co-index-map* so emit-inner-co-lookup can resolve (const
                                     " PCs)..."))
             (newline)
             (generate-zone-cl-for-code-object! co zone-name output-path
-                                               file-stem co-key)
+                                               unit-id co-key)
             (display (string-append "  Done: " output-path))
             (newline))
           (loop (+ i 1)))))))

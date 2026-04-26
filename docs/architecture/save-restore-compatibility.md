@@ -2,7 +2,7 @@
 
 ECE save files are serialized ECE values. When a saved value contains a
 continuation or compiled procedure, the serializer may refer to loaded archive
-code objects by `(archive-stem . index)` instead of embedding full instruction
+code objects by `(archive-unit-id . index)` instead of embedding full instruction
 vectors. This keeps ordinary continuation saves small, but it means save files
 have a code identity requirement.
 
@@ -12,10 +12,10 @@ A continuation save is compatible with the same archive identity, not merely
 the same source filename. Archive-registered code objects serialize as:
 
 ```scheme
-(%ser/co-ref stem index fingerprint)
+(%ser/co-ref unit-id index fingerprint)
 ```
 
-`stem` and `index` locate the code object in the loaded archive registry.
+`unit-id` and `index` locate the code object in the loaded archive registry.
 `fingerprint` identifies the code object's serialized metadata and instruction
 shape at save time. Loading a save requires the referenced archive entry to be
 present and to match the saved fingerprint. If the archive is missing,
@@ -24,7 +24,7 @@ exists but no longer matches, deserialization raises
 `ece-deser-archive-mismatch-error`.
 
 Older save blobs without fingerprints remain readable, but they cannot detect
-same-stem/index code drift. They should be treated as best-effort legacy saves.
+same-unit/index code drift. They should be treated as best-effort legacy saves.
 
 ## Code Changes
 
@@ -58,4 +58,3 @@ their complete state can be represented as ECE data. File ports, sockets, and
 other native resources should require an explicit application-level resource
 manager that serializes stable external references and reopens or rejects them
 on restore.
-
