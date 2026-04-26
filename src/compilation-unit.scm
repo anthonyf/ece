@@ -239,7 +239,7 @@ in the §8 archive format. Returns the output filename."
 OUTPUT-PATH. Each file is compiled to a code-object archive (§8 format);
 the bundle is the concatenation of those archives. Loaders iterate
 sections via load-section-from-port, dispatching on each section's head
-symbol (ecec-archive). Returns OUTPUT-PATH."
+symbol (:ecec-archive). Returns OUTPUT-PATH."
   (let ((out (open-output-file output-path)))
     (let loop ((files filenames))
       (when (pair? files)
@@ -273,7 +273,7 @@ SPACE-NAME is a symbol, SOURCE-MAP-FIELD is (filename (pc line col) ...)."
         #f)))
 
 (define (load-section-from-port port)
-  "Load one ecec archive section from PORT. Expects (ecec-archive ...).
+  "Load one ecec archive section from PORT. Expects (:ecec-archive ...).
 Returns the init's result, or eof if no more sections. Legacy
 (ecec-header ...) files were retired in §9.3 — if one is encountered,
 signals an error pointing at `make bootstrap` for regeneration."
@@ -290,7 +290,7 @@ signals an error pointing at `make bootstrap` for regeneration."
       (error "load-section-from-port: expected (:ecec-archive ...). Run `make bootstrap` to regenerate.")))))
 
 (define (load-archive-section-form archive)
-  "Archive-format path: ARCHIVE is the parsed (ecec-archive ...) form.
+  "Archive-format path: ARCHIVE is the parsed (:ecec-archive ...) form.
 Rebuild code-objects and execute the init."
   (let* ((cos (archive-sexp->code-objects archive))
          (init (vector-ref cos 0)))
@@ -320,22 +320,17 @@ Returns the result of the last section."
 ;;; §8: .ecec archive format (version 2)
 ;;;
 ;;; Shape:
-;;;   (ecec-archive
-;;;     version 2
-;;;     file "foo.scm"
-;;;     entries ((code-object name %init instructions (...) ...)
-;;;              (code-object name add1 instructions (...) ...)
+;;;   (:ecec-archive
+;;;     :version 2
+;;;     :file "foo.scm"
+;;;     :unit-id <optional-explicit-unit-id>
+;;;     :entries ((:code-object :name %init :instructions (...) ...)
+;;;               (:code-object :name add1 :instructions (...) ...)
 ;;;              ...))
 ;;;
-;;; Tag symbols are plain (no `:` prefix). A `:keyword` style would be
-;;; cleaner visually but doesn't round-trip cleanly through the existing
-;;; writer+reader pair: write-to-string-flat escapes ECE `:foo` symbols
-;;; with pipes (CL reader rules), and re-reading via CL's read produces
-;;; a CL keyword in the :keyword package instead of the ECE-package
-;;; symbol the ECE reader would have produced from source. Fixing that
-;;; requires coordinated changes to ece-print-flat + downcase-ece-symbols
-;;; and is tracked separately; until then, plain symbols avoid the
-;;; ambiguity.
+;;; Tag symbols use the ECE keyword spelling (`:foo`). During the keyword-
+;;; format transition, readers still accept legacy plain-symbol tags via
+;;; archive/plist-get and load-section-from-port.
 ;;;
 ;;; - Entry 0 is the file's init code-object (top-level forms, merged).
 ;;; - Entries 1..N are nested lambdas hoisted to archive level.
