@@ -996,15 +996,16 @@ non-code-object atoms and sub-structure unchanged."
                (ser/walk-instruction (cdr instr))))))
 
 (define (ser/stable-string-hash str)
-  "Return a deterministic integer hash for STR. This is a compatibility
-fingerprint, not a cryptographic digest."
+  "Return the deterministic 32-bit FNV-1a hash for STR. This is a
+compatibility fingerprint, not a cryptographic digest."
   (let loop ((i 0) (h 2166136261))
     (if (>= i (string-length str))
         h
         (loop (+ i 1)
-              (modulo (+ (* h 16777619)
-                         (char->integer (string-ref str i)))
-                      4294967291)))))
+              (modulo (* (bitwise-xor h
+                                       (char->integer (string-ref str i)))
+                         16777619)
+                      4294967296)))))
 
 (define (ser/label-entry<? a b)
   (let ((an (symbol->string (car a)))
