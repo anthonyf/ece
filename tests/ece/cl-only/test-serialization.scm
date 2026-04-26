@@ -6,6 +6,28 @@
 (define (test-load filename)
   (call-with-input-file filename deserialize))
 
+(define (assert-unserializable-wind-error thunk expected-index)
+  (define raised #f)
+  (define index #f)
+  (guard (e ((ece-serialization-unserializable-wind-error? e)
+             (set! raised #t)
+             (set! index (ece-serialization-unserializable-wind-error-index e))))
+    (thunk))
+  (assert-equal raised #t)
+  (if expected-index
+      (assert-equal index expected-index)
+      (assert (number? index) "wind error should include a frame index")))
+
+(define *serialization-wind-log* '())
+
+(define (serialization-wind-before)
+  (set! *serialization-wind-log*
+        (cons 'before *serialization-wind-log*)))
+
+(define (serialization-wind-after)
+  (set! *serialization-wind-log*
+        (cons 'after *serialization-wind-log*)))
+
 (test "serialize plain number" (lambda ()
   (assert-equal (serialize-value 42) "42")))
 
@@ -70,35 +92,54 @@
   (test-save! ".tmp/ece-rt-ret.dat" 42)
   (assert-equal (test-load ".tmp/ece-rt-ret.dat") 42)))
 
-;; Note: invoking the deserialized continuation is not tested here because the
-;; test runner's parameterize wind frames are stripped during serialization,
-;; making invocation unsafe. Continuation invocation is tested via the lexical
-;; state pattern tests below which use their own scoped continuations.
-(test "round-trip continuation" (lambda ()
+;; Continuations captured inside the test runner include its output-capture
+;; parameterize frame, which closes over a port. That continuation is not
+;; losslessly serializable, so serialization must fail instead of stripping the
+;; wind frame.
+(test "continuation with port wind frame is rejected" (lambda ()
   (define k #f)
   (%raw-call/cc (lambda (cont) (set! k cont) 0))
-  (test-save! ".tmp/ece-rt-cont.dat" k)
-  (define loaded (test-load ".tmp/ece-rt-cont.dat"))
-  (assert (continuation? loaded) "loaded should be a continuation")))
+  (assert-unserializable-wind-error
+   (lambda () (test-save! ".tmp/ece-rt-cont.dat" k))
+   #f)))
 
-(test "continuation serialization is compact" (lambda ()
+(test "serialize-value rejects unsafe continuation winds" (lambda ()
   (define k #f)
   (%raw-call/cc (lambda (cont) (set! k cont) 0))
-  (define size (string-length (serialize-value k)))
-  ;; Continuation captures the whole test-framework dynamic chain, plus
-  ;; any inline code-objects for REPL/test-scope lambdas (the test file
-  ;; itself isn't loaded as an archive, so its code-objects lack an
-  ;; archive-key and travel inline). The threshold is sized to catch
-  ;; pathological blowups (e.g., pulling in the entire prelude), not to
-  ;; enforce a tight bound on expected framework overhead.
-  (assert (< size 2000000) (string-append "continuation too large: " (number->string size) " bytes"))))
+  (assert-unserializable-wind-error
+   (lambda () (serialize-value k))
+   #f)))
 
-(test "continuation with state is compact" (lambda ()
+(test "unsafe continuation with state is rejected" (lambda ()
   (define state (hash-table 'room "kitchen" 'inventory (list "key" "torch") 'health 100))
   (define k #f)
   (%raw-call/cc (lambda (cont) (set! k cont) 0))
-  (define size (string-length (serialize-value k)))
-  (assert (< size 2000000) (string-append "continuation+state too large: " (number->string size) " bytes"))))
+  (assert-unserializable-wind-error
+   (lambda () (serialize-value k))
+   #f)))
+
+(test "serializable wind frames survive continuation round-trip" (lambda ()
+  (set! *serialization-wind-log* '())
+  (define k (%make-continuation '() 'done
+                                (list (cons serialization-wind-before
+                                            serialization-wind-after))))
+  (define loaded (deserialize-value (read (open-input-string (serialize-value k)))))
+  (assert (continuation? loaded) "loaded should be a continuation")
+  (define winds (continuation-winds loaded))
+  (assert (pair? winds) "loaded continuation should retain wind frames")
+  (assert (compiled-procedure? (car (car winds))) "before thunk should be restored")
+  (assert (compiled-procedure? (cdr (car winds))) "after thunk should be restored")
+  (assert-equal (cdr winds) '())))
+
+(test "unserializable wind frames are rejected" (lambda ()
+  (define port (open-output-string))
+  ;; This malformed wind frame intentionally puts a host port directly in the
+  ;; wind stack. It exercises the serializer's losslessness guard without
+  ;; depending on closure environment shape.
+  (define k (%make-continuation '() 'done (list (cons port port))))
+  (assert-unserializable-wind-error
+   (lambda () (serialize-value k))
+   0)))
 
 (test "round-trip parameter value" (lambda ()
   (define p (make-parameter 42))
@@ -123,11 +164,9 @@
   (define k #f)
   (p 42)
   (%raw-call/cc (lambda (cont) (set! k cont) 0))
-  (test-save! ".tmp/ece-rt-param-cont.dat" (list p k))
-  (define loaded (test-load ".tmp/ece-rt-param-cont.dat"))
-  (define loaded-p (car loaded))
-  (assert (parameter? loaded-p) "loaded should be a parameter")
-  (assert-equal (loaded-p) 42)))
+  (assert-unserializable-wind-error
+   (lambda () (test-save! ".tmp/ece-rt-param-cont.dat" (list p k)))
+   #f)))
 
 (test "mutated parameter survives round-trip" (lambda ()
   (define p (make-parameter 0))
@@ -173,9 +212,9 @@
     (define (fact n) (if (= n 0) 1 (* n (fact (- n 1)))))
     (%raw-call/cc (lambda (cont) (set! k cont) 0))
     (assert-equal (fact 5) 120))
-  (test-save! ".tmp/ece-rt-rec-cont.dat" k)
-  (define loaded (test-load ".tmp/ece-rt-rec-cont.dat"))
-  (assert (continuation? loaded) "loaded should be a continuation")))
+  (assert-unserializable-wind-error
+   (lambda () (test-save! ".tmp/ece-rt-rec-cont.dat" k))
+   #f)))
 
 (test "non-cyclic shared structure still works" (lambda ()
   ;; Verify existing non-cyclic round-trips still work
@@ -213,12 +252,12 @@
   (assert-equal (car result) "dungeon")
   (assert-equal (cadr result) 70)
   (assert-equal (caddr result) (list "key" "torch"))
-  ;; Continuation includes parameterize overhead from test runner plus
-  ;; any inline code-objects for REPL/test-scope lambdas (see
-  ;; "continuation serialization is compact" for the threshold rationale).
+  ;; The captured continuation includes the test runner's output port wind
+  ;; frame, so strict serialization rejects it instead of silently dropping it.
   (define k (cadddr result))
-  (assert (< (string-length (serialize-value k)) 2000000)
-          "lexical state continuation should be compact")))
+  (assert-unserializable-wind-error
+   (lambda () (serialize-value k))
+   #f)))
 
 (test "lexical state pattern: save and load preserves all state" (lambda ()
   (define (run-game)
@@ -232,12 +271,9 @@
     (%raw-call/cc (lambda (c) (set! k c) 0))
     (list (room) (hp) (inventory) k))
   (define result (run-game))
-  (test-save! ".tmp/ece-rt-lexical-state.dat" result)
-  (define loaded (test-load ".tmp/ece-rt-lexical-state.dat"))
-  (assert-equal (car loaded) "dungeon")
-  (assert-equal (cadr loaded) 70)
-  (assert-equal (caddr loaded) (list "key" "torch"))
-  (assert (continuation? (cadddr loaded)))))
+  (assert-unserializable-wind-error
+   (lambda () (test-save! ".tmp/ece-rt-lexical-state.dat" result))
+   #f)))
 
 (test "lexical state pattern: external functions work with lexical params" (lambda ()
   ;; External function receives values, not parameters
@@ -270,10 +306,9 @@
   (define k #f)
   (room "cave")
   (%raw-call/cc (lambda (c) (set! k c) 0))
-  (test-save! ".tmp/ece-rt-revert.dat" (list (room) k))
-  (define loaded (test-load ".tmp/ece-rt-revert.dat"))
-  (assert-equal (car loaded) "cave")
-  (assert (continuation? (cadr loaded)))))
+  (assert-unserializable-wind-error
+   (lambda () (test-save! ".tmp/ece-rt-revert.dat" (list (room) k)))
+   #f)))
 
 (test "round-trip continuation with multiple parameters" (lambda ()
   (define room (make-parameter "start"))
@@ -282,11 +317,9 @@
   (room "dungeon")
   (hp 50)
   (%raw-call/cc (lambda (c) (set! k c) 0))
-  (test-save! ".tmp/ece-rt-multi-revert.dat" (list (room) (hp) k))
-  (define loaded (test-load ".tmp/ece-rt-multi-revert.dat"))
-  (assert-equal (car loaded) "dungeon")
-  (assert-equal (cadr loaded) 50)
-  (assert (continuation? (caddr loaded)))))
+  (assert-unserializable-wind-error
+   (lambda () (test-save! ".tmp/ece-rt-multi-revert.dat" (list (room) (hp) k)))
+   #f)))
 
 (test "%ser/co-ref fails with typed error when archive absent" (lambda ()
   ;; Fabricate a blob that references an archive stem that isn't

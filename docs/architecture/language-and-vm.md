@@ -170,7 +170,7 @@ Exceptions are implemented in ECE with `raise`, `with-exception-handler`, `guard
 
 The prelude implements `serialize-value` and `deserialize-value` for Scheme values, shared structure, cyclic pairs, vectors, hash tables, parameters, primitives, compiled procedures, continuations, environment frames, and code objects. Archive-registered code objects serialize by reference as `(%ser/co-ref stem index)`. Anonymous or REPL-created code objects can serialize inline.
 
-Continuations serialize their saved stack, continuation entry, and serializable wind frames. Non-serializable wind frames are replaced with a stripped sentinel. `save`, `load-saved`, and `save-continuation!` provide file-based save/restore helpers.
+Continuations serialize their saved stack, continuation entry, and complete `dynamic-wind` stack. Wind frames must serialize losslessly so restored continuations can replay their `before` and `after` thunks through `do-winds!`. If a wind frame closes over host-only state such as a port or stream, serialization raises `ece-serialization-unserializable-wind-error` instead of silently stripping the frame. `save`, `load-saved`, and `save-continuation!` provide file-based save/restore helpers.
 
 This serialization layer depends on archive code-object registry state when deserializing by-reference code objects. Loading a saved continuation that refers to archive code objects requires the corresponding archive to be loaded first.
 

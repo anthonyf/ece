@@ -1109,6 +1109,15 @@ printer; UX layers that want a human-readable string should format it
 from the field values (e.g., via `format`)."
   (raise (make-ece-deser-missing-archive-error stem idx)))
 
+;; Raised when a continuation cannot be serialized losslessly because one of
+;; its dynamic-wind frames closes over host state such as ports or streams.
+;; The frame itself is intentionally not stored in the error record, because it
+;; may contain the unserializable object that caused the failure.
+(define-record ece-serialization-unserializable-wind-error index)
+
+(define (raise-ece-serialization-unserializable-wind-error index)
+  (raise (make-ece-serialization-unserializable-wind-error index)))
+
 (define (serialize-value value)
   "Serialize VALUE to an s-expression string. Handles all ECE types,
 shared structure, and global env sentinel."
@@ -1134,6 +1143,11 @@ Returns #f if it contains non-serializable objects (ports, CL streams, etc.)."
         (cond
          ((eq? obj global-frame) #t)
          ((%hash-frame? obj) #t)
+         ((and (pair? obj)
+               (or (eq? (car obj) 'input-port)
+                   (eq? (car obj) 'output-port)))
+          #f)
+         ((port? obj) #f)
          ((hash-table? obj)
           (let loop ((keys (hash-keys obj)))
             (if (null? keys) #t
@@ -1157,6 +1171,13 @@ Returns #f if it contains non-serializable objects (ports, CL streams, etc.)."
          ;; Unknown compound type (port, CL stream, etc.) — not serializable
          (else #f)))))
     (check frame))
+
+  (define (assert-continuation-winds-serializable! winds)
+    (let loop ((frames winds) (index 0))
+      (when (pair? frames)
+        (if (wind-frame-serializable? (car frames))
+            (loop (cdr frames) (+ index 1))
+            (raise-ece-serialization-unserializable-wind-error index)))))
 
   (define (scan obj)
     (cond
@@ -1184,13 +1205,15 @@ Returns #f if it contains non-serializable objects (ports, CL streams, etc.)."
               (scan-vec 0))
              ;; Compiled procedure — scan env
              ((compiled-procedure? obj) (scan (compiled-procedure-env obj)))
-             ;; Continuation — scan stack, conts, and winds (filter non-serializable wind frames)
+             ;; Continuation — scan stack, conts, and winds. Wind frames must
+             ;; serialize losslessly; otherwise restoring the continuation
+             ;; would skip before/after thunks and change dynamic-wind behavior.
              ((continuation? obj)
+              (assert-continuation-winds-serializable! (continuation-winds obj))
               (scan (continuation-stack obj))
               (scan (continuation-conts obj))
               (for-each (lambda (frame)
-                          (when (wind-frame-serializable? frame)
-                            (scan frame)))
+                          (scan frame))
                         (continuation-winds obj)))
              ;; Primitive — no sub-structure to scan
              ((primitive? obj) '())
@@ -1290,15 +1313,13 @@ Returns #f if it contains non-serializable objects (ports, CL streams, etc.)."
       (define stack (continuation-stack obj))
       (define cont (continuation-conts obj))
       (define winds (continuation-winds obj))
+      (assert-continuation-winds-serializable! winds)
       (emit "(%ser/continuation") (ser stack) (emit " ") (ser-entry cont) (emit " ")
-      ;; Filter wind frames: strip non-serializable ones (e.g. parameterize with ports)
       (emit "(")
       (let loop ((frames winds) (first #t))
         (when (pair? frames)
           (when (not first) (emit " "))
-          (if (wind-frame-serializable? (car frames))
-              (ser (car frames))
-              (emit "(%ser/wind-stripped)"))
+          (ser (car frames))
           (loop (cdr frames) #f)))
       (emit ")")
       (emit ")"))
@@ -1437,7 +1458,9 @@ Reconstructs tagged types and resolves #:def/#:ref references."
        ;; Hash frame sentinel
        ((string=? tag "%ser/hash-frame")
         (%global-env-frame))  ;; best approximation
-       ;; Wind frame stripped sentinel — skipped during continuation restoration
+       ;; Legacy wind-frame stripped sentinel — old save files may contain
+       ;; these. New serialization rejects unserializable wind frames instead
+       ;; of writing this lossy placeholder.
        ((string=? tag "%ser/wind-stripped")
         '%wind-stripped)
        ;; Opaque non-serializable object — replaced with #f
@@ -1479,7 +1502,7 @@ Reconstructs tagged types and resolves #:def/#:ref references."
         (define stack (deser (cadr form)))
         (define cont (deser/entry-form (caddr form) deser))
         (define raw-winds (if (null? (cdddr form)) '() (deser (car (cdddr form)))))
-        ;; Filter out stripped wind frame sentinels
+        ;; Filter out legacy stripped wind frame sentinels
         (define winds
           (let loop ((ws raw-winds) (acc '()))
             (if (null? ws)
