@@ -483,15 +483,31 @@ extension (matches CL archive-file-stem-symbol)."
            (else (loop (- i 1))))))
       #f))
 
+(define (archive/unit-id archive)
+  "Return ARCHIVE's semantic unit identity. Current version-2 file
+archives synthesize this from :file; future module archives can provide
+:unit-id explicitly without changing code-object registry mechanics.
+String unit ids are treated as legacy file stems and normalized to symbols."
+  (let ((unit-id (archive/plist-get (cdr archive) ':unit-id)))
+    (cond
+     ((string? unit-id) (string->symbol unit-id))
+     (unit-id unit-id)
+     (else
+      (archive/file-stem-from-field
+       (archive/plist-get (cdr archive) ':file))))))
+
+(define (archive/code-object-key unit-id index)
+  "Return the registry key for code-object INDEX in UNIT-ID."
+  (cons unit-id index))
+
 (define (archive-sexp->code-objects archive)
   "Parse an archive s-expression (as read from disk). Returns the vector
 of code-objects. Entry 0 is the init code-object. Raises on version
-mismatch. Stamps archive-key = (cons stem index) on each code-object so
+mismatch. Stamps archive-key = (unit-id . index) on each code-object so
 the serializer can emit by-reference forms."
   (let* ((version (archive/plist-get (cdr archive) ':version))
          (entries (archive/plist-get (cdr archive) ':entries))
-         (file-field (archive/plist-get (cdr archive) ':file))
-         (file-stem (archive/file-stem-from-field file-field)))
+         (unit-id (archive/unit-id archive)))
     (when (not (equal? version 2))
       (error (string-append
               "Unsupported .ecec archive version: "
@@ -515,8 +531,9 @@ the serializer can emit by-reference forms."
             (for-each (lambda (pair)
                         (%code-object-set-label! co (car pair) (cdr pair)))
                       (archive/plist-get fields ':labels))
-            (when file-stem
-              (%code-object-set-archive-key! co (cons file-stem i)))
+            (when unit-id
+              (%code-object-set-archive-key!
+               co (archive/code-object-key unit-id i)))
             (vector-set! cos i co))
           (loop (+ i 1))))
       ;; Pass 2: push instructions (with (co-ref N) patched to code-objects).

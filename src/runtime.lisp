@@ -1545,32 +1545,32 @@ bootstrap/*-zone.lisp files at load time. Spaces without a registered
 entry fall through to the interpreted dispatch loop unchanged.")
 
 (defvar *archive-zone-fns* (make-hash-table :test #'equal)
-  "Registry mapping (file-stem . co-key) keys to compiled-zone CL
-functions for per-code-object zones. FILE-STEM is an ECE-package symbol
-derived from the archive's |file| field minus its extension. CO-KEY is
-either the code-object's name symbol or its zero-based index within the
-archive. Populated by per-code-object zone .lisp files at load time;
-archive loaders consult this to attach code-object-native-fn.
+  "Registry mapping (unit-id . co-key) keys to compiled-zone CL
+functions for per-code-object zones. Current file archives synthesize
+UNIT-ID from the archive's |file| field minus its extension; future module
+archives can provide explicit unit identity. CO-KEY is the zero-based index
+within the archive. Populated by per-code-object zone .lisp files at load
+time; archive loaders consult this to attach code-object-native-fn.
 
 Distinct from *compiled-zone-functions* (symbol-keyed on space-id, still
 used by the legacy space path during Phase C coexistence).")
 
 (defvar *archive-code-objects* (make-hash-table :test #'equal)
-  "Registry mapping (file-stem . co-key) keys to the live code-object
+  "Registry mapping (unit-id . co-key) keys to the live code-object
 struct materialized by the archive loader. Same keying convention as
 *archive-zone-fns*. Used by emitted zone code at execution time to
 resolve (const <code-object>) operands for inner-lambda references —
-the zone-file is emitted for one specific archive, so the file-stem is
+the zone-file is emitted for one specific archive, so the unit id is
 a constant in the emitted form and the co-key identifies the target.")
 
-(defun archive-co-lookup (file-stem co-key)
-  "Resolve a (file-stem . co-key) pair to the live code-object struct in
+(defun archive-co-lookup (unit-id co-key)
+  "Resolve a (unit-id . co-key) pair to the live code-object struct in
 *archive-code-objects*. Called from emitted zone code to dereference
 nested-lambda constants at zone-execution time. Signals ECE-runtime-error
 if the key is unregistered — that indicates either a stale zone file
 (archive re-generated but zone not regenerated) or a mis-threaded
 co-key at codegen time."
-  (or (gethash (cons file-stem co-key) *archive-code-objects*)
+  (or (gethash (cons unit-id co-key) *archive-code-objects*)
       (error 'ece-runtime-error
              :procedure nil
              :arguments nil
@@ -1580,7 +1580,7 @@ co-key at codegen time."
              :original-error
              (make-condition 'simple-error
                              :format-control "archive-co-lookup: no code-object registered for (~A . ~A). Zone file may be stale; run `make bootstrap`."
-                             :format-arguments (list file-stem co-key)))))
+                             :format-arguments (list unit-id co-key)))))
 
 
 (defun resolve-operations (instr)
@@ -1892,8 +1892,8 @@ return an empty list."
                   nil))))
 (unless (and (find-symbol "ECE-%ARCHIVE-CO-LOOKUP" :ece)
              (fboundp (find-symbol "ECE-%ARCHIVE-CO-LOOKUP" :ece)))
-  (eval `(defun ,(intern "ECE-%ARCHIVE-CO-LOOKUP" :ece) (stem index)
-           (or (gethash (cons stem index) *archive-code-objects*)
+  (eval `(defun ,(intern "ECE-%ARCHIVE-CO-LOOKUP" :ece) (unit-id index)
+           (or (gethash (cons unit-id index) *archive-code-objects*)
                *scheme-false*))))
 
 ;;; Now that all primitives and wrapper functions are defined, initialize
@@ -2049,9 +2049,10 @@ the tree.
 
 Registration key convention (shared with codegen-cl-inline.scm
 emit-zone-registration-for-co):
-  key = (cons FILE-STEM CO-KEY)
-  FILE-STEM = (intern \"stem\" :ece) from archive's |file| minus extension
-  CO-KEY    = (code-object-name co) when set, else the zero-based index
+  key = (cons UNIT-ID CO-KEY)
+  UNIT-ID = explicit archive unit identity, synthesized from |file| for
+            current file archives
+  CO-KEY  = the zero-based index
 
 After the init runs, nested code-objects remain reachable via the
 closures the init builds — *archive-code-objects* is only consulted by
@@ -2067,10 +2068,10 @@ order is corrected, every reachable code-object gets a zone fn here."
   (let* ((archive (downcase-ece-symbols
                    (canonicalize-ecec-constants raw-archive)))
          (cos (parse-archive-sexp archive))
-         (file-stem (archive-file-stem-symbol archive)))
-    (when file-stem
-      (register-archive-code-objects cos file-stem)
-      (attach-archive-native-fns cos file-stem))
+         (unit-id (archive-unit-id archive)))
+    (when unit-id
+      (register-archive-code-objects cos unit-id)
+      (attach-archive-native-fns cos unit-id))
     (let ((init (aref cos 0)))
       (execute-instructions init 0 *global-env*))))
 
@@ -2083,6 +2084,19 @@ gracefully — callers skip registration rather than erroring)."
     (when (stringp file-str)
       (let ((dot (position #\. file-str :from-end t)))
         (intern (if dot (subseq file-str 0 dot) file-str) :ece)))))
+
+(defun archive-unit-id (archive)
+  "Return ARCHIVE's semantic unit identity.
+
+Current version-2 file archives do not carry explicit unit metadata, so this
+falls back to the historic file-stem symbol. Future module archives can provide
+:unit-id directly without changing code-object registry mechanics. String unit
+ids are treated as legacy file stems and normalized to ECE symbols."
+  (let ((unit-id (archive-plist-get (cdr archive) (intern ":unit-id" :ece))))
+    (cond
+      ((stringp unit-id) (intern unit-id :ece))
+      (unit-id unit-id)
+      (t (archive-file-stem-symbol archive)))))
 
 (defun archive-co-key (co index)
   "Derive the registry key for CO at archive INDEX. Always uses the
@@ -2099,20 +2113,24 @@ the CO in hand and passing it matches the helper's positional shape."
   (declare (ignore co))
   index)
 
-(defun register-archive-code-objects (cos file-stem)
-  "Register each code-object in COS under (FILE-STEM . CO-KEY) in
+(defun archive-code-object-key (unit-id index)
+  "Return the registry key for code-object INDEX in UNIT-ID."
+  (cons unit-id index))
+
+(defun register-archive-code-objects (cos unit-id)
+  "Register each code-object in COS under (UNIT-ID . CO-KEY) in
 *archive-code-objects* so emitted zone code can dereference nested-
 lambda (const <co>) operands at execution time."
   (dotimes (i (length cos))
     (let* ((co (aref cos i))
            (co-key (archive-co-key co i))
-           (key (cons file-stem co-key)))
+           (key (archive-code-object-key unit-id co-key)))
       (setf (gethash key *archive-code-objects*) co)
       ;; Stamp the archive-key on the code-object for O(1) serialization
       ;; dispatch (ser/code-object reads this to decide by-ref vs inline).
       (setf (code-object-archive-key co) key))))
 
-(defun attach-archive-native-fns (cos file-stem)
+(defun attach-archive-native-fns (cos unit-id)
   "For each code-object in COS, look up its zone fn in *archive-zone-fns*
 and, when found, set the native-fn slot so the executor's compiled-zone
 fast-path dispatches to it on entry.
@@ -2125,7 +2143,8 @@ stale/regen-pending zone file."
   (dotimes (i (length cos))
     (let* ((co (aref cos i))
            (co-key (archive-co-key co i))
-           (zone-fn (gethash (cons file-stem co-key) *archive-zone-fns*)))
+           (zone-fn (gethash (archive-code-object-key unit-id co-key)
+                             *archive-zone-fns*)))
       (when zone-fn
         (setf (code-object-native-fn co) zone-fn)))))
 
@@ -2164,7 +2183,7 @@ Uses the CL reader (not the ECE reader) so this works at boot before the ECE rea
 ;;;   - *compiled-zone-functions* (legacy space path) — keyed on space-id
 ;;;     symbol. Consulted by execute-instructions on space entry.
 ;;;   - *archive-zone-fns* (§9.2 archive path) — keyed on
-;;;     (file-stem . co-key). Consulted by load-ecec-archive-section as it
+;;;     (unit-id . co-key). Consulted by load-ecec-archive-section as it
 ;;;     materializes each code-object, to attach native-fn in place.
 ;;;
 ;;; Load order: zones FIRST, then boot-from-compiled. This ordering lets
@@ -2293,5 +2312,3 @@ Downcases ECE-package symbols for CL→ECE boundary compatibility."
                       (list 'quote header-info)
                       (list 'quote units)
                       output-path)))))
-
-

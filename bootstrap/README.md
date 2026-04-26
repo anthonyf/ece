@@ -16,11 +16,13 @@ Each `.ecec` section is a single top-level s-expression:
 (ecec-archive
   version     2
   file        "prelude.scm"
+  unit-id     <optional-explicit-unit-id>
   entries     (<entry-0> <entry-1> ... <entry-N-1>))
 ```
 
 - `version` is the integer `2`. A mismatch (including missing version) yields the error `"Unsupported .ecec archive version: <v>. Run `make bootstrap` to regenerate."`.
-- `file` is the basename of the `.scm` source the archive was compiled from. The loader strips the extension and interns the stem as an ECE symbol, which it uses as the first element of `(file-stem . co-key)` zone-registry keys.
+- `file` is the basename of the `.scm` source the archive was compiled from. Current file archives synthesize their archive unit id by stripping this extension and interning the stem as an ECE symbol.
+- `unit-id` is optional. When present, it supplies the semantic unit identity used as the first element of `(unit-id . co-key)` zone-registry keys. String unit ids are treated as legacy file stems and normalized to ECE symbols; structured ids are preserved as data.
 - `entries` is a list of code-object entries. Entry 0 is the archive's **init code-object**, produced by wrapping all top-level forms of the source in `(begin ...)` and calling `mc-compile-to-code-object` on the result. Entries 1..N-1 are nested lambdas reachable from the init, hoisted to the archive level in DFS reach-order.
 
 The archive uses plain symbols as field tags (`version`, `file`, `entries`, `name`, `arity`, `source-loc`, `labels`, `instructions`) rather than keywords because ECE keyword symbols (`:foo`) don't round-trip through a CL `read`/`write` pair — see `project_ecec_keyword_roundtrip_bug.md` in user project memory. Keeping the disk format in plain symbols decouples it from that bug.
@@ -73,7 +75,7 @@ Two parallel implementations; both speak the same on-disk format:
 
 - **CL side** (`src/runtime.lisp`):
   - `load-ecec-section stream &key skip` reads one section via the CL reader with a special readtable (keyword-preserving, case-sensitive) and dispatches to `load-ecec-archive-section` once it has confirmed the section starts with the `ecec-archive` symbol. A non-archive head signals `"load-ecec-section: expected (ecec-archive ...), got <head>. Run make bootstrap to regenerate."`.
-  - `load-ecec-archive-section raw-archive` materializes every code-object, registers them in `*archive-code-objects*` under `(file-stem . co-key)`, calls `attach-archive-native-fns` to populate `code-object-native-fn` for entries with a registered zone fn, and finally executes the init code-object.
+  - `load-ecec-archive-section raw-archive` materializes every code-object, registers them in `*archive-code-objects*` under `(unit-id . co-key)`, calls `attach-archive-native-fns` to populate `code-object-native-fn` for entries with a registered zone fn, and finally executes the init code-object.
   - `load-ecec-file pathname &key skip` loops `load-ecec-section` until EOF.
 - **ECE side** (`src/compilation-unit.scm`, running on the VM post-boot):
   - `load-section-from-port port` — single-section reader for REPL use.
@@ -87,8 +89,8 @@ Each code-object can optionally ship with a native-compiled "zone" — a CL `def
 The pipeline:
 
 1. `generate-all-zones-from-archive! archive-path output-dir` reads `bootstrap.ecec` section by section. For each section it calls `generate-zones-for-archive-section!`, which calls `archive-sexp->code-objects` to rebuild the code-object vector and then emits one zone file per entry.
-2. Each zone file ends with a self-registration call of the form `(cl:setf (cl:gethash (cl:cons '<file-stem> <co-key>) *archive-zone-fns*) #'<zone-defun-name>)`. `<co-key>` is either the code-object's `name` symbol (when present) or its zero-based archive index.
-3. At boot the CL runtime loads zone files **before** `bootstrap.ecec`, so `*archive-zone-fns*` is fully populated by the time the archive loader runs. `attach-archive-native-fns cos file-stem` then looks up `(file-stem . co-key)` for every code-object and, when a zone fn is registered, sets `code-object-native-fn` to that fn.
+2. Each zone file ends with a self-registration call of the form `(cl:setf (cl:gethash (cl:cons '<unit-id> <co-key>) *archive-zone-fns*) #'<zone-defun-name>)`. `<co-key>` is the code-object's zero-based archive index.
+3. At boot the CL runtime loads zone files **before** `bootstrap.ecec`, so `*archive-zone-fns*` is fully populated by the time the archive loader runs. `attach-archive-native-fns cos unit-id` then looks up `(unit-id . co-key)` for every code-object and, when a zone fn is registered, sets `code-object-native-fn` to that fn.
 4. The executor's compiled-zone fast-path reads `code-object-native-fn` directly on code-object entry. Missing native-fn (value `NIL`) falls through to the interpreter transparently.
 
 ## Regeneration

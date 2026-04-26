@@ -965,14 +965,14 @@
 ;; ─────────────────────────────────────────────────────────────────────────
 ;; Code-object serialization helpers (shared by ser-entry + ser-compound).
 ;; Two forms:
-;;   (%ser/co-ref  <archive-stem> <index> [fingerprint])
+;;   (%ser/co-ref  <archive-unit-id> <index> [fingerprint])
 ;;                                               — when the CO has an
 ;;                                                 archive-key populated
 ;;                                                 (registered at load
 ;;                                                 time; by-reference).
 ;;                                                 The optional fingerprint
 ;;                                                 lets deserialization reject
-;;                                                 same-stem/index archives
+;;                                                 same-unit/index archives
 ;;                                                 whose code changed.
 ;;   (%ser/co-inline :name ... :instructions ..) — anonymous / REPL-
 ;;                                                 compiled CO; travels
@@ -1054,7 +1054,7 @@ expose enough code-object structure to verify it."
 
 (define (ser/code-object->sexp co)
   "Dispatch a code-object to its reader-safe sexp form. Returns either
-(%ser/co-ref stem index fingerprint) when CO has an archive-key (O(1)
+(%ser/co-ref unit-id index fingerprint) when CO has an archive-key (O(1)
 lookup via the struct slot), or (%ser/co-inline ...) with name/arity/
 source-loc/labels/instructions copied from the struct otherwise. If the
 runtime cannot expose the source instructions needed for fingerprinting,
@@ -1111,7 +1111,7 @@ unchanged."
                (deser/walk-instruction (cdr instr))))))
 
 (define (deser/co-ref-fingerprint form)
-  "Return optional fingerprint from a (%ser/co-ref stem index [fp]) form."
+  "Return optional fingerprint from a (%ser/co-ref unit-id index [fp]) form."
   (if (and (pair? form)
            (pair? (cdr form))
            (pair? (cddr form))
@@ -1119,13 +1119,13 @@ unchanged."
       (car (cdddr form))
       #f))
 
-(define (deser/lookup-archive-co stem index . maybe-fingerprint)
-  "Resolve (stem . index) to the archive-registered code-object. Raises
+(define (deser/lookup-archive-co unit-id index . maybe-fingerprint)
+  "Resolve (unit-id . index) to the archive-registered code-object. Raises
 ece-deser-missing-archive-error when the key is absent (caller may catch
 and re-prompt the user to load the archive). When a saved fingerprint is
 present, raises ece-deser-archive-mismatch-error if the loaded archive
 entry no longer matches the saved code."
-  (let ((co (%archive-co-lookup stem index)))
+  (let ((co (%archive-co-lookup unit-id index)))
     (if co
         (let ((expected (if (null? maybe-fingerprint)
                             #f
@@ -1134,9 +1134,9 @@ entry no longer matches the saved code."
             (let ((actual (ser/code-object-fingerprint co)))
               (when (not (equal? expected actual))
                 (raise-ece-deser-archive-mismatch-error
-                 stem index expected actual))))
+                 unit-id index expected actual))))
           co)
-        (raise-ece-deser-missing-archive-error stem index))))
+        (raise-ece-deser-missing-archive-error unit-id index))))
 
 (define (deser/reconstruct-co-inline fields walk)
   "Reconstruct a code-object from the plist FIELDS of a (%ser/co-inline
@@ -1184,14 +1184,16 @@ DESER is the outer deserializer closure for deep reference resolution."
 ;; Record type for by-reference deser failure. Callers (e.g., IF-lib
 ;; `restore-game`) can `guard` on `ece-deser-missing-archive-error?` and
 ;; prompt the user to load the corresponding `.ecec` before retrying.
-;; The record's two fields preserve the archive stem + index so the UX
-;; layer can name the missing archive precisely.
+;; The record's two fields preserve the archive unit id + index so the UX
+;; layer can name the missing archive precisely. The first accessor keeps
+;; its historic `stem` name for compatibility.
 (define-record ece-deser-missing-archive-error stem index)
 
 (define (raise-ece-deser-missing-archive-error stem idx)
   "Raise a typed `ece-deser-missing-archive-error` record so callers can
-`guard` on `ece-deser-missing-archive-error?` and retrieve the stem + index
-fields via the accessors. The record has no built-in English-message
+`guard` on `ece-deser-missing-archive-error?` and retrieve the archive unit
+id + index fields via the accessors. The first accessor keeps its historic
+`stem` name for compatibility. The record has no built-in English-message
 printer; UX layers that want a human-readable string should format it
 from the field values (e.g., via `format`)."
   (raise (make-ece-deser-missing-archive-error stem idx)))
@@ -1458,7 +1460,7 @@ Entry shapes:
     plain co-ref/co-inline form (no PC wrapper).
   - bare integer — emit directly (rare, from older code paths).
 
-The CO is walked lazily: the by-reference form carries archive stem,
+The CO is walked lazily: the by-reference form carries archive unit id,
 index, and when available a compact fingerprint, so most archive-registered
 COs stay small. Inline COs embed their full instruction vector — serializer
 recurses through `ser` so nested code-objects (and their operands, including
@@ -1565,9 +1567,9 @@ Reconstructs tagged types and resolves #:def/#:ref references."
         #f)
        ;; By-reference code-object: look up the archive-registered CO.
        ((string=? tag "%ser/co-ref")
-        (let* ((stem (cadr form))
-               (idx  (caddr form)))
-          (deser/lookup-archive-co stem idx
+        (let* ((unit-id (cadr form))
+               (idx     (caddr form)))
+          (deser/lookup-archive-co unit-id idx
                                    (deser/co-ref-fingerprint form))))
        ;; Inline code-object: reconstruct the struct from plist fields.
        ((string=? tag "%ser/co-inline")
