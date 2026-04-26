@@ -168,11 +168,11 @@ Exceptions are implemented in ECE with `raise`, `with-exception-handler`, `guard
 
 ## Value Serialization and Save/Load
 
-The prelude implements `serialize-value` and `deserialize-value` for Scheme values, shared structure, cyclic pairs, vectors, hash tables, parameters, primitives, compiled procedures, continuations, environment frames, and code objects. Archive-registered code objects serialize by reference as `(%ser/co-ref stem index)`. Anonymous or REPL-created code objects can serialize inline.
+The prelude implements `serialize-value` and `deserialize-value` for Scheme values, shared structure, cyclic pairs, vectors, hash tables, parameters, primitives, compiled procedures, continuations, environment frames, and code objects. Archive-registered code objects serialize by reference as `(%ser/co-ref stem index fingerprint)` when the runtime can compute a fingerprint. Anonymous or REPL-created code objects can serialize inline.
 
 Continuations serialize their saved stack, continuation entry, and complete `dynamic-wind` stack. Wind frames must serialize losslessly so restored continuations can replay their `before` and `after` thunks through `do-winds!`. If a wind frame closes over host-only state such as a port or stream, serialization raises `ece-serialization-unserializable-wind-error` instead of silently stripping the frame. `save`, `load-saved`, and `save-continuation!` provide file-based save/restore helpers.
 
-This serialization layer depends on archive code-object registry state when deserializing by-reference code objects. Loading a saved continuation that refers to archive code objects requires the corresponding archive to be loaded first.
+This serialization layer depends on archive code-object registry state when deserializing by-reference code objects. Loading a saved continuation that refers to archive code objects requires the corresponding archive to be loaded first, and fingerprinted saves require the loaded archive entry to match the code that was present at save time. The full policy is documented in [`save-restore-compatibility.md`](save-restore-compatibility.md).
 
 ## Primitive and Operation Dispatch
 

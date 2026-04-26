@@ -965,10 +965,15 @@
 ;; ─────────────────────────────────────────────────────────────────────────
 ;; Code-object serialization helpers (shared by ser-entry + ser-compound).
 ;; Two forms:
-;;   (%ser/co-ref  <archive-stem> <index>)      — when the CO has an
+;;   (%ser/co-ref  <archive-stem> <index> [fingerprint])
+;;                                               — when the CO has an
 ;;                                                 archive-key populated
 ;;                                                 (registered at load
 ;;                                                 time; by-reference).
+;;                                                 The optional fingerprint
+;;                                                 lets deserialization reject
+;;                                                 same-stem/index archives
+;;                                                 whose code changed.
 ;;   (%ser/co-inline :name ... :instructions ..) — anonymous / REPL-
 ;;                                                 compiled CO; travels
 ;;                                                 inline with a copy of
@@ -990,14 +995,75 @@ non-code-object atoms and sub-structure unchanged."
    (else (cons (ser/walk-instruction (car instr))
                (ser/walk-instruction (cdr instr))))))
 
+(define (ser/stable-string-hash str)
+  "Return a deterministic integer hash for STR. This is a compatibility
+fingerprint, not a cryptographic digest."
+  (let loop ((i 0) (h 2166136261))
+    (if (>= i (string-length str))
+        h
+        (loop (+ i 1)
+              (modulo (+ (* h 16777619)
+                         (char->integer (string-ref str i)))
+                      4294967291)))))
+
+(define (ser/label-entry<? a b)
+  (let ((an (symbol->string (car a)))
+        (bn (symbol->string (car b))))
+    (if (string=? an bn)
+        (< (cdr a) (cdr b))
+        (string<? an bn))))
+
+(define (ser/insert-label-entry entry sorted)
+  (cond
+   ((null? sorted) (list entry))
+   ((ser/label-entry<? entry (car sorted)) (cons entry sorted))
+   (else (cons (car sorted)
+               (ser/insert-label-entry entry (cdr sorted))))))
+
+(define (ser/sort-label-entries entries)
+  (let loop ((remaining entries) (sorted '()))
+    (if (null? remaining)
+        sorted
+        (loop (cdr remaining)
+              (ser/insert-label-entry (car remaining) sorted)))))
+
+(define (ser/code-object-fingerprint co)
+  "Return a deterministic fingerprint for CO, or #f when the runtime cannot
+expose enough code-object structure to verify it."
+  (let ((instrs (code-object-instructions co)))
+    (if (not (vector? instrs))
+        #f
+        (let ((len (code-object-length co)))
+          (ser/stable-string-hash
+           (write-to-string-flat
+            (list ':ece-code-object-fingerprint-v1
+                  ':name (code-object-name co)
+                  ':arity (code-object-arity co)
+                  ':source-loc (code-object-source-loc co)
+                  ':labels (ser/sort-label-entries
+                            (code-object-label-entries co))
+                  ':instructions
+                  (let loop ((i 0) (acc '()))
+                    (if (>= i len)
+                        (reverse acc)
+                        (loop (+ i 1)
+                              (cons (ser/walk-instruction
+                                     (vector-ref instrs i))
+                                    acc)))))))))))
+
 (define (ser/code-object->sexp co)
   "Dispatch a code-object to its reader-safe sexp form. Returns either
-(%ser/co-ref stem index) when CO has an archive-key (O(1) lookup via
-the struct slot), or (%ser/co-inline ...) with name/arity/source-loc/
-labels/instructions copied from the struct otherwise."
+(%ser/co-ref stem index fingerprint) when CO has an archive-key (O(1)
+lookup via the struct slot), or (%ser/co-inline ...) with name/arity/
+source-loc/labels/instructions copied from the struct otherwise. If the
+runtime cannot expose the source instructions needed for fingerprinting,
+the legacy three-field co-ref form is emitted."
   (let ((key (code-object-archive-key co)))
     (if key
-        (list '%ser/co-ref (car key) (cdr key))
+        (let ((fingerprint (ser/code-object-fingerprint co)))
+          (if fingerprint
+              (list '%ser/co-ref (car key) (cdr key) fingerprint)
+              (list '%ser/co-ref (car key) (cdr key))))
         (list '%ser/co-inline
               ':name (code-object-name co)
               ':arity (code-object-arity co)
@@ -1035,20 +1101,40 @@ unchanged."
    ((not (pair? instr)) instr)
    ((and (symbol? (car instr))
          (string=? (symbol->string (car instr)) "%ser/co-ref"))
-    (deser/lookup-archive-co (cadr instr) (caddr instr)))
+    (deser/lookup-archive-co (cadr instr) (caddr instr)
+                             (deser/co-ref-fingerprint instr)))
    ((and (symbol? (car instr))
          (string=? (symbol->string (car instr)) "%ser/co-inline"))
     (deser/reconstruct-co-inline (cdr instr) deser/walk-instruction))
    (else (cons (deser/walk-instruction (car instr))
                (deser/walk-instruction (cdr instr))))))
 
-(define (deser/lookup-archive-co stem index)
+(define (deser/co-ref-fingerprint form)
+  "Return optional fingerprint from a (%ser/co-ref stem index [fp]) form."
+  (if (and (pair? form)
+           (pair? (cdr form))
+           (pair? (cddr form))
+           (pair? (cdddr form)))
+      (car (cdddr form))
+      #f))
+
+(define (deser/lookup-archive-co stem index . maybe-fingerprint)
   "Resolve (stem . index) to the archive-registered code-object. Raises
 ece-deser-missing-archive-error when the key is absent (caller may catch
-and re-prompt the user to load the archive)."
+and re-prompt the user to load the archive). When a saved fingerprint is
+present, raises ece-deser-archive-mismatch-error if the loaded archive
+entry no longer matches the saved code."
   (let ((co (%archive-co-lookup stem index)))
     (if co
-        co
+        (let ((expected (if (null? maybe-fingerprint)
+                            #f
+                            (car maybe-fingerprint))))
+          (when expected
+            (let ((actual (ser/code-object-fingerprint co)))
+              (when (not (equal? expected actual))
+                (raise-ece-deser-archive-mismatch-error
+                 stem index expected actual))))
+          co)
         (raise-ece-deser-missing-archive-error stem index))))
 
 (define (deser/reconstruct-co-inline fields walk)
@@ -1108,6 +1194,16 @@ fields via the accessors. The record has no built-in English-message
 printer; UX layers that want a human-readable string should format it
 from the field values (e.g., via `format`)."
   (raise (make-ece-deser-missing-archive-error stem idx)))
+
+;; Raised when a save file references an archive entry that exists, but the
+;; loaded code-object no longer matches the fingerprint stored in the save.
+;; This avoids silently resuming a continuation at a stale program counter in
+;; semantically different code.
+(define-record ece-deser-archive-mismatch-error stem index expected actual)
+
+(define (raise-ece-deser-archive-mismatch-error stem idx expected actual)
+  (raise (make-ece-deser-archive-mismatch-error
+          stem idx expected actual)))
 
 ;; Raised when a continuation cannot be serialized losslessly because one of
 ;; its dynamic-wind frames closes over host state such as ports or streams.
@@ -1361,11 +1457,11 @@ Entry shapes:
     plain co-ref/co-inline form (no PC wrapper).
   - bare integer — emit directly (rare, from older code paths).
 
-The CO is walked lazily: the by-reference form only carries
-(archive-stem . index), so most archive-registered COs fit in a handful
-of bytes. Inline COs embed their full instruction vector — serializer
-recurses through `ser` so nested code-objects (and their operands,
-including any non-cyclic shared pairs) honor the same dispatch."
+The CO is walked lazily: the by-reference form carries archive stem,
+index, and when available a compact fingerprint, so most archive-registered
+COs stay small. Inline COs embed their full instruction vector — serializer
+recurses through `ser` so nested code-objects (and their operands, including
+any non-cyclic shared pairs) honor the same dispatch."
     (cond
      ((code-object? entry)
       (ser (ser/code-object->sexp entry)))
@@ -1470,7 +1566,8 @@ Reconstructs tagged types and resolves #:def/#:ref references."
        ((string=? tag "%ser/co-ref")
         (let* ((stem (cadr form))
                (idx  (caddr form)))
-          (deser/lookup-archive-co stem idx)))
+          (deser/lookup-archive-co stem idx
+                                   (deser/co-ref-fingerprint form))))
        ;; Inline code-object: reconstruct the struct from plist fields.
        ((string=? tag "%ser/co-inline")
         (deser/reconstruct-co-inline (cdr form) deser))

@@ -76,6 +76,6 @@ Compared with CHICKEN, ECE chooses explicit register-machine interpretation over
 4. Audit `syntax-rules` hygiene against R7RS examples that exercise free identifiers outside operator position, nested syntax-rules, and local macro scopes.
 5. Add a parity matrix for CL and WASM primitives, especially code-object introspection, filesystem/process behavior, and error bridging.
 6. Add a native-zone stale-artifact test that intentionally mismatches archive/zone keys and verifies the failure mode is loud.
-7. Specify a broader save/restore compatibility policy: archive stem/index requirements, code-version changes, and whether host resources such as ports should ever be restored by value or by external reference.
+7. Specify a broader save/restore compatibility policy: archive stem/index requirements, code-version changes, and whether host resources such as ports should ever be restored by value or by external reference. Addressed in [`save-restore-compatibility.md`](save-restore-compatibility.md); future work may still add application-level resource managers.
 8. Restore or redesign archive-era source maps so code-object errors can report file/line/column consistently on CL and WASM.
 9. Measure bootstrap archive parse time on CL and WASM before deciding whether a binary archive format is warranted.
