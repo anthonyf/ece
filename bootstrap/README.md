@@ -15,17 +15,27 @@ Each `.ecec` section is a single top-level s-expression:
 ```scheme
 (:ecec-archive
   :version  2
+  :kind     <optional-:file-or-:module>
   :file     "prelude.scm"
   :unit-id  <optional-explicit-unit-id>
+  :phase    <optional-phase-integer>
+  :imports  <optional-import-list>
+  :exports  <optional-export-list-or-:all>
+  :init     <optional-init-entry-index>
   :entries  (<entry-0> <entry-1> ... <entry-N-1>))
 ```
 
 - `version` is the integer `2`. A mismatch (including missing version) yields the error `"Unsupported .ecec archive version: <v>. Run `make bootstrap` to regenerate."`.
+- `kind` is optional and defaults to `:file`. Future module archive sections use `:module`.
 - `file` is the basename of the `.scm` source the archive was compiled from. Current file archives synthesize their archive unit-id by stripping this extension and interning the stem as an ECE symbol.
 - `unit-id` is optional. When present, it supplies the semantic unit identity used as the first element of `(unit-id . co-key)` zone-registry keys. String unit ids are treated as legacy file stems and normalized to ECE symbols; structured ids are preserved as data.
-- `entries` is a list of code-object entries. Entry 0 is the archive's **init code-object**, produced by wrapping all top-level forms of the source in `(begin ...)` and calling `mc-compile-to-code-object` on the result. Entries 1..N-1 are nested lambdas reachable from the init, hoisted to the archive level in DFS reach-order.
+- `phase` is optional and defaults to `0`. It is metadata only until macro-phase module support exists.
+- `imports` is optional and defaults to `()`. Phase 2 parses and preserves it but does not resolve imports yet.
+- `exports` is optional and defaults to `:all` for current file archives. Future module archives use a declared export list.
+- `init` is optional and defaults to `0`, selecting the code-object entry to execute when the section is loaded.
+- `entries` is a list of code-object entries. For current file archives, entry 0 is the **init code-object**, produced by wrapping all top-level forms of the source in `(begin ...)` and calling `mc-compile-to-code-object` on the result. Entries 1..N-1 are nested lambdas reachable from the init, hoisted to the archive level in DFS reach-order.
 
-The current archive uses ECE keyword-style symbols as field tags (`:version`, `:file`, `:entries`, `:name`, `:arity`, `:source-loc`, `:labels`, `:instructions`). Loaders still accept the legacy plain-symbol spelling (`ecec-archive`, `version`, `file`, ...) as a transition compatibility path, but new archives should use the colon-prefixed form emitted by the writer.
+The current archive uses ECE keyword-style symbols as field tags (`:version`, `:kind`, `:file`, `:entries`, `:name`, `:arity`, `:source-loc`, `:labels`, `:instructions`). Loaders still accept the legacy plain-symbol spelling (`ecec-archive`, `version`, `file`, ...) as a transition compatibility path, but new archives should use the colon-prefixed form emitted by the writer.
 
 ## Entry shape
 
@@ -65,7 +75,7 @@ Both live in `src/compilation-unit.scm`:
 
 - `compile-file-to-archive filename output-port` — compile every form in `filename`, wrap them in `(begin ...)`, run `mc-compile-to-code-object`, walk the resulting code-object tree via `archive/collect-reachable`, and write one `(:ecec-archive ...)` s-expression to `output-port` via `write-to-string-flat`.
 - `compile-file-archive filename` — convenience wrapper that opens `<filename-minus-.scm>.ecec` and calls `compile-file-to-archive`.
-- `code-object->archive-sexp top-co filename` — pure function: produce the archive s-expression from an already-compiled code-object.
+- `code-object->archive-sexp top-co filename [metadata]` — pure function: produce the archive s-expression from an already-compiled code-object. `metadata` is an optional plist containing `:kind`, `:unit-id`, `:phase`, `:imports`, `:exports`, or `:init`; ordinary file archive callers omit it.
 
 `compile-system` (also in `compilation-unit.scm`) calls `compile-file-to-archive` per input file and concatenates the sections into `bootstrap.ecec`.
 
@@ -75,12 +85,12 @@ Two parallel implementations; both speak the same on-disk format:
 
 - **CL side** (`src/runtime.lisp`):
   - `load-ecec-section stream &key skip` reads one section via the CL reader with a special readtable (keyword-preserving, case-sensitive) and dispatches to `load-ecec-archive-section` once it has confirmed the section starts with the `:ecec-archive` symbol. A non-archive head signals `"load-ecec-section: expected (:ecec-archive ...), got <head>. Run make bootstrap to regenerate."`.
-  - `load-ecec-archive-section raw-archive` materializes every code-object, registers them in `*archive-code-objects*` under `(unit-id . co-key)`, calls `attach-archive-native-fns` to populate `code-object-native-fn` for entries with a registered zone fn, and finally executes the init code-object.
+  - `load-ecec-archive-section raw-archive` materializes every code-object, registers them in `*archive-code-objects*` under `(unit-id . co-key)`, calls `attach-archive-native-fns` to populate `code-object-native-fn` for entries with a registered zone fn, and finally executes the selected init code-object.
   - `load-ecec-file pathname &key skip` loops `load-ecec-section` until EOF.
 - **ECE side** (`src/compilation-unit.scm`, running on the VM post-boot):
   - `load-section-from-port port` — single-section reader for REPL use.
   - `archive-sexp->code-objects archive` — parse + materialize + patch co-refs. Raises on version mismatch.
-  - `load-archive-from-port port` / `load-archive filename` — full round-trip: read, materialize, execute init, return init result.
+  - `load-archive-from-port port` / `load-archive filename` — full round-trip: read, materialize, execute the selected init entry, return init result.
 
 ## Per-code-object zone files
 

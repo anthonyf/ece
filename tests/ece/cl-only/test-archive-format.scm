@@ -49,6 +49,89 @@
     (assert-equal 'scratch (car key))
     (assert-equal 0 (cdr key)))))
 
+(test "archive: unit metadata defaults to current file semantics" (lambda ()
+  (let* ((co (mc-compile-to-code-object 42))
+         (archive (code-object->archive-sexp co "scratch.scm"))
+         (unit (archive/unit-metadata archive)))
+    ;; Current file archive emission stays compact: optional module-ready
+    ;; fields are defaults in the parsed unit descriptor, not written into
+    ;; every file archive.
+    (assert-equal #f (archive/plist-has-key? (cdr archive) ':kind))
+    (assert-equal #f (archive/plist-has-key? (cdr archive) ':phase))
+    (assert-equal ':file (archive/plist-get unit ':kind))
+    (assert-equal 'scratch (archive/plist-get unit ':unit-id))
+    (assert-equal 0 (archive/plist-get unit ':phase))
+    (assert-equal '() (archive/plist-get unit ':imports))
+    (assert-equal ':all (archive/plist-get unit ':exports))
+    (assert-equal 0 (archive/plist-get unit ':init)))))
+
+(test "archive: explicit module metadata is emitted and parsed" (lambda ()
+  (let* ((co (mc-compile-to-code-object 42))
+         (unit-id '(module (game inventory) 0))
+         (metadata (list ':kind ':module
+                         ':unit-id unit-id
+                         ':phase 0
+                         ':imports '((ece base) (game item))
+                         ':exports '(make-inventory inventory-add inventory-has?)
+                         ':init 0))
+         (archive (code-object->archive-sexp co "inventory.scm" metadata))
+         (fields (cdr archive))
+         (unit (archive/unit-metadata archive))
+         (cos (archive-sexp->code-objects archive))
+         (key (code-object-archive-key (vector-ref cos 0))))
+    (assert-equal ':module (archive/plist-get fields ':kind))
+    (assert-equal unit-id (archive/plist-get fields ':unit-id))
+    (assert-equal '((ece base) (game item))
+                  (archive/plist-get fields ':imports))
+    (assert-equal '(make-inventory inventory-add inventory-has?)
+                  (archive/plist-get fields ':exports))
+    (assert-equal ':module (archive/plist-get unit ':kind))
+    (assert-equal unit-id (archive/plist-get unit ':unit-id))
+    (assert-equal 0 (archive/plist-get unit ':phase))
+    (assert-equal 0 (archive/plist-get unit ':init))
+    (assert-equal unit-id (car key))
+    (assert-equal 0 (cdr key)))))
+
+(test "archive: init metadata selects the code-object to execute" (lambda ()
+  (let* ((archive-one (code-object->archive-sexp (mc-compile-to-code-object 1)
+                                                 "multi.scm"))
+         (archive-two (code-object->archive-sexp (mc-compile-to-code-object 2)
+                                                 "multi.scm"))
+         (entry-one (car (archive/plist-get (cdr archive-one) ':entries)))
+         (entry-two (car (archive/plist-get (cdr archive-two) ':entries)))
+         (archive (list ':ecec-archive
+                        ':version 2
+                        ':file "multi.scm"
+                        ':init 1
+                        ':entries (list entry-one entry-two))))
+    (assert-equal 1 (archive/unit-init-index archive))
+    (assert-equal 2 (load-archive-section-form archive)))))
+
+(test "archive: invalid init metadata raises clear error" (lambda ()
+  (let* ((archive-one (code-object->archive-sexp (mc-compile-to-code-object 1)
+                                                 "bad-init.scm"))
+         (entry-one (car (archive/plist-get (cdr archive-one) ':entries))))
+    (define (message-for init)
+      (let ((archive (list ':ecec-archive
+                           ':version 2
+                           ':file "bad-init.scm"
+                           ':init init
+                           ':entries (list entry-one))))
+        (guard (e (#t (if (error-object? e)
+                          (error-object-message e)
+                          "non-error-object")))
+          (load-archive-section-form archive)
+          #f)))
+    (let ((out-of-range (message-for 1))
+          (non-integer (message-for 'not-an-index))
+          (false-init (message-for #f)))
+      (assert-true (string-contains? out-of-range
+                                     "Invalid .ecec archive init index"))
+      (assert-true (string-contains? non-integer
+                                     "Invalid .ecec archive init index"))
+      (assert-true (string-contains? false-init
+                                     "Invalid .ecec archive init index"))))))
+
 (test "archive: collect-reachable includes top then children (ordering)"
   (lambda ()
     (let* ((co (mc-compile-to-code-object '(lambda (x) (lambda (y) (+ x y)))))
