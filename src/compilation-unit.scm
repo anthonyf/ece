@@ -860,7 +860,7 @@ static value imports/exports and one module per source file."
          (lambda (import)
            (when (not (or (module/source-name? import)
                           (archive/module-unit-id? import)))
-             (error "define-module: imports must be module names")))
+             (error "define-module: imports must be module names or (module <name> <phase>) unit ids")))
          (cdr (car forms)))
         (loop (cdr forms)
               (module/append-reversed (cdr (car forms)) imports)

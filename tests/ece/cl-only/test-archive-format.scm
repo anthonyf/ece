@@ -147,12 +147,11 @@
     (lambda () (cleanup-module-test-units! unit-ids))))
 
 (define (write-archive-test-file filename text)
-  (let ((port (open-output-file filename)))
-    (let loop ((i 0))
-      (when (< i (string-length text))
-        (write-char (string-ref text i) port)
-        (loop (+ i 1))))
-    (close-output-port port)))
+  (let ((port #f))
+    (dynamic-wind
+     (lambda () (set! port (open-output-file filename)))
+     (lambda () (display text port))
+     (lambda () (when port (close-output-port port))))))
 
 (test "modules: define-module source emits module archive metadata" (lambda ()
   (let ((unit-id '(module (phase4 metadata) 0))
