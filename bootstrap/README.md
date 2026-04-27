@@ -39,7 +39,7 @@ The current archive uses ECE keyword-style symbols as field tags (`:version`, `:
 
 ## Module Units
 
-Archive sections with `:kind :module` are registered by `:unit-id` and run in a private module environment instead of mutating the global environment. Phase 3 supports metadata-only modules: no source-level module syntax is required yet.
+Archive sections with `:kind :module` are registered by `:unit-id` and run in a private module environment instead of mutating the global environment. Phase 3 introduced metadata-only modules; Phase 4 adds the source syntax described below.
 
 - `unit-id` should use `(module <module-name> <phase>)`, for example `(module (game inventory) 0)`.
 - `imports` names module unit ids. A short module name such as `(game item)` is normalized to `(module (game item) <current-phase>)`.
@@ -48,6 +48,31 @@ Archive sections with `:kind :module` are registered by `:unit-id` and run in a 
 - Missing imports, duplicate unit ids, declared-but-missing exports, invalid init indexes, and import cycles are errors.
 
 Current bundle loading is still order-sensitive: imported modules must appear earlier in the bundle, or be registered by direct runtime/test setup.
+
+## Source modules
+
+Phase 4 adds a minimal source syntax that compiles directly to `:kind :module`
+archive sections:
+
+```scheme
+(define-module (game inventory)
+  (import (game item))
+  (export make-inventory inventory-add)
+
+  (define (make-inventory)
+    '())
+
+  (define (inventory-add inv item)
+    (cons item inv)))
+```
+
+The initial compiler support is intentionally narrow:
+
+- A module source file must contain exactly one top-level `define-module` form.
+- `import` and `export` declarations must be static and must precede the module body.
+- Imports are value imports at phase `0`; `(import (game item))` emits `:imports ((game item))`, which the loader normalizes to `(module (game item) 0)`.
+- Exports are explicit value binding names. Only those names are captured from the module's private environment after init runs.
+- Macro imports, phase `1` units, graph sorting, and multi-file modules are future work.
 
 ## Entry shape
 

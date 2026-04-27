@@ -803,10 +803,92 @@ result of the init code-object."
       (close-input-port port)
       result)))
 
+(define (module/source-form? expr)
+  "Return #t when EXPR is a source-level define-module form."
+  (and (pair? expr) (eq? (car expr) 'define-module)))
+
+(define (module/symbol-list? value)
+  "Return #t when VALUE is a proper list of symbols."
+  (cond
+   ((null? value) #t)
+   ((and (pair? value) (symbol? (car value)))
+    (module/symbol-list? (cdr value)))
+   (else #f)))
+
+(define (module/source-name? value)
+  "Return #t when VALUE is a non-empty module name such as (game inventory)."
+  (and (pair? value) (module/symbol-list? value)))
+
+(define (module/import-form? expr)
+  "Return #t when EXPR is a module import declaration."
+  (and (pair? expr) (eq? (car expr) 'import)))
+
+(define (module/export-form? expr)
+  "Return #t when EXPR is a module export declaration."
+  (and (pair? expr) (eq? (car expr) 'export)))
+
+(define (module/append-reversed items acc)
+  "Prepend ITEMS to ACC while preserving ITEMS' order after ACC is reversed."
+  (let loop ((rest items) (result acc))
+    (if (null? rest)
+        result
+        (loop (cdr rest) (cons (car rest) result)))))
+
+(define (module/parse-define-module form)
+  "Parse a source-level define-module form into a plist:
+:name, :imports, :exports, and :body. Phase 4 deliberately accepts only
+static value imports/exports and one module per source file."
+  (when (or (not (pair? (cdr form)))
+            (not (module/source-name? (cadr form))))
+    (error "define-module: expected (define-module (<name> ...) ...)"))
+  (let ((name (cadr form)))
+    (let loop ((forms (cddr form))
+               (imports '())
+               (exports '())
+               (body '())
+               (body-started? #f))
+      (cond
+       ((null? forms)
+        (list ':name name
+              ':imports (reverse imports)
+              ':exports (reverse exports)
+              ':body (reverse body)))
+       ((module/import-form? (car forms))
+        (when body-started?
+          (error "define-module: import declarations must precede body forms"))
+        (for-each
+         (lambda (import)
+           (when (not (or (module/source-name? import)
+                          (archive/module-unit-id? import)))
+             (error "define-module: imports must be module names")))
+         (cdr (car forms)))
+        (loop (cdr forms)
+              (module/append-reversed (cdr (car forms)) imports)
+              exports
+              body
+              #f))
+       ((module/export-form? (car forms))
+        (when body-started?
+          (error "define-module: export declarations must precede body forms"))
+        (when (not (module/symbol-list? (cdr (car forms))))
+          (error "define-module: exports must be symbols"))
+        (loop (cdr forms)
+              imports
+              (module/append-reversed (cdr (car forms)) exports)
+              body
+              #f))
+       (else
+        (loop (cdr forms)
+              imports
+              exports
+              (cons (car forms) body)
+              #t))))))
+
 (define (compile-file-to-archive filename output-port)
   "Compile all forms in FILENAME via mc-compile-to-code-object and
 write the resulting code-object archive to OUTPUT-PORT. Mirrors
-compile-file-to-port but produces the §8 archive format."
+compile-file-to-port but produces the §8 archive format. A file containing
+one top-level define-module form emits a :module archive section."
   (let ((basename (filename-basename filename)))
     (set! *source-locations* (%make-hash-table))
     (set! *source-file-name* basename)
@@ -827,19 +909,54 @@ compile-file-to-port but produces the §8 archive format."
             (mc-expand-macro-at-compile-time
              (get-macro 'define-syntax) (cdr expr))
             expr))
+      (define (prepare-form expr)
+        (let ((expanded (maybe-expand-define-syntax expr)))
+          (when (and (pair? expanded) (eq? (car expanded) 'define-macro))
+            (mc-compile-and-go expanded))
+          (if (and (pair? expanded) (eq? (car expanded) 'define-macro))
+              (define-macro-to-set-macro expanded)
+              expanded)))
+      (define (prepare-forms forms)
+        (let loop ((rest forms) (acc '()))
+          (if (null? rest)
+              (reverse acc)
+              (loop (cdr rest)
+                    (cons (prepare-form (car rest)) acc)))))
       (define (read-loop forms)
-        (let ((expr (maybe-expand-define-syntax (ece-scheme-read in))))
+        (let ((expr (ece-scheme-read in)))
           (if (eof? expr)
               (begin (close-input-port in) (reverse forms))
-              (begin
-                (when (and (pair? expr) (eq? (car expr) 'define-macro))
-                  (mc-compile-and-go expr))
-                (read-loop
-                 (cons (if (and (pair? expr) (eq? (car expr) 'define-macro))
-                           (define-macro-to-set-macro expr)
-                           expr)
-                       forms))))))
-      (let* ((forms (read-loop '()))
+              (read-loop (cons expr forms)))))
+      (define (module-form forms)
+        (let loop ((rest forms) (found #f))
+          (cond
+           ((null? rest) found)
+           ((module/source-form? (car rest))
+            (when found
+              (error "define-module: only one module form is allowed per file"))
+            (loop (cdr rest) (car rest)))
+           (else (loop (cdr rest) found)))))
+      (let* ((raw-forms (read-loop '()))
+             (module (module-form raw-forms))
+             (module-data
+              (if module (module/parse-define-module module) #f))
+             (forms
+              (if module
+                  (begin
+                    (when (or (pair? (cdr raw-forms))
+                              (not (module/source-form? (car raw-forms))))
+                      (error "define-module: module files may contain only the module form"))
+                    (prepare-forms (archive/plist-get module-data ':body)))
+                  (prepare-forms raw-forms)))
+             (metadata
+              (if module
+                  (let ((name (archive/plist-get module-data ':name)))
+                    (list ':kind ':module
+                          ':unit-id (list 'module name 0)
+                          ':phase 0
+                          ':imports (archive/plist-get module-data ':imports)
+                          ':exports (archive/plist-get module-data ':exports)))
+                  '()))
              ;; Wrap all forms in (begin ...) so mc-compile-to-code-object
              ;; gets a single expression. define-variable! side effects
              ;; sequence correctly inside begin.
@@ -851,7 +968,7 @@ compile-file-to-port but produces the §8 archive format."
         ;; source-loc on every code-object broke the WASM loader's
         ;; cast in `$%code-object-set-source-loc!`. Per-PC source-map
         ;; tracking is diagnostics roadmap thread 5 — a separate proposal.
-        (let ((archive (code-object->archive-sexp top-co basename)))
+        (let ((archive (code-object->archive-sexp top-co basename metadata)))
           (write-string-to-port (write-to-string-flat archive) output-port)
           (write-char #\newline output-port))
         (set! *source-locations* (%make-hash-table))
