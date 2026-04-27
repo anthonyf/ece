@@ -3488,6 +3488,70 @@ during a clean run, which is by design."
                           "dynamic-wind runs before/body/after in order"))
                  (ensure-assembler-zone-registered)))))
 
+(deftest test-cl-archive-loader-module-units
+    (testing "CL archive loader registers module units and resolves short imports"
+             (labels ((kw (name)
+                        (intern (format nil ":~(~A~)" name) :ece))
+                      (compile-archive (source file metadata)
+                        (ece::evaluate
+                         (list (ece-sym 'code-object->archive-sexp)
+                               (list (ece-sym 'mc-compile-to-code-object)
+                                     (list 'quote (ece-read-string source)))
+                               file
+                               (list 'quote metadata)))))
+               (let* ((module-sym (ece-sym 'module))
+                      (name-root (list (ece-sym 'phase3-cl) (ece-sym 'module-loader)))
+                      (base-name (append name-root (list (ece-sym 'base))))
+                      (user-name (append name-root (list (ece-sym 'user))))
+                      (base-id (list module-sym base-name 0))
+                      (user-id (list module-sym user-name 0))
+                      (base-archive
+                       (compile-archive
+                        "(begin (define answer 42) (define hidden 9) answer)"
+                        "phase3-cl-base.scm"
+                        (list (kw 'kind) (kw 'module)
+                              (kw 'unit-id) base-id
+                              (kw 'exports) (list (ece-sym 'answer)))))
+                      (user-archive
+                       (compile-archive
+                        "(begin (define doubled (+ answer answer)) doubled)"
+                        "phase3-cl-user.scm"
+                        (list (kw 'kind) (kw 'module)
+                              (kw 'unit-id) user-id
+                              (kw 'imports) (list base-name)
+                              (kw 'exports) (list (ece-sym 'doubled))))))
+                 (unwind-protect
+                      (progn
+                        (remhash base-id ece::*archive-units*)
+                        (remhash user-id ece::*archive-units*)
+                        (remhash base-id ece::*module-instances*)
+                        (remhash user-id ece::*module-instances*)
+                        (ok (= (ece::load-ecec-archive-section base-archive) 42)
+                            "base module init result")
+                        (let* ((base-instance
+                                (gethash base-id ece::*module-instances*))
+                               (base-exports
+                                (ece::module-instance-exports base-instance)))
+                          (ok (= (gethash (ece-sym 'answer) base-exports) 42)
+                              "base module exports answer")
+                          (multiple-value-bind (_ hidden-exported)
+                              (gethash (ece-sym 'hidden) base-exports)
+                            (declare (ignore _))
+                            (ok (not hidden-exported)
+                                "base module does not export private binding")))
+                        (ok (= (ece::load-ecec-archive-section user-archive) 84)
+                            "user module init result")
+                        (let* ((user-instance
+                                (gethash user-id ece::*module-instances*))
+                               (user-exports
+                                (ece::module-instance-exports user-instance)))
+                          (ok (= (gethash (ece-sym 'doubled) user-exports) 84)
+                              "short import provides exported binding")))
+                   (remhash base-id ece::*archive-units*)
+                   (remhash user-id ece::*archive-units*)
+                   (remhash base-id ece::*module-instances*)
+                   (remhash user-id ece::*module-instances*))))))
+
 (defun build-archive-zone-fn-inverse ()
   "Invert *archive-zone-fns* to a (make-hash-table :test 'eq) keyed on the
 function value, mapping back to the original (unit-id . co-key) cons.

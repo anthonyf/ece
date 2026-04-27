@@ -132,6 +132,149 @@
       (assert-true (string-contains? false-init
                                      "Invalid .ecec archive init index"))))))
 
+(define (cleanup-module-test-units! unit-ids)
+  (for-each
+   (lambda (unit-id)
+     (let ((key (archive/unit-key unit-id)))
+       (hash-remove! *archive-units* key)
+       (hash-remove! *module-instances* key)))
+   unit-ids))
+
+(define (with-module-test-units unit-ids thunk)
+  (dynamic-wind
+    (lambda () (cleanup-module-test-units! unit-ids))
+    thunk
+    (lambda () (cleanup-module-test-units! unit-ids))))
+
+(test "modules: module archive imports and exports are isolated" (lambda ()
+  (let ((base-id '(module (phase3 base) 0))
+        (user-id '(module (phase3 user) 0)))
+    (with-module-test-units
+     (list base-id user-id)
+     (lambda ()
+       (let* ((base-archive
+               (code-object->archive-sexp
+                (mc-compile-to-code-object
+                 '(begin
+                    (define answer 42)
+                    (define hidden 9)
+                    answer))
+                "phase3-base.scm"
+                (list ':kind ':module
+                      ':unit-id base-id
+                      ':exports '(answer))))
+              (base-result (load-archive-section-form base-archive))
+              (base-instance (hash-ref *module-instances*
+                                       (archive/unit-key base-id)
+                                       #f))
+              (base-exports (archive/module-instance-exports base-instance))
+              (user-archive
+               (code-object->archive-sexp
+                (mc-compile-to-code-object
+                 '(begin
+                    (define doubled (+ answer answer))
+                    doubled))
+                "phase3-user.scm"
+                (list ':kind ':module
+                      ':unit-id user-id
+                      ':imports (list base-id)
+                      ':exports '(doubled))))
+              (user-result (load-archive-section-form user-archive))
+              (user-instance (hash-ref *module-instances*
+                                       (archive/unit-key user-id)
+                                       #f))
+              (user-exports (archive/module-instance-exports user-instance)))
+         (assert-equal 42 base-result)
+         (assert-equal 42 (hash-ref base-exports 'answer))
+         (assert-equal #f (hash-has-key? base-exports 'hidden))
+         (assert-equal 84 user-result)
+         (assert-equal 84 (hash-ref user-exports 'doubled))))))))
+
+(test "modules: missing import raises clear error" (lambda ()
+  (let ((user-id '(module (phase3 missing-import-user) 0))
+        (missing-id '(module (phase3 missing-import-dep) 0)))
+    (with-module-test-units
+     (list user-id missing-id)
+     (lambda ()
+       (let* ((archive
+               (code-object->archive-sexp
+                (mc-compile-to-code-object 1)
+                "phase3-missing-import.scm"
+                (list ':kind ':module
+                      ':unit-id user-id
+                      ':imports (list missing-id)
+                      ':exports '()))))
+         (let ((message (guard (e (#t (if (error-object? e)
+                                          (error-object-message e)
+                                          "non-error-object")))
+                          (load-archive-section-form archive)
+                          #f)))
+           (assert-true
+            (string-contains? message "Module import not found")))))))))
+
+(test "modules: missing declared export raises clear error" (lambda ()
+  (let ((unit-id '(module (phase3 missing-export) 0)))
+    (with-module-test-units
+     (list unit-id)
+     (lambda ()
+       (let* ((archive
+               (code-object->archive-sexp
+                (mc-compile-to-code-object
+                 '(begin (define present 1) present))
+                "phase3-missing-export.scm"
+                (list ':kind ':module
+                      ':unit-id unit-id
+                      ':exports '(present absent)))))
+         (let ((message (guard (e (#t (if (error-object? e)
+                                          (error-object-message e)
+                                          "non-error-object")))
+                          (load-archive-section-form archive)
+                          #f)))
+           (assert-true (string-contains? message
+                                          "declared missing export")))))))))
+
+(test "modules: duplicate unit id raises clear error" (lambda ()
+  (let ((unit-id '(module (phase3 duplicate) 0)))
+    (with-module-test-units
+     (list unit-id)
+     (lambda ()
+       (let* ((archive
+               (code-object->archive-sexp
+                (mc-compile-to-code-object 1)
+                "phase3-duplicate.scm"
+                (list ':kind ':module
+                      ':unit-id unit-id
+                      ':exports '()))))
+         (load-archive-section-form archive)
+         (let ((message (guard (e (#t (if (error-object? e)
+                                          (error-object-message e)
+                                          "non-error-object")))
+                          (load-archive-section-form archive)
+                          #f)))
+           (assert-true (string-contains? message
+                                          "Duplicate archive unit id")))))))))
+
+(test "modules: import cycle raises clear error" (lambda ()
+  (let ((unit-id '(module (phase3 cycle) 0)))
+    (with-module-test-units
+     (list unit-id)
+     (lambda ()
+       (let* ((archive
+               (code-object->archive-sexp
+                (mc-compile-to-code-object 1)
+                "phase3-cycle.scm"
+                (list ':kind ':module
+                      ':unit-id unit-id
+                      ':imports (list unit-id)
+                      ':exports '()))))
+         (let ((message (guard (e (#t (if (error-object? e)
+                                          (error-object-message e)
+                                          "non-error-object")))
+                          (load-archive-section-form archive)
+                          #f)))
+           (assert-true (string-contains? message
+                                          "Module import cycle")))))))))
+
 (test "archive: collect-reachable includes top then children (ordering)"
   (lambda ()
     (let* ((co (mc-compile-to-code-object '(lambda (x) (lambda (y) (+ x y)))))

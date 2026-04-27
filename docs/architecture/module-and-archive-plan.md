@@ -208,6 +208,36 @@ layout and makes stale-zone checks line up with save/restore checks.
 - Implement module instantiation once per module identity.
 - Add loud errors for missing imports, missing exports, and import cycles.
 
+Phase 3 deliberately keeps module source syntax out of scope. A module is a
+version-2 archive section with `:kind :module`, a stable `:unit-id`, declared
+`:imports`, and declared `:exports`.
+
+The initial import format is archive-unit based:
+
+```scheme
+:unit-id (module (game inventory) 0)
+:imports ((module (game item) 0))
+```
+
+For convenience, loaders also accept the short module name in `:imports` and
+normalize it using the importing unit's phase:
+
+```scheme
+:imports ((game item)) ; => (module (game item) 0)
+```
+
+Module archive sections are registered by unit id and instantiated once.
+Instantiation creates a private hash-frame environment seeded with imported
+exports and chained to the global environment for primitives and boot support.
+Top-level `define` mutates only that private frame. After init runs, the loader
+captures the declared exports into the module instance. Missing imports,
+duplicate unit ids, declared-but-missing exports, and import cycles are hard
+errors.
+
+Current bundle loading remains order-sensitive: a module's imports must already
+be registered by earlier archive sections or by direct test/runtime setup. A
+later phase can add two-pass bundle discovery and graph sorting.
+
 ### Phase 4: Minimal Module Compiler
 
 - Add `define-module` parsing/compilation.
