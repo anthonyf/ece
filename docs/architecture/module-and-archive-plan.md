@@ -246,6 +246,29 @@ later phase can add two-pass bundle discovery and graph sorting.
   bindings installed.
 - Capture and register only declared exports.
 
+Phase 4's source form is:
+
+```scheme
+(define-module (game inventory)
+  (import (game item))
+  (export make-inventory
+          inventory-add
+          inventory-has?)
+
+  (define (make-inventory)
+    '())
+
+  (define (inventory-add inv item)
+    (cons item inv)))
+```
+
+The first compiler pass keeps the same constraints as the original surface
+proposal: one `define-module` per source file, static phase-0 value imports,
+static value exports, and declarations before body forms. It emits version-2
+archive sections with `:kind :module`, `:unit-id (module <name> 0)`, `:phase 0`,
+`:imports`, and `:exports`. Bundle loading is still order-sensitive, so imported
+modules must appear earlier in the bundle until graph discovery/sorting lands.
+
 ### Phase 5: Module-Aware Tooling
 
 - Teach `compile-system` to compile a module graph.

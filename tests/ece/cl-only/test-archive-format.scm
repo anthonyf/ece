@@ -146,6 +146,62 @@
     thunk
     (lambda () (cleanup-module-test-units! unit-ids))))
 
+(define (write-archive-test-file filename text)
+  (let ((port #f))
+    (dynamic-wind
+     (lambda () (set! port (open-output-file filename)))
+     (lambda () (display text port))
+     (lambda () (when port (close-output-port port))))))
+
+(test "modules: define-module source emits module archive metadata" (lambda ()
+  (let ((unit-id '(module (phase4 metadata) 0))
+        (path ".tmp/phase4-metadata.scm")
+        (sink (open-output-string)))
+    (with-module-test-units
+     (list unit-id '(module (phase4 dep) 0))
+     (lambda ()
+       (write-archive-test-file
+        path
+        "(define-module (phase4 metadata)\n  (import (phase4 dep))\n  (export public)\n  (define public 11)\n  (define private 22)\n  public)\n")
+       (compile-file-to-archive path sink)
+       (let* ((archive-text (get-output-string sink))
+              (archive (ece-scheme-read (open-input-string archive-text)))
+              (fields (cdr archive)))
+         (assert-equal (archive/plist-get fields ':kind) ':module)
+         (assert-equal (archive/plist-get fields ':unit-id) unit-id)
+         (assert-equal (archive/plist-get fields ':imports)
+                       '((phase4 dep)))
+         (assert-equal (archive/plist-get fields ':exports) '(public))))))))
+
+(test "modules: define-module source imports and exports through bundle load" (lambda ()
+  (let ((base-id '(module (phase4 base) 0))
+        (user-id '(module (phase4 user) 0))
+        (base-path ".tmp/phase4-base.scm")
+        (user-path ".tmp/phase4-user.scm")
+        (bundle-path ".tmp/phase4-modules.ecec"))
+    (with-module-test-units
+     (list base-id user-id)
+     (lambda ()
+       (write-archive-test-file
+        base-path
+        "(define-module (phase4 base)\n  (export answer)\n  (define answer 42)\n  (define hidden 9)\n  answer)\n")
+       (write-archive-test-file
+        user-path
+        "(define-module (phase4 user)\n  (import (phase4 base))\n  (export doubled)\n  (define doubled (+ answer answer))\n  doubled)\n")
+       (compile-system (list base-path user-path) bundle-path)
+       (load-bundle bundle-path)
+       (let* ((base-instance (hash-ref *module-instances*
+                                       (archive/unit-key base-id)
+                                       #f))
+              (user-instance (hash-ref *module-instances*
+                                       (archive/unit-key user-id)
+                                       #f))
+              (base-exports (archive/module-instance-exports base-instance))
+              (user-exports (archive/module-instance-exports user-instance)))
+         (assert-equal 42 (hash-ref base-exports 'answer))
+         (assert-equal #f (hash-has-key? base-exports 'hidden))
+         (assert-equal 84 (hash-ref user-exports 'doubled))))))))
+
 (test "modules: module archive imports and exports are isolated" (lambda ()
   (let ((base-id '(module (phase3 base) 0))
         (user-id '(module (phase3 user) 0)))
