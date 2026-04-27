@@ -292,9 +292,14 @@ signals an error pointing at `make bootstrap` for regeneration."
 (define (load-archive-section-form archive)
   "Archive-format path: ARCHIVE is the parsed (:ecec-archive ...) form.
 Rebuild code-objects and execute the selected init entry."
-  (let* ((cos (archive-sexp->code-objects archive))
-         (init (archive/select-init-code-object archive cos)))
-    (execute-code-object init)))
+  (let* ((unit (archive/unit-metadata archive))
+         (cos (archive-sexp->code-objects archive)))
+    (if (archive/module-kind? (archive/plist-get unit ':kind))
+        (archive/module-instance-result
+         (archive/instantiate-module!
+          (archive/register-unit! unit cos)))
+        (let ((init (archive/select-init-code-object archive cos)))
+          (execute-code-object init)))))
 
 (define (load-compiled filename)
   "Load and execute compiled code from a .ecec file (first section only).
@@ -569,6 +574,166 @@ the metadata-selected index."
                (archive/unit-init-index archive)
                (vector-length cos))))
 
+(define *archive-units* (%make-hash-table))
+(define *module-instances* (%make-hash-table))
+
+(define (archive/unit-key unit-id)
+  "Return a stable hash key for UNIT-ID. ECE hash tables are eq?-keyed, so
+structured module ids use an interned symbol derived from their written form
+as the registry key."
+  (string->symbol (write-to-string unit-id)))
+
+(define (archive/module-kind? kind)
+  "Return #t when KIND names a module archive unit."
+  (eq? kind ':module))
+
+(define (archive/module-unit-id? value)
+  "Return #t when VALUE has the normalized (module <name> <phase>) shape."
+  (and (pair? value) (eq? (car value) 'module)))
+
+(define (archive/normalize-module-import-id import phase)
+  "Normalize IMPORT to a module archive unit id. Phase 3 accepts either a
+full `(module <name> <phase>)` unit id or the short module name `<name>`."
+  (if (archive/module-unit-id? import)
+      import
+      (list 'module import phase)))
+
+(define (archive/make-unit-record unit cos)
+  "Create a mutable archive-unit record as a hash table."
+  (let ((record (%make-hash-table)))
+    (hash-set! record ':unit-id (archive/plist-get unit ':unit-id))
+    (hash-set! record ':kind (archive/plist-get unit ':kind))
+    (hash-set! record ':phase (archive/plist-get unit ':phase))
+    (hash-set! record ':imports (archive/plist-get unit ':imports))
+    (hash-set! record ':exports (archive/plist-get unit ':exports))
+    (hash-set! record ':init (archive/validate-init-index
+                              (archive/plist-get unit ':init)
+                              (vector-length cos)))
+    (hash-set! record ':cos cos)
+    (hash-set! record ':state ':registered)
+    record))
+
+(define (archive/register-unit! unit cos)
+  "Register UNIT and COS. Duplicate unit ids are rejected so module identity
+stays unambiguous."
+  (let ((unit-id (archive/plist-get unit ':unit-id)))
+    (when (hash-has-key? *archive-units* (archive/unit-key unit-id))
+      (error (string-append "Duplicate archive unit id: "
+                            (write-to-string unit-id)
+                            ".")))
+    (let ((record (archive/make-unit-record unit cos)))
+      (hash-set! *archive-units* (archive/unit-key unit-id) record)
+      record)))
+
+(define (archive/module-instance-result instance)
+  "Return INSTANCE's init result."
+  (hash-ref instance ':result #f))
+
+(define (archive/module-instance-exports instance)
+  "Return INSTANCE's export table."
+  (hash-ref instance ':exports #f))
+
+(define (archive/module-env-table env)
+  "Return the private hash table from a module environment."
+  (cdr (car env)))
+
+(define (archive/make-module-env imported-exports)
+  "Create a private module environment seeded with IMPORTED-EXPORTS."
+  (let ((table (%make-hash-table)))
+    (for-each
+     (lambda (name)
+       (hash-set! table name (hash-ref imported-exports name)))
+     (hash-keys imported-exports))
+    (cons (cons ':hash-frame table) *global-env*)))
+
+(define (archive/module-instance-for-import import phase importer-id)
+  "Resolve and instantiate IMPORT for IMPORTER-ID."
+  (let* ((unit-id (archive/normalize-module-import-id import phase))
+         (unit (hash-ref *archive-units* (archive/unit-key unit-id) #f)))
+    (when (not unit)
+      (error (string-append "Module import not found: "
+                            (write-to-string unit-id)
+                            " imported by "
+                            (write-to-string importer-id)
+                            ".")))
+    (archive/instantiate-module! unit)))
+
+(define (archive/collect-module-imports unit)
+  "Instantiate UNIT's imports and return a hash table of imported bindings."
+  (let ((bindings (%make-hash-table)))
+    (for-each
+     (lambda (import)
+       (let* ((instance
+               (archive/module-instance-for-import
+                import
+                (hash-ref unit ':phase)
+                (hash-ref unit ':unit-id)))
+              (exports (archive/module-instance-exports instance)))
+         (for-each
+          (lambda (name)
+            (hash-set! bindings name (hash-ref exports name)))
+          (hash-keys exports))))
+     (hash-ref unit ':imports))
+    bindings))
+
+(define (archive/capture-module-exports unit env)
+  "Capture UNIT's declared exports from ENV."
+  (let ((declared (hash-ref unit ':exports))
+        (table (archive/module-env-table env))
+        (exports (%make-hash-table)))
+    (if (eq? declared ':all)
+        (for-each
+         (lambda (name)
+           (hash-set! exports name (hash-ref table name)))
+         (hash-keys table))
+        (for-each
+         (lambda (name)
+           (when (not (hash-has-key? table name))
+             (error (string-append "Module "
+                                   (write-to-string (hash-ref unit ':unit-id))
+                                   " declared missing export "
+                                   (write-to-string name)
+                                   ".")))
+           (hash-set! exports name (hash-ref table name)))
+         declared))
+    exports))
+
+(define (archive/instantiate-module! unit)
+  "Instantiate UNIT once, recursively initializing imports first."
+  (let ((state (hash-ref unit ':state)))
+    (cond
+     ((eq? state ':initialized)
+      (hash-ref unit ':instance))
+     ((eq? state ':initializing)
+      (error (string-append "Module import cycle involving "
+                            (write-to-string (hash-ref unit ':unit-id))
+                            ".")))
+     (else
+      (when (not (archive/module-kind? (hash-ref unit ':kind)))
+        (error (string-append "Import "
+                              (write-to-string (hash-ref unit ':unit-id))
+                              " does not name a module archive unit.")))
+      (hash-set! unit ':state ':initializing)
+      (let* ((imports (archive/collect-module-imports unit))
+             (env (archive/make-module-env imports))
+             (cos (hash-ref unit ':cos))
+             (init (vector-ref cos (hash-ref unit ':init)))
+             (result (execute-code-object init env))
+             (exports (archive/capture-module-exports unit env))
+             (instance (%make-hash-table)))
+        (hash-set! instance ':unit-id (hash-ref unit ':unit-id))
+        (hash-set! instance ':env env)
+        (hash-set! instance ':exports exports)
+        (hash-set! instance ':result result)
+        (hash-set! unit ':env env)
+        (hash-set! unit ':result result)
+        (hash-set! unit ':instance instance)
+        (hash-set! unit ':state ':initialized)
+        (hash-set! *module-instances*
+                   (archive/unit-key (hash-ref unit ':unit-id))
+                   instance)
+        instance)))))
+
 (define (archive/code-object-key unit-id index)
   "Return the registry key for code-object INDEX in UNIT-ID."
   (cons unit-id index))
@@ -627,10 +792,8 @@ so the serializer can emit by-reference forms."
 (define (load-archive-from-port port)
   "Read an archive from PORT, build all code-objects, execute the init
 entry selected by metadata. Returns the init's result."
-  (let* ((archive (ece-scheme-read port))
-         (cos (archive-sexp->code-objects archive))
-         (init (archive/select-init-code-object archive cos)))
-    (execute-code-object init)))
+  (let ((archive (ece-scheme-read port)))
+    (load-archive-section-form archive)))
 
 (define (load-archive filename)
   "Load and execute a code-object archive from FILENAME. Returns the

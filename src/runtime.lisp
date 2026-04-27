@@ -381,7 +381,13 @@ Each entry is (proc space-sym . local-pc)."
 
 (defun hash-frame-p (frame)
   "Return T if FRAME is a hash-table-backed frame (:hash-frame . ht)."
-  (and (consp frame) (eq (car frame) :hash-frame)))
+  (and (consp frame)
+       (or (eq (car frame) :hash-frame)
+           ;; ECE code can construct archive/module environments using
+           ;; ECE keyword-style symbols. Accept that spelling so module
+           ;; loaders written in ECE can create hash frames for the CL VM.
+           (and (symbolp (car frame))
+                (string= (symbol-name (car frame)) ":hash-frame")))))
 
 (defun lexical-ref (depth offset env)
   "O(1) variable access: traverse DEPTH frames, index at OFFSET."
@@ -1563,6 +1569,33 @@ resolve (const <code-object>) operands for inner-lambda references —
 the zone-file is emitted for one specific archive, so the unit id is
 a constant in the emitted form and the co-key identifies the target.")
 
+(defstruct archive-unit
+  "Materialized archive section plus normalized module-ready metadata."
+  unit-id
+  kind
+  phase
+  imports
+  exports
+  init-index
+  cos
+  state
+  env
+  result
+  instance)
+
+(defstruct module-instance
+  "Instantiated module value namespace."
+  unit-id
+  env
+  exports
+  result)
+
+(defvar *archive-units* (make-hash-table :test #'equal)
+  "Registry of materialized archive units keyed by normalized unit-id.")
+
+(defvar *module-instances* (make-hash-table :test #'equal)
+  "Registry of initialized module instances keyed by normalized unit-id.")
+
 (defun archive-co-lookup (unit-id co-key)
   "Resolve a (unit-id . co-key) pair to the live code-object struct in
 *archive-code-objects*. Called from emitted zone code to dereference
@@ -2087,12 +2120,18 @@ order is corrected, every reachable code-object gets a zone fn here."
                    (canonicalize-ecec-constants raw-archive)))
          (cos (parse-archive-sexp archive))
          (unit (archive-unit-metadata archive))
-         (unit-id (archive-plist-get unit (intern ":unit-id" :ece))))
+         (unit-id (archive-plist-get unit (intern ":unit-id" :ece)))
+         (kind (archive-plist-get unit (intern ":kind" :ece))))
     (when unit-id
       (register-archive-code-objects cos unit-id)
       (attach-archive-native-fns cos unit-id))
-    (let ((init (aref cos (archive-validated-init-index unit cos))))
-      (execute-instructions init 0 *global-env*))))
+    (cond
+      ((module-kind-p kind)
+       (module-instance-result
+        (instantiate-module-unit (register-archive-unit unit cos))))
+      (t
+       (let ((init (aref cos (archive-validated-init-index unit cos))))
+         (execute-instructions init 0 *global-env*))))))
 
 (defun archive-file-stem-symbol (archive)
   "Derive the :ece-package file-stem symbol for ARCHIVE's |file| field,
@@ -2163,6 +2202,142 @@ as a low-level AREF type or bounds condition during boot."
                              :format-control "Invalid .ecec archive init index: ~S for ~D entries."
                              :format-arguments (list init count))))
     init))
+
+(defun archive-runtime-error (format-control &rest format-arguments)
+  "Signal a clear archive/module loading error."
+  (error 'ece-runtime-error
+         :procedure nil
+         :arguments nil
+         :environment *global-env*
+         :instruction nil
+         :backtrace nil
+         :original-error
+         (make-condition 'simple-error
+                         :format-control format-control
+                         :format-arguments format-arguments)))
+
+(defun archive-unit-field (unit key)
+  (archive-plist-get unit (intern key :ece)))
+
+(defun module-kind-p (kind)
+  (and (symbolp kind) (string= (symbol-name kind) ":module")))
+
+(defun module-unit-id-p (value)
+  (and (consp value)
+       (symbolp (car value))
+       (string= (symbol-name (car value)) "module")))
+
+(defun normalize-module-import-id (import phase)
+  "Normalize an import form to an archive unit id.
+Phase 3 accepts either a full unit id `(module <name> <phase>)` or the
+short module name `<name>`, which normalizes to `(module <name> PHASE)`."
+  (cond
+    ((module-unit-id-p import) import)
+    (t (list (intern "module" :ece) import phase))))
+
+(defun register-archive-unit (unit cos)
+  "Register UNIT and COS as an archive-unit record. Duplicate unit ids are
+rejected so module identity remains unambiguous."
+  (let* ((unit-id (archive-unit-field unit ":unit-id"))
+         (existing (gethash unit-id *archive-units*)))
+    (when existing
+      (archive-runtime-error "Duplicate archive unit id: ~S." unit-id))
+    (let ((record (make-archive-unit
+                   :unit-id unit-id
+                   :kind (archive-unit-field unit ":kind")
+                   :phase (archive-unit-field unit ":phase")
+                   :imports (archive-unit-field unit ":imports")
+                   :exports (archive-unit-field unit ":exports")
+                   :init-index (archive-validated-init-index unit cos)
+                   :cos cos
+                   :state :registered)))
+      (setf (gethash unit-id *archive-units*) record)
+      record)))
+
+(defun make-module-environment (imported-exports)
+  "Create a private module environment seeded with IMPORTED-EXPORTS."
+  (let ((table (make-hash-table :test 'eq)))
+    (maphash (lambda (name value)
+               (setf (gethash name table) value))
+             imported-exports)
+    (list* (cons :hash-frame table) *global-env*)))
+
+(defun module-instance-for-import (import phase importer-id)
+  "Resolve and instantiate IMPORT for IMPORTER-ID."
+  (let* ((unit-id (normalize-module-import-id import phase))
+         (unit (gethash unit-id *archive-units*)))
+    (unless unit
+      (archive-runtime-error "Module import not found: ~S imported by ~S."
+                             unit-id importer-id))
+    (instantiate-module-unit unit)))
+
+(defun collect-module-imports (unit)
+  "Instantiate UNIT's imports and return a hash table of imported bindings."
+  (let ((bindings (make-hash-table :test 'eq)))
+    (dolist (import (archive-unit-imports unit))
+      (let ((instance (module-instance-for-import
+                       import
+                       (archive-unit-phase unit)
+                       (archive-unit-unit-id unit))))
+        (maphash (lambda (name value)
+                   (setf (gethash name bindings) value))
+                 (module-instance-exports instance))))
+    bindings))
+
+(defun module-env-table (env)
+  (let ((frame (car env)))
+    (unless (hash-frame-p frame)
+      (archive-runtime-error "Internal module environment has no hash frame."))
+    (cdr frame)))
+
+(defun capture-module-exports (unit env)
+  "Capture UNIT's declared exports from ENV."
+  (let ((declared (archive-unit-exports unit))
+        (table (module-env-table env))
+        (exports (make-hash-table :test 'eq)))
+    (cond
+      ((and (symbolp declared) (string= (symbol-name declared) ":all"))
+       (maphash (lambda (name value)
+                  (setf (gethash name exports) value))
+                table))
+      (t
+       (dolist (name declared)
+         (multiple-value-bind (value found) (gethash name table)
+           (unless found
+             (archive-runtime-error "Module ~S declared missing export ~S."
+                                    (archive-unit-unit-id unit) name))
+           (setf (gethash name exports) value)))))
+    exports))
+
+(defun instantiate-module-unit (unit)
+  "Instantiate UNIT once, recursively initializing imports first."
+  (case (archive-unit-state unit)
+    (:initialized (archive-unit-instance unit))
+    (:initializing
+     (archive-runtime-error "Module import cycle involving ~S."
+                            (archive-unit-unit-id unit)))
+    (otherwise
+     (unless (module-kind-p (archive-unit-kind unit))
+       (archive-runtime-error "Import ~S does not name a module archive unit."
+                              (archive-unit-unit-id unit)))
+     (setf (archive-unit-state unit) :initializing)
+     (let* ((imports (collect-module-imports unit))
+            (env (make-module-environment imports))
+            (init (aref (archive-unit-cos unit)
+                        (archive-unit-init-index unit)))
+            (result (execute-instructions init 0 env))
+            (exports (capture-module-exports unit env))
+            (instance (make-module-instance
+                       :unit-id (archive-unit-unit-id unit)
+                       :env env
+                       :exports exports
+                       :result result)))
+       (setf (archive-unit-env unit) env
+             (archive-unit-result unit) result
+             (archive-unit-instance unit) instance
+             (archive-unit-state unit) :initialized
+             (gethash (archive-unit-unit-id unit) *module-instances*) instance)
+       instance))))
 
 (defun archive-co-key (co index)
   "Derive the registry key for CO at archive INDEX. Always uses the

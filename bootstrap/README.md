@@ -37,6 +37,18 @@ Each `.ecec` section is a single top-level s-expression:
 
 The current archive uses ECE keyword-style symbols as field tags (`:version`, `:kind`, `:file`, `:entries`, `:name`, `:arity`, `:source-loc`, `:labels`, `:instructions`). Loaders still accept the legacy plain-symbol spelling (`ecec-archive`, `version`, `file`, ...) as a transition compatibility path, but new archives should use the colon-prefixed form emitted by the writer.
 
+## Module Units
+
+Archive sections with `:kind :module` are registered by `:unit-id` and run in a private module environment instead of mutating the global environment. Phase 3 supports metadata-only modules: no source-level module syntax is required yet.
+
+- `unit-id` should use `(module <module-name> <phase>)`, for example `(module (game inventory) 0)`.
+- `imports` names module unit ids. A short module name such as `(game item)` is normalized to `(module (game item) <current-phase>)`.
+- `exports` names the bindings captured from the module's private environment after init runs. `:all` exports every binding in that private frame.
+- Each module init runs at most once. Later imports reuse the existing module instance.
+- Missing imports, duplicate unit ids, declared-but-missing exports, invalid init indexes, and import cycles are errors.
+
+Current bundle loading is still order-sensitive: imported modules must appear earlier in the bundle, or be registered by direct runtime/test setup.
+
 ## Entry shape
 
 ```scheme
