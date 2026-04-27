@@ -56,7 +56,10 @@ archive sections:
 
 ```scheme
 (define-module (game inventory)
-  (import (game item))
+  (import (game item)
+          (only (game stats) stack-size)
+          (except (game debug) trace-item)
+          (rename (game item-id) (make-id make-item-id)))
   (export make-inventory inventory-add)
 
   (define (make-inventory)
@@ -71,6 +74,8 @@ The initial compiler support is intentionally narrow:
 - A module source file must contain exactly one top-level `define-module` form.
 - `import` and `export` declarations must be static and must precede the module body.
 - Imports are value imports at phase `0`; `(import (game item))` emits `:imports ((game item))`, which the loader normalizes to `(module (game item) 0)`.
+- Imports may be filtered with `(only <module> <symbol> ...)`, filtered negatively with `(except <module> <symbol> ...)`, or renamed with `(rename <module> (<from> <to>) ...)`.
+- Duplicate local names imported from multiple modules are ambiguous and raise an error. Use `only`, `except`, or `rename` to make the imported names explicit.
 - Exports are explicit value binding names. Only those names are captured from the module's private environment after init runs.
 - Macro imports, phase `1` units, graph sorting, and multi-file modules are future work.
 

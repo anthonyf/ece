@@ -250,7 +250,10 @@ Phase 4's source form is:
 
 ```scheme
 (define-module (game inventory)
-  (import (game item))
+  (import (game item)
+          (only (game stats) stack-size)
+          (except (game debug) trace-item)
+          (rename (game item-id) (make-id make-item-id)))
   (export make-inventory
           inventory-add
           inventory-has?)
@@ -264,10 +267,13 @@ Phase 4's source form is:
 
 The first compiler pass keeps the same constraints as the original surface
 proposal: one `define-module` per source file, static phase-0 value imports,
-static value exports, and declarations before body forms. It emits version-2
-archive sections with `:kind :module`, `:unit-id (module <name> 0)`, `:phase 0`,
-`:imports`, and `:exports`. Bundle loading is still order-sensitive, so imported
-modules must appear earlier in the bundle until graph discovery/sorting lands.
+static value exports, and declarations before body forms. Imports may be
+filtered with `only`, filtered negatively with `except`, or locally renamed with
+`rename`; duplicate local imported names are an ambiguity error unless a filter
+or rename resolves the conflict. It emits version-2 archive sections with
+`:kind :module`, `:unit-id (module <name> 0)`, `:phase 0`, `:imports`, and
+`:exports`. Bundle loading is still order-sensitive, so imported modules must
+appear earlier in the bundle until graph discovery/sorting lands.
 
 ### Phase 5: Module-Aware Tooling
 

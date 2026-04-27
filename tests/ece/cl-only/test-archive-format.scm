@@ -202,6 +202,97 @@
          (assert-equal #f (hash-has-key? base-exports 'hidden))
          (assert-equal 84 (hash-ref user-exports 'doubled))))))))
 
+(test "modules: import filters and renames mitigate ambiguity" (lambda ()
+  (let ((left-id '(module (phase5 left) 0))
+        (right-id '(module (phase5 right) 0))
+        (third-id '(module (phase5 third) 0))
+        (facade-id '(module (phase5 facade) 0))
+        (left-path ".tmp/phase5-left.scm")
+        (right-path ".tmp/phase5-right.scm")
+        (third-path ".tmp/phase5-third.scm")
+        (facade-path ".tmp/phase5-facade.scm")
+        (bundle-path ".tmp/phase5-modules.ecec"))
+    (with-module-test-units
+     (list left-id right-id third-id facade-id)
+     (lambda ()
+       (write-archive-test-file
+        left-path
+        "(define-module (phase5 left)\n  (export answer left-only)\n  (define answer 10)\n  (define left-only 1)\n  answer)\n")
+       (write-archive-test-file
+        right-path
+        "(define-module (phase5 right)\n  (export answer right-only)\n  (define answer 20)\n  (define right-only 3)\n  answer)\n")
+       (write-archive-test-file
+        third-path
+        "(define-module (phase5 third)\n  (export answer)\n  (define answer 7)\n  answer)\n")
+       (write-archive-test-file
+        facade-path
+        "(define-module (phase5 facade)\n  (import (only (phase5 left) answer)\n          (except (phase5 right) answer)\n          (rename (phase5 third) (answer third-answer)))\n  (export answer right-only third-answer total)\n  (define total (+ answer right-only third-answer))\n  total)\n")
+       (compile-system (list left-path right-path third-path facade-path)
+                       bundle-path)
+       (load-bundle bundle-path)
+       (let* ((facade-instance (hash-ref *module-instances*
+                                         (archive/unit-key facade-id)
+                                         #f))
+              (facade-exports
+               (archive/module-instance-exports facade-instance)))
+         (assert-equal 10 (hash-ref facade-exports 'answer))
+         (assert-equal 3 (hash-ref facade-exports 'right-only))
+         (assert-equal 7 (hash-ref facade-exports 'third-answer))
+         (assert-equal 20 (hash-ref facade-exports 'total))))))))
+
+(test "modules: duplicate imported names are ambiguous" (lambda ()
+  (let ((left-id '(module (phase5 ambiguous-left) 0))
+        (right-id '(module (phase5 ambiguous-right) 0))
+        (bad-id '(module (phase5 ambiguous-user) 0))
+        (left-path ".tmp/phase5-ambiguous-left.scm")
+        (right-path ".tmp/phase5-ambiguous-right.scm")
+        (bad-path ".tmp/phase5-ambiguous-user.scm")
+        (bundle-path ".tmp/phase5-ambiguous.ecec"))
+    (with-module-test-units
+     (list left-id right-id bad-id)
+     (lambda ()
+       (write-archive-test-file
+        left-path
+        "(define-module (phase5 ambiguous-left)\n  (export answer)\n  (define answer 1)\n  answer)\n")
+       (write-archive-test-file
+        right-path
+        "(define-module (phase5 ambiguous-right)\n  (export answer)\n  (define answer 2)\n  answer)\n")
+       (write-archive-test-file
+        bad-path
+        "(define-module (phase5 ambiguous-user)\n  (import (phase5 ambiguous-left) (phase5 ambiguous-right))\n  (export answer)\n  answer)\n")
+       (compile-system (list left-path right-path bad-path) bundle-path)
+       (let ((message (guard (e (#t (if (error-object? e)
+                                        (error-object-message e)
+                                        "non-error-object")))
+                        (load-bundle bundle-path)
+                        #f)))
+         (assert-true (string-contains? message "Ambiguous import"))
+         (assert-true (string-contains? message "answer"))))))))
+
+(test "modules: import filters validate exported names" (lambda ()
+  (let ((base-id '(module (phase5 filter-base) 0))
+        (bad-id '(module (phase5 filter-user) 0))
+        (base-path ".tmp/phase5-filter-base.scm")
+        (bad-path ".tmp/phase5-filter-user.scm")
+        (bundle-path ".tmp/phase5-filter.ecec"))
+    (with-module-test-units
+     (list base-id bad-id)
+     (lambda ()
+       (write-archive-test-file
+        base-path
+        "(define-module (phase5 filter-base)\n  (export present)\n  (define present 1)\n  present)\n")
+       (write-archive-test-file
+        bad-path
+        "(define-module (phase5 filter-user)\n  (import (only (phase5 filter-base) missing))\n  (export missing)\n  missing)\n")
+       (compile-system (list base-path bad-path) bundle-path)
+       (let ((message (guard (e (#t (if (error-object? e)
+                                        (error-object-message e)
+                                        "non-error-object")))
+                        (load-bundle bundle-path)
+                        #f)))
+         (assert-true (string-contains? message "only list names"))
+         (assert-true (string-contains? message "missing export"))))))))
+
 (test "modules: module archive imports and exports are isolated" (lambda ()
   (let ((base-id '(module (phase3 base) 0))
         (user-id '(module (phase3 user) 0)))
