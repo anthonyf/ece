@@ -1629,6 +1629,23 @@ is in the keyword format."
      (cadr plist))
     (t (archive-plist-get (cddr plist) key))))
 
+(defun archive-plist-has-key-p (plist key)
+  "Return true when PLIST contains KEY, using the same legacy key matching as
+archive-plist-get. This distinguishes an absent field from an explicit NIL
+value for metadata such as :exports."
+  (cond
+    ((null plist) nil)
+    ((null (cdr plist)) nil)
+    ((eq (car plist) key) t)
+    ((and (symbolp (car plist))
+          (let ((kn (symbol-name key))
+                (pn (symbol-name (car plist))))
+            (and (> (length kn) 0)
+                 (char= (char kn 0) #\:)
+                 (string= pn (subseq kn 1)))))
+     t)
+    (t (archive-plist-has-key-p (cddr plist) key))))
+
 (defun archive-patch-co-refs (tree cos-vec)
   "Replace every (const (co-ref N)) in TREE with (const <code-object-at-N>)."
   (cond
@@ -1644,11 +1661,12 @@ is in the keyword format."
 
 (defun parse-archive-sexp (archive)
   "Parse a read archive s-expr into a simple-vector of code-object structs.
-The shape matches the ECE-side archive-sexp->code-objects output: entry 0 is
-the file init; entries 1..N-1 are nested hoisted code-objects. Signals an
+The shape matches the ECE-side archive-sexp->code-objects output: entries
+hold the init code-object plus nested hoisted code-objects. Signals an
 ece-runtime-error on version mismatch."
-  (let* ((version (archive-plist-get (cdr archive) (intern ":version" :ece)))
-         (entries (archive-plist-get (cdr archive) (intern ":entries" :ece))))
+  (let* ((unit (archive-unit-metadata archive))
+         (version (archive-plist-get (cdr archive) (intern ":version" :ece)))
+         (entries (archive-plist-get unit (intern ":entries" :ece))))
     (unless (eql version 2)
       (error 'ece-runtime-error
              :procedure nil
@@ -2068,11 +2086,12 @@ order is corrected, every reachable code-object gets a zone fn here."
   (let* ((archive (downcase-ece-symbols
                    (canonicalize-ecec-constants raw-archive)))
          (cos (parse-archive-sexp archive))
-         (unit-id (archive-unit-id archive)))
+         (unit (archive-unit-metadata archive))
+         (unit-id (archive-plist-get unit (intern ":unit-id" :ece))))
     (when unit-id
       (register-archive-code-objects cos unit-id)
       (attach-archive-native-fns cos unit-id))
-    (let ((init (aref cos 0)))
+    (let ((init (aref cos (archive-validated-init-index unit cos))))
       (execute-instructions init 0 *global-env*))))
 
 (defun archive-file-stem-symbol (archive)
@@ -2097,6 +2116,53 @@ ids are treated as legacy file stems and normalized to ECE symbols."
       ((stringp unit-id) (intern unit-id :ece))
       (unit-id unit-id)
       (t (archive-file-stem-symbol archive)))))
+
+(defun archive-unit-metadata (archive)
+  "Return normalized archive-unit metadata for ARCHIVE as an ECE-keyed plist.
+Current file archives default to historic global loading semantics. Explicit
+module-shaped archives can already carry kind, unit-id, phase, imports,
+exports, and init metadata; enforcement happens in the later module registry
+phase."
+  (let ((fields (cdr archive)))
+    (flet ((field (key default)
+             (if (archive-plist-has-key-p fields key)
+                 (archive-plist-get fields key)
+                 default)))
+      (list (intern ":kind" :ece)
+            (field (intern ":kind" :ece) (intern ":file" :ece))
+            (intern ":unit-id" :ece)
+            (archive-unit-id archive)
+            (intern ":phase" :ece)
+            (field (intern ":phase" :ece) 0)
+            (intern ":imports" :ece)
+            (field (intern ":imports" :ece) nil)
+            (intern ":exports" :ece)
+            (field (intern ":exports" :ece) (intern ":all" :ece))
+            (intern ":init" :ece)
+            (field (intern ":init" :ece) 0)
+            (intern ":file" :ece)
+            (archive-plist-get fields (intern ":file" :ece))
+            (intern ":entries" :ece)
+            (archive-plist-get fields (intern ":entries" :ece))))))
+
+(defun archive-validated-init-index (unit cos)
+  "Return UNIT's validated init entry index for COS.
+Malformed metadata gets a clear archive-format error instead of bubbling up
+as a low-level AREF type or bounds condition during boot."
+  (let ((init (archive-plist-get unit (intern ":init" :ece)))
+        (count (length cos)))
+    (unless (and (integerp init) (<= 0 init) (< init count))
+      (error 'ece-runtime-error
+             :procedure nil
+             :arguments nil
+             :environment *global-env*
+             :instruction nil
+             :backtrace nil
+             :original-error
+             (make-condition 'simple-error
+                             :format-control "Invalid .ecec archive init index: ~S for ~D entries."
+                             :format-arguments (list init count))))
+    init))
 
 (defun archive-co-key (co index)
   "Derive the registry key for CO at archive INDEX. Always uses the

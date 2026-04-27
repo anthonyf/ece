@@ -291,9 +291,9 @@ signals an error pointing at `make bootstrap` for regeneration."
 
 (define (load-archive-section-form archive)
   "Archive-format path: ARCHIVE is the parsed (:ecec-archive ...) form.
-Rebuild code-objects and execute the init."
+Rebuild code-objects and execute the selected init entry."
   (let* ((cos (archive-sexp->code-objects archive))
-         (init (vector-ref cos 0)))
+         (init (archive/select-init-code-object archive cos)))
     (execute-code-object init)))
 
 (define (load-compiled filename)
@@ -322,8 +322,13 @@ Returns the result of the last section."
 ;;; Shape:
 ;;;   (:ecec-archive
 ;;;     :version 2
+;;;     :kind <optional, default :file>
 ;;;     :file "foo.scm"
 ;;;     :unit-id <optional-explicit-unit-id>
+;;;     :phase <optional, default 0>
+;;;     :imports <optional, default ()>
+;;;     :exports <optional, default :all>
+;;;     :init <optional, default 0>
 ;;;     :entries ((:code-object :name %init :instructions (...) ...)
 ;;;               (:code-object :name add1 :instructions (...) ...)
 ;;;              ...))
@@ -351,6 +356,17 @@ the keyword format."
    ((eq? (car plist) key) (cadr plist))
    ((archive/key-matches-legacy? (car plist) key) (cadr plist))
    (else (archive/plist-get (cddr plist) key))))
+
+(define (archive/plist-has-key? plist key)
+  "Return #t when PLIST contains KEY. Uses the same legacy key matching as
+archive/plist-get so metadata defaults work for both current and transition
+archive spellings."
+  (cond
+   ((null? plist) #f)
+   ((null? (cdr plist)) #f)
+   ((eq? (car plist) key) #t)
+   ((archive/key-matches-legacy? (car plist) key) #t)
+   (else (archive/plist-has-key? (cddr plist) key))))
 
 (define (archive/key-matches-legacy? sym key)
   "Return #t when SYM is the plain-symbol form of a keyword KEY (KEY minus
@@ -446,23 +462,47 @@ nested code-object constants to (co-ref N) via CO-MAP."
           ':labels (code-object-label-entries co)
           ':instructions rewritten)))
 
-(define (code-object->archive-sexp top-co filename)
+(define (archive/optional-field metadata key)
+  "Return (KEY VALUE) when METADATA contains KEY, otherwise ()."
+  (if (archive/plist-has-key? metadata key)
+      (list key (archive/plist-get metadata key))
+      '()))
+
+(define (archive/field-or-default fields key default)
+  "Return FIELDS[KEY] when present, otherwise DEFAULT. Unlike `or`, this
+preserves explicit #f values so validators can reject malformed metadata
+instead of silently defaulting it."
+  (if (archive/plist-has-key? fields key)
+      (archive/plist-get fields key)
+      default))
+
+(define (code-object->archive-sexp top-co filename . maybe-metadata)
   "Build the full archive s-expression from TOP-CO (and all reachable
-code-objects) for FILENAME."
+code-objects) for FILENAME. Optional metadata is a plist containing any of
+:kind, :unit-id, :phase, :imports, :exports, or :init. Current file archive
+callers omit it, preserving the existing emitted shape."
   (let* ((all-cos (archive/collect-reachable top-co))
-         (co-map (%make-hash-table)))
+         (co-map (%make-hash-table))
+         (metadata (if (null? maybe-metadata) '() (car maybe-metadata))))
     (let loop ((cos all-cos) (idx 0))
       (when (pair? cos)
         (hash-set! co-map (car cos) idx)
         (loop (cdr cos) (+ idx 1))))
-    (list ':ecec-archive
-          ':version 2
-          ':file filename
-          ':entries
-          (let loop ((cos all-cos) (acc '()))
-            (if (null? cos) (reverse acc)
-                (loop (cdr cos)
-                      (cons (archive/code-object->entry (car cos) co-map) acc)))))))
+    (append
+     (list ':ecec-archive ':version 2)
+     (archive/optional-field metadata ':kind)
+     (list ':file filename)
+     (archive/optional-field metadata ':unit-id)
+     (archive/optional-field metadata ':phase)
+     (archive/optional-field metadata ':imports)
+     (archive/optional-field metadata ':exports)
+     (archive/optional-field metadata ':init)
+     (list
+      ':entries
+      (let loop ((cos all-cos) (acc '()))
+        (if (null? cos) (reverse acc)
+            (loop (cdr cos)
+                  (cons (archive/code-object->entry (car cos) co-map) acc))))))))
 
 (define (archive/file-stem-from-field file-field)
   "Derive the archive stem symbol from the FILE-FIELD string in the
@@ -491,18 +531,58 @@ String unit ids are treated as legacy file stems and normalized to symbols."
       (archive/file-stem-from-field
        (archive/plist-get (cdr archive) ':file))))))
 
+(define (archive/unit-metadata archive)
+  "Return normalized archive-unit metadata for ARCHIVE as a plist.
+This is the Phase 2 boundary between raw archive sections and future module
+registries: file archives default to current semantics, while module-shaped
+archives can already carry kind, imports, exports, phase, and init metadata."
+  (let ((fields (cdr archive)))
+    (list ':kind (archive/field-or-default fields ':kind ':file)
+          ':unit-id (archive/unit-id archive)
+          ':phase (archive/field-or-default fields ':phase 0)
+          ':imports (archive/field-or-default fields ':imports '())
+          ':exports (archive/field-or-default fields ':exports ':all)
+          ':init (archive/field-or-default fields ':init 0)
+          ':file (archive/plist-get fields ':file)
+          ':entries (archive/plist-get fields ':entries))))
+
+(define (archive/unit-init-index archive)
+  "Return ARCHIVE's init entry index, defaulting to 0 for current archives."
+  (archive/plist-get (archive/unit-metadata archive) ':init))
+
+(define (archive/validate-init-index init count)
+  "Validate INIT as a code-object index for COUNT archive entries."
+  (if (and (integer? init) (>= init 0) (< init count))
+      init
+      (error (string-append
+              "Invalid .ecec archive init index: "
+              (write-to-string init)
+              " for "
+              (number->string count)
+              " entries."))))
+
+(define (archive/select-init-code-object archive cos)
+  "Return ARCHIVE's selected init code-object from COS, after validating
+the metadata-selected index."
+  (vector-ref cos
+              (archive/validate-init-index
+               (archive/unit-init-index archive)
+               (vector-length cos))))
+
 (define (archive/code-object-key unit-id index)
   "Return the registry key for code-object INDEX in UNIT-ID."
   (cons unit-id index))
 
 (define (archive-sexp->code-objects archive)
   "Parse an archive s-expression (as read from disk). Returns the vector
-of code-objects. Entry 0 is the init code-object. Raises on version
-mismatch. Stamps archive-key = (unit-id . index) on each code-object so
-the serializer can emit by-reference forms."
-  (let* ((version (archive/plist-get (cdr archive) ':version))
-         (entries (archive/plist-get (cdr archive) ':entries))
-         (unit-id (archive/unit-id archive)))
+of code-objects. Current file archives use entry 0 as the init code-object;
+module-shaped archives may select another init entry with :init. Raises on
+version mismatch. Stamps archive-key = (unit-id . index) on each code-object
+so the serializer can emit by-reference forms."
+  (let* ((unit (archive/unit-metadata archive))
+         (version (archive/plist-get (cdr archive) ':version))
+         (entries (archive/plist-get unit ':entries))
+         (unit-id (archive/plist-get unit ':unit-id)))
     (when (not (equal? version 2))
       (error (string-append
               "Unsupported .ecec archive version: "
@@ -546,10 +626,10 @@ the serializer can emit by-reference forms."
 
 (define (load-archive-from-port port)
   "Read an archive from PORT, build all code-objects, execute the init
-(entry 0). Returns the init's result."
+entry selected by metadata. Returns the init's result."
   (let* ((archive (ece-scheme-read port))
          (cos (archive-sexp->code-objects archive))
-         (init (vector-ref cos 0)))
+         (init (archive/select-init-code-object archive cos)))
     (execute-code-object init)))
 
 (define (load-archive filename)
