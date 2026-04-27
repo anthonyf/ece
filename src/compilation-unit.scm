@@ -579,9 +579,9 @@ the metadata-selected index."
 
 (define (archive/unit-key unit-id)
   "Return a stable hash key for UNIT-ID. ECE hash tables are eq?-keyed, so
-structured module ids use an interned symbol derived from their written form
-as the registry key."
-  (string->symbol (write-to-string unit-id)))
+structured module ids use an interned symbol derived from their flat archive
+spelling as the registry key."
+  (string->symbol (write-to-string-flat unit-id)))
 
 (define (archive/module-kind? kind)
   "Return #t when KIND names a module archive unit."
