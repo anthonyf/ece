@@ -202,3 +202,56 @@
          (assert-true
           (string-contains? message
                             "does not name a module archive unit"))))))))
+
+(test "modules: run-module-export invokes selected module export" (lambda ()
+  (let ((app-id '(module (phase-b entry-app) 0))
+        (app-path ".tmp/phase-b-entry-app.scm")
+        (bundle-path ".tmp/phase-b-entry-app.ecec"))
+    (with-module-test-units*
+     (list app-id)
+     (lambda ()
+       (write-module-test-file
+        app-path
+        "(define-module (phase-b entry-app)\n  (export main)\n  (define (main) 42)\n  'loaded)\n")
+       (compile-system (list app-path) bundle-path)
+       (load-bundle bundle-path)
+       (assert-equal 42 (run-module-export '(phase-b entry-app) 'main)))))))
+
+(test "modules: run-module-export passes arguments to export" (lambda ()
+  (let ((app-id '(module (phase-b entry-args) 0))
+        (app-path ".tmp/phase-b-entry-args.scm")
+        (bundle-path ".tmp/phase-b-entry-args.ecec"))
+    (with-module-test-units*
+     (list app-id)
+     (lambda ()
+       (write-module-test-file
+        app-path
+        "(define-module (phase-b entry-args)\n  (export add)\n  (define (add a b) (+ a b))\n  'loaded)\n")
+       (compile-system (list app-path) bundle-path)
+       (load-bundle bundle-path)
+       (assert-equal 9 (run-module-export '(phase-b entry-args) 'add 4 5)))))))
+
+(test "modules: run-module-export reports missing and non-callable exports" (lambda ()
+  (let ((app-id '(module (phase-b entry-errors) 0))
+        (app-path ".tmp/phase-b-entry-errors.scm")
+        (bundle-path ".tmp/phase-b-entry-errors.ecec"))
+    (with-module-test-units*
+     (list app-id)
+     (lambda ()
+       (write-module-test-file
+        app-path
+        "(define-module (phase-b entry-errors)\n  (export value)\n  (define value 7)\n  value)\n")
+       (compile-system (list app-path) bundle-path)
+       (load-bundle bundle-path)
+       (let ((missing-message
+              (module-test-error-message
+               (lambda () (run-module-export '(phase-b entry-errors) 'main))))
+             (non-callable-message
+              (module-test-error-message
+               (lambda () (run-module-export '(phase-b entry-errors) 'value)))))
+         (assert-true
+          (string-contains? missing-message "Module entry export not found"))
+         (assert-true (string-contains? missing-message "main"))
+         (assert-true
+          (string-contains? non-callable-message
+                            "Module entry export is not callable"))))))))

@@ -154,7 +154,22 @@ Environments are chains of frames. Local lexical frames are vectors for O(1) lex
 
 The compiler chooses lexical access when a binding is known at compile time. Otherwise it emits named lookup/mutation. `define-variable!` skips vector frames and writes into the first hash frame; `set-variable-value!` searches hash frames by name and skips vector frames. `%global-ref` bypasses local frames entirely by reading from `*global-env*`.
 
-This model makes the REPL, `load`, and compiled bundle execution share one mutable top-level environment. It also means module boundaries are not currently a runtime abstraction. A bundle is sequenced source files whose top-level side effects define or mutate shared globals.
+This model makes the REPL, `load`, and ordinary file archive execution share
+one mutable top-level environment. Module archive sections are separate runtime
+units: each module instantiates once into a private hash-table-backed module
+environment, imports declared bindings from dependency module exports, and
+publishes only its declared exports. Loading a bundle first registers module
+sections and their code objects, then instantiates modules in dependency order.
+File sections still execute immediately for compatibility.
+
+The CLI can run a module export as an application entry point:
+
+```sh
+ece --module '(app main)' --entry main app.ecec
+```
+
+`run-module-export` resolves the module instance, looks up the exported symbol,
+requires it to be callable, and applies it.
 
 ## Parameters, Exceptions, and `dynamic-wind`
 

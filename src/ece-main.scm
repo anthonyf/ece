@@ -40,6 +40,10 @@
   (newline)
   (display "  -e EXPR, --eval EXPR  Evaluate EXPR")
   (newline)
+  (display "  --module MODULE       Select module entry point, e.g. '(app main)'")
+  (newline)
+  (display "  --entry SYMBOL        Run exported procedure from --module")
+  (newline)
   (display "  -i, --interactive     Enter REPL after processing files")
   (newline)
   (display "  --geiser              Run REPL in Geiser wire-protocol mode")
@@ -66,38 +70,96 @@
 ;;   version?     — #t if -V/--version seen
 ;;   extra-args   — list of strings after --
 ;;   geiser?      — #t if --geiser seen (REPL in Geiser wire-protocol mode)
+;;   module-name   — module name datum from --module, or #f
+;;   entry-name    — symbol from --entry, or #f
+
+(define (read-cli-datum option value)
+  "Read exactly one datum from VALUE for OPTION."
+  (let ((port (open-input-string value)))
+    (let ((datum (read port)))
+      (cond
+       ((eof? datum)
+        (display "Error: ")
+        (display option)
+        (display " requires a datum")
+        (newline)
+        (exit 2))
+       ((not (eof? (read port)))
+        (display "Error: ")
+        (display option)
+        (display " accepts exactly one datum")
+        (newline)
+        (exit 2))
+       (else
+        (close-input-port port)
+        datum)))))
+
+(define (read-entry-symbol value)
+  "Read one symbol from VALUE for --entry."
+  (let ((datum (read-cli-datum "--entry" value)))
+    (when (not (symbol? datum))
+      (display "Error: --entry requires a symbol")
+      (newline)
+      (exit 2))
+    datum))
 
 (define (parse-argv argv)
   "Parse argv (excluding argv[0]). Returns
- (list interactive? help? version? extra-args steps geiser?)."
+ (list interactive? help? version? extra-args steps geiser? module-name entry-name)."
   (let loop ((rest argv)
              (interactive? #f)
              (help? #f)
              (version? #f)
              (extra-args '())
              (steps '())
-             (geiser? #f))
+             (geiser? #f)
+             (module-name #f)
+             (entry-name #f))
     (cond
      ((null? rest)
-      (list interactive? help? version? extra-args (reverse steps) geiser?))
+      (list interactive? help? version? extra-args (reverse steps) geiser?
+            module-name entry-name))
      (else
       (let ((arg (car rest)))
         (cond
          ;; -- : take everything after it as passthrough args
          ((opt-terminator? arg)
-          (list interactive? help? version? (cdr rest) (reverse steps) geiser?))
+          (list interactive? help? version? (cdr rest) (reverse steps) geiser?
+                module-name entry-name))
          ;; --help / -h
          ((or (string=? arg "--help") (string=? arg "-h"))
-          (loop (cdr rest) interactive? #t version? extra-args steps geiser?))
+          (loop (cdr rest) interactive? #t version? extra-args steps geiser?
+                module-name entry-name))
          ;; --version / -V
          ((or (string=? arg "--version") (string=? arg "-V"))
-          (loop (cdr rest) interactive? help? #t extra-args steps geiser?))
+          (loop (cdr rest) interactive? help? #t extra-args steps geiser?
+                module-name entry-name))
          ;; --interactive / -i
          ((or (string=? arg "--interactive") (string=? arg "-i"))
-          (loop (cdr rest) #t help? version? extra-args steps geiser?))
+          (loop (cdr rest) #t help? version? extra-args steps geiser?
+                module-name entry-name))
          ;; --geiser
          ((string=? arg "--geiser")
-          (loop (cdr rest) interactive? help? version? extra-args steps #t))
+          (loop (cdr rest) interactive? help? version? extra-args steps #t
+                module-name entry-name))
+         ;; --module MODULE
+         ((string=? arg "--module")
+          (if (or (null? (cdr rest)))
+              (begin
+                (display "Error: --module requires an argument")
+                (newline)
+                (exit 2))
+              (loop (cddr rest) interactive? help? version? extra-args steps
+                    geiser? (read-cli-datum "--module" (cadr rest)) entry-name)))
+         ;; --entry SYMBOL
+         ((string=? arg "--entry")
+          (if (or (null? (cdr rest)))
+              (begin
+                (display "Error: --entry requires an argument")
+                (newline)
+                (exit 2))
+              (loop (cddr rest) interactive? help? version? extra-args steps
+                    geiser? module-name (read-entry-symbol (cadr rest)))))
          ;; --load FILE
          ((string=? arg "--load")
           (if (or (null? (cdr rest)))
@@ -106,7 +168,8 @@
                 (newline)
                 (exit 2))
               (loop (cddr rest) interactive? help? version? extra-args
-                    (cons (list 'load (cadr rest)) steps) geiser?)))
+                    (cons (list 'load (cadr rest)) steps) geiser?
+                    module-name entry-name)))
          ;; --eval EXPR / -e EXPR
          ((or (string=? arg "--eval") (string=? arg "-e"))
           (if (or (null? (cdr rest)))
@@ -117,7 +180,8 @@
                 (newline)
                 (exit 2))
               (loop (cddr rest) interactive? help? version? extra-args
-                    (cons (list 'eval (cadr rest)) steps) geiser?)))
+                    (cons (list 'eval (cadr rest)) steps) geiser?
+                    module-name entry-name)))
          ;; Unknown long option
          ((long-opt? arg)
           (display "Error: unknown option: ")
@@ -133,7 +197,23 @@
          ;; Positional file argument
          (else
           (loop (cdr rest) interactive? help? version? extra-args
-                (cons (list 'load arg) steps) geiser?))))))))
+                (cons (list 'load arg) steps) geiser?
+                module-name entry-name))))))))
+
+(define (run-module-entry-if-requested module-name entry-name)
+  "Run the requested module entry point, or do nothing when none was supplied."
+  (cond
+   ((and module-name entry-name)
+    (run-module-export module-name entry-name))
+   (module-name
+    (display "Error: --module requires --entry")
+    (newline)
+    (exit 2))
+   (entry-name
+    (display "Error: --entry requires --module")
+    (newline)
+    (exit 2))
+   (else #f)))
 
 ;; ---- Step execution ----
 
@@ -238,15 +318,18 @@ Returns the value of the last expression."
          (version? (list-ref parsed 2))
          (_extra (list-ref parsed 3))
          (steps (list-ref parsed 4))
-         (geiser? (list-ref parsed 5)))
+         (geiser? (list-ref parsed 5))
+         (module-name (list-ref parsed 6))
+         (entry-name (list-ref parsed 7)))
     (cond
      (help? (print-usage) (exit 0))
      (version? (print-version) (exit 0))
      (else
       (run-steps steps)
+      (run-module-entry-if-requested module-name entry-name)
       (cond
        (interactive? (repl geiser?))
-       ((null? steps) (repl geiser?))
+       ((and (null? steps) (not module-name) (not entry-name)) (repl geiser?))
        (else (exit 0)))))))
 
 ;; ---- ece-repl entry point ----

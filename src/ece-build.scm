@@ -81,44 +81,68 @@ to accumulate without quadratic allocation."
 
 (define (parse-build-args argv)
   "Parse ece-build CLI args. Returns
- (list target output-dir standalone? source-files help?) or signals error."
+ (list target output-dir standalone? module-name entry-name source-files help?)
+or signals error."
   (let loop ((rest argv)
              (target #f)
              (output-dir #f)
              (standalone? #f)
+             (module-name #f)
+             (entry-name #f)
              (sources '())
              (help? #f))
     (cond
      ((null? rest)
-      (list target output-dir standalone? (reverse sources) help?))
+      (list target output-dir standalone? module-name entry-name
+            (reverse sources) help?))
      (else
       (let ((arg (car rest)))
         (cond
          ((or (string=? arg "-h") (string=? arg "--help"))
-          (loop (cdr rest) target output-dir standalone? sources #t))
+          (loop (cdr rest) target output-dir standalone? module-name entry-name
+                sources #t))
          ((string=? arg "--target")
           (if (null? (cdr rest))
               (begin
                 (display "Error: --target requires an argument")
                 (newline)
                 (exit 1))
-              (loop (cddr rest) (cadr rest) output-dir standalone? sources help?)))
+              (loop (cddr rest) (cadr rest) output-dir standalone? module-name
+                    entry-name sources help?)))
          ((string=? arg "-o")
           (if (null? (cdr rest))
               (begin
                 (display "Error: -o requires an argument")
                 (newline)
                 (exit 1))
-              (loop (cddr rest) target (cadr rest) standalone? sources help?)))
+              (loop (cddr rest) target (cadr rest) standalone? module-name
+                    entry-name sources help?)))
          ((string=? arg "--standalone")
-          (loop (cdr rest) target output-dir #t sources help?))
+          (loop (cdr rest) target output-dir #t module-name entry-name sources help?))
+         ((string=? arg "--module")
+          (if (null? (cdr rest))
+              (begin
+                (display "Error: --module requires an argument")
+                (newline)
+                (exit 1))
+              (loop (cddr rest) target output-dir standalone? (cadr rest)
+                    entry-name sources help?)))
+         ((string=? arg "--entry")
+          (if (null? (cdr rest))
+              (begin
+                (display "Error: --entry requires an argument")
+                (newline)
+                (exit 1))
+              (loop (cddr rest) target output-dir standalone? module-name
+                    (cadr rest) sources help?)))
          ((starts-with? arg "-")
           (display "Error: Unknown option: ")
           (display arg)
           (newline)
           (exit 1))
          (else
-          (loop (cdr rest) target output-dir standalone? (cons arg sources) help?))))))))
+          (loop (cdr rest) target output-dir standalone? module-name entry-name
+                (cons arg sources) help?))))))))
 
 (define (ece-build-usage)
   (display "Usage: ece-build --target web|cl|test-page -o <dir> [--standalone] <source.scm> ...")
@@ -132,6 +156,10 @@ to accumulate without quadratic allocation."
   (newline)
   (display "  --standalone                Web: base64-encode all assets for file:// use")
   (newline)
+  (display "  --module MODULE            CL: run MODULE's --entry export")
+  (newline)
+  (display "  --entry SYMBOL             CL: exported procedure to run")
+  (newline)
   (display "  -h, --help                  Show this help")
   (newline)
   (newline)
@@ -140,29 +168,35 @@ to accumulate without quadratic allocation."
   (display "  <source.scm> ...  One or more .scm source files in dependency order")
   (newline))
 
-(define (validate-build-args target output-dir sources)
+(define (build-args-error target output-dir sources module-name entry-name)
+  "Return a CLI validation error string for build args, or #f when valid."
   (cond
    ((not target)
-    (display "Error: --target is required")
-    (newline)
-    (ece-build-usage)
-    (exit 1))
+    "Error: --target is required")
    ((and (not (string=? target "web")) (not (string=? target "cl")) (not (string=? target "test-page")))
-    (display "Error: --target must be 'web', 'cl', or 'test-page', got '")
-    (display target)
-    (display "'")
-    (newline)
-    (exit 1))
+    (string-append "Error: --target must be 'web', 'cl', or 'test-page', got '"
+                   target
+                   "'"))
    ((not output-dir)
-    (display "Error: -o is required")
-    (newline)
-    (ece-build-usage)
-    (exit 1))
+    "Error: -o is required")
    ((null? sources)
-    (display "Error: At least one source .scm file is required")
-    (newline)
-    (ece-build-usage)
-    (exit 1)))
+    "Error: At least one source .scm file is required")
+   ((and (or module-name entry-name) (not (string=? target "cl")))
+    "Error: --module and --entry are only supported with --target cl")
+   ((and module-name (not entry-name))
+    "Error: --module requires --entry")
+   ((and entry-name (not module-name))
+    "Error: --entry requires --module")
+   (else #f)))
+
+(define (validate-build-args target output-dir sources module-name entry-name)
+  (let ((message (build-args-error target output-dir sources module-name entry-name)))
+    (when message
+      (display message)
+      (newline)
+      (when (or (not target) (not output-dir) (null? sources))
+        (ece-build-usage))
+      (exit 1)))
   ;; Validate source files exist
   (for-each
    (lambda (f)
@@ -273,18 +307,54 @@ the WASM binary as a base64 constant (standalone mode)."
 
 ;; ---- Target: cl ----
 
-(define (build-cl home output-dir bundle-path)
+(define (shell-quote value)
+  "Return VALUE safely quoted as one POSIX shell argument."
+  (let ((out (open-output-string)))
+    (%write-char-to-port #\' out)
+    (let loop ((i 0))
+      (when (< i (string-length value))
+        (let ((ch (string-ref value i)))
+          (if (char=? ch #\')
+              (display "'\\''" out)
+              (%write-char-to-port ch out)))
+        (loop (+ i 1))))
+    (%write-char-to-port #\' out)
+    (get-output-string out)))
+
+(define (write-cl-run-wrapper out-path module-name entry-name)
+  "Write the CL run wrapper, optionally invoking a module entry point."
+  (let ((out (open-output-file out-path)))
+    (display "#!/bin/sh" out)
+    (newline out)
+    (display "# run — Invoke the installed `ece` binary on the bundled app.ecec." out)
+    (newline out)
+    (display (string-append "# Generated by ece-build. Requires `ece` to be in "
+                            "$" "PATH.")
+             out)
+    (newline out)
+    (if (and module-name entry-name)
+        (begin
+          (display "exec ece --module " out)
+          (display (shell-quote module-name) out)
+          (display " --entry " out)
+          (display (shell-quote entry-name) out)
+          (display (string-append " \"" "$" "(dirname \"" "$"
+                                  "0\")/app.ecec\" -- \"" "$" "@\"")
+                   out)
+          (newline out))
+        (begin
+          (display (string-append "exec ece \"" "$" "(dirname \"" "$"
+                                  "0\")/app.ecec\" -- \"" "$" "@\"")
+                   out)
+          (newline out)))
+    (close-output-port out)))
+
+(define (build-cl home output-dir bundle-path module-name entry-name)
   "Package as CL target: just app.ecec + a run wrapper that execs ece."
   (display "Packaging for CL...")
   (newline)
-  (let* ((template (path-join home "templates" "cl" "run.sh"))
-         (out-path (path-join output-dir "run")))
-    (when (not (%file-exists? template))
-      (display "Error: Template not found: ")
-      (display template)
-      (newline)
-      (exit 1))
-    (copy-file-text template out-path)
+  (let ((out-path (path-join output-dir "run")))
+    (write-cl-run-wrapper out-path module-name entry-name)
     (%chmod out-path 493)  ; 0o755
     (display "CL app built in ")
     (display output-dir)
@@ -343,12 +413,14 @@ the WASM binary as a base64 constant (standalone mode)."
          (target (list-ref parsed 0))
          (output-dir (list-ref parsed 1))
          (standalone? (list-ref parsed 2))
-         (sources (list-ref parsed 3))
-         (help? (list-ref parsed 4)))
+         (module-name (list-ref parsed 3))
+         (entry-name (list-ref parsed 4))
+         (sources (list-ref parsed 5))
+         (help? (list-ref parsed 6)))
     (when help?
       (ece-build-usage)
       (exit 0))
-    (validate-build-args target output-dir sources)
+    (validate-build-args target output-dir sources module-name entry-name)
     ;; Ensure output directory exists
     (%make-directory output-dir)
     ;; Compile sources into a bundle
@@ -369,6 +441,6 @@ the WASM binary as a base64 constant (standalone mode)."
            (standalone? (build-web-standalone home output-dir bundle-path))
            (else (build-web-server home output-dir bundle-path))))
          ((string=? target "cl")
-          (build-cl home output-dir bundle-path))
+          (build-cl home output-dir bundle-path module-name entry-name))
          ((string=? target "test-page")
           (build-test-page home output-dir bundle-path)))))))

@@ -283,6 +283,18 @@ appear earlier in the bundle until graph discovery/sorting lands.
 - Add diagnostics that name module identities instead of source filenames when
   imports fail.
 
+Module entry points use the exported binding table rather than a magic top-level
+name. A bundle can be run directly with:
+
+```sh
+ece --module '(game app)' --entry main app.ecec
+```
+
+For CL packaging, `ece-build --target cl --module '(game app)' --entry main`
+generates a `run` wrapper that loads `app.ecec` and invokes that exported
+procedure. The entry export must be a procedure; missing or non-callable exports
+are reported as module entry errors.
+
 ### Phase 6: Macro Phases
 
 - Add explicit syntax imports only after value modules are working.
