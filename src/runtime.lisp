@@ -2075,7 +2075,7 @@ so load-ecec-file can read both old and new serialization formats.")
              :instruction nil :backtrace nil
              :original-error
              (make-condition 'simple-error
-                             :format-control "load-ecec-section: expected (:ecec-archive ...), got ~A. Run `make bootstrap` to regenerate."
+                             :format-control "read-ecec-archive-form: expected (:ecec-archive ...), got ~A. Run `make bootstrap` to regenerate."
                              :format-arguments (list (if (consp raw-head) (car raw-head) raw-head)))))
     raw-head))
 
@@ -2521,7 +2521,7 @@ stale/regen-pending zone file."
 (defun load-ecec-file (pathname &key skip)
   "Load a .ecec file: read sections, create named spaces, assemble and execute.
 Supports multi-space bundles (loops until EOF).
-If SKIP is a list of strings, skip sections whose space name matches.
+If SKIP is a list of strings, skip sections whose archive |file| field matches.
 Uses the CL reader (not the ECE reader) so this works at boot before the ECE reader exists."
   (with-open-file (stream pathname)
     (let ((sections nil))

@@ -287,7 +287,7 @@ signals an error pointing at `make bootstrap` for regeneration."
                (eq? (car head) 'ecec-archive)))
       head)
      (else
-      (error "load-section-from-port: expected (:ecec-archive ...). Run `make bootstrap` to regenerate.")))))
+      (error "read-archive-section-form: expected (:ecec-archive ...). Run `make bootstrap` to regenerate.")))))
 
 (define (load-section-from-port port)
   "Load one ecec archive section from PORT. Expects (:ecec-archive ...).
