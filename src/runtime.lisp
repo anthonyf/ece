@@ -2227,13 +2227,44 @@ as a low-level AREF type or bounds condition during boot."
        (symbolp (car value))
        (string= (symbol-name (car value)) "module")))
 
+(defun module-import-spec-p (value)
+  (and (consp value)
+       (symbolp (car value))
+       (string= (symbol-name (car value)) ":module")))
+
+(defun module-import-target (import)
+  (if (module-import-spec-p import)
+      (archive-plist-get import (intern ":module" :ece))
+      import))
+
 (defun normalize-module-import-id (import phase)
-  "Normalize an import form to an archive unit id.
-Phase 3 accepts either a full unit id `(module <name> <phase>)` or the
-short module name `<name>`, which normalizes to `(module <name> PHASE)`."
-  (cond
-    ((module-unit-id-p import) import)
-    (t (list (intern "module" :ece) import phase))))
+  "Normalize an import form or import spec to an archive unit id.
+Phase 3 accepts a `(:module ...)` import spec, a full unit id
+`(module <name> <phase>)`, or the short module name `<name>`. Short names
+and import specs normalize to `(module <name> PHASE)`."
+  (let ((target (module-import-target import)))
+    (cond
+      ((module-unit-id-p target) target)
+      (t (list (intern "module" :ece) target phase)))))
+
+(defun module-import-spec-field (import key default)
+  (if (module-import-spec-p import)
+      (let ((field-key (intern key :ece)))
+        (if (archive-plist-has-key-p import field-key)
+            (archive-plist-get import field-key)
+            default))
+      default))
+
+(defun module-import-spec-has-field-p (import key)
+  (and (module-import-spec-p import)
+       (archive-plist-has-key-p import (intern key :ece))))
+
+(defun module-import-symbol-member-p (name names)
+  (member name names :test #'eq))
+
+(defun module-import-rename-target (name renames)
+  (let ((entry (assoc name renames :test #'eq)))
+    (if entry (second entry) name)))
 
 (defun register-archive-unit (unit cos)
   "Register UNIT and COS as an archive-unit record. Duplicate unit ids are
@@ -2273,16 +2304,60 @@ rejected so module identity remains unambiguous."
 
 (defun collect-module-imports (unit)
   "Instantiate UNIT's imports and return a hash table of imported bindings."
-  (let ((bindings (make-hash-table :test 'eq)))
+  (let ((bindings (make-hash-table :test 'eq))
+        (providers (make-hash-table :test 'eq))
+        (importer-id (archive-unit-unit-id unit)))
+    (flet ((validate-exported-names (unit-id exports names context)
+             (dolist (name names)
+               (multiple-value-bind (_ found) (gethash name exports)
+                 (declare (ignore _))
+                 (unless found
+                   (archive-runtime-error
+                    "Module import ~S in ~S ~A missing export ~S."
+                    unit-id importer-id context name)))))
+           (import-name-p (name only-present-p only except)
+             (and (or (not only-present-p)
+                      (module-import-symbol-member-p name only))
+                  (not (module-import-symbol-member-p name except)))))
+      (labels ((record-import (local-name value provider-id importer-id)
+                 (multiple-value-bind (_ found) (gethash local-name bindings)
+                   (declare (ignore _))
+                   (when found
+                     (archive-runtime-error
+                      "Ambiguous import ~S in ~S: provided by ~S and ~S."
+                      local-name
+                      importer-id
+                      (gethash local-name providers)
+                      provider-id)))
+                 (setf (gethash local-name bindings) value
+                       (gethash local-name providers) provider-id)))
     (dolist (import (archive-unit-imports unit))
-      (let ((instance (module-instance-for-import
+      (let* ((unit-id (normalize-module-import-id
                        import
-                       (archive-unit-phase unit)
-                       (archive-unit-unit-id unit))))
-        (maphash (lambda (name value)
-                   (setf (gethash name bindings) value))
-                 (module-instance-exports instance))))
-    bindings))
+                       (archive-unit-phase unit)))
+             (only-present-p (module-import-spec-has-field-p import ":only"))
+             (only (module-import-spec-field import ":only" nil))
+             (except (module-import-spec-field import ":except" nil))
+             (renames (module-import-spec-field import ":rename" nil))
+             (instance (module-instance-for-import
+                        import
+                        (archive-unit-phase unit)
+                        importer-id))
+             (exports (module-instance-exports instance)))
+        (when only-present-p
+          (validate-exported-names unit-id exports only "only list names"))
+        (validate-exported-names unit-id exports except "except list names")
+        (validate-exported-names
+         unit-id exports (mapcar #'first renames) "rename list names")
+        (maphash (lambda (exported-name value)
+                   (when (import-name-p exported-name only-present-p only except)
+                     (record-import
+                      (module-import-rename-target exported-name renames)
+                      value
+                      unit-id
+                      importer-id)))
+                 exports))))
+    bindings)))
 
 (defun module-env-table (env)
   (let ((frame (car env)))

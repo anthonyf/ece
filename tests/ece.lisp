@@ -3552,6 +3552,202 @@ during a clean run, which is by design."
                    (remhash base-id ece::*module-instances*)
                    (remhash user-id ece::*module-instances*))))))
 
+(deftest test-cl-archive-loader-module-import-specs
+    (labels ((kw (name)
+               (intern (format nil ":~(~A~)" name) :ece))
+             (compile-archive (source file metadata)
+               (ece::evaluate
+                (list (ece-sym 'code-object->archive-sexp)
+                      (list (ece-sym 'mc-compile-to-code-object)
+                            (list 'quote (ece-read-string source)))
+                      file
+                      (list 'quote metadata))))
+             (cleanup (ids)
+               (dolist (id ids)
+                 (remhash id ece::*archive-units*)
+                 (remhash id ece::*module-instances*)))
+             (load-error-message (archive)
+               (handler-case
+                   (progn
+                     (ece::load-ecec-archive-section archive)
+                     nil)
+                 (ece:ece-runtime-error (e)
+                   (princ-to-string (ece:ece-original-error e))))))
+      (testing "CL archive loader supports only/except/rename import specs"
+               (let* ((module-sym (ece-sym 'module))
+                      (root (list (ece-sym 'phase5-cl) (ece-sym 'imports)))
+                      (left-name (append root (list (ece-sym 'left))))
+                      (right-name (append root (list (ece-sym 'right))))
+                      (third-name (append root (list (ece-sym 'third))))
+                      (facade-name (append root (list (ece-sym 'facade))))
+                      (left-id (list module-sym left-name 0))
+                      (right-id (list module-sym right-name 0))
+                      (third-id (list module-sym third-name 0))
+                      (facade-id (list module-sym facade-name 0))
+                      (answer (ece-sym 'answer))
+                      (right-only (ece-sym 'right-only))
+                      (third-answer (ece-sym 'third-answer))
+                      (total (ece-sym 'total))
+                      (left-archive
+                       (compile-archive
+                        "(begin (define answer 10) answer)"
+                        "phase5-cl-left.scm"
+                        (list (kw 'kind) (kw 'module)
+                              (kw 'unit-id) left-id
+                              (kw 'exports) (list answer))))
+                      (right-archive
+                       (compile-archive
+                        "(begin (define answer 20) (define right-only 3) answer)"
+                        "phase5-cl-right.scm"
+                        (list (kw 'kind) (kw 'module)
+                              (kw 'unit-id) right-id
+                              (kw 'exports) (list answer right-only))))
+                      (third-archive
+                       (compile-archive
+                        "(begin (define answer 7) answer)"
+                        "phase5-cl-third.scm"
+                        (list (kw 'kind) (kw 'module)
+                              (kw 'unit-id) third-id
+                              (kw 'exports) (list answer))))
+                      (facade-archive
+                       (compile-archive
+                        "(begin (define total (+ answer right-only third-answer)) total)"
+                        "phase5-cl-facade.scm"
+                        (list (kw 'kind) (kw 'module)
+                              (kw 'unit-id) facade-id
+                              (kw 'imports)
+                              (list (list (kw 'module) left-name
+                                          (kw 'only) (list answer))
+                                    (list (kw 'module) right-name
+                                          (kw 'except) (list answer))
+                                    (list (kw 'module) third-name
+                                          (kw 'rename)
+                                          (list (list answer third-answer))))
+                              (kw 'exports)
+                              (list answer right-only third-answer total)))))
+                 (unwind-protect
+                      (progn
+                        (cleanup (list left-id right-id third-id facade-id))
+                        (ece::load-ecec-archive-section left-archive)
+                        (ece::load-ecec-archive-section right-archive)
+                        (ece::load-ecec-archive-section third-archive)
+                        (ok (= (ece::load-ecec-archive-section facade-archive) 20)
+                            "facade init can use mitigated imports")
+                        (let* ((facade-instance
+                                (gethash facade-id ece::*module-instances*))
+                               (exports
+                                (ece::module-instance-exports facade-instance)))
+                          (ok (= (gethash answer exports) 10)
+                              "only import exposes selected binding")
+                          (ok (= (gethash right-only exports) 3)
+                              "except import excludes conflicting binding")
+                          (ok (= (gethash third-answer exports) 7)
+                              "rename import exposes local binding")))
+                   (cleanup (list left-id right-id third-id facade-id)))))
+      (testing "CL archive loader rejects ambiguous imported names"
+               (let* ((module-sym (ece-sym 'module))
+                      (root (list (ece-sym 'phase5-cl) (ece-sym 'ambiguous)))
+                      (left-name (append root (list (ece-sym 'left))))
+                      (right-name (append root (list (ece-sym 'right))))
+                      (bad-name (append root (list (ece-sym 'bad))))
+                      (left-id (list module-sym left-name 0))
+                      (right-id (list module-sym right-name 0))
+                      (bad-id (list module-sym bad-name 0))
+                      (answer (ece-sym 'answer))
+                      (left-archive
+                       (compile-archive
+                        "(begin (define answer 1) answer)"
+                        "phase5-cl-amb-left.scm"
+                        (list (kw 'kind) (kw 'module)
+                              (kw 'unit-id) left-id
+                              (kw 'exports) (list answer))))
+                      (right-archive
+                       (compile-archive
+                        "(begin (define answer 2) answer)"
+                        "phase5-cl-amb-right.scm"
+                        (list (kw 'kind) (kw 'module)
+                              (kw 'unit-id) right-id
+                              (kw 'exports) (list answer))))
+                      (bad-archive
+                       (compile-archive
+                        "answer"
+                        "phase5-cl-amb-bad.scm"
+                        (list (kw 'kind) (kw 'module)
+                              (kw 'unit-id) bad-id
+                              (kw 'imports) (list left-name right-name)
+                              (kw 'exports) (list answer)))))
+                 (unwind-protect
+                      (progn
+                        (cleanup (list left-id right-id bad-id))
+                        (ece::load-ecec-archive-section left-archive)
+                        (ece::load-ecec-archive-section right-archive)
+                        (let ((message (load-error-message bad-archive)))
+                          (ok (search "Ambiguous import" message)
+                              "ambiguous duplicate imported names are rejected")
+                          (ok (search "answer" message)
+                              "ambiguous import message names the binding")))
+                   (cleanup (list left-id right-id bad-id)))))))
+
+(deftest test-cl-archive-loader-module-import-spec-missing-export
+    (labels ((kw (name)
+               (intern (format nil ":~(~A~)" name) :ece))
+             (compile-archive (source file metadata)
+               (ece::evaluate
+                (list (ece-sym 'code-object->archive-sexp)
+                      (list (ece-sym 'mc-compile-to-code-object)
+                            (list 'quote (ece-read-string source)))
+                      file
+                      (list 'quote metadata))))
+             (cleanup (ids)
+               (dolist (id ids)
+                 (remhash id ece::*archive-units*)
+                 (remhash id ece::*module-instances*)))
+             (load-error-message (archive)
+               (handler-case
+                   (progn
+                     (ece::load-ecec-archive-section archive)
+                     nil)
+                 (ece:ece-runtime-error (e)
+                   (princ-to-string (ece:ece-original-error e))))))
+      (testing "CL archive loader reports importer for missing import spec names"
+               (let* ((module-sym (ece-sym 'module))
+                      (root (list (ece-sym 'phase5-cl) (ece-sym 'filter)))
+                      (base-name (append root (list (ece-sym 'base))))
+                      (bad-name (append root (list (ece-sym 'user))))
+                      (base-id (list module-sym base-name 0))
+                      (bad-id (list module-sym bad-name 0))
+                      (present (ece-sym 'present))
+                      (missing (ece-sym 'missing))
+                      (base-archive
+                       (compile-archive
+                        "(begin (define present 1) present)"
+                        "phase5-cl-filter-base.scm"
+                        (list (kw 'kind) (kw 'module)
+                              (kw 'unit-id) base-id
+                              (kw 'exports) (list present))))
+                      (bad-archive
+                       (compile-archive
+                        "missing"
+                        "phase5-cl-filter-user.scm"
+                        (list (kw 'kind) (kw 'module)
+                              (kw 'unit-id) bad-id
+                              (kw 'imports)
+                              (list (list (kw 'module) base-name
+                                          (kw 'only) (list missing)))
+                              (kw 'exports) (list missing)))))
+                 (unwind-protect
+                      (progn
+                        (cleanup (list base-id bad-id))
+                        (ece::load-ecec-archive-section base-archive)
+                        (let ((message (load-error-message bad-archive)))
+                          (ok (search "only list names" message)
+                              "missing import filter error names filter kind")
+                          (ok (search "missing export" message)
+                              "missing import filter error names missing export")
+                          (ok (search "user" message)
+                              "missing import filter error names importer")))
+                   (cleanup (list base-id bad-id)))))))
+
 (defun build-archive-zone-fn-inverse ()
   "Invert *archive-zone-fns* to a (make-hash-table :test 'eq) keyed on the
 function value, mapping back to the original (unit-id . co-key) cons.

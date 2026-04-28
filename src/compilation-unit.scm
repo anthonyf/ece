@@ -591,12 +591,48 @@ spelling as the registry key."
   "Return #t when VALUE has the normalized (module <name> <phase>) shape."
   (and (pair? value) (eq? (car value) 'module)))
 
+(define (archive/module-import-spec? value)
+  "Return #t when VALUE is a normalized module import spec."
+  (and (pair? value) (eq? (car value) ':module)))
+
+(define (archive/module-import-target import)
+  "Return IMPORT's target module name or unit id."
+  (if (archive/module-import-spec? import)
+      (archive/plist-get import ':module)
+      import))
+
 (define (archive/normalize-module-import-id import phase)
-  "Normalize IMPORT to a module archive unit id. Phase 3 accepts either a
-full `(module <name> <phase>)` unit id or the short module name `<name>`."
-  (if (archive/module-unit-id? import)
-      import
-      (list 'module import phase)))
+  "Normalize IMPORT to a module archive unit id. Phase 3 accepts a normalized
+`(:module <target> ...)` import spec, a full `(module <name> <phase>)` unit id,
+or the short module name `<name>`."
+  (let ((target (archive/module-import-target import)))
+    (if (archive/module-unit-id? target)
+        target
+        (list 'module target phase))))
+
+(define (archive/import-symbol-member? name names)
+  "Return #t when NAME appears in NAMES."
+  (cond
+   ((null? names) #f)
+   ((eq? name (car names)) #t)
+   (else (archive/import-symbol-member? name (cdr names)))))
+
+(define (archive/import-rename-target name renames)
+  "Return NAME's local rename target from RENAMES, or NAME when unrenamed."
+  (cond
+   ((null? renames) name)
+   ((and (pair? (car renames))
+         (eq? name (car (car renames))))
+    (cadr (car renames)))
+   (else (archive/import-rename-target name (cdr renames)))))
+
+(define (archive/import-spec-field import key default)
+  "Return KEY from normalized IMPORT spec, or DEFAULT for bare imports."
+  (if (archive/module-import-spec? import)
+      (if (archive/plist-has-key? import key)
+          (archive/plist-get import key)
+          default)
+      default))
 
 (define (archive/make-unit-record unit cos)
   "Create a mutable archive-unit record as a hash table."
@@ -660,18 +696,78 @@ stays unambiguous."
 
 (define (archive/collect-module-imports unit)
   "Instantiate UNIT's imports and return a hash table of imported bindings."
-  (let ((bindings (%make-hash-table)))
+  (let ((bindings (%make-hash-table))
+        (providers (%make-hash-table)))
+    (define (validate-exported-names! unit-id importer-id exports names context)
+      (for-each
+       (lambda (name)
+         (when (not (hash-has-key? exports name))
+           (error (string-append "Module import "
+                                 (write-to-string unit-id)
+                                 " in "
+                                 (write-to-string importer-id)
+                                 " "
+                                 context
+                                 " missing export "
+                                 (write-to-string name)
+                                 "."))))
+       names))
+    (define (import-name? name only except)
+      (and (or (not only)
+               (archive/import-symbol-member? name only))
+           (not (archive/import-symbol-member? name except))))
+    (define (record-import! local-name value provider-id importer-id)
+      (when (hash-has-key? bindings local-name)
+        (error (string-append "Ambiguous import "
+                              (write-to-string local-name)
+                              " in "
+                              (write-to-string importer-id)
+                              ": provided by "
+                              (write-to-string (hash-ref providers local-name))
+                              " and "
+                              (write-to-string provider-id)
+                              ".")))
+      (hash-set! bindings local-name value)
+      (hash-set! providers local-name provider-id))
     (for-each
      (lambda (import)
-       (let* ((instance
+       (let* ((unit-id (archive/normalize-module-import-id
+                        import
+                        (hash-ref unit ':phase)))
+              (only (archive/import-spec-field import ':only #f))
+              (except (archive/import-spec-field import ':except '()))
+              (renames (archive/import-spec-field import ':rename '()))
+              (importer-id (hash-ref unit ':unit-id))
+              (instance
                (archive/module-instance-for-import
                 import
                 (hash-ref unit ':phase)
-                (hash-ref unit ':unit-id)))
+                importer-id))
               (exports (archive/module-instance-exports instance)))
+         (when only
+           (validate-exported-names!
+            unit-id importer-id exports only "only list names"))
+         (validate-exported-names!
+          unit-id importer-id exports except "except list names")
+         (validate-exported-names!
+          unit-id
+          importer-id
+          exports
+          (let loop ((rest renames) (acc '()))
+            (if (null? rest)
+                (reverse acc)
+                (loop (cdr rest) (cons (car (car rest)) acc))))
+          "rename list names")
          (for-each
-          (lambda (name)
-            (hash-set! bindings name (hash-ref exports name)))
+          (lambda (exported-name)
+            (when (import-name? exported-name only except)
+              (let ((local-name
+                     (archive/import-rename-target exported-name renames)))
+                (record-import!
+                 local-name
+                 (hash-ref exports exported-name)
+                 unit-id
+                 importer-id))))
           (hash-keys exports))))
      (hash-ref unit ':imports))
     bindings))
@@ -834,6 +930,57 @@ result of the init code-object."
         result
         (loop (cdr rest) (cons (car rest) result)))))
 
+(define (module/plain-import? value)
+  "Return #t when VALUE is a direct module import target."
+  (or (module/source-name? value)
+      (archive/module-unit-id? value)))
+
+(define (module/rename-list? value)
+  "Return #t when VALUE is a proper list of (exported local) symbol pairs."
+  (cond
+   ((null? value) #t)
+   ((and (pair? value)
+         (pair? (car value))
+         (symbol? (car (car value)))
+         (pair? (cdr (car value)))
+         (symbol? (cadr (car value)))
+         (null? (cddr (car value))))
+    (module/rename-list? (cdr value)))
+   (else #f)))
+
+(define (module/normalize-import import)
+  "Normalize one source import declaration for archive metadata."
+  (cond
+   ((module/plain-import? import) import)
+   ((and (pair? import) (eq? (car import) 'only))
+    (when (or (not (pair? (cdr import)))
+              (not (module/plain-import? (cadr import)))
+              (not (module/symbol-list? (cddr import))))
+      (error "define-module: expected (only <module> <symbol> ...) import"))
+    (list ':module (cadr import) ':only (cddr import)))
+   ((and (pair? import) (eq? (car import) 'except))
+    (when (or (not (pair? (cdr import)))
+              (not (module/plain-import? (cadr import)))
+              (not (module/symbol-list? (cddr import))))
+      (error "define-module: expected (except <module> <symbol> ...) import"))
+    (list ':module (cadr import) ':except (cddr import)))
+   ((and (pair? import) (eq? (car import) 'rename))
+    (when (or (not (pair? (cdr import)))
+              (not (module/plain-import? (cadr import)))
+              (not (module/rename-list? (cddr import))))
+      (error "define-module: expected (rename <module> (<from> <to>) ...) import"))
+    (list ':module (cadr import) ':rename (cddr import)))
+   (else
+    (error "define-module: imports must be module names, (module <name> <phase>) unit ids, or only/except/rename specs"))))
+
+(define (module/normalize-imports imports)
+  "Normalize a proper list of source imports."
+  (let loop ((rest imports) (acc '()))
+    (if (null? rest)
+        (reverse acc)
+        (loop (cdr rest)
+              (cons (module/normalize-import (car rest)) acc)))))
+
 (define (module/parse-define-module form)
   "Parse a source-level define-module form into a plist:
 :name, :imports, :exports, and :body. Phase 4 deliberately accepts only
@@ -856,14 +1003,10 @@ static value imports/exports and one module per source file."
        ((module/import-form? (car forms))
         (when body-started?
           (error "define-module: import declarations must precede body forms"))
-        (for-each
-         (lambda (import)
-           (when (not (or (module/source-name? import)
-                          (archive/module-unit-id? import)))
-             (error "define-module: imports must be module names or (module <name> <phase>) unit ids")))
-         (cdr (car forms)))
         (loop (cdr forms)
-              (module/append-reversed (cdr (car forms)) imports)
+              (module/append-reversed
+               (module/normalize-imports (cdr (car forms)))
+               imports)
               exports
               body
               #f))
