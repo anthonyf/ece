@@ -272,9 +272,9 @@ SPACE-NAME is a symbol, SOURCE-MAP-FIELD is (filename (pc line col) ...)."
         (hash-ref space-map pc #f)
         #f)))
 
-(define (load-section-from-port port)
-  "Load one ecec archive section from PORT. Expects (:ecec-archive ...).
-Returns the init's result, or eof if no more sections. Legacy
+(define (read-archive-section-form port)
+  "Read one ecec archive section from PORT. Expects (:ecec-archive ...).
+Returns the archive form, or eof if no more sections. Legacy
 (ecec-header ...) files were retired in §9.3 — if one is encountered,
 signals an error pointing at `make bootstrap` for regeneration."
   (let ((head (ece-scheme-read port)))
@@ -285,20 +285,81 @@ signals an error pointing at `make bootstrap` for regeneration."
      ((and (pair? head)
            (or (eq? (car head) ':ecec-archive)
                (eq? (car head) 'ecec-archive)))
-      (load-archive-section-form head))
+      head)
      (else
       (error "load-section-from-port: expected (:ecec-archive ...). Run `make bootstrap` to regenerate.")))))
+
+(define (load-section-from-port port)
+  "Load one ecec archive section from PORT. Expects (:ecec-archive ...).
+Returns the init's result, or eof if no more sections."
+  (let ((archive (read-archive-section-form port)))
+    (if (eof? archive)
+        archive
+        (load-archive-section-form archive))))
 
 (define (load-archive-section-form archive)
   "Archive-format path: ARCHIVE is the parsed (:ecec-archive ...) form.
 Rebuild code-objects and execute the selected init entry."
+  (archive/load-materialized-section
+   (archive/materialize-section archive)
+   #f))
+
+(define (archive/materialize-section archive)
+  "Parse ARCHIVE into a section descriptor with normalized metadata and code."
   (let* ((unit (archive/unit-metadata archive))
          (cos (archive-sexp->code-objects archive)))
-    (if (archive/module-kind? (archive/plist-get unit ':kind))
+    (list ':archive archive ':unit unit ':cos cos)))
+
+(define (archive/section-unit section)
+  (archive/plist-get section ':unit))
+
+(define (archive/section-cos section)
+  (archive/plist-get section ':cos))
+
+(define (archive/section-module? section)
+  (archive/module-kind?
+   (archive/plist-get (archive/section-unit section) ':kind)))
+
+(define (archive/registered-unit unit-id)
+  (hash-ref *archive-units* (archive/unit-key unit-id) #f))
+
+(define (archive/ensure-registered-unit! unit cos)
+  "Return UNIT's existing record, or register it when absent."
+  (let* ((unit-id (archive/plist-get unit ':unit-id))
+         (existing (archive/registered-unit unit-id)))
+    (if existing
+        existing
+        (archive/register-unit! unit cos))))
+
+(define (archive/register-bundle-section! section)
+  "Register SECTION's unit for bundle-wide module graph resolution.
+Module duplicate unit ids stay hard errors. File units are recorded when
+absent so an explicit module-shaped import can fail as a non-module import
+rather than as a missing unit, without making repeated file loads fatal."
+  (let* ((unit (archive/section-unit section))
+         (cos (archive/section-cos section))
+         (unit-id (archive/plist-get unit ':unit-id)))
+    (if (archive/section-module? section)
+        (archive/register-unit! unit cos)
+        (when (not (archive/registered-unit unit-id))
+          (hash-set! *archive-units*
+                     (archive/unit-key unit-id)
+                     (archive/make-unit-record unit cos))))))
+
+(define (archive/load-materialized-section section bundle-registered?)
+  "Execute or instantiate SECTION. When BUNDLE-REGISTERED? is true, module
+records have already been registered during the bundle discovery pass."
+  (let ((unit (archive/section-unit section))
+        (cos (archive/section-cos section)))
+    (if (archive/section-module? section)
         (archive/module-instance-result
          (archive/instantiate-module!
-          (archive/register-unit! unit cos)))
-        (let ((init (archive/select-init-code-object archive cos)))
+          (if bundle-registered?
+              (archive/ensure-registered-unit! unit cos)
+              (archive/register-unit! unit cos))))
+        (let ((init (archive/select-init-code-object
+                     (archive/plist-get section ':archive)
+                     cos)))
           (execute-code-object init)))))
 
 (define (load-compiled filename)
@@ -311,15 +372,24 @@ For multi-space bundles, only the first section is loaded."
 
 (define (load-bundle filename)
   "Load and execute all sections from a .ecec bundle file.
-Each section creates a new space, registers its source-map, and executes
-sequentially. Definitions from earlier sections are available to later ones.
+The bundle is discovered first so module units can be imported regardless of
+section order. File sections still execute sequentially in bundle order.
 Returns the result of the last section."
   (let ((port (open-input-file filename)))
-    (let loop ((last-result #f))
-      (let ((result (load-section-from-port port)))
-        (if (eof? result)
-            (begin (close-input-port port) last-result)
-            (loop result))))))
+    (define (read-sections sections)
+      (let ((archive (read-archive-section-form port)))
+        (if (eof? archive)
+            (reverse sections)
+            (read-sections
+             (cons (archive/materialize-section archive) sections)))))
+    (let ((sections (read-sections '())))
+      (close-input-port port)
+      (for-each archive/register-bundle-section! sections)
+      (let loop ((rest sections) (last-result #f))
+        (if (null? rest)
+            last-result
+            (loop (cdr rest)
+                  (archive/load-materialized-section (car rest) #t)))))))
 
 ;;; ─────────────────────────────────────────────────────────────────────────
 ;;; §8: .ecec archive format (version 2)
