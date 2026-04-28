@@ -2053,6 +2053,38 @@ the downcased (source-map filename (pc line col) ...) cdr."
   "Custom CL readtable that understands #f, #t (plus default #S, etc.)
 so load-ecec-file can read both old and new serialization formats.")
 
+(defun ecec-archive-form-p (value)
+  (and (consp value)
+       (symbolp (car value))
+       (let ((n (symbol-name (car value))))
+         ;; Accept both the new keyword head (:ecec-archive) and the legacy
+         ;; plain-symbol head (ecec-archive) so older generated test fixtures
+         ;; can still be diagnosed by the version gate.
+         (or (string-equal n ":ecec-archive")
+             (string-equal n "ecec-archive")))))
+
+(defun read-ecec-archive-form (stream)
+  "Read one archive form from STREAM, returning :EOF at end of file."
+  (let* ((*package* (find-package :ece))
+         (*readtable* *ecec-readtable*)
+         (raw-head (cl:read stream nil :eof)))
+    (when (eq raw-head :eof) (return-from read-ecec-archive-form :eof))
+    (unless (ecec-archive-form-p raw-head)
+      (error 'ece-runtime-error
+             :procedure nil :arguments nil :environment *global-env*
+             :instruction nil :backtrace nil
+             :original-error
+             (make-condition 'simple-error
+                             :format-control "read-ecec-archive-form: expected (:ecec-archive ...), got ~A. Run `make bootstrap` to regenerate."
+                             :format-arguments (list (if (consp raw-head) (car raw-head) raw-head)))))
+    raw-head))
+
+(defun ecec-archive-skipped-p (raw-archive skip)
+  (when skip
+    (let* ((archive (downcase-ece-symbols raw-archive))
+           (file (archive-plist-get (cdr archive) (intern ":file" :ece))))
+      (and file (member file skip :test #'string=)))))
+
 (defun load-ecec-section (stream &key skip)
   "Load one ecec archive section from STREAM. Expects (ecec-archive ...).
 SKIP is retained for Makefile API compat (skips sections whose archive
@@ -2060,34 +2092,70 @@ SKIP is retained for Makefile API compat (skips sections whose archive
 has more sections (including skipped ones), NIL on EOF. Legacy
 (ecec-header ...) files were retired in §9.3 — if one is encountered,
 signals an error pointing at `make bootstrap` for regeneration."
-  ;; Bind *package* to :ece so cl:read interns symbols in the ECE package,
-  ;; regardless of caller context (e.g., CL-USER from run.lisp).
-  (let* ((*package* (find-package :ece))
-         (*readtable* *ecec-readtable*)
-         (raw-head (cl:read stream nil :eof)))
+  (let ((raw-head (read-ecec-archive-form stream)))
     (when (eq raw-head :eof) (return-from load-ecec-section nil))
-    (unless (and (consp raw-head)
-                 (symbolp (car raw-head))
-                 (let ((n (symbol-name (car raw-head))))
-                   ;; Accept both the new keyword head (:ecec-archive) and
-                   ;; the legacy plain-symbol head (ecec-archive) so we can
-                   ;; boot from either format during the transition.
-                   (or (string-equal n ":ecec-archive")
-                       (string-equal n "ecec-archive"))))
-      (error 'ece-runtime-error
-             :procedure nil :arguments nil :environment *global-env*
-             :instruction nil :backtrace nil
-             :original-error
-             (make-condition 'simple-error
-                             :format-control "load-ecec-section: expected (:ecec-archive ...), got ~A. Run `make bootstrap` to regenerate."
-                             :format-arguments (list (if (consp raw-head) (car raw-head) raw-head)))))
     (when skip
-      (let* ((archive (downcase-ece-symbols raw-head))
-             (file (archive-plist-get (cdr archive) (intern ":file" :ece))))
-        (when (and file (member file skip :test #'string=))
-          (return-from load-ecec-section t))))
+      (when (ecec-archive-skipped-p raw-head skip)
+        (return-from load-ecec-section t)))
     (load-ecec-archive-section raw-head)
     t))
+
+(defun materialize-ecec-archive-section (raw-archive)
+  "Parse RAW-ARCHIVE into a materialized archive section descriptor."
+  (let* ((archive (downcase-ece-symbols
+                   (canonicalize-ecec-constants raw-archive)))
+         (cos (parse-archive-sexp archive))
+         (unit (archive-unit-metadata archive))
+         (unit-id (archive-plist-get unit (intern ":unit-id" :ece))))
+    (when unit-id
+      (register-archive-code-objects cos unit-id)
+      (attach-archive-native-fns cos unit-id))
+    (list :archive archive :unit unit :cos cos)))
+
+(defun ensure-archive-unit-registered (unit cos)
+  "Return UNIT's existing archive-unit record, or register it when absent."
+  (let* ((unit-id (archive-unit-field unit ":unit-id"))
+         (existing (gethash unit-id *archive-units*)))
+    (or existing (register-archive-unit unit cos))))
+
+(defun register-bundle-archive-section (section)
+  "Register SECTION's unit for bundle-wide module graph resolution.
+Module duplicate unit ids stay hard errors. File units are recorded when
+absent so module-shaped imports of non-module units fail as non-module imports
+rather than missing imports."
+  (let* ((unit (getf section :unit))
+         (cos (getf section :cos))
+         (unit-id (archive-unit-field unit ":unit-id")))
+    (if (module-kind-p (archive-unit-field unit ":kind"))
+        (register-archive-unit unit cos)
+        (unless (gethash unit-id *archive-units*)
+          (setf (gethash unit-id *archive-units*)
+                (make-archive-unit
+                 :unit-id unit-id
+                 :kind (archive-unit-field unit ":kind")
+                 :phase (archive-unit-field unit ":phase")
+                 :imports (archive-unit-field unit ":imports")
+                 :exports (archive-unit-field unit ":exports")
+                 :init-index (archive-validated-init-index unit cos)
+                 :cos cos
+                 :state :registered))))))
+
+(defun load-materialized-ecec-archive-section (section &key bundle-registered)
+  "Execute or instantiate SECTION. BUNDLE-REGISTERED means module records were
+already created during bundle discovery."
+  (let* ((unit (getf section :unit))
+         (cos (getf section :cos))
+         (kind (archive-unit-field unit ":kind")))
+    (cond
+      ((module-kind-p kind)
+       (module-instance-result
+        (instantiate-module-unit
+         (if bundle-registered
+             (ensure-archive-unit-registered unit cos)
+             (register-archive-unit unit cos)))))
+      (t
+       (let ((init (aref cos (archive-validated-init-index unit cos))))
+         (execute-instructions init 0 *global-env*))))))
 
 (defun load-ecec-archive-section (raw-archive)
   "Archive-format dispatch: parse the archive, register each code-object
@@ -2116,22 +2184,8 @@ interpreter when it's NIL, so code-objects with no registered zone run
 interpreted. This is the Phase C / Phase D transitional state: once
 Phase D flips compile-system to archive format and the zone-file load
 order is corrected, every reachable code-object gets a zone fn here."
-  (let* ((archive (downcase-ece-symbols
-                   (canonicalize-ecec-constants raw-archive)))
-         (cos (parse-archive-sexp archive))
-         (unit (archive-unit-metadata archive))
-         (unit-id (archive-plist-get unit (intern ":unit-id" :ece)))
-         (kind (archive-plist-get unit (intern ":kind" :ece))))
-    (when unit-id
-      (register-archive-code-objects cos unit-id)
-      (attach-archive-native-fns cos unit-id))
-    (cond
-      ((module-kind-p kind)
-       (module-instance-result
-        (instantiate-module-unit (register-archive-unit unit cos))))
-      (t
-       (let ((init (aref cos (archive-validated-init-index unit cos))))
-         (execute-instructions init 0 *global-env*))))))
+  (load-materialized-ecec-archive-section
+   (materialize-ecec-archive-section raw-archive)))
 
 (defun archive-file-stem-symbol (archive)
   "Derive the :ece-package file-stem symbol for ARCHIVE's |file| field,
@@ -2467,10 +2521,22 @@ stale/regen-pending zone file."
 (defun load-ecec-file (pathname &key skip)
   "Load a .ecec file: read sections, create named spaces, assemble and execute.
 Supports multi-space bundles (loops until EOF).
-If SKIP is a list of strings, skip sections whose space name matches.
+If SKIP is a list of strings, skip sections whose archive |file| field matches.
 Uses the CL reader (not the ECE reader) so this works at boot before the ECE reader exists."
   (with-open-file (stream pathname)
-    (loop while (load-ecec-section stream :skip skip))))
+    (let ((sections nil))
+      (loop
+        for raw = (read-ecec-archive-form stream)
+        until (eq raw :eof)
+        unless (ecec-archive-skipped-p raw skip)
+          do (push (materialize-ecec-archive-section raw) sections))
+      (setf sections (nreverse sections))
+      (dolist (section sections)
+        (register-bundle-archive-section section))
+      (dolist (section sections)
+        (load-materialized-ecec-archive-section
+         section
+         :bundle-registered t)))))
 
 (defun boot-from-compiled ()
   "Boot ECE by loading the bootstrap bundle, skipping browser-lib."
