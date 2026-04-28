@@ -291,6 +291,7 @@
                         (load-bundle bundle-path)
                         #f)))
          (assert-true (string-contains? message "only list names"))
+         (assert-true (string-contains? message "filter-user"))
          (assert-true (string-contains? message "missing export"))))))))
 
 (test "modules: module archive imports and exports are isolated" (lambda ()

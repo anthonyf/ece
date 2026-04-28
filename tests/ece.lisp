@@ -3688,6 +3688,66 @@ during a clean run, which is by design."
                               "ambiguous import message names the binding")))
                    (cleanup (list left-id right-id bad-id)))))))
 
+(deftest test-cl-archive-loader-module-import-spec-missing-export
+    (labels ((kw (name)
+               (intern (format nil ":~(~A~)" name) :ece))
+             (compile-archive (source file metadata)
+               (ece::evaluate
+                (list (ece-sym 'code-object->archive-sexp)
+                      (list (ece-sym 'mc-compile-to-code-object)
+                            (list 'quote (ece-read-string source)))
+                      file
+                      (list 'quote metadata))))
+             (cleanup (ids)
+               (dolist (id ids)
+                 (remhash id ece::*archive-units*)
+                 (remhash id ece::*module-instances*)))
+             (load-error-message (archive)
+               (handler-case
+                   (progn
+                     (ece::load-ecec-archive-section archive)
+                     nil)
+                 (ece:ece-runtime-error (e)
+                   (princ-to-string (ece:ece-original-error e))))))
+      (testing "CL archive loader reports importer for missing import spec names"
+               (let* ((module-sym (ece-sym 'module))
+                      (root (list (ece-sym 'phase5-cl) (ece-sym 'filter)))
+                      (base-name (append root (list (ece-sym 'base))))
+                      (bad-name (append root (list (ece-sym 'user))))
+                      (base-id (list module-sym base-name 0))
+                      (bad-id (list module-sym bad-name 0))
+                      (present (ece-sym 'present))
+                      (missing (ece-sym 'missing))
+                      (base-archive
+                       (compile-archive
+                        "(begin (define present 1) present)"
+                        "phase5-cl-filter-base.scm"
+                        (list (kw 'kind) (kw 'module)
+                              (kw 'unit-id) base-id
+                              (kw 'exports) (list present))))
+                      (bad-archive
+                       (compile-archive
+                        "missing"
+                        "phase5-cl-filter-user.scm"
+                        (list (kw 'kind) (kw 'module)
+                              (kw 'unit-id) bad-id
+                              (kw 'imports)
+                              (list (list (kw 'module) base-name
+                                          (kw 'only) (list missing)))
+                              (kw 'exports) (list missing)))))
+                 (unwind-protect
+                      (progn
+                        (cleanup (list base-id bad-id))
+                        (ece::load-ecec-archive-section base-archive)
+                        (let ((message (load-error-message bad-archive)))
+                          (ok (search "only list names" message)
+                              "missing import filter error names filter kind")
+                          (ok (search "missing export" message)
+                              "missing import filter error names missing export")
+                          (ok (search "user" message)
+                              "missing import filter error names importer")))
+                   (cleanup (list base-id bad-id)))))))
+
 (defun build-archive-zone-fn-inverse ()
   "Invert *archive-zone-fns* to a (make-hash-table :test 'eq) keyed on the
 function value, mapping back to the original (unit-id . co-key) cons.

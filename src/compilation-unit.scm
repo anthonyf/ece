@@ -602,8 +602,9 @@ spelling as the registry key."
       import))
 
 (define (archive/normalize-module-import-id import phase)
-  "Normalize IMPORT to a module archive unit id. Phase 3 accepts either a
-full `(module <name> <phase>)` unit id or the short module name `<name>`."
+  "Normalize IMPORT to a module archive unit id. Phase 3 accepts a normalized
+`(:module <target> ...)` import spec, a full `(module <name> <phase>)` unit id,
+or the short module name `<name>`."
   (let ((target (archive/module-import-target import)))
     (if (archive/module-unit-id? target)
         target
@@ -697,12 +698,14 @@ stays unambiguous."
   "Instantiate UNIT's imports and return a hash table of imported bindings."
   (let ((bindings (%make-hash-table))
         (providers (%make-hash-table)))
-    (define (validate-exported-names! import unit-id exports names context)
+    (define (validate-exported-names! unit-id importer-id exports names context)
       (for-each
        (lambda (name)
          (when (not (hash-has-key? exports name))
            (error (string-append "Module import "
                                  (write-to-string unit-id)
+                                 " in "
+                                 (write-to-string importer-id)
                                  " "
                                  context
                                  " missing export "
@@ -734,18 +737,21 @@ stays unambiguous."
               (only (archive/import-spec-field import ':only #f))
               (except (archive/import-spec-field import ':except '()))
               (renames (archive/import-spec-field import ':rename '()))
+              (importer-id (hash-ref unit ':unit-id))
               (instance
                (archive/module-instance-for-import
                 import
                 (hash-ref unit ':phase)
-                (hash-ref unit ':unit-id)))
+                importer-id))
               (exports (archive/module-instance-exports instance)))
          (when only
-           (validate-exported-names! import unit-id exports only "only list names"))
-         (validate-exported-names! import unit-id exports except "except list names")
+           (validate-exported-names!
+            unit-id importer-id exports only "only list names"))
          (validate-exported-names!
-          import
+          unit-id importer-id exports except "except list names")
+         (validate-exported-names!
           unit-id
+          importer-id
           exports
           (let loop ((rest renames) (acc '()))
             (if (null? rest)
@@ -761,7 +767,7 @@ stays unambiguous."
                  local-name
                  (hash-ref exports exported-name)
                  unit-id
-                 (hash-ref unit ':unit-id)))))
+                 importer-id))))
           (hash-keys exports))))
      (hash-ref unit ':imports))
     bindings))

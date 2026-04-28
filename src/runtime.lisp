@@ -2238,9 +2238,10 @@ as a low-level AREF type or bounds condition during boot."
       import))
 
 (defun normalize-module-import-id (import phase)
-  "Normalize an import form to an archive unit id.
-Phase 3 accepts either a full unit id `(module <name> <phase>)` or the
-short module name `<name>`, which normalizes to `(module <name> PHASE)`."
+  "Normalize an import form or import spec to an archive unit id.
+Phase 3 accepts a `(:module ...)` import spec, a full unit id
+`(module <name> <phase>)`, or the short module name `<name>`. Short names
+and import specs normalize to `(module <name> PHASE)`."
   (let ((target (module-import-target import)))
     (cond
       ((module-unit-id-p target) target)
@@ -2304,15 +2305,16 @@ rejected so module identity remains unambiguous."
 (defun collect-module-imports (unit)
   "Instantiate UNIT's imports and return a hash table of imported bindings."
   (let ((bindings (make-hash-table :test 'eq))
-        (providers (make-hash-table :test 'eq)))
+        (providers (make-hash-table :test 'eq))
+        (importer-id (archive-unit-unit-id unit)))
     (flet ((validate-exported-names (unit-id exports names context)
              (dolist (name names)
                (multiple-value-bind (_ found) (gethash name exports)
                  (declare (ignore _))
                  (unless found
                    (archive-runtime-error
-                    "Module import ~S ~A missing export ~S."
-                    unit-id context name)))))
+                    "Module import ~S in ~S ~A missing export ~S."
+                    unit-id importer-id context name)))))
            (import-name-p (name only-present-p only except)
              (and (or (not only-present-p)
                       (module-import-symbol-member-p name only))
@@ -2340,7 +2342,7 @@ rejected so module identity remains unambiguous."
              (instance (module-instance-for-import
                         import
                         (archive-unit-phase unit)
-                        (archive-unit-unit-id unit)))
+                        importer-id))
              (exports (module-instance-exports instance)))
         (when only-present-p
           (validate-exported-names unit-id exports only "only list names"))
@@ -2353,7 +2355,7 @@ rejected so module identity remains unambiguous."
                       (module-import-rename-target exported-name renames)
                       value
                       unit-id
-                      (archive-unit-unit-id unit))))
+                      importer-id)))
                  exports))))
     bindings)))
 
