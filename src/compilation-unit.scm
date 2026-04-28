@@ -739,6 +739,48 @@ stays unambiguous."
   "Return INSTANCE's export table."
   (hash-ref instance ':exports #f))
 
+(define (archive/module-instance module . maybe-phase)
+  "Return MODULE's instance, instantiating its registered unit if needed.
+MODULE may be a short module name such as (game app) or a normalized
+(module <name> <phase>) unit id. MAYBE-PHASE defaults to 0 for short names."
+  (let* ((phase (if (null? maybe-phase) 0 (car maybe-phase)))
+         (unit-id (archive/normalize-module-import-id module phase))
+         (key (archive/unit-key unit-id))
+         (existing (hash-ref *module-instances* key #f)))
+    (if existing
+        existing
+        (let ((unit (hash-ref *archive-units* key #f)))
+          (when (not unit)
+            (error (string-append "Module not found: "
+                                  (write-to-string unit-id)
+                                  ".")))
+          (archive/instantiate-module! unit)))))
+
+(define (archive/module-export module export-name . maybe-phase)
+  "Return EXPORT-NAME from MODULE, instantiating MODULE if needed."
+  (when (not (symbol? export-name))
+    (error "module export name must be a symbol" export-name))
+  (let* ((phase (if (null? maybe-phase) 0 (car maybe-phase)))
+         (unit-id (archive/normalize-module-import-id module phase))
+         (instance (archive/module-instance unit-id))
+         (exports (archive/module-instance-exports instance)))
+    (when (not (hash-has-key? exports export-name))
+      (error (string-append "Module entry export not found: "
+                            (write-to-string export-name)
+                            " in "
+                            (write-to-string unit-id)
+                            ".")))
+    (hash-ref exports export-name)))
+
+(define (run-module-export module export-name . args)
+  "Run MODULE's exported procedure EXPORT-NAME with ARGS."
+  (let ((value (archive/module-export module export-name)))
+    (when (not (procedure? value))
+      (error (string-append "Module entry export is not callable: "
+                            (write-to-string export-name)
+                            ".")))
+    (apply value args)))
+
 (define (archive/module-env-table env)
   "Return the private hash table from a module environment."
   (cdr (car env)))

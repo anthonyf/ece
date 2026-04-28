@@ -70,3 +70,9 @@
   (let ((parsed (parse-argv '("-i" "init.scm"))))
     (assert-equal (list-ref parsed 0) #t)
     (assert-equal (list-ref parsed 4) '((load "init.scm"))))))
+
+(test "parse-argv: module entry options" (lambda ()
+  (let ((parsed (parse-argv '("--module" "(phase-b app)" "--entry" "main" "app.ecec"))))
+    (assert-equal (list-ref parsed 4) '((load "app.ecec")))
+    (assert-equal (list-ref parsed 6) '(phase-b app))
+    (assert-equal (list-ref parsed 7) 'main))))

@@ -207,6 +207,7 @@ ece -e "(display (+ 1 2))"           # evaluate expression → 3
 ece main.scm                         # load and run a script
 ece --load lib.scm -e "(lib-fn 42)"  # chain loads and evals
 ece app.ecec                         # run a compiled bundle
+ece --module '(app main)' --entry main app.ecec  # run a module export
 ece -i main.scm                      # run script, then drop into REPL
 ece main.scm -- arg1 arg2            # pass args via (command-line)
 ```
@@ -219,6 +220,8 @@ ece [OPTIONS] [FILE...]
 Options:
   --load FILE           Load and execute FILE (.scm or .ecec)
   -e EXPR, --eval EXPR  Read and evaluate EXPR
+  --module MODULE       Select module entry point, e.g. '(app main)'
+  --entry SYMBOL        Run exported procedure from --module
   -i, --interactive     Enter REPL after processing files
   --                    Stop option parsing; pass rest via (command-line)
   -h, --help            Show help and exit
@@ -334,6 +337,16 @@ dist/
 ./dist/run             # requires `ece` in $PATH
 ./dist/run foo bar     # args are visible to main.scm via (command-line)
 ```
+
+For a module bundle, ask the wrapper to invoke an exported procedure:
+
+```sh
+ece-build --target cl -o dist/ --module '(app main)' --entry main app/main.scm
+./dist/run
+```
+
+The selected export must be a procedure. The build still writes `app.ecec`; the
+generated `run` script invokes `ece --module ... --entry ... app.ecec`.
 
 ### Multi-file builds
 
