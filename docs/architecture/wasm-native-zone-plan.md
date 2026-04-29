@@ -262,6 +262,14 @@ No executor dispatch in this phase.
 
 Still no native execution in this phase.
 
+Registry keys should be normalized before they reach the runtime. File-style
+unit ids may already be symbols or strings, but module unit ids are structured
+lists such as `(module (game main) 0)`. The current WASM hash table is
+identity-keyed, so the ECE host layer interns strings directly and interns a
+stable textual key for structured unit ids before passing the normalized key to
+the runtime registry. This keeps repeated equal module ids addressable without
+requiring structural hash-table support in the WAT kernel.
+
 ### Phase 3: Hand-Written Dispatch Smoke
 
 - Add the executor entry hook.

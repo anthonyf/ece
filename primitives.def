@@ -368,3 +368,10 @@
 (258 code-object-archive-key          1  core   "Archive-key metadata of a code object (#f for REPL-compiled/anonymous)")
 (259 %code-object-set-archive-key!    2  core   "Set the archive-key slot on a code object")
 (260 %archive-co-lookup                2  core   "Look up (stem . index) in *archive-code-objects*; #f if absent")
+
+;;; ═══════════════════════════════════════════════════════════════════════
+;;; WASM NATIVE-ZONE REGISTRY (261-262) — phase 2 host surface
+;;; ═══════════════════════════════════════════════════════════════════════
+
+(261 %native-zone-register!            3  core   "Register native-zone export ref by normalized unit key and co-index")
+(262 %native-zone-lookup               2  core   "Look up native-zone export ref by normalized unit key and co-index; #f if absent")

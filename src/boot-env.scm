@@ -284,6 +284,13 @@
 (%register-primitive! '%code-object-set-source-loc! 255)
 (%register-primitive! 'execute-code-object 256)
 (%register-primitive! 'code-object-arity 257)
+(%register-primitive! 'code-object-archive-key 258)
+(%register-primitive! '%code-object-set-archive-key! 259)
+(%register-primitive! '%archive-co-lookup 260)
+
+;; --- WASM native-zone registry ---
+(%register-primitive! '%native-zone-register! 261)
+(%register-primitive! '%native-zone-lookup 262)
 
 ;;; ═══════════════════════════════════════════════════════════════════
 ;;; 2. Initialize assembler symbol table

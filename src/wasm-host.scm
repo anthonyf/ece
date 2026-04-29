@@ -160,6 +160,28 @@ Optional string fields are :source, :module-url, and per-entry :fingerprint."
 (define (native-zone-entry-fingerprint entry)
   (wasm-host/plist-get entry ':fingerprint))
 
+(define (wasm-host/registry-unit-key unit-id)
+  "Return an interned key suitable for identity-keyed runtime registries."
+  (cond
+   ((not unit-id)
+    (wasm-host/error "native-zone unit-id must not be #f"))
+   ((symbol? unit-id) unit-id)
+   ((string? unit-id) (string->symbol unit-id))
+   (else (string->symbol (write-to-string-flat unit-id)))))
+
+(define wasm-host/max-co-index 1073741823)
+
+(define (wasm-host/validate-co-index co-index)
+  (when (not (and (integer? co-index)
+                  (>= co-index 0)
+                  (<= co-index wasm-host/max-co-index)))
+    (wasm-host/error
+     "native-zone co-index must be an integer in the range 0..1073741823")))
+
+(define (wasm-host/normalize-co-index co-index)
+  (wasm-host/validate-co-index co-index)
+  (truncate co-index))
+
 (define (fetch-text url)
   (wasm-host/not-implemented 'fetch-text))
 
@@ -173,7 +195,22 @@ Optional string fields are :source, :module-url, and per-entry :fingerprint."
   (wasm-host/not-implemented 'wasm-export))
 
 (define (register-native-zone! unit-id co-index export-ref)
-  (wasm-host/not-implemented 'register-native-zone!))
+  "Register EXPORT-REF as the native zone for UNIT-ID code object CO-INDEX."
+  (when (not export-ref)
+    (wasm-host/error "native-zone export-ref must not be #f"))
+  (%native-zone-register!
+   (wasm-host/registry-unit-key unit-id)
+   (wasm-host/normalize-co-index co-index)
+   export-ref))
+
+(define (native-zone-lookup unit-id co-index)
+  "Return the registered native-zone export ref, or #f when absent."
+  (%native-zone-lookup
+   (wasm-host/registry-unit-key unit-id)
+   (wasm-host/normalize-co-index co-index)))
+
+(define (native-zone-registered? unit-id co-index)
+  (if (native-zone-lookup unit-id co-index) #t #f))
 
 (define (native-zone-imports)
   "Return the import object for side-loaded native-zone modules.

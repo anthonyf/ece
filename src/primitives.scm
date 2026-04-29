@@ -623,6 +623,16 @@
   :cl `(cl:or (cl:gethash (cl:cons ,unit-id ,index) *archive-code-objects*)
               *scheme-false*))
 
+(define-host-primitive (%native-zone-register! unit-key index export-ref)
+  :cl `(cl:progn
+         (cl:setf (cl:gethash (cl:cons ,unit-key ,index) *native-zone-registry*)
+                  ,export-ref)
+         ,export-ref))
+
+(define-host-primitive (%native-zone-lookup unit-key index)
+  :cl `(cl:or (cl:gethash (cl:cons ,unit-key ,index) *native-zone-registry*)
+              *scheme-false*))
+
 ;;; ─────────────────────────────────────────────────────────────────────────
 ;;; Serialization (id 136)
 ;;; ─────────────────────────────────────────────────────────────────────────
