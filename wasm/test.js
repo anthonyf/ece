@@ -30,6 +30,24 @@ function runIntegrationTests(w, envH) {
     if (!cond) throw new Error(msg || "assertion failed");
   }
 
+  function eceEval(src) {
+    const evalStr = w.env_lookup(envH, ECE.internSym("eval-string-last"));
+    return w.call_ece_proc(evalStr, w.h_cons(ECE.makeString(src), w.h_nil()));
+  }
+
+  function nativeResult(mode, pc, val, regs) {
+    const vec = w.h_vector(8);
+    w.h_vector_set(vec, 0, w.h_fixnum(mode));
+    w.h_vector_set(vec, 1, w.h_fixnum(pc));
+    w.h_vector_set(vec, 2, val);
+    w.h_vector_set(vec, 3, regs.env);
+    w.h_vector_set(vec, 4, regs.proc);
+    w.h_vector_set(vec, 5, regs.argl);
+    w.h_vector_set(vec, 6, regs.cont);
+    w.h_vector_set(vec, 7, regs.stack);
+    return vec;
+  }
+
   // ── Op-id exhaustive check (canonical IDs from operations.def) ──
   const opNames = [
     'lookup-variable-value', 'lookup-global-variable',
@@ -170,6 +188,83 @@ function runIntegrationTests(w, envH) {
     const h = ECE.internSym("car");
     const r = w.test_lookup_returns_sentinel(h);
     assert(r === 0, `expected value (0), got ${r}`);
+  });
+
+  // ── Native-zone entry dispatch smoke ──
+  iTest("native zone dispatch returns value", () => {
+    globalThis.__eceNativeReturn99 = (regs) =>
+      nativeResult(0, 0, regs.wasm.h_fixnum(99), regs);
+
+    const result = eceEval(`
+      (begin
+        (define native-smoke-co (mc-compile-to-code-object 42))
+        (%code-object-set-archive-key! native-smoke-co (cons 'native-smoke 0))
+        (register-native-zone! 'native-smoke 0
+          (%js-eval "globalThis.__eceNativeReturn99"))
+        (execute-code-object native-smoke-co))`);
+
+    assert(w.h_fixnum_val(result) === 99,
+      `expected native return 99, got ${w.h_fixnum_val(result)}`);
+  });
+
+  iTest("native zone bail falls back to interpreter", () => {
+    let calls = 0;
+    globalThis.__eceNativeInterpret = (regs) => {
+      calls++;
+      return nativeResult(2, regs.pc, regs.val, regs);
+    };
+
+    const result = eceEval(`
+      (begin
+        (define native-bail-co (mc-compile-to-code-object 42))
+        (%code-object-set-archive-key! native-bail-co (cons 'native-bail 0))
+        (register-native-zone! 'native-bail 0
+          (%js-eval "globalThis.__eceNativeInterpret"))
+        (execute-code-object native-bail-co))`);
+
+    assert(calls === 1, `expected native zone to be called once, got ${calls}`);
+    assert(w.h_fixnum_val(result) === 42,
+      `expected interpreted fallback 42, got ${w.h_fixnum_val(result)}`);
+  });
+
+  iTest("native zone replacement affects future dispatch", () => {
+    globalThis.__eceNativeReturn100 = (regs) =>
+      nativeResult(0, 0, regs.wasm.h_fixnum(100), regs);
+
+    const first = eceEval(`
+      (begin
+        (define native-replace-co (mc-compile-to-code-object 41))
+        (%code-object-set-archive-key! native-replace-co (cons 'native-replace 0))
+        (register-native-zone! 'native-replace 0
+          (%js-eval "globalThis.__eceNativeReturn99"))
+        (execute-code-object native-replace-co))`);
+    const second = eceEval(`
+      (begin
+        (register-native-zone! 'native-replace 0
+          (%js-eval "globalThis.__eceNativeReturn100"))
+        (execute-code-object native-replace-co))`);
+
+    assert(w.h_fixnum_val(first) === 99,
+      `expected first native return 99, got ${w.h_fixnum_val(first)}`);
+    assert(w.h_fixnum_val(second) === 100,
+      `expected replacement native return 100, got ${w.h_fixnum_val(second)}`);
+  });
+
+  iTest("native zone malformed result reports protocol error", () => {
+    globalThis.__eceNativeMalformed = (regs) => regs.val;
+    try {
+      eceEval(`
+        (begin
+          (define native-bad-co (mc-compile-to-code-object 7))
+          (%code-object-set-archive-key! native-bad-co (cons 'native-bad 0))
+          (register-native-zone! 'native-bad 0
+            (%js-eval "globalThis.__eceNativeMalformed"))
+          (execute-code-object native-bad-co))`);
+      assert(false, "expected malformed native result to throw");
+    } catch (e) {
+      assert(e.message === "native-zone result must be a vector",
+        `expected native-zone protocol error, got '${e.message}'`);
+    }
   });
 
   // Serialization round-trip tests are in tests/ece/test-serialization.scm

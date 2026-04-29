@@ -47,6 +47,9 @@
   (import "ffi" "from_string" (func $js-ffi-from-string (param i32 i32) (result i32)))
   (import "ffi" "release" (func $js-ffi-release (param i32)))
   (import "ffi" "is_null" (func $js-ffi-is-null (param i32) (result i32)))
+  (import "ffi" "native_zone_call"
+    (func $js-native-zone-call
+      (param i32 i32 i32 i32 i32 i32 i32 i32 i32) (result i32)))
 
   ;; localStorage — file I/O backing store
   ;; storage_read: filename (UTF-16 in linear memory, len chars) → content length
@@ -320,6 +323,41 @@
       (i32.const 97)(i32.const 107)(i32.const 101)(i32.const 32)(i32.const 98)(i32.const 111)
       (i32.const 111)(i32.const 116)(i32.const 115)(i32.const 116)(i32.const 114)(i32.const 97)
       (i32.const 112)))
+
+  ;; Native-zone dispatch errors. Native-zone result mode vector slots are:
+  ;; 0 mode, 1 pc, 2 val, 3 env, 4 proc, 5 argl, 6 continue, 7 stack.
+  ;; Modes: 0=return, 1=continue with updated registers, 2=bail to interpreter.
+  ;; "native-zone export-ref must be a js-ref" (39 chars)
+  (global $err-native-not-js-ref (ref $string)
+    (array.new_fixed $string 39
+      (i32.const 110)(i32.const 97)(i32.const 116)(i32.const 105)(i32.const 118)
+      (i32.const 101)(i32.const 45)(i32.const 122)(i32.const 111)(i32.const 110)
+      (i32.const 101)(i32.const 32)(i32.const 101)(i32.const 120)(i32.const 112)
+      (i32.const 111)(i32.const 114)(i32.const 116)(i32.const 45)(i32.const 114)
+      (i32.const 101)(i32.const 102)(i32.const 32)(i32.const 109)(i32.const 117)
+      (i32.const 115)(i32.const 116)(i32.const 32)(i32.const 98)(i32.const 101)
+      (i32.const 32)(i32.const 97)(i32.const 32)(i32.const 106)(i32.const 115)
+      (i32.const 45)(i32.const 114)(i32.const 101)(i32.const 102)))
+  ;; "native-zone result must be a vector" (35 chars)
+  (global $err-native-result-vector (ref $string)
+    (array.new_fixed $string 35
+      (i32.const 110)(i32.const 97)(i32.const 116)(i32.const 105)(i32.const 118)
+      (i32.const 101)(i32.const 45)(i32.const 122)(i32.const 111)(i32.const 110)
+      (i32.const 101)(i32.const 32)(i32.const 114)(i32.const 101)(i32.const 115)
+      (i32.const 117)(i32.const 108)(i32.const 116)(i32.const 32)(i32.const 109)
+      (i32.const 117)(i32.const 115)(i32.const 116)(i32.const 32)(i32.const 98)
+      (i32.const 101)(i32.const 32)(i32.const 97)(i32.const 32)(i32.const 118)
+      (i32.const 101)(i32.const 99)(i32.const 116)(i32.const 111)(i32.const 114)))
+  ;; "native-zone unknown result mode" (31 chars)
+  (global $err-native-result-mode (ref $string)
+    (array.new_fixed $string 31
+      (i32.const 110)(i32.const 97)(i32.const 116)(i32.const 105)(i32.const 118)
+      (i32.const 101)(i32.const 45)(i32.const 122)(i32.const 111)(i32.const 110)
+      (i32.const 101)(i32.const 32)(i32.const 117)(i32.const 110)(i32.const 107)
+      (i32.const 110)(i32.const 111)(i32.const 119)(i32.const 110)(i32.const 32)
+      (i32.const 114)(i32.const 101)(i32.const 115)(i32.const 117)(i32.const 108)
+      (i32.const 116)(i32.const 32)(i32.const 109)(i32.const 111)(i32.const 100)
+      (i32.const 101)))
 
   ;; Type-tag strings for $write-to-string-impl's fallback. Each is
   ;; "#<TYPENAME>" in UTF-16, pre-interned as a $string constant.
@@ -2188,6 +2226,12 @@
     (local $op-result (ref null eq))
     (local $addr (ref null eq))
     (local $addr-pair (ref $pair))
+    (local $native-entry-co (ref null eq))
+    (local $native-key (ref null eq))
+    (local $native-ref (ref null eq))
+    (local $native-result (ref null eq))
+    (local $native-vec (ref $vector))
+    (local $native-mode i32)
 
     ;; Initialize
     (local.set $co (local.get $init-code-obj))
@@ -2241,6 +2285,78 @@
           (then
             (global.set $yield-flag (i32.const 0))
             (br $loop-end)))
+
+        ;; Native-zone entry hook. Only check at pc 0, and only once for a
+        ;; given code-object entry. The native result vector protocol is:
+        ;;   #(mode pc val env proc argl continue stack)
+        ;;   mode 0 = return val, mode 1 = continue with updated registers,
+        ;;   mode 2 = bail to the interpreter unchanged.
+        (if (i32.and
+              (i32.eqz (local.get $pc))
+              (i32.eqz (ref.eq (local.get $co) (local.get $native-entry-co))))
+          (then
+            (local.set $native-entry-co (local.get $co))
+            (local.set $native-key
+              (struct.get $code-object $archive-key
+                (ref.cast (ref $code-object) (local.get $co))))
+            (if (ref.test (ref $pair) (local.get $native-key))
+              (then
+                (local.set $addr-pair (ref.cast (ref $pair) (local.get $native-key)))
+                (local.set $native-ref
+                  (call $native-zone-registry-get
+                    (call $car (local.get $addr-pair))
+                    (call $cdr (local.get $addr-pair))))
+                (if (i32.eqz (call $is-false (local.get $native-ref)))
+                  (then
+                    (if (i32.eqz (ref.test (ref $js-ref) (local.get $native-ref)))
+                      (then (call $signal-error-str (global.get $err-native-not-js-ref))))
+                    (local.set $native-result
+                      (call $deref-handle
+                        (call $js-native-zone-call
+                          (call $js-ref-idx
+                            (ref.cast (ref $js-ref) (local.get $native-ref)))
+                          (local.get $pc)
+                          (call $alloc-handle (local.get $val))
+                          (call $alloc-handle (local.get $env))
+                          (call $alloc-handle (local.get $proc))
+                          (call $alloc-handle (local.get $argl))
+                          (call $alloc-handle (local.get $cont))
+                          (call $alloc-handle (local.get $stack))
+                          (call $alloc-handle (local.get $co)))))
+                    (if (i32.eqz (ref.test (ref $vector) (local.get $native-result)))
+                      (then (call $signal-error-str (global.get $err-native-result-vector))))
+                    (local.set $native-vec
+                      (ref.cast (ref $vector) (local.get $native-result)))
+                    (local.set $native-mode
+                      (call $fixnum-value
+                        (ref.cast (ref i31)
+                          (array.get $vector (local.get $native-vec) (i32.const 0)))))
+                    (if (i32.eqz (local.get $native-mode))
+                      (then
+                        (local.set $val
+                          (array.get $vector (local.get $native-vec) (i32.const 2)))
+                        (br $loop-end)))
+                    (if (i32.eq (local.get $native-mode) (i32.const 1))
+                      (then
+                        (local.set $pc
+                          (call $fixnum-value
+                            (ref.cast (ref i31)
+                              (array.get $vector (local.get $native-vec) (i32.const 1)))))
+                        (local.set $val
+                          (array.get $vector (local.get $native-vec) (i32.const 2)))
+                        (local.set $env
+                          (array.get $vector (local.get $native-vec) (i32.const 3)))
+                        (local.set $proc
+                          (array.get $vector (local.get $native-vec) (i32.const 4)))
+                        (local.set $argl
+                          (array.get $vector (local.get $native-vec) (i32.const 5)))
+                        (local.set $cont
+                          (array.get $vector (local.get $native-vec) (i32.const 6)))
+                        (local.set $stack
+                          (array.get $vector (local.get $native-vec) (i32.const 7)))
+                        (br $loop-start)))
+                    (if (i32.ne (local.get $native-mode) (i32.const 2))
+                      (then (call $signal-error-str (global.get $err-native-result-mode))))))))))
 
         ;; Debug tracking
         (global.set $dbg-pc (local.get $pc))
