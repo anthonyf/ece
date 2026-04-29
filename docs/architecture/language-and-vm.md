@@ -240,6 +240,13 @@ The JS glue creates the global environment, registers boot primitives needed by 
 
 WASM currently does not use the CL native-zone pipeline. Its `native-fn` field exists for structural parity, but there is no generated WAT zone loader equivalent to `bootstrap/*-zone.lisp`.
 
+The intended next step is an ECE-authored WASM host layer plus a WASM native-zone
+registry. JavaScript should provide only browser capabilities such as root VM
+instantiation, `fetch`, side-module instantiation, and promise/import-object
+bridging. ECE code should own archive reload policy, native-zone manifest
+parsing, `(unit-id . co-index)` registration, and interpreter fallback.
+That design is documented in [`wasm-native-zone-plan.md`](wasm-native-zone-plan.md).
+
 ## Current Parity Boundaries
 
 The core language, reader/compiler/assembler pipeline, archive loading, code-object execution, tail calls, `call/cc`, parameters, `dynamic-wind`, exceptions, and many tests run across CL and WASM.
