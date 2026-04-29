@@ -79,3 +79,4 @@ Compared with CHICKEN, ECE chooses explicit register-machine interpretation over
 7. Specify a broader save/restore compatibility policy: archive unit-id/index requirements, code-version changes, and whether host resources such as ports should ever be restored by value or by external reference. Addressed in [`save-restore-compatibility.md`](save-restore-compatibility.md); future work may still add application-level resource managers.
 8. Restore or redesign archive-era source maps so code-object errors can report file/line/column consistently on CL and WASM.
 9. Measure bootstrap archive parse time on CL and WASM before deciding whether a binary archive format is warranted.
+10. Implement the WASM native-zone host plan in [`wasm-native-zone-plan.md`](wasm-native-zone-plan.md): keep JavaScript as a small host-capability layer, define ECE-level loading/manifest policy, add a WASM native-zone registry, then add executor dispatch.
