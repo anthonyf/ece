@@ -1569,6 +1569,11 @@ resolve (const <code-object>) operands for inner-lambda references —
 the zone-file is emitted for one specific archive, so the unit id is
 a constant in the emitted form and the co-key identifies the target.")
 
+(defvar *native-zone-registry* (make-hash-table :test #'equal)
+  "Registry mapping (normalized-unit-key . co-index) to native-zone export
+references. The browser runtime stores opaque host refs here; the CL runtime
+keeps the same shape for cross-runtime policy tests.")
+
 (defstruct archive-unit
   "Materialized archive section plus normalized module-ready metadata."
   unit-id
@@ -1945,6 +1950,18 @@ return an empty list."
              (fboundp (find-symbol "ECE-%ARCHIVE-CO-LOOKUP" :ece)))
   (eval `(defun ,(intern "ECE-%ARCHIVE-CO-LOOKUP" :ece) (unit-id index)
            (or (gethash (cons unit-id index) *archive-code-objects*)
+               *scheme-false*))))
+(unless (and (find-symbol "ECE-%NATIVE-ZONE-REGISTER!" :ece)
+             (fboundp (find-symbol "ECE-%NATIVE-ZONE-REGISTER!" :ece)))
+  (eval `(defun ,(intern "ECE-%NATIVE-ZONE-REGISTER!" :ece) (unit-key index export-ref)
+           (progn
+             (setf (gethash (cons unit-key index) *native-zone-registry*)
+                   export-ref)
+             export-ref))))
+(unless (and (find-symbol "ECE-%NATIVE-ZONE-LOOKUP" :ece)
+             (fboundp (find-symbol "ECE-%NATIVE-ZONE-LOOKUP" :ece)))
+  (eval `(defun ,(intern "ECE-%NATIVE-ZONE-LOOKUP" :ece) (unit-key index)
+           (or (gethash (cons unit-key index) *native-zone-registry*)
                *scheme-false*))))
 
 ;;; Now that all primitives and wrapper functions are defined, initialize

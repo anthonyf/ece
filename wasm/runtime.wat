@@ -1665,6 +1665,12 @@
   ;; $load-archive-impl; read by primitive 260 (%archive-co-lookup).
   (global $archive-registry (mut (ref null eq)) (ref.null eq))
 
+  ;; Native-zone registry: outer $hash-table keyed by normalized unit-key
+  ;; symbol mapping to inner $hash-tables keyed by index-fixnum mapping to
+  ;; opaque native-zone export refs. Populated by primitive 261; read by
+  ;; primitive 262 and future executor dispatch.
+  (global $native-zone-registry (mut (ref null eq)) (ref.null eq))
+
   ;; --- Compile-time macro table (symbol → transformer) ---
   (global $macro-table (mut (ref null eq)) (ref.null eq))
 
@@ -5626,6 +5632,23 @@
         (call $arg1 (local.get $args))
         (call $arg2 (local.get $args))))))
 
+    ;; 261 = %native-zone-register!(unit-key, index, export-ref)
+    ;; UNIT-KEY is normalized in src/wasm-host.scm to an interned symbol so
+    ;; this identity-keyed hash table can support structured module unit ids.
+    (if (i32.eq (local.get $id) (i32.const 261))
+      (then
+        (call $native-zone-registry-put
+          (call $arg1 (local.get $args))
+          (call $arg2 (local.get $args))
+          (call $arg3 (local.get $args)))
+        (return (call $arg3 (local.get $args)))))
+
+    ;; 262 = %native-zone-lookup(unit-key, index)
+    (if (i32.eq (local.get $id) (i32.const 262))
+      (then (return (call $native-zone-registry-get
+        (call $arg1 (local.get $args))
+        (call $arg2 (local.get $args))))))
+
     ;; Unknown primitive — return void
     (global.get $void)
   )
@@ -6353,6 +6376,55 @@
       (ref.cast (ref $hash-table) (global.get $archive-registry)))
     (local.set $inner
       (call $hash-ref-impl (ref.as_non_null (local.get $outer)) (local.get $stem)))
+    (if (i32.eqz (ref.test (ref $hash-table) (local.get $inner)))
+      (then (return (global.get $false))))
+    (call $hash-ref-impl
+      (ref.cast (ref $hash-table) (local.get $inner))
+      (local.get $index-fx)))
+
+  (func $native-zone-registry-put (param $unit-key (ref null eq))
+                                  (param $index-fx (ref null eq))
+                                  (param $export-ref (ref null eq))
+    (local $outer (ref null $hash-table))
+    (local $inner (ref null eq))
+    (local $inner-ht (ref null $hash-table))
+    (if (ref.is_null (global.get $native-zone-registry))
+      (then
+        (global.set $native-zone-registry
+          (struct.new $hash-table
+            (array.new_default $hash-keys (i32.const 32))
+            (array.new_default $hash-vals (i32.const 32))
+            (i32.const 0)))))
+    (local.set $outer
+      (ref.cast (ref $hash-table) (global.get $native-zone-registry)))
+    (local.set $inner
+      (call $hash-ref-impl (ref.as_non_null (local.get $outer)) (local.get $unit-key)))
+    (if (i32.eqz (ref.test (ref $hash-table) (local.get $inner)))
+      (then
+        (local.set $inner-ht
+          (struct.new $hash-table
+            (array.new_default $hash-keys (i32.const 32))
+            (array.new_default $hash-vals (i32.const 32))
+            (i32.const 0)))
+        (call $hash-set-impl (ref.as_non_null (local.get $outer))
+          (local.get $unit-key) (ref.as_non_null (local.get $inner-ht))))
+      (else
+        (local.set $inner-ht
+          (ref.cast (ref $hash-table) (local.get $inner)))))
+    (call $hash-set-impl (ref.as_non_null (local.get $inner-ht))
+      (local.get $index-fx) (local.get $export-ref)))
+
+  (func $native-zone-registry-get (param $unit-key (ref null eq))
+                                  (param $index-fx (ref null eq))
+                                  (result (ref null eq))
+    (local $outer (ref null $hash-table))
+    (local $inner (ref null eq))
+    (if (ref.is_null (global.get $native-zone-registry))
+      (then (return (global.get $false))))
+    (local.set $outer
+      (ref.cast (ref $hash-table) (global.get $native-zone-registry)))
+    (local.set $inner
+      (call $hash-ref-impl (ref.as_non_null (local.get $outer)) (local.get $unit-key)))
     (if (i32.eqz (ref.test (ref $hash-table) (local.get $inner)))
       (then (return (global.get $false))))
     (call $hash-ref-impl

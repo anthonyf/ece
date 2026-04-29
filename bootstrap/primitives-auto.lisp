@@ -150,6 +150,12 @@
 (defun ece-%make-primitive (id)
   (cl:list '|primitive| id))
 
+(defun ece-%native-zone-lookup (unit-key index)
+  (cl:or (cl:gethash (cl:cons unit-key index) *native-zone-registry*) *scheme-false*))
+
+(defun ece-%native-zone-register! (unit-key index export-ref)
+  (cl:progn (cl:setf (cl:gethash (cl:cons unit-key index) *native-zone-registry*) export-ref) export-ref))
+
 (defun ece-%newline-to-port (port)
   (let ((stream (ece-port-stream port))) (cl:terpri stream) (cl:finish-output stream) cl:nil))
 

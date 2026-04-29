@@ -110,3 +110,49 @@
     (assert-equal
      "wasm-host: fetch-text requires browser WASM host capabilities that are not implemented yet"
      message))))
+
+(test "wasm-host: native-zone registry stores and overwrites refs" (lambda ()
+  (let ((unit-id '(module (game main) 0))
+        (same-unit-id (list 'module (list 'game 'main) 0)))
+    (assert-equal #f (native-zone-lookup unit-id 401))
+    (assert-equal 'zone-a (register-native-zone! unit-id 401 'zone-a))
+    (assert-equal 'zone-a (native-zone-lookup same-unit-id 401))
+    (assert-true (native-zone-registered? same-unit-id 401))
+    (assert-equal 'zone-b (register-native-zone! same-unit-id 401 'zone-b))
+    (assert-equal 'zone-b (native-zone-lookup unit-id 401)))))
+
+(test "wasm-host: native-zone registry normalizes string unit ids" (lambda ()
+  (assert-equal 'zone-string
+                (register-native-zone! "app" 402 'zone-string))
+  (assert-equal 'zone-string
+                (native-zone-lookup 'app 402))))
+
+(test "wasm-host: native-zone registry normalizes integral float indexes" (lambda ()
+  (assert-equal 'zone-float-index
+                (register-native-zone! 'float-index-app
+                                       (exact->inexact 403)
+                                       'zone-float-index))
+  (assert-equal 'zone-float-index
+                (native-zone-lookup 'float-index-app 403))))
+
+(test "wasm-host: native-zone registry validates registration inputs" (lambda ()
+  (let ((bad-index-message
+         (wasm-host-test-error-message
+          (lambda () (register-native-zone! 'app -1 'zone))))
+        (large-index-message
+         (wasm-host-test-error-message
+          (lambda () (register-native-zone! 'app 1073741824 'zone))))
+        (bad-unit-message
+         (wasm-host-test-error-message
+          (lambda () (register-native-zone! #f 0 'zone))))
+        (bad-ref-message
+         (wasm-host-test-error-message
+          (lambda () (register-native-zone! 'app 0 #f)))))
+    (assert-equal "wasm-host: native-zone co-index must be an integer in the range 0..1073741823"
+                  bad-index-message)
+    (assert-equal "wasm-host: native-zone co-index must be an integer in the range 0..1073741823"
+                  large-index-message)
+    (assert-equal "wasm-host: native-zone unit-id must not be #f"
+                  bad-unit-message)
+    (assert-equal "wasm-host: native-zone export-ref must not be #f"
+                  bad-ref-message))))
