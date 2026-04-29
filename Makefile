@@ -99,13 +99,13 @@ export ASDF_OUTPUT_TRANSLATIONS = (:output-translations ("$(CURDIR)/" "$(CURDIR)
 # base64.scm and sha1.scm must come before the test files so their exports
 # are defined when test-base64 / test-sha1 run. Both run on CL and WASM now
 # that the bitwise primitives handle large integers uniformly.
-WASM_TEST_SRCS := src/sdk-lib.scm src/ece-unit.scm src/base64.scm src/sha1.scm src/scheduler.scm src/http-codec.scm src/websocket-codec.scm src/json.scm src/ece-serve.scm src/geiser-ece.scm $(wildcard tests/ece/common/test-*.scm) wasm/wasm-test-runner.scm
+WASM_TEST_SRCS := src/sdk-lib.scm src/ece-unit.scm src/base64.scm src/sha1.scm src/scheduler.scm src/http-codec.scm src/websocket-codec.scm src/json.scm src/ece-serve.scm src/wasm-host.scm src/geiser-ece.scm $(wildcard tests/ece/common/test-*.scm) wasm/wasm-test-runner.scm
 
 # Temp dir for test output capture
 TEST_OUTPUT_DIR := .tmp/test-output
 
 BOOTSTRAP_DIR := bootstrap
-BOOTSTRAP_SRCS := src/boot-env.scm src/prelude.scm src/compiler.scm src/reader.scm src/assembler.scm src/compilation-unit.scm src/syntax-rules.scm src/browser-lib.scm src/disassemble.scm
+BOOTSTRAP_SRCS := src/boot-env.scm src/prelude.scm src/compiler.scm src/reader.scm src/assembler.scm src/compilation-unit.scm src/syntax-rules.scm src/browser-lib.scm src/wasm-host.scm src/disassemble.scm
 
 GOLDEN_SRCS := $(wildcard tests/golden/*.scm)
 
@@ -131,6 +131,7 @@ test-ece: | .qlot/qlot.conf
 	  --eval '(ece:evaluate (list (quote load) "src/websocket-codec.scm"))' \
 	  --eval '(ece:evaluate (list (quote load) "src/json.scm"))' \
 	  --eval '(ece:evaluate (list (quote load) "src/ece-serve.scm"))' \
+	  --eval '(ece:evaluate (list (quote load) "src/wasm-host.scm"))' \
 	  --eval '(ece:evaluate (list (quote load) "src/geiser-ece.scm"))' \
 	  --eval '(ece:evaluate (list (quote load) "src/ece-unit.scm"))' \
 	  --eval '(ece:evaluate (list (quote load) "src/ece-test.scm"))' \
@@ -255,7 +256,7 @@ $(BOOTSTRAP_DIR)/bootstrap.ecec: $(BOOTSTRAP_SRCS) $(BOOTSTRAP_DIR)/primitives-a
 	qlot exec sbcl --dynamic-space-size 4096 --eval '(asdf:load-system :ece)' \
 	  --eval '(in-package :ece)' \
 	  --eval '(evaluate (list (quote eval) (list (quote read) (list (quote open-input-string) "(load \"src/compilation-unit.scm\")"))))' \
-	  --eval '(evaluate (list (quote eval) (list (quote read) (list (quote open-input-string) "(compile-system (quote (\"src/boot-env.scm\" \"src/prelude.scm\" \"src/compiler.scm\" \"src/reader.scm\" \"src/assembler.scm\" \"src/compilation-unit.scm\" \"src/syntax-rules.scm\" \"src/browser-lib.scm\" \"src/disassemble.scm\")) \"bootstrap/bootstrap.ecec\")"))))' \
+	  --eval '(evaluate (list (quote eval) (list (quote read) (list (quote open-input-string) "(compile-system (quote (\"src/boot-env.scm\" \"src/prelude.scm\" \"src/compiler.scm\" \"src/reader.scm\" \"src/assembler.scm\" \"src/compilation-unit.scm\" \"src/syntax-rules.scm\" \"src/browser-lib.scm\" \"src/wasm-host.scm\" \"src/disassemble.scm\")) \"bootstrap/bootstrap.ecec\")"))))' \
 	  --quit
 	@echo "Bootstrap bundle regenerated: $(BOOTSTRAP_DIR)/bootstrap.ecec"
 	@# Zones compiled against the old bootstrap.ecec have PC layouts that
