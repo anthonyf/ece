@@ -277,6 +277,22 @@ requiring structural hash-table support in the WAT kernel.
   object.
 - Verify native dispatch, interpreter fallback, bail mode, and error reporting.
 
+The initial dispatch protocol is deliberately handle-based because WasmGC refs
+do not cross into JavaScript directly. A registered native-zone value must be a
+`js-ref` wrapping a callable side-module export. At code-object entry, the WAT
+executor wraps the current logical registers as handles and calls the host
+bridge. The callable returns an ECE vector:
+
+```scheme
+#(mode pc val env proc argl continue stack)
+```
+
+Mode `0` returns `val` immediately. Mode `1` updates the logical registers and
+continues interpreting the same code object at `pc`. Mode `2` is a bail: the
+executor ignores the vector's register slots and runs the interpreter from the
+original entry state. This is enough to prove the runtime contract before the
+compiler emits native zones.
+
 ### Phase 4: Compiler-Generated WASM Zones
 
 - Add a WASM native-zone code generator for a small instruction subset.

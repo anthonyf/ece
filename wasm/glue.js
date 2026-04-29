@@ -261,6 +261,14 @@ const ECE = {
     is_null(idx) {
       const v = ECE._jsGet(idx);
       return (v === null || v === undefined) ? 1 : 0;
+    },
+
+    native_zone_call(idx, pc, val, env, proc, argl, cont, stack, co) {
+      const fn = ECE._jsGet(idx);
+      if (typeof fn !== "function") {
+        throw new Error("native-zone export-ref is not callable");
+      }
+      return fn({ pc, val, env, proc, argl, cont, stack, co, wasm: ECE.wasm, ECE });
     }
   },
 
