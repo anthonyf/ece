@@ -5509,13 +5509,23 @@
         (ref.test (ref $code-object) (call $arg1 (local.get $args)))
         (then (global.get $true)) (else (global.get $false))))))
 
-    ;; 242 = code-object-instructions(co) — stub (instr-vec is not an ECE-visible ref eq)
+    ;; 242 = code-object-instructions(co)
     (if (i32.eq (local.get $id) (i32.const 242))
-      (then (return (global.get $void))))
+      (then
+        (if (i32.eqz (ref.is_null (global.get $co-pending-instrs)))
+          (then (call $finalize-co-pending-instrs)))
+        (return
+          (call $code-object-instructions-vector
+            (ref.cast (ref $code-object) (call $arg1 (local.get $args)))))))
 
-    ;; 243 = code-object-resolved-instructions(co) — stub (same as 242 on WASM)
+    ;; 243 = code-object-resolved-instructions(co) — same as 242 on WASM
     (if (i32.eq (local.get $id) (i32.const 243))
-      (then (return (global.get $void))))
+      (then
+        (if (i32.eqz (ref.is_null (global.get $co-pending-instrs)))
+          (then (call $finalize-co-pending-instrs)))
+        (return
+          (call $code-object-instructions-vector
+            (ref.cast (ref $code-object) (call $arg1 (local.get $args)))))))
 
     ;; 244 = code-object-length(co)
     (if (i32.eq (local.get $id) (i32.const 244))
@@ -6363,6 +6373,87 @@
     (array.set $instr-vec (local.get $vec) (local.get $len) (local.get $instr))
     (struct.set $code-object $len (local.get $co)
       (i32.add (local.get $len) (i32.const 1))))
+
+  ;; Decode a stored instruction back to ECE data for compiler/codegen tools.
+  ;; The runtime executes resolved $instr structs, but code generators need the
+  ;; source-shaped vector exposed by `code-object-instructions`. Unsupported
+  ;; instruction/source combinations decode to a raw numeric tuple so code
+  ;; fingerprints still distinguish different instruction streams.
+  (func $asm-sym-ref (param $slot i32) (result (ref $symbol))
+    (ref.as_non_null
+      (array.get $sym-ref-array
+        (ref.as_non_null (global.get $sym-refs))
+        (array.get $i32-array
+          (ref.as_non_null (global.get $asm-sym-ids))
+          (local.get $slot)))))
+
+  (func $reg-id-sym (param $reg-id i32) (result (ref $symbol))
+    (call $asm-sym-ref (i32.add (i32.const 7) (local.get $reg-id))))
+
+  (func $decode-instr-sexp (param $instr (ref null $instr)) (result (ref null eq))
+    (local $i (ref $instr))
+    (if (ref.is_null (local.get $instr))
+      (then (return (global.get $void))))
+    (local.set $i (ref.as_non_null (local.get $instr)))
+    ;; (assign <reg> (const <value>))
+    (if (i32.and
+          (i32.eqz (struct.get $instr $opcode (local.get $i)))
+          (i32.eqz (struct.get $instr $b (local.get $i))))
+      (then
+        (return
+          (call $cons
+            (call $asm-sym-ref (i32.const 0))
+            (call $cons
+              (call $reg-id-sym (struct.get $instr $a (local.get $i)))
+              (call $cons
+                (call $cons
+                  (call $asm-sym-ref (i32.const 13))
+                  (call $cons
+                    (struct.get $instr $val (local.get $i))
+                    (global.get $nil)))
+                (global.get $nil)))))))
+    ;; (halt)
+    (if (i32.eq (struct.get $instr $opcode (local.get $i)) (i32.const 7))
+      (then
+        (return
+          (call $cons
+            (call $asm-sym-ref (i32.const 44))
+            (global.get $nil)))))
+    (call $cons
+      (call $make-fixnum (struct.get $instr $opcode (local.get $i)))
+      (call $cons
+        (call $make-fixnum (struct.get $instr $a (local.get $i)))
+        (call $cons
+          (call $make-fixnum (struct.get $instr $b (local.get $i)))
+          (call $cons
+            (call $make-fixnum (struct.get $instr $c (local.get $i)))
+            (call $cons
+              (if (result (ref null eq))
+                (ref.is_null (struct.get $instr $val (local.get $i)))
+                (then (global.get $nil))
+                (else (struct.get $instr $val (local.get $i))))
+              (global.get $nil)))))))
+
+  (func $code-object-instructions-vector (param $co (ref $code-object))
+                                         (result (ref $vector))
+    (local $out (ref $vector))
+    (local $instrs (ref $instr-vec))
+    (local $len i32)
+    (local $i i32)
+    (local.set $len (struct.get $code-object $len (local.get $co)))
+    (local.set $instrs (struct.get $code-object $instrs (local.get $co)))
+    (local.set $out (array.new_default $vector (local.get $len)))
+    (block $done
+      (loop $loop
+        (br_if $done (i32.ge_u (local.get $i) (local.get $len)))
+        (array.set $vector
+          (local.get $out)
+          (local.get $i)
+          (call $decode-instr-sexp
+            (array.get $instr-vec (local.get $instrs) (local.get $i))))
+        (local.set $i (i32.add (local.get $i) (i32.const 1)))
+        (br $loop)))
+    (local.get $out))
 
   ;; Parse a (ecec-archive version 2 file "..." entries (<entry>...)) sexp
   ;; and return the init code-object (entry 0). Two passes: skeleton first,
