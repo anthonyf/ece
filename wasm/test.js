@@ -355,6 +355,42 @@ async function runGeneratedZoneIntegrationTests(w, envH) {
       `expected generated native return 77, got ${w.h_fixnum_val(result)}`);
   });
 
+  await iTest("generated register-machine WASM zone returns direct nil constant", async () => {
+    const watHandle = eceEval(`
+      (begin
+        (define generated-nil-co (%make-code-object))
+        (%code-object-push-instruction! generated-nil-co
+          '(assign val (const ())))
+        (%code-object-push-instruction! generated-nil-co '(halt))
+        (%code-object-set-archive-key! generated-nil-co (cons 'generated-nil 0))
+        (generate-register-machine-wasm-zone generated-nil-co "zone_nil_0"))`);
+    const watText = ECE._eceToJs(watHandle);
+    assert(typeof watText === "string", "expected generated nil WAT string");
+    assert(watText.includes('(export "zone_nil_0")'), "generated WAT missing nil export");
+    assert(watText.includes('(call $h_nil)'), "generated WAT missing direct nil call");
+
+    const zoneBytes = compileWat(watText, "generated-nil-zone");
+    const { instance } = await WebAssembly.instantiate(zoneBytes, {
+      ece: {
+        h_fixnum: w.h_fixnum,
+        h_nil: w.h_nil,
+        h_cons: w.h_cons,
+        h_vector: w.h_vector,
+        h_vector_set: w.h_vector_set
+      }
+    });
+
+    globalThis.__eceGeneratedNilZone0 = instance.exports.zone_nil_0;
+    const result = eceEval(`
+      (begin
+        (register-native-zone! 'generated-nil 0
+          (%js-eval "globalThis.__eceGeneratedNilZone0"))
+        (if (null? (execute-code-object generated-nil-co)) 1 0))`);
+
+    assert(w.h_fixnum_val(result) === 1,
+      `expected generated nil return to satisfy null?, got ${w.h_fixnum_val(result)}`);
+  });
+
   await iTest("generated register-machine WASM zone bails out with updated registers", async () => {
     const watHandle = eceEval(`
       (begin

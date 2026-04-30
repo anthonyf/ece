@@ -64,6 +64,15 @@
     (assert-true (string-contains? wat "(call \$h_fixnum (i32.const 42))"))
     (assert-true (string-contains? wat "(i32.const 2)")))))
 
+(test "codegen-wasm-zone: emits direct nil constant assignments" (lambda ()
+  (let ((wat (generate-register-machine-wasm-zone
+              (wasm-zone-test-constant-co '())
+              "zone_nil")))
+    (assert-true (string? wat))
+    (assert-true (string-contains? wat "(export \"zone_nil\")"))
+    (assert-true (string-contains? wat "(import \"ece\" \"h_nil\""))
+    (assert-true (string-contains? wat "(local.set \$val (call \$h_nil))")))))
+
 (test "codegen-wasm-zone: emits register assignments and prefix bailout" (lambda ()
   (let ((wat (generate-register-machine-wasm-zone
               (wasm-zone-test-prefix-bailout-co)
