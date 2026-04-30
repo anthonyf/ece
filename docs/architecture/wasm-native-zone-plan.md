@@ -289,9 +289,9 @@ bridge. The callable returns an ECE vector:
 
 Mode `0` returns `val` immediately. Mode `1` updates the logical registers and
 continues interpreting the same code object at `pc`. Mode `2` is a bail: the
-executor ignores the vector's register slots and runs the interpreter from the
-original entry state. This is enough to prove the runtime contract before the
-compiler emits native zones.
+executor applies the vector's `pc` and register slots before resuming the
+interpreter. This lets generated zones run a supported prefix and bail out at
+the first unsupported instruction without losing register-machine state.
 
 ### Phase 4: Register-Machine WASM Zones
 
@@ -309,16 +309,19 @@ returns the normal native-zone result vector. Tail calls, `call/cc`,
 stack is an implementation detail, not the Scheme continuation model.
 
 The first generator slice is intentionally tiny. It emits a side-module WAT
-function for a code object whose instruction stream is a straight-line fixnum
-constant return:
+function for a code object whose instruction stream begins with straight-line
+register assignments:
 
 ```scheme
-(assign val (const <fixnum>))
+(assign <register> (const <fixnum>))
+(assign <register> (reg <register>))
 (halt)
 ```
 
-Any unsupported code object declines generation, so it has no registered native
-zone and continues through the interpreter.
+If the first instruction is unsupported, the code object declines generation and
+continues through the interpreter. If a supported prefix reaches an unsupported
+instruction, the generated zone returns `:bail` with updated registers and the
+unsupported instruction's PC, so the interpreter continues from that point.
 
 ## Testing Strategy
 

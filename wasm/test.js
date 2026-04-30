@@ -353,6 +353,46 @@ async function runGeneratedZoneIntegrationTests(w, envH) {
       `expected generated native return 77, got ${w.h_fixnum_val(result)}`);
   });
 
+  await iTest("generated register-machine WASM zone bails out with updated registers", async () => {
+    const watHandle = eceEval(`
+      (begin
+        (define generated-bail-co (%make-code-object))
+        (%code-object-push-instruction! generated-bail-co
+          '(assign val (const 88)))
+        (%code-object-push-instruction! generated-bail-co
+          '(perform (op define-variable!) (const generated-bail-value)
+                    (reg val) (reg env)))
+        (%code-object-push-instruction! generated-bail-co
+          '(assign val (const 99)))
+        (%code-object-push-instruction! generated-bail-co '(halt))
+        (%code-object-set-archive-key! generated-bail-co (cons 'generated-bail 0))
+        (generate-register-machine-wasm-zone generated-bail-co "zone_bail_0"))`);
+    const watText = ECE._eceToJs(watHandle);
+    assert(typeof watText === "string", "expected generated bailout WAT string");
+    assert(watText.includes('(export "zone_bail_0")'), "generated WAT missing bailout export");
+    assert(watText.includes('(i32.const 2)'), "generated WAT missing bailout mode");
+
+    const zoneBytes = compileWat(watText, "generated-bail-zone");
+    const { instance } = await WebAssembly.instantiate(zoneBytes, {
+      ece: {
+        h_fixnum: w.h_fixnum,
+        h_vector: w.h_vector,
+        h_vector_set: w.h_vector_set
+      }
+    });
+
+    globalThis.__eceGeneratedBailZone0 = instance.exports.zone_bail_0;
+    const result = eceEval(`
+      (begin
+        (register-native-zone! 'generated-bail 0
+          (%js-eval "globalThis.__eceGeneratedBailZone0"))
+        (execute-code-object generated-bail-co)
+        generated-bail-value)`);
+
+    assert(w.h_fixnum_val(result) === 88,
+      `expected bailout to preserve generated val 88, got ${w.h_fixnum_val(result)}`);
+  });
+
   return { passed: iPassed, failed: iFailed };
 }
 

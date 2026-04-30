@@ -2290,7 +2290,7 @@
         ;; given code-object entry. The native result vector protocol is:
         ;;   #(mode pc val env proc argl continue stack)
         ;;   mode 0 = return val, mode 1 = continue with updated registers,
-        ;;   mode 2 = bail to the interpreter unchanged.
+        ;;   mode 2 = bail to the interpreter with updated registers.
         (if (i32.and
               (i32.eqz (local.get $pc))
               (i32.eqz (ref.eq (local.get $co) (local.get $native-entry-co))))
@@ -2355,8 +2355,26 @@
                         (local.set $stack
                           (array.get $vector (local.get $native-vec) (i32.const 7)))
                         (br $loop-start)))
-                    (if (i32.ne (local.get $native-mode) (i32.const 2))
-                      (then (call $signal-error-str (global.get $err-native-result-mode))))))))))
+                    (if (i32.eq (local.get $native-mode) (i32.const 2))
+                      (then
+                        (local.set $pc
+                          (call $fixnum-value
+                            (ref.cast (ref i31)
+                              (array.get $vector (local.get $native-vec) (i32.const 1)))))
+                        (local.set $val
+                          (array.get $vector (local.get $native-vec) (i32.const 2)))
+                        (local.set $env
+                          (array.get $vector (local.get $native-vec) (i32.const 3)))
+                        (local.set $proc
+                          (array.get $vector (local.get $native-vec) (i32.const 4)))
+                        (local.set $argl
+                          (array.get $vector (local.get $native-vec) (i32.const 5)))
+                        (local.set $cont
+                          (array.get $vector (local.get $native-vec) (i32.const 6)))
+                        (local.set $stack
+                          (array.get $vector (local.get $native-vec) (i32.const 7)))
+                        (br $loop-start)))
+                    (call $signal-error-str (global.get $err-native-result-mode))))))))
 
         ;; Debug tracking
         (global.set $dbg-pc (local.get $pc))
@@ -6410,6 +6428,23 @@
                   (call $asm-sym-ref (i32.const 13))
                   (call $cons
                     (struct.get $instr $val (local.get $i))
+                    (global.get $nil)))
+                (global.get $nil)))))))
+    ;; (assign <reg> (reg <reg>))
+    (if (i32.and
+          (i32.eqz (struct.get $instr $opcode (local.get $i)))
+          (i32.eq (struct.get $instr $b (local.get $i)) (i32.const 1)))
+      (then
+        (return
+          (call $cons
+            (call $asm-sym-ref (i32.const 0))
+            (call $cons
+              (call $reg-id-sym (struct.get $instr $a (local.get $i)))
+              (call $cons
+                (call $cons
+                  (call $asm-sym-ref (i32.const 14))
+                  (call $cons
+                    (call $reg-id-sym (struct.get $instr $c (local.get $i)))
                     (global.get $nil)))
                 (global.get $nil)))))))
     ;; (halt)

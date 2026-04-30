@@ -7,9 +7,32 @@
     (thunk)
     #f))
 
+(define (wasm-zone-test-substring-count s needle)
+  (let ((slen (string-length s))
+        (nlen (string-length needle)))
+    (let loop ((i 0) (count 0))
+      (cond ((> (+ i nlen) slen) count)
+            ((string=? (substring s i (+ i nlen)) needle)
+             (loop (+ i 1) (+ count 1)))
+            (else
+             (loop (+ i 1) count))))))
+
 (define (wasm-zone-test-constant-co value)
   (let ((co (%make-code-object)))
     (%code-object-push-instruction! co (list 'assign 'val (list 'const value)))
+    (%code-object-push-instruction! co (list 'halt))
+    co))
+
+(define (wasm-zone-test-prefix-bailout-co)
+  (let ((co (%make-code-object)))
+    (%code-object-push-instruction! co (list 'assign 'val (list 'const 88)))
+    (%code-object-push-instruction! co (list 'assign 'proc (list 'reg 'val)))
+    (%code-object-push-instruction! co
+                                    (list 'perform
+                                          (list 'op 'define-variable!)
+                                          (list 'const 'generated-bail-value)
+                                          (list 'reg 'val)
+                                          (list 'reg 'env)))
     (%code-object-push-instruction! co (list 'halt))
     co))
 
@@ -19,8 +42,18 @@
     (assert-true (string? wat))
     (assert-true (string-contains? wat "(export \"zone_0\")"))
     (assert-true (string-contains? wat "(param \$pc i32)"))
+    (assert-true (string-contains? wat "(local.set \$val"))
     (assert-true (string-contains? wat "(call \$h_fixnum (i32.const 42))"))
     (assert-true (string-contains? wat "(i32.const 2)")))))
+
+(test "codegen-wasm-zone: emits register assignments and prefix bailout" (lambda ()
+  (let ((wat (generate-register-machine-wasm-zone
+              (wasm-zone-test-prefix-bailout-co)
+              "zone_prefix")))
+    (assert-true (string? wat))
+    (assert-true (string-contains? wat "(local.set \$val (call \$h_fixnum (i32.const 88)))"))
+    (assert-true (string-contains? wat "(local.set \$proc (local.get \$val))"))
+    (assert-true (>= (wasm-zone-test-substring-count wat "(i32.const 2)") 2)))))
 
 (test "codegen-wasm-zone: unsupported code objects decline generation" (lambda ()
   (let ((co (mc-compile-to-code-object '(+ 1 2))))
