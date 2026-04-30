@@ -7,11 +7,15 @@
 ;;;   zone(pc, val, env, proc, argl, continue, stack, co) -> result-vector
 ;;;
 ;;; Unsupported code objects return #f from the generator, leaving execution on
-;;; the interpreter path. The first slice supports only the smallest useful
-;;; straight-line shape:
+;;; the interpreter path. The supported subset is a straight-line prefix:
 ;;;
-;;;   (assign val (const <fixnum>))
+;;;   (assign <register> (const <fixnum>))
+;;;   (assign <register> (reg <register>))
 ;;;   (halt)
+;;;
+;;; If a supported prefix reaches an unsupported instruction, the zone returns
+;;; mode 2 with the updated registers and the unsupported instruction's PC so
+;;; the interpreter can resume there.
 
 (define (wasm-zone/error message)
   (error (string-append "wasm-zone: " message)))
@@ -38,31 +42,98 @@
                         (char=? ch #\.))
                     (loop (+ i 1))))))))
 
-(define (wasm-zone/fixnum-constant-return co)
-  "Return the fixnum constant for the first supported zone shape, else #f."
-  (if (not (and (code-object? co)
-                (= (code-object-length co) 2)))
+(define (wasm-zone/register-local reg)
+  "Return the WAT local name for a register symbol, or #f for unsupported regs."
+  (cond ((eq? reg 'val) "\$val")
+        ((eq? reg 'env) "\$env")
+        ((eq? reg 'proc) "\$proc")
+        ((eq? reg 'argl) "\$argl")
+        ((eq? reg 'continue) "\$cont")
+        ((eq? reg 'stack) "\$stack")
+        (else #f)))
+
+(define (wasm-zone/result-call-wat mode next-pc)
+  (string-append
+   "        (call \$result\n"
+   "          (i32.const " (number->string mode) ")\n"
+   "          (i32.const " (number->string next-pc) ")\n"
+   "          (local.get \$val)\n"
+   "          (local.get \$env)\n"
+   "          (local.get \$proc)\n"
+   "          (local.get \$argl)\n"
+   "          (local.get \$cont)\n"
+   "          (local.get \$stack))"))
+
+(define (wasm-zone/result-call-current-pc-wat mode)
+  (string-append
+   "        (call \$result\n"
+   "          (i32.const " (number->string mode) ")\n"
+   "          (local.get \$pc)\n"
+   "          (local.get \$val)\n"
+   "          (local.get \$env)\n"
+   "          (local.get \$proc)\n"
+   "          (local.get \$argl)\n"
+   "          (local.get \$cont)\n"
+   "          (local.get \$stack))"))
+
+(define (wasm-zone/emit-assign-wat instr)
+  "Return WAT for a supported assign instruction, else #f."
+  (if (not (and (pair? instr)
+                (eq? (car instr) 'assign)
+                (pair? (cdr instr))
+                (pair? (cddr instr))))
       #f
-      (let* ((instrs (code-object-instructions co))
-             (first (vector-ref instrs 0))
-             (second (vector-ref instrs 1)))
-        (if (and (pair? first)
-                 (eq? (car first) 'assign)
-                 (pair? (cdr first))
-                 (eq? (cadr first) 'val)
-                 (pair? (cddr first))
-                 (let ((source (caddr first)))
-                   (and (pair? source)
-                        (eq? (car source) 'const)
-                        (pair? (cdr source))
-                        (wasm-zone/fixnum-immediate? (cadr source))))
-                 (pair? second)
-                 (eq? (car second) 'halt))
-            (cadr (caddr first))
-            #f))))
+      (let* ((target (cadr instr))
+             (source (caddr instr))
+             (target-local (wasm-zone/register-local target)))
+        (if (not target-local)
+            #f
+            (cond
+             ((and (pair? source)
+                   (eq? (car source) 'const)
+                   (pair? (cdr source))
+                   (wasm-zone/fixnum-immediate? (cadr source)))
+              (string-append
+               "        (local.set " target-local
+               " (call \$h_fixnum (i32.const "
+               (number->string (cadr source))
+               ")))\n"))
+             ((and (pair? source)
+                   (eq? (car source) 'reg)
+                   (pair? (cdr source))
+                   (wasm-zone/register-local (cadr source)))
+              (string-append
+               "        (local.set " target-local
+               " (local.get " (wasm-zone/register-local (cadr source)) "))\n"))
+             (else #f))))))
+
+(define (wasm-zone/halt-instruction? instr)
+  (and (pair? instr) (eq? (car instr) 'halt)))
+
+(define (wasm-zone/body-wat co)
+  "Return WAT for CO's supported prefix, or #f when no prefix is supported."
+  (if (not (code-object? co))
+      #f
+      (let ((instrs (code-object-instructions co))
+            (len (code-object-length co)))
+        (let loop ((pc 0) (emitted? #f) (body ""))
+          (if (>= pc len)
+              (if emitted?
+                  (string-append body (wasm-zone/result-call-wat 2 pc))
+                  #f)
+              (let* ((instr (vector-ref instrs pc))
+                     (assign-wat (wasm-zone/emit-assign-wat instr)))
+                (cond
+                 (assign-wat
+                  (loop (+ pc 1) #t (string-append body assign-wat)))
+                 ((wasm-zone/halt-instruction? instr)
+                  (string-append body (wasm-zone/result-call-wat 0 pc)))
+                 (emitted?
+                  (string-append body (wasm-zone/result-call-wat 2 pc)))
+                 (else #f))))))))
 
 (define (wasm-zone/supported? co)
-  (if (wasm-zone/fixnum-constant-return co) #t #f))
+  (if (wasm-zone/body-wat co) #t #f))
 
 (define (wasm-zone/result-helper-wat)
   (string-append
@@ -87,8 +158,8 @@ The generated export uses positional register handles and never models Scheme
 calls with the host WASM stack."
   (if (not (wasm-zone/safe-export-name? export-name))
       (wasm-zone/error "native-zone export name must contain only letters, digits, _, -, or .")
-      (let ((constant (wasm-zone/fixnum-constant-return co)))
-        (if (not constant)
+      (let ((body (wasm-zone/body-wat co)))
+        (if (not body)
             #f
             (string-append
              "(module\n"
@@ -102,25 +173,9 @@ calls with the host WASM stack."
              "        (param \$stack i32) (param \$co i32) (result i32)\n"
              "    (if (result i32) (i32.eq (local.get \$pc) (i32.const 0))\n"
              "      (then\n"
-             "        (call \$result\n"
-             "          (i32.const 0)\n"
-             "          (i32.const 0)\n"
-             "          (call \$h_fixnum (i32.const " (number->string constant) "))\n"
-             "          (local.get \$env)\n"
-             "          (local.get \$proc)\n"
-             "          (local.get \$argl)\n"
-             "          (local.get \$cont)\n"
-             "          (local.get \$stack)))\n"
+             body ")\n"
              "      (else\n"
-             "        (call \$result\n"
-             "          (i32.const 2)\n"
-             "          (local.get \$pc)\n"
-             "          (local.get \$val)\n"
-             "          (local.get \$env)\n"
-             "          (local.get \$proc)\n"
-             "          (local.get \$argl)\n"
-             "          (local.get \$cont)\n"
-             "          (local.get \$stack)))))\n"
+             (wasm-zone/result-call-current-pc-wat 2) ")))\n"
              ")\n")))))
 
 (define (generate-register-machine-wasm-zone-manifest unit-id co-index

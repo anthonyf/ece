@@ -241,8 +241,9 @@ The JS glue creates the global environment, registers boot primitives needed by 
 WASM does not use the CL native-zone pipeline. Its `native-fn` field exists for
 structural parity; WASM native zones are registered through the WASM native-zone
 registry instead. The first generated WASM zone path emits register-machine WAT
-for a very small code-object subset and leaves unsupported code objects on the
-interpreter path.
+for a very small straight-line assignment subset. A generated zone can either
+return directly or bail out with updated register state so the interpreter
+continues at the first unsupported instruction.
 
 The intended next step is an ECE-authored WASM host layer plus a WASM native-zone
 registry. JavaScript should provide only browser capabilities such as root VM
