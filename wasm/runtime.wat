@@ -6408,6 +6408,60 @@
   (func $reg-id-sym (param $reg-id i32) (result (ref $symbol))
     (call $asm-sym-ref (i32.add (i32.const 7) (local.get $reg-id))))
 
+  (func $decode-operand-sexp (param $operand (ref null eq)) (result (ref null eq))
+    (local $p (ref $pair))
+    (local $kind i32)
+    (local.set $p (ref.cast (ref $pair) (local.get $operand)))
+    (local.set $kind
+      (call $fixnum-value (ref.cast (ref i31) (call $car (local.get $p)))))
+    ;; (const <value>)
+    (if (i32.eqz (local.get $kind))
+      (then
+        (return
+          (call $cons
+            (call $asm-sym-ref (i32.const 13))
+            (call $cons
+              (call $cdr (local.get $p))
+              (global.get $nil))))))
+    ;; (reg <register>)
+    (if (i32.eq (local.get $kind) (i32.const 1))
+      (then
+        (return
+          (call $cons
+            (call $asm-sym-ref (i32.const 14))
+            (call $cons
+              (call $reg-id-sym
+                (call $fixnum-value
+                  (ref.cast (ref i31) (call $cdr (local.get $p)))))
+              (global.get $nil))))))
+    ;; (label <pc>)
+    (if (i32.eq (local.get $kind) (i32.const 2))
+      (then
+        (return
+          (call $cons
+            (call $asm-sym-ref (i32.const 15))
+            (call $cons
+              (call $cdr (local.get $p))
+              (global.get $nil))))))
+    (local.get $operand))
+
+  (func $decode-operands-sexp (param $operands (ref null eq)) (result (ref null eq))
+    (local $result (ref null eq))
+    (local $cur (ref null eq))
+    (local.set $result (global.get $nil))
+    (local.set $cur (local.get $operands))
+    (block $done
+      (loop $loop
+        (br_if $done (ref.is_null (local.get $cur)))
+        (br_if $done (call $is-null (local.get $cur)))
+        (local.set $result
+          (call $cons
+            (call $decode-operand-sexp (call $xcar (local.get $cur)))
+            (local.get $result)))
+        (local.set $cur (call $xcdr (local.get $cur)))
+        (br $loop)))
+    (call $reverse-list (local.get $result)))
+
   (func $decode-instr-sexp (param $instr (ref null $instr)) (result (ref null eq))
     (local $i (ref $instr))
     (if (ref.is_null (local.get $instr))
@@ -6447,6 +6501,26 @@
                     (call $reg-id-sym (struct.get $instr $c (local.get $i)))
                     (global.get $nil)))
                 (global.get $nil)))))))
+    ;; (assign <reg> (op <name>) <operands>...)
+    (if (i32.and
+          (i32.eqz (struct.get $instr $opcode (local.get $i)))
+          (i32.eq (struct.get $instr $b (local.get $i)) (i32.const 3)))
+      (then
+        (return
+          (call $cons
+            (call $asm-sym-ref (i32.const 0))
+            (call $cons
+              (call $reg-id-sym (struct.get $instr $a (local.get $i)))
+              (call $cons
+                (call $cons
+                  (call $asm-sym-ref (i32.const 16))
+                  (call $cons
+                    (call $asm-sym-ref
+                      (i32.add (i32.const 17)
+                               (struct.get $instr $c (local.get $i))))
+                    (global.get $nil)))
+                (call $decode-operands-sexp
+                  (struct.get $instr $val (local.get $i)))))))))
     ;; (halt)
     (if (i32.eq (struct.get $instr $opcode (local.get $i)) (i32.const 7))
       (then

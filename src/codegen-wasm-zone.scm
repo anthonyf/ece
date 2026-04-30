@@ -10,7 +10,10 @@
 ;;; the interpreter path. The supported subset is a straight-line prefix:
 ;;;
 ;;;   (assign <register> (const <fixnum>))
+;;;   (assign <register> (const ()))
 ;;;   (assign <register> (reg <register>))
+;;;   (assign <register> (op list) <operand> ...)
+;;;   (assign <register> (op cons) <operand> <operand>)
 ;;;   (halt)
 ;;;
 ;;; If a supported prefix reaches an unsupported instruction, the zone returns
@@ -76,6 +79,58 @@
    "          (local.get \$cont)\n"
    "          (local.get \$stack))"))
 
+(define (wasm-zone/const-value-wat value)
+  (cond ((wasm-zone/fixnum-immediate? value)
+         (string-append "(call \$h_fixnum (i32.const "
+                        (number->string value)
+                        "))"))
+        ((null? value)
+         "(call \$h_nil)")
+        (else #f)))
+
+(define (wasm-zone/source-value-wat source)
+  (cond
+   ((and (pair? source)
+         (eq? (car source) 'const)
+         (pair? (cdr source)))
+    (wasm-zone/const-value-wat (cadr source)))
+   ((and (pair? source)
+         (eq? (car source) 'reg)
+         (pair? (cdr source))
+         (wasm-zone/register-local (cadr source)))
+    (string-append "(local.get " (wasm-zone/register-local (cadr source)) ")"))
+   (else #f)))
+
+(define (wasm-zone/list-value-wat operands)
+  (if (null? operands)
+      "(call \$h_nil)"
+      (let ((head (wasm-zone/source-value-wat (car operands)))
+            (tail (wasm-zone/list-value-wat (cdr operands))))
+        (if (and head tail)
+            (string-append "(call \$h_cons " head " " tail ")")
+            #f))))
+
+(define (wasm-zone/operation-name source)
+  (if (and (pair? source)
+           (eq? (car source) 'op)
+           (pair? (cdr source)))
+      (cadr source)
+      #f))
+
+(define (wasm-zone/op-value-wat source operands)
+  (let ((op-name (wasm-zone/operation-name source)))
+    (cond
+     ((eq? op-name 'list)
+      (wasm-zone/list-value-wat operands))
+     ((and (eq? op-name 'cons)
+           (= (length operands) 2))
+      (let ((car-wat (wasm-zone/source-value-wat (car operands)))
+            (cdr-wat (wasm-zone/source-value-wat (cadr operands))))
+        (if (and car-wat cdr-wat)
+            (string-append "(call \$h_cons " car-wat " " cdr-wat ")")
+            #f)))
+     (else #f))))
+
 (define (wasm-zone/emit-assign-wat instr)
   "Return WAT for a supported assign instruction, else #f."
   (if (not (and (pair? instr)
@@ -85,27 +140,18 @@
       #f
       (let* ((target (cadr instr))
              (source (caddr instr))
+             (operands (cdddr instr))
              (target-local (wasm-zone/register-local target)))
         (if (not target-local)
             #f
-            (cond
-             ((and (pair? source)
-                   (eq? (car source) 'const)
-                   (pair? (cdr source))
-                   (wasm-zone/fixnum-immediate? (cadr source)))
-              (string-append
-               "        (local.set " target-local
-               " (call \$h_fixnum (i32.const "
-               (number->string (cadr source))
-               ")))\n"))
-             ((and (pair? source)
-                   (eq? (car source) 'reg)
-                   (pair? (cdr source))
-                   (wasm-zone/register-local (cadr source)))
-              (string-append
-               "        (local.set " target-local
-               " (local.get " (wasm-zone/register-local (cadr source)) "))\n"))
-             (else #f))))))
+            (let ((value-wat
+                   (if (wasm-zone/operation-name source)
+                       (wasm-zone/op-value-wat source operands)
+                       (wasm-zone/source-value-wat source))))
+              (if value-wat
+                  (string-append
+                   "        (local.set " target-local " " value-wat ")\n")
+                  #f))))))
 
 (define (wasm-zone/halt-instruction? instr)
   (and (pair? instr) (eq? (car instr) 'halt)))
@@ -164,6 +210,8 @@ calls with the host WASM stack."
             (string-append
              "(module\n"
              "  (import \"ece\" \"h_fixnum\" (func \$h_fixnum (param i32) (result i32)))\n"
+             "  (import \"ece\" \"h_nil\" (func \$h_nil (result i32)))\n"
+             "  (import \"ece\" \"h_cons\" (func \$h_cons (param i32) (param i32) (result i32)))\n"
              "  (import \"ece\" \"h_vector\" (func \$h_vector (param i32) (result i32)))\n"
              "  (import \"ece\" \"h_vector_set\" (func \$h_vector_set (param i32) (param i32) (param i32)))\n"
              (wasm-zone/result-helper-wat)

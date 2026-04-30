@@ -36,6 +36,24 @@
     (%code-object-push-instruction! co (list 'halt))
     co))
 
+(define (wasm-zone-test-list-prefix-co)
+  (let ((co (%make-code-object)))
+    (%code-object-push-instruction! co (list 'assign 'val (list 'const 5)))
+    (%code-object-push-instruction! co (list 'assign 'argl (list 'op 'list)
+                                             (list 'reg 'val)))
+    (%code-object-push-instruction! co (list 'assign 'val (list 'const 3)))
+    (%code-object-push-instruction! co (list 'assign 'argl (list 'op 'cons)
+                                             (list 'reg 'val)
+                                             (list 'reg 'argl)))
+    (%code-object-push-instruction! co
+                                    (list 'perform
+                                          (list 'op 'define-variable!)
+                                          (list 'const 'generated-list-value)
+                                          (list 'reg 'argl)
+                                          (list 'reg 'env)))
+    (%code-object-push-instruction! co (list 'halt))
+    co))
+
 (test "codegen-wasm-zone: emits a register-machine fixnum return zone" (lambda ()
   (let* ((co (mc-compile-to-code-object 42))
          (wat (generate-register-machine-wasm-zone co "zone_0")))
@@ -54,6 +72,17 @@
     (assert-true (string-contains? wat "(local.set \$val (call \$h_fixnum (i32.const 88)))"))
     (assert-true (string-contains? wat "(local.set \$proc (local.get \$val))"))
     (assert-true (>= (wasm-zone-test-substring-count wat "(i32.const 2)") 2)))))
+
+(test "codegen-wasm-zone: emits list and cons operation assignments" (lambda ()
+  (let ((wat (generate-register-machine-wasm-zone
+              (wasm-zone-test-list-prefix-co)
+              "zone_list")))
+    (assert-true (string? wat))
+    (assert-true (string-contains? wat "(import \"ece\" \"h_nil\""))
+    (assert-true (string-contains? wat "(import \"ece\" \"h_cons\""))
+    (assert-true (string-contains? wat "(local.set \$argl (call \$h_cons (local.get \$val) (call \$h_nil)))"))
+    (assert-true (string-contains? wat "(local.set \$argl (call \$h_cons (local.get \$val) (local.get \$argl)))"))
+    (assert-true (>= (wasm-zone-test-substring-count wat "(i32.const 4)") 1)))))
 
 (test "codegen-wasm-zone: unsupported code objects decline generation" (lambda ()
   (let ((co (mc-compile-to-code-object '(+ 1 2))))
