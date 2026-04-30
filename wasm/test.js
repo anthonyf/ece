@@ -337,6 +337,8 @@ async function runGeneratedZoneIntegrationTests(w, envH) {
     const { instance } = await WebAssembly.instantiate(zoneBytes, {
       ece: {
         h_fixnum: w.h_fixnum,
+        h_nil: w.h_nil,
+        h_cons: w.h_cons,
         h_vector: w.h_vector,
         h_vector_set: w.h_vector_set
       }
@@ -351,6 +353,42 @@ async function runGeneratedZoneIntegrationTests(w, envH) {
 
     assert(w.h_fixnum_val(result) === 77,
       `expected generated native return 77, got ${w.h_fixnum_val(result)}`);
+  });
+
+  await iTest("generated register-machine WASM zone returns direct nil constant", async () => {
+    const watHandle = eceEval(`
+      (begin
+        (define generated-nil-co (%make-code-object))
+        (%code-object-push-instruction! generated-nil-co
+          '(assign val (const ())))
+        (%code-object-push-instruction! generated-nil-co '(halt))
+        (%code-object-set-archive-key! generated-nil-co (cons 'generated-nil 0))
+        (generate-register-machine-wasm-zone generated-nil-co "zone_nil_0"))`);
+    const watText = ECE._eceToJs(watHandle);
+    assert(typeof watText === "string", "expected generated nil WAT string");
+    assert(watText.includes('(export "zone_nil_0")'), "generated WAT missing nil export");
+    assert(watText.includes('(call $h_nil)'), "generated WAT missing direct nil call");
+
+    const zoneBytes = compileWat(watText, "generated-nil-zone");
+    const { instance } = await WebAssembly.instantiate(zoneBytes, {
+      ece: {
+        h_fixnum: w.h_fixnum,
+        h_nil: w.h_nil,
+        h_cons: w.h_cons,
+        h_vector: w.h_vector,
+        h_vector_set: w.h_vector_set
+      }
+    });
+
+    globalThis.__eceGeneratedNilZone0 = instance.exports.zone_nil_0;
+    const result = eceEval(`
+      (begin
+        (register-native-zone! 'generated-nil 0
+          (%js-eval "globalThis.__eceGeneratedNilZone0"))
+        (if (null? (execute-code-object generated-nil-co)) 1 0))`);
+
+    assert(w.h_fixnum_val(result) === 1,
+      `expected generated nil return to satisfy null?, got ${w.h_fixnum_val(result)}`);
   });
 
   await iTest("generated register-machine WASM zone bails out with updated registers", async () => {
@@ -376,6 +414,8 @@ async function runGeneratedZoneIntegrationTests(w, envH) {
     const { instance } = await WebAssembly.instantiate(zoneBytes, {
       ece: {
         h_fixnum: w.h_fixnum,
+        h_nil: w.h_nil,
+        h_cons: w.h_cons,
         h_vector: w.h_vector,
         h_vector_set: w.h_vector_set
       }
@@ -391,6 +431,53 @@ async function runGeneratedZoneIntegrationTests(w, envH) {
 
     assert(w.h_fixnum_val(result) === 88,
       `expected bailout to preserve generated val 88, got ${w.h_fixnum_val(result)}`);
+  });
+
+  await iTest("generated register-machine WASM zone builds list prefix before bailout", async () => {
+    const watHandle = eceEval(`
+      (begin
+        (define generated-list-co (%make-code-object))
+        (%code-object-push-instruction! generated-list-co
+          '(assign val (const 5)))
+        (%code-object-push-instruction! generated-list-co
+          '(assign argl (op list) (reg val)))
+        (%code-object-push-instruction! generated-list-co
+          '(assign val (const 3)))
+        (%code-object-push-instruction! generated-list-co
+          '(assign argl (op cons) (reg val) (reg argl)))
+        (%code-object-push-instruction! generated-list-co
+          '(perform (op define-variable!) (const generated-list-value)
+                    (reg argl) (reg env)))
+        (%code-object-push-instruction! generated-list-co '(halt))
+        (%code-object-set-archive-key! generated-list-co (cons 'generated-list 0))
+        (generate-register-machine-wasm-zone generated-list-co "zone_list_0"))`);
+    const watText = ECE._eceToJs(watHandle);
+    assert(typeof watText === "string", "expected generated list WAT string");
+    assert(watText.includes('(export "zone_list_0")'), "generated WAT missing list export");
+    assert(watText.includes('h_cons'), "generated WAT missing cons import/call");
+
+    const zoneBytes = compileWat(watText, "generated-list-zone");
+    const { instance } = await WebAssembly.instantiate(zoneBytes, {
+      ece: {
+        h_fixnum: w.h_fixnum,
+        h_nil: w.h_nil,
+        h_cons: w.h_cons,
+        h_vector: w.h_vector,
+        h_vector_set: w.h_vector_set
+      }
+    });
+
+    globalThis.__eceGeneratedListZone0 = instance.exports.zone_list_0;
+    const result = eceEval(`
+      (begin
+        (register-native-zone! 'generated-list 0
+          (%js-eval "globalThis.__eceGeneratedListZone0"))
+        (execute-code-object generated-list-co)
+        generated-list-value)`);
+
+    const values = ECE._eceListToJsArray(result);
+    assert(values.length === 2 && values[0] === 3 && values[1] === 5,
+      `expected generated list (3 5), got ${JSON.stringify(values)}`);
   });
 
   return { passed: iPassed, failed: iFailed };

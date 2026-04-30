@@ -314,7 +314,10 @@ register assignments:
 
 ```scheme
 (assign <register> (const <fixnum>))
+(assign <register> (const ()))
 (assign <register> (reg <register>))
+(assign <register> (op list) <operand> ...)
+(assign <register> (op cons) <operand> <operand>)
 (halt)
 ```
 
@@ -322,6 +325,11 @@ If the first instruction is unsupported, the code object declines generation and
 continues through the interpreter. If a supported prefix reaches an unsupported
 instruction, the generated zone returns `:bail` with updated registers and the
 unsupported instruction's PC, so the interpreter continues from that point.
+
+The first operation support is limited to pure data construction, not primitive
+procedure dispatch. Arithmetic such as `+` still compiles through ordinary
+primitive lookup/application so the generator should not shortcut it until it
+can preserve Scheme's mutable binding semantics and primitive error behavior.
 
 ## Testing Strategy
 
