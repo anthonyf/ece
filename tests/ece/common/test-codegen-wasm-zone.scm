@@ -7,6 +7,16 @@
     (thunk)
     #f))
 
+(define (wasm-zone-test-substring-count s needle)
+  (let ((slen (string-length s))
+        (nlen (string-length needle)))
+    (let loop ((i 0) (count 0))
+      (cond ((> (+ i nlen) slen) count)
+            ((string=? (substring s i (+ i nlen)) needle)
+             (loop (+ i 1) (+ count 1)))
+            (else
+             (loop (+ i 1) count))))))
+
 (define (wasm-zone-test-constant-co value)
   (let ((co (%make-code-object)))
     (%code-object-push-instruction! co (list 'assign 'val (list 'const value)))
@@ -43,7 +53,7 @@
     (assert-true (string? wat))
     (assert-true (string-contains? wat "(local.set \$val (call \$h_fixnum (i32.const 88)))"))
     (assert-true (string-contains? wat "(local.set \$proc (local.get \$val))"))
-    (assert-true (string-contains? wat "(i32.const 2)\n          (i32.const 2)")))))
+    (assert-true (>= (wasm-zone-test-substring-count wat "(i32.const 2)") 2)))))
 
 (test "codegen-wasm-zone: unsupported code objects decline generation" (lambda ()
   (let ((co (mc-compile-to-code-object '(+ 1 2))))

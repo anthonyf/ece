@@ -6414,11 +6414,11 @@
       (then (return (global.get $void))))
     (local.set $i (ref.as_non_null (local.get $instr)))
     ;; (assign <reg> (const <value>))
-	    (if (i32.and
-	          (i32.eqz (struct.get $instr $opcode (local.get $i)))
-	          (i32.eqz (struct.get $instr $b (local.get $i))))
-	      (then
-	        (return
+    (if (i32.and
+          (i32.eqz (struct.get $instr $opcode (local.get $i)))
+          (i32.eqz (struct.get $instr $b (local.get $i))))
+      (then
+        (return
           (call $cons
             (call $asm-sym-ref (i32.const 0))
             (call $cons
@@ -6427,30 +6427,30 @@
                 (call $cons
                   (call $asm-sym-ref (i32.const 13))
                   (call $cons
-	                    (struct.get $instr $val (local.get $i))
-	                    (global.get $nil)))
-	                (global.get $nil)))))))
-	    ;; (assign <reg> (reg <reg>))
-	    (if (i32.and
-	          (i32.eqz (struct.get $instr $opcode (local.get $i)))
-	          (i32.eq (struct.get $instr $b (local.get $i)) (i32.const 1)))
-	      (then
-	        (return
-	          (call $cons
-	            (call $asm-sym-ref (i32.const 0))
-	            (call $cons
-	              (call $reg-id-sym (struct.get $instr $a (local.get $i)))
-	              (call $cons
-	                (call $cons
-	                  (call $asm-sym-ref (i32.const 14))
-	                  (call $cons
-	                    (call $reg-id-sym (struct.get $instr $c (local.get $i)))
-	                    (global.get $nil)))
-	                (global.get $nil)))))))
-	    ;; (halt)
-	    (if (i32.eq (struct.get $instr $opcode (local.get $i)) (i32.const 7))
-	      (then
-	        (return
+                    (struct.get $instr $val (local.get $i))
+                    (global.get $nil)))
+                (global.get $nil)))))))
+    ;; (assign <reg> (reg <reg>))
+    (if (i32.and
+          (i32.eqz (struct.get $instr $opcode (local.get $i)))
+          (i32.eq (struct.get $instr $b (local.get $i)) (i32.const 1)))
+      (then
+        (return
+          (call $cons
+            (call $asm-sym-ref (i32.const 0))
+            (call $cons
+              (call $reg-id-sym (struct.get $instr $a (local.get $i)))
+              (call $cons
+                (call $cons
+                  (call $asm-sym-ref (i32.const 14))
+                  (call $cons
+                    (call $reg-id-sym (struct.get $instr $c (local.get $i)))
+                    (global.get $nil)))
+                (global.get $nil)))))))
+    ;; (halt)
+    (if (i32.eq (struct.get $instr $opcode (local.get $i)) (i32.const 7))
+      (then
+        (return
           (call $cons
             (call $asm-sym-ref (i32.const 44))
             (global.get $nil)))))
