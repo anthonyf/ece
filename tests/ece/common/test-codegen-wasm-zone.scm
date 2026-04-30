@@ -54,6 +54,12 @@
     (%code-object-push-instruction! co (list 'halt))
     co))
 
+(define (wasm-zone-test-bundle-cos)
+  (vector
+   (wasm-zone-test-constant-co 7)
+   (mc-compile-to-code-object '(+ 1 2))
+   (wasm-zone-test-list-prefix-co)))
+
 (test "codegen-wasm-zone: emits a register-machine fixnum return zone" (lambda ()
   (let* ((co (mc-compile-to-code-object 42))
          (wat (generate-register-machine-wasm-zone co "zone_0")))
@@ -133,3 +139,27 @@
                   "demo-zones.wasm")
     (assert-equal (native-zone-entry-index entry) 3)
     (assert-equal (native-zone-entry-export-name entry) "zone_3"))))
+
+(test "codegen-wasm-zone: emits bundle WAT and manifest for supported entries" (lambda ()
+  (let* ((bundle
+          (generate-register-machine-wasm-zone-bundle
+           'bundle-unit
+           (wasm-zone-test-bundle-cos)
+           "bundle-zones.wasm"))
+         (wat (wasm-zone-bundle-wat bundle))
+         (manifest (wasm-zone-bundle-manifest bundle))
+         (entries (native-zone-manifest-entries manifest))
+         (first (car entries))
+         (second (cadr entries)))
+    (assert-true (string? wat))
+    (assert-true (string-contains? wat "(export \"zone_0\")"))
+    (assert-true (not (string-contains? wat "(export \"zone_1\")")))
+    (assert-true (string-contains? wat "(export \"zone_2\")"))
+    (assert-equal (native-zone-manifest-unit-id manifest) 'bundle-unit)
+    (assert-equal (native-zone-manifest-module-url manifest)
+                  "bundle-zones.wasm")
+    (assert-equal (length entries) 2)
+    (assert-equal (native-zone-entry-index first) 0)
+    (assert-equal (native-zone-entry-export-name first) "zone_0")
+    (assert-equal (native-zone-entry-index second) 2)
+    (assert-equal (native-zone-entry-export-name second) "zone_2"))))
