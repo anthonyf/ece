@@ -331,6 +331,13 @@ procedure dispatch. Arithmetic such as `+` still compiles through ordinary
 primitive lookup/application so the generator should not shortcut it until it
 can preserve Scheme's mutable binding semantics and primitive error behavior.
 
+The generator can also walk an archive code-object vector and produce one
+side-module WAT plus a native-zone manifest. Supported code-object indexes get
+stable exports named `zone_<index>`; unsupported indexes are omitted from the
+manifest and keep running through the interpreter. The `.ecec` archive remains
+the semantic source of truth, while the side module is a replaceable
+acceleration artifact keyed by the archive unit id and code-object index.
+
 ## Testing Strategy
 
 - ECE tests for manifest parsing and validation.

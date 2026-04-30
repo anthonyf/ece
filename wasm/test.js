@@ -480,6 +480,64 @@ async function runGeneratedZoneIntegrationTests(w, envH) {
       `expected generated list (3 5), got ${JSON.stringify(values)}`);
   });
 
+  await iTest("generated register-machine WASM zone bundle registers supported entries", async () => {
+    const watHandle = eceEval(`
+      (begin
+        (define generated-bundle-co0 (mc-compile-to-code-object 12))
+        (%code-object-set-archive-key! generated-bundle-co0
+          (cons 'generated-bundle 0))
+        (define generated-bundle-co1 (mc-compile-to-code-object '(+ 1 2)))
+        (%code-object-set-archive-key! generated-bundle-co1
+          (cons 'generated-bundle 1))
+        (define generated-bundle-co2 (%make-code-object))
+        (%code-object-push-instruction! generated-bundle-co2
+          '(assign val (const ())))
+        (%code-object-push-instruction! generated-bundle-co2 '(halt))
+        (%code-object-set-archive-key! generated-bundle-co2
+          (cons 'generated-bundle 2))
+        (define generated-bundle
+          (generate-register-machine-wasm-zone-bundle
+            'generated-bundle
+            (vector generated-bundle-co0
+                    generated-bundle-co1
+                    generated-bundle-co2)
+            "generated-bundle-zones.wasm"))
+        (wasm-zone-bundle-wat generated-bundle))`);
+    const watText = ECE._eceToJs(watHandle);
+    assert(typeof watText === "string", "expected generated bundle WAT string");
+    assert(watText.includes('(export "zone_0")'), "bundle WAT missing zone_0");
+    assert(!watText.includes('(export "zone_1")'), "bundle WAT should skip unsupported zone_1");
+    assert(watText.includes('(export "zone_2")'), "bundle WAT missing zone_2");
+
+    const zoneBytes = compileWat(watText, "generated-bundle-zones");
+    const { instance } = await WebAssembly.instantiate(zoneBytes, {
+      ece: {
+        h_fixnum: w.h_fixnum,
+        h_nil: w.h_nil,
+        h_cons: w.h_cons,
+        h_vector: w.h_vector,
+        h_vector_set: w.h_vector_set
+      }
+    });
+
+    globalThis.__eceGeneratedBundleZone0 = instance.exports.zone_0;
+    globalThis.__eceGeneratedBundleZone2 = instance.exports.zone_2;
+    const result = eceEval(`
+      (begin
+        (register-native-zone! 'generated-bundle 0
+          (%js-eval "globalThis.__eceGeneratedBundleZone0"))
+        (register-native-zone! 'generated-bundle 2
+          (%js-eval "globalThis.__eceGeneratedBundleZone2"))
+        (list
+          (execute-code-object generated-bundle-co0)
+          (execute-code-object generated-bundle-co1)
+          (if (null? (execute-code-object generated-bundle-co2)) 1 0)))`);
+
+    const values = ECE._eceListToJsArray(result);
+    assert(values.length === 3 && values[0] === 12 && values[1] === 3 && values[2] === 1,
+      `expected bundle results (12 3 1), got ${JSON.stringify(values)}`);
+  });
+
   return { passed: iPassed, failed: iFailed };
 }
 

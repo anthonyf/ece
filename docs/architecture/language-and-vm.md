@@ -244,6 +244,9 @@ registry instead. The first generated WASM zone path emits register-machine WAT
 for a very small straight-line assignment and data-construction subset. A
 generated zone can either return directly or bail out with updated register
 state so the interpreter continues at the first unsupported instruction.
+Archive-scale generation emits one side-module WAT plus a manifest that maps
+supported code-object indexes to exports; unsupported entries are simply absent
+from the manifest and remain interpreted.
 
 The intended next step is an ECE-authored WASM host layer plus a WASM native-zone
 registry. JavaScript should provide only browser capabilities such as root VM

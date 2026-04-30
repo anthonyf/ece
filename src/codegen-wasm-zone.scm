@@ -198,6 +198,34 @@
    "    (call \$h_vector_set (local.get \$vec) (i32.const 7) (local.get \$stack))\n"
    "    (local.get \$vec))\n"))
 
+(define (wasm-zone/imports-wat)
+  (string-append
+   "  (import \"ece\" \"h_fixnum\" (func \$h_fixnum (param i32) (result i32)))\n"
+   "  (import \"ece\" \"h_nil\" (func \$h_nil (result i32)))\n"
+   "  (import \"ece\" \"h_cons\" (func \$h_cons (param i32) (param i32) (result i32)))\n"
+   "  (import \"ece\" \"h_vector\" (func \$h_vector (param i32) (result i32)))\n"
+   "  (import \"ece\" \"h_vector_set\" (func \$h_vector_set (param i32) (param i32) (param i32)))\n"))
+
+(define (wasm-zone/export-function-wat export-name body)
+  (string-append
+   "  (func (export \"" export-name "\")\n"
+   "        (param \$pc i32) (param \$val i32) (param \$env i32)\n"
+   "        (param \$proc i32) (param \$argl i32) (param \$cont i32)\n"
+   "        (param \$stack i32) (param \$co i32) (result i32)\n"
+   "    (if (result i32) (i32.eq (local.get \$pc) (i32.const 0))\n"
+   "      (then\n"
+   body ")\n"
+   "      (else\n"
+   (wasm-zone/result-call-current-pc-wat 2) ")))\n"))
+
+(define (wasm-zone/module-wat functions-wat)
+  (string-append
+   "(module\n"
+   (wasm-zone/imports-wat)
+   (wasm-zone/result-helper-wat)
+   functions-wat
+   ")\n"))
+
 (define (generate-register-machine-wasm-zone co export-name)
   "Return WAT for CO, or #f if CO is outside this generator's subset.
 The generated export uses positional register handles and never models Scheme
@@ -207,24 +235,59 @@ calls with the host WASM stack."
       (let ((body (wasm-zone/body-wat co)))
         (if (not body)
             #f
-            (string-append
-             "(module\n"
-             "  (import \"ece\" \"h_fixnum\" (func \$h_fixnum (param i32) (result i32)))\n"
-             "  (import \"ece\" \"h_nil\" (func \$h_nil (result i32)))\n"
-             "  (import \"ece\" \"h_cons\" (func \$h_cons (param i32) (param i32) (result i32)))\n"
-             "  (import \"ece\" \"h_vector\" (func \$h_vector (param i32) (result i32)))\n"
-             "  (import \"ece\" \"h_vector_set\" (func \$h_vector_set (param i32) (param i32) (param i32)))\n"
-             (wasm-zone/result-helper-wat)
-             "  (func (export \"" export-name "\")\n"
-             "        (param \$pc i32) (param \$val i32) (param \$env i32)\n"
-             "        (param \$proc i32) (param \$argl i32) (param \$cont i32)\n"
-             "        (param \$stack i32) (param \$co i32) (result i32)\n"
-             "    (if (result i32) (i32.eq (local.get \$pc) (i32.const 0))\n"
-             "      (then\n"
-             body ")\n"
-             "      (else\n"
-             (wasm-zone/result-call-current-pc-wat 2) ")))\n"
-             ")\n")))))
+            (wasm-zone/module-wat
+             (wasm-zone/export-function-wat export-name body))))))
+
+(define (wasm-zone/default-export-name co-index)
+  (string-append "zone_" (number->string co-index)))
+
+(define (wasm-zone/manifest module-unit-id entries maybe-module-url)
+  (let ((module-url-fields
+         (if (null? maybe-module-url)
+             '()
+             (list ':module-url (car maybe-module-url)))))
+    (validate-native-zone-manifest
+     (append
+      (list ':ece-native-zones
+            ':version 1
+            ':unit-id module-unit-id)
+      module-url-fields
+      (list ':entries entries)))))
+
+(define (generate-register-machine-wasm-zone-bundle unit-id cos
+                                                    . maybe-module-url)
+  "Return a plist with :wat and :manifest for supported code objects in COS.
+COS must be the archive code-object vector. Unsupported code objects are
+omitted from the manifest, leaving them on the interpreter path."
+  (let ((len (vector-length cos)))
+    (let loop ((i 0) (functions '()) (entries '()))
+      (if (>= i len)
+          (let ((manifest (wasm-zone/manifest unit-id
+                                              (reverse entries)
+                                              maybe-module-url))
+                (function-wat (apply string-append (reverse functions))))
+            (list ':wat (wasm-zone/module-wat function-wat)
+                  ':manifest manifest))
+          (let* ((co (vector-ref cos i))
+                 (body (wasm-zone/body-wat co)))
+            (if body
+                (let* ((index (wasm-host/normalize-co-index i))
+                       (export-name (wasm-zone/default-export-name index)))
+                  (loop (+ i 1)
+                        (cons (wasm-zone/export-function-wat export-name body)
+                              functions)
+                        (cons (list ':index index ':export export-name)
+                              entries)))
+                (loop (+ i 1) functions entries)))))))
+
+(define (wasm-zone-bundle-wat bundle)
+  (wasm-host/plist-get bundle ':wat))
+
+(define (wasm-zone-bundle-manifest bundle)
+  (wasm-host/plist-get bundle ':manifest))
+
+(define (wasm-zone-bundle-entries bundle)
+  (native-zone-manifest-entries (wasm-zone-bundle-manifest bundle)))
 
 (define (generate-register-machine-wasm-zone-manifest unit-id co-index
                                                       export-name
@@ -233,15 +296,5 @@ calls with the host WASM stack."
   (when (not (wasm-zone/safe-export-name? export-name))
     (wasm-zone/error "native-zone export name must contain only letters, digits, _, -, or ."))
   (let ((entry (list ':index (wasm-host/normalize-co-index co-index)
-                     ':export export-name))
-        (module-url-fields
-         (if (null? maybe-module-url)
-             '()
-             (list ':module-url (car maybe-module-url)))))
-    (validate-native-zone-manifest
-     (append
-      (list ':ece-native-zones
-            ':version 1
-            ':unit-id unit-id)
-      module-url-fields
-      (list ':entries (list entry))))))
+                     ':export export-name)))
+    (wasm-zone/manifest unit-id (list entry) maybe-module-url)))
