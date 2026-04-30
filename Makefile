@@ -99,7 +99,7 @@ export ASDF_OUTPUT_TRANSLATIONS = (:output-translations ("$(CURDIR)/" "$(CURDIR)
 # base64.scm and sha1.scm must come before the test files so their exports
 # are defined when test-base64 / test-sha1 run. Both run on CL and WASM now
 # that the bitwise primitives handle large integers uniformly.
-WASM_TEST_SRCS := src/sdk-lib.scm src/ece-unit.scm src/base64.scm src/sha1.scm src/scheduler.scm src/http-codec.scm src/websocket-codec.scm src/json.scm src/ece-serve.scm src/wasm-host.scm src/geiser-ece.scm $(wildcard tests/ece/common/test-*.scm) wasm/wasm-test-runner.scm
+WASM_TEST_SRCS := src/sdk-lib.scm src/ece-unit.scm src/base64.scm src/sha1.scm src/scheduler.scm src/http-codec.scm src/websocket-codec.scm src/json.scm src/ece-serve.scm src/wasm-host.scm src/codegen-wasm-zone.scm src/geiser-ece.scm $(wildcard tests/ece/common/test-*.scm) wasm/wasm-test-runner.scm
 
 # Temp dir for test output capture
 TEST_OUTPUT_DIR := .tmp/test-output
@@ -132,6 +132,7 @@ test-ece: | .qlot/qlot.conf
 	  --eval '(ece:evaluate (list (quote load) "src/json.scm"))' \
 	  --eval '(ece:evaluate (list (quote load) "src/ece-serve.scm"))' \
 	  --eval '(ece:evaluate (list (quote load) "src/wasm-host.scm"))' \
+	  --eval '(ece:evaluate (list (quote load) "src/codegen-wasm-zone.scm"))' \
 	  --eval '(ece:evaluate (list (quote load) "src/geiser-ece.scm"))' \
 	  --eval '(ece:evaluate (list (quote load) "src/ece-unit.scm"))' \
 	  --eval '(ece:evaluate (list (quote load) "src/ece-test.scm"))' \

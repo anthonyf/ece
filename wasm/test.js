@@ -6,6 +6,8 @@
 const ECE = require("./glue.js");
 const fs = require("fs");
 const path = require("path");
+const os = require("os");
+const childProcess = require("child_process");
 
 const testFile = process.argv[2] || path.join(__dirname, "..", "wasm-tests.ecec");
 const bootstrapDir = path.join(__dirname, "..", "bootstrap");
@@ -273,6 +275,87 @@ function runIntegrationTests(w, envH) {
   return { passed: iPassed, failed: iFailed };
 }
 
+async function runGeneratedZoneIntegrationTests(w, envH) {
+  let iPassed = 0, iFailed = 0;
+
+  async function iTest(name, fn) {
+    try {
+      await fn();
+      iPassed++;
+    } catch (e) {
+      console.log(`  FAIL: ${name}: ${e.message}`);
+      iFailed++;
+    }
+  }
+
+  function assert(cond, msg) {
+    if (!cond) throw new Error(msg || "assertion failed");
+  }
+
+  function eceEval(src) {
+    const evalStr = w.env_lookup(envH, ECE.internSym("eval-string-last"));
+    return w.call_ece_proc(evalStr, w.h_cons(ECE.makeString(src), w.h_nil()));
+  }
+
+  function compileWat(watText, basename) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ece-zone-"));
+    const watPath = path.join(dir, `${basename}.wat`);
+    const wasmPath = path.join(dir, `${basename}.wasm`);
+    const args = ["--enable-gc", "--enable-reference-types", watPath, "-o", wasmPath];
+    try {
+      fs.writeFileSync(watPath, watText);
+      try {
+        childProcess.execFileSync("wasm-as", args, { stdio: "pipe" });
+      } catch (e) {
+        const stderr = e.stderr ? String(e.stderr).trim() : "";
+        const stdout = e.stdout ? String(e.stdout).trim() : "";
+        const details = [
+          `wasm-as failed: wasm-as ${args.join(" ")}`,
+          e.message,
+          stderr && `stderr:\n${stderr}`,
+          stdout && `stdout:\n${stdout}`
+        ].filter(Boolean).join("\n");
+        throw new Error(details);
+      }
+      return fs.readFileSync(wasmPath);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  await iTest("generated register-machine WASM zone dispatches", async () => {
+    const watHandle = eceEval(`
+      (begin
+        (define generated-zone-co (mc-compile-to-code-object 77))
+        (%code-object-set-archive-key! generated-zone-co (cons 'generated-zone 0))
+        (generate-register-machine-wasm-zone generated-zone-co "zone_0"))`);
+    const watText = ECE._eceToJs(watHandle);
+    assert(typeof watText === "string", "expected generated WAT string");
+    assert(watText.includes('(export "zone_0")'), "generated WAT missing export");
+
+    const zoneBytes = compileWat(watText, "generated-zone");
+    const { instance } = await WebAssembly.instantiate(zoneBytes, {
+      ece: {
+        h_fixnum: w.h_fixnum,
+        h_vector: w.h_vector,
+        h_vector_set: w.h_vector_set
+      }
+    });
+
+    globalThis.__eceGeneratedZone0 = instance.exports.zone_0;
+    const result = eceEval(`
+      (begin
+        (register-native-zone! 'generated-zone 0
+          (%js-eval "globalThis.__eceGeneratedZone0"))
+        (execute-code-object generated-zone-co))`);
+
+    assert(w.h_fixnum_val(result) === 77,
+      `expected generated native return 77, got ${w.h_fixnum_val(result)}`);
+  });
+
+  return { passed: iPassed, failed: iFailed };
+}
+
 // ── Main test runner ──
 
 async function run() {
@@ -342,8 +425,6 @@ async function run() {
   } catch (e) {
     eceCrash = e.message;
   }
-  const elapsed = Date.now() - t0;
-
   // Print FAIL/ERROR lines from ECE output
   const text = output.join("");
   const lines = text.split("\n");
@@ -370,13 +451,16 @@ async function run() {
     // Counters not available — leave at 0
   }
 
+  const generatedZoneResults = await runGeneratedZoneIntegrationTests(w, envH);
+  const elapsed = Date.now() - t0;
+
   // Combined results
-  const totalPassed = passed + intResults.passed;
-  const totalFailed = failed + intResults.failed;
+  const totalPassed = passed + intResults.passed + generatedZoneResults.passed;
+  const totalFailed = failed + intResults.failed + generatedZoneResults.failed;
 
   console.log(`\nWASM tests: ${totalPassed} passed, ${totalFailed} failed (${elapsed}ms)`);
-  if (intResults.passed > 0) {
-    console.log(`  (${passed} ECE + ${intResults.passed} integration)`);
+  if (intResults.passed > 0 || generatedZoneResults.passed > 0) {
+    console.log(`  (${passed} ECE + ${intResults.passed + generatedZoneResults.passed} integration)`);
   }
 
   if (totalFailed > 0 || eceCrash || passed === 0) {

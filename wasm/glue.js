@@ -268,6 +268,9 @@ const ECE = {
       if (typeof fn !== "function") {
         throw new Error("native-zone export-ref is not callable");
       }
+      if (fn.length >= 8) {
+        return fn(pc, val, env, proc, argl, cont, stack, co);
+      }
       return fn({ pc, val, env, proc, argl, cont, stack, co, wasm: ECE.wasm, ECE });
     }
   },

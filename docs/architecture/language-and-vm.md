@@ -238,7 +238,11 @@ WASM implements:
 
 The JS glue creates the global environment, registers boot primitives needed by `boot-env.ecec`, initializes assembler symbol IDs for the WAT archive loader, defines `#t`, `#f`, and `*global-env*`, fetches `bootstrap.ecec`, and executes each archive init code object in order.
 
-WASM currently does not use the CL native-zone pipeline. Its `native-fn` field exists for structural parity, but there is no generated WAT zone loader equivalent to `bootstrap/*-zone.lisp`.
+WASM does not use the CL native-zone pipeline. Its `native-fn` field exists for
+structural parity; WASM native zones are registered through the WASM native-zone
+registry instead. The first generated WASM zone path emits register-machine WAT
+for a very small code-object subset and leaves unsupported code objects on the
+interpreter path.
 
 The intended next step is an ECE-authored WASM host layer plus a WASM native-zone
 registry. JavaScript should provide only browser capabilities such as root VM

@@ -46,7 +46,7 @@ The intended ownership split is:
 | Browser host capabilities | JavaScript | Root VM instantiation, `fetch`, side-module instantiation, promise bridging, import object construction. |
 | WASM host library | ECE | User-facing loading API, manifest parsing, reload policy, native-zone registration, error reporting. |
 | WASM runtime kernel | WAT | Archive/code-object loading, native-zone registry storage, executor dispatch hook, handle-table interop. |
-| Native-zone module | Generated WASM | Fast-path implementation for selected code objects, with a narrow register ABI and interpreter bail-out. |
+| Native-zone module | Generated register-machine WASM | Fast-path implementation for selected code objects, with a narrow register ABI and interpreter bail-out. |
 
 This mirrors the existing browser library pattern. Raw `%js-*` primitives are
 host capabilities; [`src/browser-lib.scm`](../../src/browser-lib.scm) turns them
@@ -293,12 +293,32 @@ executor ignores the vector's register slots and runs the interpreter from the
 original entry state. This is enough to prove the runtime contract before the
 compiler emits native zones.
 
-### Phase 4: Compiler-Generated WASM Zones
+### Phase 4: Register-Machine WASM Zones
 
-- Add a WASM native-zone code generator for a small instruction subset.
+- Add a WASM native-zone code generator for a small register-machine
+  instruction subset.
 - Emit native-zone manifests.
 - Fall back on unsupported instructions.
 - Expand coverage only after cross-runtime tests are stable.
+
+Generated zones are not direct-style Scheme procedures. They implement the
+same logical register contract as the interpreter: `pc`, `val`, `env`, `proc`,
+`argl`, `continue`, and `stack` are still the semantic state, and the zone
+returns the normal native-zone result vector. Tail calls, `call/cc`,
+`dynamic-wind`, and fallback correctness all depend on this: the WASM host call
+stack is an implementation detail, not the Scheme continuation model.
+
+The first generator slice is intentionally tiny. It emits a side-module WAT
+function for a code object whose instruction stream is a straight-line fixnum
+constant return:
+
+```scheme
+(assign val (const <fixnum>))
+(halt)
+```
+
+Any unsupported code object declines generation, so it has no registered native
+zone and continues through the interpreter.
 
 ## Testing Strategy
 
