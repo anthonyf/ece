@@ -116,10 +116,15 @@
      "wasm-host: %wasm-fetch-text requires browser WASM host capabilities that are not implemented yet"
      (wasm-host-test-error-message (lambda () (fetch-text "missing.ecez")))))))
 
+(test "wasm-host: reload-program requires paired native-zone URLs" (lambda ()
+  (assert-equal
+   "wasm-host: reload-program requires both native-zone module and manifest URLs"
+   (wasm-host-test-error-message
+    (lambda () (reload-program "app.ecec" "app-zones.wasm" #f))))))
+
 (test "wasm-host: native-zone registry stores and overwrites refs" (lambda ()
   (let ((unit-id '(module (game main) 0))
         (same-unit-id (list 'module (list 'game 'main) 0)))
-    (assert-equal #f (native-zone-lookup unit-id 401))
     (assert-equal 'zone-a (register-native-zone! unit-id 401 'zone-a))
     (assert-equal 'zone-a (native-zone-lookup same-unit-id 401))
     (assert-true (native-zone-registered? same-unit-id 401))

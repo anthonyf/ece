@@ -551,13 +551,13 @@ async function runGeneratedZoneIntegrationTests(w, envH) {
             'host-load
             (vector host-load-co0 host-load-co1)
             "host-load-zones.wasm"))
-        (wasm-zone-bundle-wat host-load-bundle))`);
-    const watText = ECE._eceToJs(bundleInfo);
+        (list
+          (wasm-zone-bundle-wat host-load-bundle)
+          (wasm-zone-bundle-manifest-text host-load-bundle)))`);
+    const [watText, manifestText] = ECE._eceListToJsArray(bundleInfo);
     ECE.wasmHost.setBytes("host-load-zones.wasm",
       compileWat(watText, "host-load-zones"));
-    ECE.wasmHost.setText(
-      "host-load-zones.manifest",
-      "(:ece-native-zones :version 1 :unit-id host-load :module-url \"host-load-zones.wasm\" :entries ((:index 0 :export \"zone_0\")))");
+    ECE.wasmHost.setText("host-load-zones.manifest", manifestText);
 
     const result = eceEval(`
       (begin
@@ -592,18 +592,16 @@ async function runGeneratedZoneIntegrationTests(w, envH) {
             "host-reload-b.wasm"))
         (list
           (wasm-zone-bundle-wat host-reload-bundle-a)
-          (wasm-zone-bundle-wat host-reload-bundle-b)))`);
-    const [watA, watB] = ECE._eceListToJsArray(reloadInfo);
+          (wasm-zone-bundle-manifest-text host-reload-bundle-a)
+          (wasm-zone-bundle-wat host-reload-bundle-b)
+          (wasm-zone-bundle-manifest-text host-reload-bundle-b)))`);
+    const [watA, manifestA, watB, manifestB] = ECE._eceListToJsArray(reloadInfo);
     ECE.wasmHost.setBytes("host-reload-a.wasm",
       compileWat(watA, "host-reload-a"));
-    ECE.wasmHost.setText(
-      "host-reload-a.manifest",
-      "(:ece-native-zones :version 1 :unit-id host-reload :module-url \"host-reload-a.wasm\" :entries ((:index 0 :export \"zone_0\")))");
+    ECE.wasmHost.setText("host-reload-a.manifest", manifestA);
     ECE.wasmHost.setBytes("host-reload-b.wasm",
       compileWat(watB, "host-reload-b"));
-    ECE.wasmHost.setText(
-      "host-reload-b.manifest",
-      "(:ece-native-zones :version 1 :unit-id host-reload :module-url \"host-reload-b.wasm\" :entries ((:index 0 :export \"zone_0\")))");
+    ECE.wasmHost.setText("host-reload-b.manifest", manifestB);
 
     const result = eceEval(`
       (begin
@@ -629,12 +627,18 @@ async function runGeneratedZoneIntegrationTests(w, envH) {
             'host-missing
             (vector host-missing-co)
             "host-missing.wasm"))
-        (wasm-zone-bundle-wat host-missing-bundle))`);
+        (list
+          (wasm-zone-bundle-wat host-missing-bundle)
+          (wasm-zone-manifest->text
+            (generate-register-machine-wasm-zone-manifest
+              'host-missing
+              0
+              "missing_zone"
+              "host-missing.wasm"))))`);
+    const [missingWat, missingManifest] = ECE._eceListToJsArray(bundleInfo);
     ECE.wasmHost.setBytes("host-missing.wasm",
-      compileWat(ECE._eceToJs(bundleInfo), "host-missing"));
-    ECE.wasmHost.setText(
-      "host-missing.manifest",
-      "(:ece-native-zones :version 1 :unit-id host-missing :entries ((:index 0 :export \"missing_zone\")))");
+      compileWat(missingWat, "host-missing"));
+    ECE.wasmHost.setText("host-missing.manifest", missingManifest);
 
     try {
       eceEval(`
@@ -645,6 +649,46 @@ async function runGeneratedZoneIntegrationTests(w, envH) {
       assert(e.message === "wasm-host: missing WASM export: missing_zone",
         `expected missing export error, got '${e.message}'`);
     }
+  });
+
+  await iTest("reload-program loads archive and native-zone artifacts", async () => {
+    ECE.wasmHost.clearResources();
+    const reloadProgramInfo = eceEval(`
+      (begin
+        (define reload-program-archive-co (mc-compile-to-code-object 0))
+        (define reload-program-archive
+          (code-object->archive-sexp
+            reload-program-archive-co
+            "reload-program.scm"
+            (list ':unit-id 'reload-program-unit)))
+        (define reload-program-zone-co (mc-compile-to-code-object 91))
+        (define reload-program-bundle
+          (generate-register-machine-wasm-zone-bundle
+            'reload-program-unit
+            (vector reload-program-zone-co)
+            "reload-program-zones.wasm"))
+        (list
+          (write-to-string-flat reload-program-archive)
+          (wasm-zone-bundle-wat reload-program-bundle)
+          (wasm-zone-bundle-manifest-text reload-program-bundle)))`);
+    const [archiveText, zoneWat, zoneManifest] = ECE._eceListToJsArray(reloadProgramInfo);
+    ECE.wasmHost.setText("reload-program.ecec", archiveText);
+    ECE.wasmHost.setBytes("reload-program-zones.wasm",
+      compileWat(zoneWat, "reload-program-zones"));
+    ECE.wasmHost.setText("reload-program-zones.manifest", zoneManifest);
+
+    const result = eceEval(`
+      (begin
+        (reload-program "reload-program.ecec"
+                        "reload-program-zones.wasm"
+                        "reload-program-zones.manifest")
+        (let* ((unit (archive/registered-unit 'reload-program-unit))
+               (cos (hash-ref unit ':cos #f))
+               (co (vector-ref cos 0)))
+          (execute-code-object co)))`);
+
+    assert(ECE._eceToJs(result) === 91,
+      `expected reload-program native result 91, got ${ECE._eceToJs(result)}`);
   });
 
   return { passed: iPassed, failed: iFailed };

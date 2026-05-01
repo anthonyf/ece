@@ -250,5 +250,48 @@ This policy is ECE-owned, but it depends on future browser host primitives."
      (native-zone-manifest-entries manifest))
     instance))
 
+(define (wasm-host/register-reload-section! section)
+  "Register SECTION for reload, replacing any prior unit record."
+  (let* ((unit (archive/section-unit section))
+         (cos (archive/section-cos section))
+         (unit-id (wasm-host/plist-get unit ':unit-id)))
+    (hash-set! *archive-units*
+               (archive/unit-key unit-id)
+               (archive/make-unit-record unit cos))))
+
+(define (reload-archive-bundle-text text)
+  "Load and execute all .ecec archive sections from TEXT for reload.
+Unlike load-bundle, this replaces existing unit records so future lookups and
+fresh module imports observe the newly loaded archive."
+  (let ((port (open-input-string text)))
+    (define (read-sections sections)
+      (let ((archive (read-archive-section-form port)))
+        (if (eof? archive)
+            (reverse sections)
+            (read-sections
+             (cons (archive/materialize-section archive) sections)))))
+    (let ((sections (read-sections '())))
+      (close-input-port port)
+      (for-each wasm-host/register-reload-section! sections)
+      (let loop ((rest sections) (last-result #f))
+        (if (null? rest)
+            last-result
+            (loop (cdr rest)
+                  (archive/load-materialized-section (car rest) #t)))))))
+
 (define (reload-program archive-url zone-module-url manifest-url)
-  (wasm-host/not-implemented 'reload-program))
+  "Fetch and load ARCHIVE-URL, then optionally load native-zone artifacts.
+When both ZONE-MODULE-URL and MANIFEST-URL are provided, the native-zone module
+is loaded after the archive. When both are #f, this performs an archive-only
+reload. Supplying only one native-zone URL is an error. Returns the archive
+bundle's last init result."
+  (when (and (not (and zone-module-url manifest-url))
+             (or zone-module-url manifest-url))
+    (wasm-host/error
+     "reload-program requires both native-zone module and manifest URLs"))
+  (let ((archive-result (reload-archive-bundle-text (fetch-text archive-url))))
+    (cond
+     ((and zone-module-url manifest-url)
+      (load-native-zone-module zone-module-url manifest-url))
+     (else #f))
+    archive-result))
