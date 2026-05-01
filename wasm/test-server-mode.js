@@ -8,8 +8,31 @@ const ECE = require("./glue.js");
 
 const baseUrl = process.argv[2];
 if (!baseUrl) {
-  console.error("Usage: node test-server-mode.js <base-url>");
+  console.error("Usage: node test-server-mode.js <base-url> [expected-text]");
   process.exit(1);
+}
+const expectedText = process.argv[3] || "Hello, World!";
+
+async function tryLoadNativeZones(ECE, envHandle, baseUrl) {
+  let manifestResp;
+  let wasmResp;
+
+  try {
+    manifestResp = await fetch(`${baseUrl}/app-zones.manifest`);
+    wasmResp = await fetch(`${baseUrl}/app-zones.wasm`);
+  } catch (_err) {
+    return;
+  }
+  if (!manifestResp.ok || !wasmResp.ok) return;
+
+  ECE.wasmHost.setText("app-zones.manifest", await manifestResp.text());
+  ECE.wasmHost.setBytes("app-zones.wasm", await wasmResp.arrayBuffer());
+  const evalStr = ECE.wasm.env_lookup(envHandle, ECE.internSym("eval-string-last"));
+  ECE.wasm.call_ece_proc(
+    evalStr,
+    ECE.wasm.h_cons(
+      ECE.makeString("(load-native-zone-module \"app-zones.wasm\" \"app-zones.manifest\")"),
+      ECE.wasm.h_nil()));
 }
 
 async function run() {
@@ -54,6 +77,8 @@ async function run() {
   ECE.loadArchiveBundle(bootText);
   ECE.wasm.mark_handles();
 
+  await tryLoadNativeZones(ECE, envHandle, baseUrl);
+
   // Fetch and load app via archive loader
   const appResp = await fetch(`${baseUrl}/app.ecec`);
   const appText = await appResp.text();
@@ -61,12 +86,12 @@ async function run() {
 
   // Verify output
   const text = output.join("");
-  if (text.includes("Hello, World!")) {
-    console.log("PASS: Server mode output contains 'Hello, World!'");
+  if (text.includes(expectedText)) {
+    console.log(`PASS: Server mode output contains '${expectedText}'`);
     console.log("Output:", JSON.stringify(text.trim()));
     process.exit(0);
   } else {
-    console.log("FAIL: Expected 'Hello, World!' in output");
+    console.log(`FAIL: Expected '${expectedText}' in output`);
     console.log("Got:", JSON.stringify(text));
     process.exit(1);
   }

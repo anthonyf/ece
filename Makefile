@@ -225,6 +225,25 @@ print(r.stdout, end=""); \
 print(r.stderr, end="", file=sys.stderr); \
 srv.shutdown(); \
 sys.exit(r.returncode)'
+	@echo "Building native-zone server mode smoke..."
+	@mkdir -p .tmp/server-mode-native-test
+	@printf '123\n(display (if (native-zone-registered? (quote server-mode-native) 0) "Native zone registered!" "Native zone missing!"))\n(newline)\n' > .tmp/server-mode-native.scm
+	@bin/ece-build --target web --native-zones -o .tmp/server-mode-native-test .tmp/server-mode-native.scm
+	@wasm-as --enable-gc --enable-reference-types .tmp/server-mode-native-test/app-zones.wat -o .tmp/server-mode-native-test/app-zones.wasm
+	@echo "Starting HTTP server for native-zone smoke..."
+	@python3 -c '\
+import http.server, socketserver, threading, sys, subprocess, functools; \
+handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=".tmp/server-mode-native-test"); \
+srv = socketserver.TCPServer(("127.0.0.1", 0), handler); \
+port = srv.server_address[1]; \
+print(f"Serving on port {port}"); \
+t = threading.Thread(target=srv.serve_forever, daemon=True); \
+t.start(); \
+r = subprocess.run(["node", "wasm/test-server-mode.js", f"http://127.0.0.1:{port}", "Native zone registered!"], capture_output=True, text=True); \
+print(r.stdout, end=""); \
+print(r.stderr, end="", file=sys.stderr); \
+srv.shutdown(); \
+sys.exit(r.returncode)'
 
 test-web-apps: sandbox
 	@echo "Running web apps smoke test..."
