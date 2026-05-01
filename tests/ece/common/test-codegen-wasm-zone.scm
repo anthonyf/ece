@@ -184,3 +184,43 @@
     (assert-equal (native-zone-entry-export-name (car entries)) "zone_0")
     (assert-equal (native-zone-entry-index (cadr entries)) 2)
     (assert-equal (native-zone-entry-export-name (cadr entries)) "zone_2"))))
+
+(test "codegen-wasm-zone: archive text emits one manifest for multiple units" (lambda ()
+  (let* ((archive-a
+          (code-object->archive-sexp
+           (wasm-zone-test-constant-co 11)
+           "zone-a.scm"
+           (list ':unit-id 'zone-a)))
+         (archive-b
+          (code-object->archive-sexp
+           (wasm-zone-test-constant-co 22)
+           "zone-b.scm"
+           (list ':unit-id 'zone-b)))
+         (archive-text
+          (string-append (write-to-string-flat archive-a)
+                         "\n"
+                         (write-to-string-flat archive-b)
+                         "\n"))
+         (bundle
+          (generate-register-machine-wasm-zone-archive-text
+           archive-text
+           "app-zones.wasm"))
+         (wat (wasm-zone-bundle-wat bundle))
+         (text (wasm-zone-bundle-manifest-text bundle))
+         (manifest (parse-native-zone-manifest text))
+         (entries (native-zone-manifest-entries manifest))
+         (first (car entries))
+         (second (cadr entries)))
+    (assert-true (string-contains? wat "(export \"unit_0_zone_0\")"))
+    (assert-true (string-contains? wat "(export \"unit_1_zone_0\")"))
+    (assert-true (string-contains? text ":module-url \"app-zones.wasm\""))
+    (assert-true (string-contains? text ":unit-id zone-a"))
+    (assert-true (string-contains? text ":unit-id zone-b"))
+    (assert-equal (native-zone-manifest-unit-id manifest) 'archive-bundle)
+    (assert-equal (length entries) 2)
+    (assert-equal (native-zone-entry-unit-id first) 'zone-a)
+    (assert-equal (native-zone-entry-index first) 0)
+    (assert-equal (native-zone-entry-export-name first) "unit_0_zone_0")
+    (assert-equal (native-zone-entry-unit-id second) 'zone-b)
+    (assert-equal (native-zone-entry-index second) 0)
+    (assert-equal (native-zone-entry-export-name second) "unit_1_zone_0"))))

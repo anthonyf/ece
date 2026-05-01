@@ -45,47 +45,52 @@
                         (char=? ch #\.))
                     (loop (+ i 1))))))))
 
+(define (wasm-zone/name name)
+  "Return a WAT identifier. Build the leading dollar at runtime so archive
+reload never sees dollar-prefixed strings as interpolation input."
+  (string-append (string #\$) name))
+
 (define (wasm-zone/register-local reg)
   "Return the WAT local name for a register symbol, or #f for unsupported regs."
-  (cond ((eq? reg 'val) "\$val")
-        ((eq? reg 'env) "\$env")
-        ((eq? reg 'proc) "\$proc")
-        ((eq? reg 'argl) "\$argl")
-        ((eq? reg 'continue) "\$cont")
-        ((eq? reg 'stack) "\$stack")
+  (cond ((eq? reg 'val) (wasm-zone/name "val"))
+        ((eq? reg 'env) (wasm-zone/name "env"))
+        ((eq? reg 'proc) (wasm-zone/name "proc"))
+        ((eq? reg 'argl) (wasm-zone/name "argl"))
+        ((eq? reg 'continue) (wasm-zone/name "cont"))
+        ((eq? reg 'stack) (wasm-zone/name "stack"))
         (else #f)))
 
 (define (wasm-zone/result-call-wat mode next-pc)
   (string-append
-   "        (call \$result\n"
+   "        (call " (wasm-zone/name "result") "\n"
    "          (i32.const " (number->string mode) ")\n"
    "          (i32.const " (number->string next-pc) ")\n"
-   "          (local.get \$val)\n"
-   "          (local.get \$env)\n"
-   "          (local.get \$proc)\n"
-   "          (local.get \$argl)\n"
-   "          (local.get \$cont)\n"
-   "          (local.get \$stack))"))
+   "          (local.get " (wasm-zone/name "val") ")\n"
+   "          (local.get " (wasm-zone/name "env") ")\n"
+   "          (local.get " (wasm-zone/name "proc") ")\n"
+   "          (local.get " (wasm-zone/name "argl") ")\n"
+   "          (local.get " (wasm-zone/name "cont") ")\n"
+   "          (local.get " (wasm-zone/name "stack") "))"))
 
 (define (wasm-zone/result-call-current-pc-wat mode)
   (string-append
-   "        (call \$result\n"
+   "        (call " (wasm-zone/name "result") "\n"
    "          (i32.const " (number->string mode) ")\n"
-   "          (local.get \$pc)\n"
-   "          (local.get \$val)\n"
-   "          (local.get \$env)\n"
-   "          (local.get \$proc)\n"
-   "          (local.get \$argl)\n"
-   "          (local.get \$cont)\n"
-   "          (local.get \$stack))"))
+   "          (local.get " (wasm-zone/name "pc") ")\n"
+   "          (local.get " (wasm-zone/name "val") ")\n"
+   "          (local.get " (wasm-zone/name "env") ")\n"
+   "          (local.get " (wasm-zone/name "proc") ")\n"
+   "          (local.get " (wasm-zone/name "argl") ")\n"
+   "          (local.get " (wasm-zone/name "cont") ")\n"
+   "          (local.get " (wasm-zone/name "stack") "))"))
 
 (define (wasm-zone/const-value-wat value)
   (cond ((wasm-zone/fixnum-immediate? value)
-         (string-append "(call \$h_fixnum (i32.const "
+         (string-append "(call " (wasm-zone/name "h_fixnum") " (i32.const "
                         (number->string value)
                         "))"))
         ((null? value)
-         "(call \$h_nil)")
+         (string-append "(call " (wasm-zone/name "h_nil") ")"))
         (else #f)))
 
 (define (wasm-zone/source-value-wat source)
@@ -103,11 +108,11 @@
 
 (define (wasm-zone/list-value-wat operands)
   (if (null? operands)
-      "(call \$h_nil)"
+      (string-append "(call " (wasm-zone/name "h_nil") ")")
       (let ((head (wasm-zone/source-value-wat (car operands)))
             (tail (wasm-zone/list-value-wat (cdr operands))))
         (if (and head tail)
-            (string-append "(call \$h_cons " head " " tail ")")
+            (string-append "(call " (wasm-zone/name "h_cons") " " head " " tail ")")
             #f))))
 
 (define (wasm-zone/operation-name source)
@@ -127,7 +132,7 @@
       (let ((car-wat (wasm-zone/source-value-wat (car operands)))
             (cdr-wat (wasm-zone/source-value-wat (cadr operands))))
         (if (and car-wat cdr-wat)
-            (string-append "(call \$h_cons " car-wat " " cdr-wat ")")
+            (string-append "(call " (wasm-zone/name "h_cons") " " car-wat " " cdr-wat ")")
             #f)))
      (else #f))))
 
@@ -183,36 +188,73 @@
 
 (define (wasm-zone/result-helper-wat)
   (string-append
-   "  (func \$result (param \$mode i32) (param \$next_pc i32) (param \$val i32)\n"
-   "                (param \$env i32) (param \$proc i32) (param \$argl i32)\n"
-   "                (param \$cont i32) (param \$stack i32) (result i32)\n"
-   "    (local \$vec i32)\n"
-   "    (local.set \$vec (call \$h_vector (i32.const 8)))\n"
-   "    (call \$h_vector_set (local.get \$vec) (i32.const 0) (call \$h_fixnum (local.get \$mode)))\n"
-   "    (call \$h_vector_set (local.get \$vec) (i32.const 1) (call \$h_fixnum (local.get \$next_pc)))\n"
-   "    (call \$h_vector_set (local.get \$vec) (i32.const 2) (local.get \$val))\n"
-   "    (call \$h_vector_set (local.get \$vec) (i32.const 3) (local.get \$env))\n"
-   "    (call \$h_vector_set (local.get \$vec) (i32.const 4) (local.get \$proc))\n"
-   "    (call \$h_vector_set (local.get \$vec) (i32.const 5) (local.get \$argl))\n"
-   "    (call \$h_vector_set (local.get \$vec) (i32.const 6) (local.get \$cont))\n"
-   "    (call \$h_vector_set (local.get \$vec) (i32.const 7) (local.get \$stack))\n"
-   "    (local.get \$vec))\n"))
+   "  (func " (wasm-zone/name "result")
+   " (param " (wasm-zone/name "mode")
+   " i32) (param " (wasm-zone/name "next_pc")
+   " i32) (param " (wasm-zone/name "val") " i32)\n"
+   "                (param " (wasm-zone/name "env")
+   " i32) (param " (wasm-zone/name "proc")
+   " i32) (param " (wasm-zone/name "argl") " i32)\n"
+   "                (param " (wasm-zone/name "cont")
+   " i32) (param " (wasm-zone/name "stack")
+   " i32) (result i32)\n"
+   "    (local " (wasm-zone/name "vec") " i32)\n"
+   "    (local.set " (wasm-zone/name "vec")
+   " (call " (wasm-zone/name "h_vector") " (i32.const 8)))\n"
+   "    (call " (wasm-zone/name "h_vector_set")
+   " (local.get " (wasm-zone/name "vec")
+   ") (i32.const 0) (call " (wasm-zone/name "h_fixnum")
+   " (local.get " (wasm-zone/name "mode") ")))\n"
+   "    (call " (wasm-zone/name "h_vector_set")
+   " (local.get " (wasm-zone/name "vec")
+   ") (i32.const 1) (call " (wasm-zone/name "h_fixnum")
+   " (local.get " (wasm-zone/name "next_pc") ")))\n"
+   "    (call " (wasm-zone/name "h_vector_set")
+   " (local.get " (wasm-zone/name "vec")
+   ") (i32.const 2) (local.get " (wasm-zone/name "val") "))\n"
+   "    (call " (wasm-zone/name "h_vector_set")
+   " (local.get " (wasm-zone/name "vec")
+   ") (i32.const 3) (local.get " (wasm-zone/name "env") "))\n"
+   "    (call " (wasm-zone/name "h_vector_set")
+   " (local.get " (wasm-zone/name "vec")
+   ") (i32.const 4) (local.get " (wasm-zone/name "proc") "))\n"
+   "    (call " (wasm-zone/name "h_vector_set")
+   " (local.get " (wasm-zone/name "vec")
+   ") (i32.const 5) (local.get " (wasm-zone/name "argl") "))\n"
+   "    (call " (wasm-zone/name "h_vector_set")
+   " (local.get " (wasm-zone/name "vec")
+   ") (i32.const 6) (local.get " (wasm-zone/name "cont") "))\n"
+   "    (call " (wasm-zone/name "h_vector_set")
+   " (local.get " (wasm-zone/name "vec")
+   ") (i32.const 7) (local.get " (wasm-zone/name "stack") "))\n"
+   "    (local.get " (wasm-zone/name "vec") "))\n"))
 
 (define (wasm-zone/imports-wat)
   (string-append
-   "  (import \"ece\" \"h_fixnum\" (func \$h_fixnum (param i32) (result i32)))\n"
-   "  (import \"ece\" \"h_nil\" (func \$h_nil (result i32)))\n"
-   "  (import \"ece\" \"h_cons\" (func \$h_cons (param i32) (param i32) (result i32)))\n"
-   "  (import \"ece\" \"h_vector\" (func \$h_vector (param i32) (result i32)))\n"
-   "  (import \"ece\" \"h_vector_set\" (func \$h_vector_set (param i32) (param i32) (param i32)))\n"))
+   "  (import \"ece\" \"h_fixnum\" (func " (wasm-zone/name "h_fixnum")
+   " (param i32) (result i32)))\n"
+   "  (import \"ece\" \"h_nil\" (func " (wasm-zone/name "h_nil")
+   " (result i32)))\n"
+   "  (import \"ece\" \"h_cons\" (func " (wasm-zone/name "h_cons")
+   " (param i32) (param i32) (result i32)))\n"
+   "  (import \"ece\" \"h_vector\" (func " (wasm-zone/name "h_vector")
+   " (param i32) (result i32)))\n"
+   "  (import \"ece\" \"h_vector_set\" (func " (wasm-zone/name "h_vector_set")
+   " (param i32) (param i32) (param i32)))\n"))
 
 (define (wasm-zone/export-function-wat export-name body)
   (string-append
    "  (func (export \"" export-name "\")\n"
-   "        (param \$pc i32) (param \$val i32) (param \$env i32)\n"
-   "        (param \$proc i32) (param \$argl i32) (param \$cont i32)\n"
-   "        (param \$stack i32) (param \$co i32) (result i32)\n"
-   "    (if (result i32) (i32.eq (local.get \$pc) (i32.const 0))\n"
+   "        (param " (wasm-zone/name "pc")
+   " i32) (param " (wasm-zone/name "val")
+   " i32) (param " (wasm-zone/name "env") " i32)\n"
+   "        (param " (wasm-zone/name "proc")
+   " i32) (param " (wasm-zone/name "argl")
+   " i32) (param " (wasm-zone/name "cont") " i32)\n"
+   "        (param " (wasm-zone/name "stack")
+   " i32) (param " (wasm-zone/name "co") " i32) (result i32)\n"
+   "    (if (result i32) (i32.eq (local.get " (wasm-zone/name "pc")
+   ") (i32.const 0))\n"
    "      (then\n"
    body ")\n"
    "      (else\n"
@@ -240,6 +282,12 @@ calls with the host WASM stack."
 
 (define (wasm-zone/default-export-name co-index)
   (string-append "zone_" (number->string co-index)))
+
+(define (wasm-zone/archive-export-name section-index co-index)
+  (string-append "unit_"
+                 (number->string section-index)
+                 "_zone_"
+                 (number->string co-index)))
 
 (define (wasm-zone/manifest module-unit-id entries maybe-module-url)
   (let ((module-url-fields
@@ -305,7 +353,15 @@ omitted from the manifest, leaving them on the interpreter path."
 
 (define (wasm-zone/entry->text entry)
   (string-append
-   "(:index "
+   "("
+   (string-join
+    (if (native-zone-entry-unit-id entry)
+        (list ":unit-id "
+              (write-to-string-flat (native-zone-entry-unit-id entry))
+              " ")
+        '())
+    "")
+   ":index "
    (number->string (native-zone-entry-index entry))
    " :export "
    (write-to-string-flat (native-zone-entry-export-name entry))
@@ -352,3 +408,72 @@ omitted from the manifest, leaving them on the interpreter path."
   (let ((entry (list ':index (wasm-host/normalize-co-index co-index)
                      ':export export-name)))
     (wasm-zone/manifest unit-id (list entry) maybe-module-url)))
+
+(define (generate-register-machine-wasm-zone-archive-text archive-text
+                                                          module-url)
+  "Generate one native-zone side-module WAT bundle for ARCHIVE-TEXT.
+The resulting manifest uses per-entry :unit-id fields so one module can cover
+all supported code objects across all archive sections in the .ecec bundle."
+  (let ((port (open-input-string archive-text)))
+    (define (scan-code-objects section-index unit-id cos i functions entries)
+      (if (>= i (vector-length cos))
+          (list functions entries)
+          (let* ((co (vector-ref cos i))
+                 (body (wasm-zone/body-wat co)))
+            (if body
+                (let* ((index (wasm-host/normalize-co-index i))
+                       (export-name (wasm-zone/archive-export-name
+                                     section-index
+                                     index)))
+                  (scan-code-objects
+                   section-index
+                   unit-id
+                   cos
+                   (+ i 1)
+                   (cons (wasm-zone/export-function-wat export-name body)
+                         functions)
+                   (cons (list ':unit-id unit-id
+                               ':index index
+                               ':export export-name)
+                         entries)))
+                (scan-code-objects section-index unit-id cos (+ i 1)
+                                   functions entries)))))
+    (define (scan-sections section-index functions entries)
+      (let ((archive (read-archive-section-form port)))
+        (if (eof? archive)
+            (begin
+              (close-input-port port)
+              (let ((manifest (wasm-zone/manifest
+                               'archive-bundle
+                               (reverse entries)
+                               (list module-url)))
+                    (function-wat (apply string-append
+                                         (reverse functions))))
+                (list ':wat (wasm-zone/module-wat function-wat)
+                      ':manifest manifest)))
+            (let* ((section (archive/materialize-section archive))
+                   (unit (archive/section-unit section))
+                   (unit-id (wasm-host/plist-get unit ':unit-id))
+                   (cos (archive/section-cos section))
+                   (result (scan-code-objects section-index unit-id cos 0
+                                              functions entries)))
+              (scan-sections (+ section-index 1)
+                             (car result)
+                             (cadr result))))))
+    (scan-sections 0 '() '())))
+
+(define (generate-register-machine-wasm-zone-archive-file archive-path
+                                                          module-url)
+  "Generate native-zone WAT and manifest data from an archive bundle file."
+  (generate-register-machine-wasm-zone-archive-text
+   (call-with-input-file archive-path
+     (lambda (port)
+       (let ((out (open-output-string)))
+         (let loop ()
+           (let ((ch (read-char port)))
+             (if (eof? ch)
+                 (get-output-string out)
+                 (begin
+                   (%write-char-to-port ch out)
+                   (loop))))))))
+   module-url))

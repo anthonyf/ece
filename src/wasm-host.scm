@@ -65,7 +65,17 @@
     (wasm-host/error
      (string-append context " " (symbol->string key) " must be a string")))))
 
-(define (wasm-host/validate-entry entry seen-indices)
+(define (wasm-host/optional-unit-id entry)
+  (cond
+   ((not (wasm-host/plist-has-key? entry ':unit-id)) '())
+   (else
+    (let ((unit-id (wasm-host/plist-get entry ':unit-id)))
+      (cond
+       (unit-id (list ':unit-id unit-id))
+       (else
+        (wasm-host/error "native-zone entry :unit-id must not be #f")))))))
+
+(define (wasm-host/validate-entry entry)
   "Validate one native-zone manifest entry and return a normalized plist."
   (wasm-host/ensure-plist entry "native-zone entry")
   (let ((index (wasm-host/plist-get entry ':index))
@@ -75,8 +85,6 @@
       (wasm-host/error "native-zone entry missing :index"))
      ((not (wasm-host/non-negative-integer? index))
       (wasm-host/error "native-zone entry :index must be a non-negative integer"))
-     ((member index seen-indices)
-      (wasm-host/error "native-zone manifest has duplicate :index"))
      ((not (wasm-host/plist-has-key? entry ':export))
       (wasm-host/error "native-zone entry missing :export"))
      ((not (wasm-host/non-empty-string? export-name))
@@ -84,9 +92,14 @@
      (else
       (append
        (list ':index index ':export export-name)
+       (wasm-host/optional-unit-id entry)
        (wasm-host/optional-string entry ':fingerprint "native-zone entry"))))))
 
-(define (wasm-host/validate-entries entries)
+(define (wasm-host/entry-key default-unit-id entry)
+  (list (or (native-zone-entry-unit-id entry) default-unit-id)
+        (native-zone-entry-index entry)))
+
+(define (wasm-host/validate-entries default-unit-id entries)
   "Validate native-zone ENTRIES and return normalized entries."
   (cond
    ((not (list? entries))
@@ -96,9 +109,12 @@
       (cond
        ((null? rest) (reverse acc))
        (else
-        (let* ((entry (wasm-host/validate-entry (car rest) seen))
-               (index (native-zone-entry-index entry)))
-          (loop (cdr rest) (cons index seen) (cons entry acc)))))))))
+        (let* ((entry (wasm-host/validate-entry (car rest)))
+               (key (wasm-host/entry-key default-unit-id entry)))
+          (when (member key seen)
+            (wasm-host/error
+             "native-zone manifest has duplicate (:unit-id, :index) entry"))
+          (loop (cdr rest) (cons key seen) (cons entry acc)))))))))
 
 (define (validate-native-zone-manifest manifest)
   "Validate MANIFEST and return a normalized native-zone manifest plist.
@@ -107,10 +123,12 @@ Expected input shape:
 
   (:ece-native-zones
     :version 1
-    :unit-id <archive-unit-id>
+    :unit-id <default-archive-unit-id>
     :entries ((:index 0 :export \"zone_0\") ...))
 
-Optional string fields are :source, :module-url, and per-entry :fingerprint."
+Each entry may also include :unit-id to let one side module cover multiple
+archive units. Optional string fields are :source, :module-url, and per-entry
+:fingerprint."
   (cond
    ((not (and (pair? manifest) (eq? (car manifest) ':ece-native-zones)))
     (wasm-host/error "native-zone manifest must start with :ece-native-zones"))
@@ -134,7 +152,7 @@ Optional string fields are :source, :module-url, and per-entry :fingerprint."
          (else
           (append
            (list ':unit-id unit-id
-                 ':entries (wasm-host/validate-entries entries))
+                 ':entries (wasm-host/validate-entries unit-id entries))
            (wasm-host/optional-string fields ':source "native-zone manifest")
            (wasm-host/optional-string fields ':module-url "native-zone manifest")))))))))
 
@@ -157,6 +175,13 @@ Optional string fields are :source, :module-url, and per-entry :fingerprint."
 
 (define (native-zone-entry-index entry)
   (wasm-host/plist-get entry ':index))
+
+(define (native-zone-entry-unit-id entry)
+  (wasm-host/plist-get entry ':unit-id))
+
+(define (native-zone-entry-effective-unit-id manifest entry)
+  (or (native-zone-entry-unit-id entry)
+      (native-zone-manifest-unit-id manifest)))
 
 (define (native-zone-entry-export-name entry)
   (wasm-host/plist-get entry ':export))
@@ -244,7 +269,7 @@ This policy is ECE-owned, but it depends on future browser host primitives."
     (for-each
      (lambda (entry)
        (register-native-zone!
-        (native-zone-manifest-unit-id manifest)
+        (native-zone-entry-effective-unit-id manifest entry)
         (native-zone-entry-index entry)
         (wasm-export instance (native-zone-entry-export-name entry))))
      (native-zone-manifest-entries manifest))

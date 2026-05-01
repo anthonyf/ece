@@ -41,7 +41,8 @@
         canvas: ECE.canvas,
         timing: ECE.timing,
         math: ECE.math,
-        ffi: ECE.ffi
+        ffi: ECE.ffi,
+        wasm_host: ECE.wasmHost
       };
       const { instance } = await WebAssembly.instantiateStreaming(
         fetch("runtime.wasm"), imports);
@@ -54,6 +55,27 @@
       const bootText = await bootResp.text();
       ECE.loadArchiveBundle(bootText);
       ECE.wasm.mark_handles();
+
+      async function tryLoadNativeZones() {
+        try {
+          const manifestResp = await fetch("app-zones.manifest", { cache: "no-store" });
+          const wasmResp = await fetch("app-zones.wasm", { cache: "no-store" });
+          if (!manifestResp.ok || !wasmResp.ok) return;
+
+          ECE.wasmHost.setText("app-zones.manifest", await manifestResp.text());
+          ECE.wasmHost.setBytes("app-zones.wasm", await wasmResp.arrayBuffer());
+          const evalStr = ECE.wasm.env_lookup(envHandle, ECE.internSym("eval-string-last"));
+          ECE.wasm.call_ece_proc(
+            evalStr,
+            ECE.wasm.h_cons(
+              ECE.makeString("(load-native-zone-module \"app-zones.wasm\" \"app-zones.manifest\")"),
+              ECE.wasm.h_nil()));
+        } catch (_err) {
+          return;
+        }
+      }
+
+      await tryLoadNativeZones();
 
       // Load and execute app archive bundle
       const appResp = await fetch("app.ecec");
