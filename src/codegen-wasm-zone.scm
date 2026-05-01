@@ -16,6 +16,9 @@
 ;;;   (assign <register> (op cons) <operand> <operand>)
 ;;;   (assign <register> (op car) <operand>)
 ;;;   (assign <register> (op cdr) <operand>)
+;;;   (assign <register> (op lookup-variable-value)
+;;;                      (const <single-char-symbol>) (reg env))
+;;;   primitive tail application of a previously looked-up proc
 ;;;   (halt)
 ;;;
 ;;; If a supported prefix reaches an unsupported instruction, the zone returns
@@ -108,6 +111,19 @@ reload never sees dollar-prefixed strings as interpolation input."
     (string-append "(local.get " (wasm-zone/register-local (cadr source)) ")"))
    (else #f)))
 
+(define (wasm-zone/single-char-symbol? value)
+  (and (symbol? value)
+       (= (string-length (symbol->string value)) 1)))
+
+(define (wasm-zone/symbol-handle-wat value)
+  (if (wasm-zone/single-char-symbol? value)
+      (string-append
+       "(call " (wasm-zone/name "h_symbol_1")
+       " (i32.const "
+       (number->string (char->integer (string-ref (symbol->string value) 0)))
+       "))")
+      #f))
+
 (define (wasm-zone/list-value-wat operands)
   (if (null? operands)
       (string-append "(call " (wasm-zone/name "h_nil") ")")
@@ -148,6 +164,20 @@ reload never sees dollar-prefixed strings as interpolation input."
         (if pair-wat
             (string-append "(call " (wasm-zone/name "h_cdr") " " pair-wat ")")
             #f)))
+     ((and (eq? op-name 'lookup-variable-value)
+           (= (length operands) 2)
+           (pair? (car operands))
+           (eq? (caar operands) 'const)
+           (pair? (cdr (car operands)))
+           (pair? (cadr operands))
+           (eq? (car (cadr operands)) 'reg)
+           (eq? (cadr (cadr operands)) 'env))
+      (let ((name-wat (wasm-zone/symbol-handle-wat (cadr (car operands)))))
+        (if name-wat
+            (string-append "(call " (wasm-zone/name "h_lookup")
+                           " " name-wat
+                           " (local.get " (wasm-zone/name "env") "))")
+            #f)))
      (else #f))))
 
 (define (wasm-zone/emit-assign-wat instr)
@@ -175,6 +205,65 @@ reload never sees dollar-prefixed strings as interpolation input."
 (define (wasm-zone/halt-instruction? instr)
   (and (pair? instr) (eq? (car instr) 'halt)))
 
+(define (wasm-zone/test-primitive-procedure? instr)
+  (and (pair? instr)
+       (eq? (car instr) 'test)
+       (pair? (cdr instr))
+       (pair? (cadr instr))
+       (eq? (car (cadr instr)) 'op)
+       (eq? (cadr (cadr instr)) 'primitive-procedure?)
+       (pair? (cddr instr))
+       (pair? (caddr instr))
+       (eq? (car (caddr instr)) 'reg)
+       (eq? (cadr (caddr instr)) 'proc)))
+
+(define (wasm-zone/apply-primitive-assign? instr)
+  (and (pair? instr)
+       (eq? (car instr) 'assign)
+       (pair? (cdr instr))
+       (eq? (cadr instr) 'val)
+       (pair? (cddr instr))
+       (pair? (caddr instr))
+       (eq? (car (caddr instr)) 'op)
+       (eq? (cadr (caddr instr)) 'apply-primitive-procedure)
+       (pair? (cdddr instr))
+       (pair? (cadddr instr))
+       (eq? (car (cadddr instr)) 'reg)
+       (eq? (cadr (cadddr instr)) 'proc)
+       (pair? (cdr (cdddr instr)))
+       (pair? (car (cdr (cdddr instr))))
+       (eq? (car (car (cdr (cdddr instr)))) 'reg)
+       (eq? (cadr (car (cdr (cdddr instr)))) 'argl)))
+
+(define (wasm-zone/find-primitive-tail instrs len pc)
+  "Return the apply-primitive PC when PC starts a primitive tail, else #f."
+  (and (wasm-zone/test-primitive-procedure? (vector-ref instrs pc))
+       (let loop ((i (+ pc 1)))
+         (cond
+          ((>= i (- len 1)) #f)
+          ((and (wasm-zone/apply-primitive-assign? (vector-ref instrs i))
+                (wasm-zone/halt-instruction? (vector-ref instrs (+ i 1))))
+           i)
+          (else (loop (+ i 1)))))))
+
+(define (wasm-zone/primitive-tail-wat test-pc apply-pc)
+  (string-append
+   "        (if (result i32) (call " (wasm-zone/name "h_primitive_p")
+   " (local.get " (wasm-zone/name "proc") "))\n"
+   "          (then\n"
+   "            (local.set " (wasm-zone/name "val")
+   " (call " (wasm-zone/name "h_apply_primitive")
+   " (local.get " (wasm-zone/name "proc")
+   ") (local.get " (wasm-zone/name "argl") ")))\n"
+   "            (if (result i32) (call " (wasm-zone/name "h_error_sentinel_p")
+   " (local.get " (wasm-zone/name "val") "))\n"
+   "              (then\n"
+   (wasm-zone/result-call-wat 2 apply-pc) ")\n"
+   "              (else\n"
+   (wasm-zone/result-call-wat 0 apply-pc) ")))\n"
+   "          (else\n"
+   (wasm-zone/result-call-wat 2 test-pc) "))"))
+
 (define (wasm-zone/body-wat co)
   "Return WAT for CO's supported prefix, or #f when no prefix is supported."
   (if (not (code-object? co))
@@ -193,6 +282,13 @@ reload never sees dollar-prefixed strings as interpolation input."
                   (loop (+ pc 1) #t (string-append body assign-wat)))
                  ((wasm-zone/halt-instruction? instr)
                   (string-append body (wasm-zone/result-call-wat 0 pc)))
+                 ((and emitted?
+                       (wasm-zone/find-primitive-tail instrs len pc))
+                  (string-append
+                   body
+                   (wasm-zone/primitive-tail-wat
+                    pc
+                    (wasm-zone/find-primitive-tail instrs len pc))))
                  (emitted?
                   (string-append body (wasm-zone/result-call-wat 2 pc)))
                  (else #f))))))))
@@ -251,6 +347,16 @@ reload never sees dollar-prefixed strings as interpolation input."
    " (result i32)))\n"
    "  (import \"ece\" \"h_cons\" (func " (wasm-zone/name "h_cons")
    " (param i32) (param i32) (result i32)))\n"
+   "  (import \"ece\" \"h_symbol_1\" (func " (wasm-zone/name "h_symbol_1")
+   " (param i32) (result i32)))\n"
+   "  (import \"ece\" \"h_lookup\" (func " (wasm-zone/name "h_lookup")
+   " (param i32) (param i32) (result i32)))\n"
+   "  (import \"ece\" \"h_primitive_p\" (func " (wasm-zone/name "h_primitive_p")
+   " (param i32) (result i32)))\n"
+   "  (import \"ece\" \"h_apply_primitive\" (func " (wasm-zone/name "h_apply_primitive")
+   " (param i32) (param i32) (result i32)))\n"
+   "  (import \"ece\" \"h_error_sentinel_p\" (func " (wasm-zone/name "h_error_sentinel_p")
+   " (param i32) (result i32)))\n"
    "  (import \"ece\" \"pair_car\" (func " (wasm-zone/name "h_car")
    " (param i32) (result i32)))\n"
    "  (import \"ece\" \"pair_cdr\" (func " (wasm-zone/name "h_cdr")

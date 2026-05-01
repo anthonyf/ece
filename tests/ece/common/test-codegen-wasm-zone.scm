@@ -125,8 +125,21 @@
     (assert-true (string-contains? wat "(local.set \$proc (call \$h_car (local.get \$argl)))"))
     (assert-true (string-contains? wat "(local.set \$argl (call \$h_cdr (local.get \$argl)))")))))
 
+(test "codegen-wasm-zone: emits primitive tail application through VM helpers" (lambda ()
+  (let ((wat (generate-register-machine-wasm-zone
+              (mc-compile-to-code-object '(+ 1 2))
+              "zone_plus")))
+    (assert-true (string? wat))
+    (assert-true (string-contains? wat "(export \"zone_plus\")"))
+    (assert-true (string-contains? wat "(import \"ece\" \"h_lookup\""))
+    (assert-true (string-contains? wat "(import \"ece\" \"h_apply_primitive\""))
+    (assert-true (string-contains? wat "(import \"ece\" \"h_primitive_p\""))
+    (assert-true (string-contains? wat "h_symbol_1"))
+    (assert-true (string-contains? wat "(i32.const 43)"))
+    (assert-true (string-contains? wat "h_error_sentinel_p")))))
+
 (test "codegen-wasm-zone: unsupported code objects decline generation" (lambda ()
-  (let ((co (mc-compile-to-code-object '(+ 1 2))))
+  (let ((co (mc-compile-to-code-object "unsupported string")))
     (assert-equal (generate-register-machine-wasm-zone co "zone_unsupported")
                   #f))))
 
@@ -167,38 +180,47 @@
     (assert-equal (native-zone-entry-export-name entry) "zone_3"))))
 
 (test "codegen-wasm-zone: emits bundle WAT and manifest for supported entries" (lambda ()
-  (let* ((bundle
+  (let* ((cos (wasm-zone-test-bundle-cos))
+         (bundle
           (generate-register-machine-wasm-zone-bundle
            'bundle-unit
-           (wasm-zone-test-bundle-cos)
+           cos
            "bundle-zones.wasm"))
          (wat (wasm-zone-bundle-wat bundle))
          (manifest (wasm-zone-bundle-manifest bundle))
          (entries (native-zone-manifest-entries manifest))
          (first (car entries))
          (second (cadr entries))
+         (third (caddr entries))
          (first-fingerprint
           (ser/code-object-fingerprint
-           (vector-ref (wasm-zone-test-bundle-cos) 0)))
+           (vector-ref cos 0)))
          (second-fingerprint
           (ser/code-object-fingerprint
-           (vector-ref (wasm-zone-test-bundle-cos) 2))))
+           (vector-ref cos 1)))
+         (third-fingerprint
+          (ser/code-object-fingerprint
+           (vector-ref cos 2))))
     (assert-true (string? wat))
     (assert-true (string-contains? wat "(export \"zone_0\")"))
-    (assert-true (not (string-contains? wat "(export \"zone_1\")")))
+    (assert-true (string-contains? wat "(export \"zone_1\")"))
     (assert-true (string-contains? wat "(export \"zone_2\")"))
     (assert-equal (native-zone-manifest-unit-id manifest) 'bundle-unit)
     (assert-equal (native-zone-manifest-module-url manifest)
                   "bundle-zones.wasm")
-    (assert-equal (length entries) 2)
+    (assert-equal (length entries) 3)
     (assert-equal (native-zone-entry-index first) 0)
     (assert-equal (native-zone-entry-export-name first) "zone_0")
     (assert-equal (native-zone-entry-fingerprint first)
                   first-fingerprint)
-    (assert-equal (native-zone-entry-index second) 2)
-    (assert-equal (native-zone-entry-export-name second) "zone_2")
+    (assert-equal (native-zone-entry-index second) 1)
+    (assert-equal (native-zone-entry-export-name second) "zone_1")
     (assert-equal (native-zone-entry-fingerprint second)
-                  second-fingerprint))))
+                  second-fingerprint)
+    (assert-equal (native-zone-entry-index third) 2)
+    (assert-equal (native-zone-entry-export-name third) "zone_2")
+    (assert-equal (native-zone-entry-fingerprint third)
+                  third-fingerprint))))
 
 (test "codegen-wasm-zone: emits reader-safe manifest text" (lambda ()
   (let* ((bundle
@@ -215,13 +237,16 @@
                   '(module (demo main) 0))
     (assert-equal (native-zone-manifest-module-url parsed)
                   "demo-zones.wasm")
-    (assert-equal (length entries) 2)
+    (assert-equal (length entries) 3)
     (assert-equal (native-zone-entry-index (car entries)) 0)
     (assert-equal (native-zone-entry-export-name (car entries)) "zone_0")
     (assert-true (string? (native-zone-entry-fingerprint (car entries))))
-    (assert-equal (native-zone-entry-index (cadr entries)) 2)
-    (assert-equal (native-zone-entry-export-name (cadr entries)) "zone_2")
-    (assert-true (string? (native-zone-entry-fingerprint (cadr entries)))))))
+    (assert-equal (native-zone-entry-index (cadr entries)) 1)
+    (assert-equal (native-zone-entry-export-name (cadr entries)) "zone_1")
+    (assert-true (string? (native-zone-entry-fingerprint (cadr entries))))
+    (assert-equal (native-zone-entry-index (caddr entries)) 2)
+    (assert-equal (native-zone-entry-export-name (caddr entries)) "zone_2")
+    (assert-true (string? (native-zone-entry-fingerprint (caddr entries)))))))
 
 (test "codegen-wasm-zone: archive text emits one manifest for multiple units" (lambda ()
   (let* ((archive-a
