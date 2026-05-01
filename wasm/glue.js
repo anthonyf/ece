@@ -275,11 +275,97 @@ const ECE = {
     }
   },
 
+  wasmHost: {
+    resources: new Map(),
+
+    setText(url, text) {
+      ECE.wasmHost.resources.set(url, { kind: "text", value: String(text) });
+    },
+
+    setBytes(url, bytes) {
+      let value = bytes;
+      if (bytes instanceof ArrayBuffer) {
+        value = new Uint8Array(bytes);
+      } else if (ArrayBuffer.isView(bytes)) {
+        value = new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+      }
+      ECE.wasmHost.resources.set(url, { kind: "bytes", value });
+    },
+
+    clearResources() {
+      ECE.wasmHost.resources.clear();
+    },
+
+    _resource(url, expectedKind) {
+      const resource = ECE.wasmHost.resources.get(url);
+      if (!resource) {
+        throw new Error(`wasm-host: resource not cached: ${url}`);
+      }
+      if (resource.kind !== expectedKind) {
+        throw new Error(`wasm-host: cached resource has wrong kind: ${url}`);
+      }
+      return resource.value;
+    },
+
+    fetch_text(ptr, len) {
+      const url = ECE._readMem(ptr, len);
+      const text = ECE.wasmHost._resource(url, "text");
+      ECE.writeString(text);
+      return text.length;
+    },
+
+    fetch_bytes(ptr, len) {
+      const url = ECE._readMem(ptr, len);
+      return ECE._jsAlloc(ECE.wasmHost._resource(url, "bytes"));
+    },
+
+    instantiate(bytesIdx, importsIdx) {
+      const bytes = ECE._jsGet(bytesIdx);
+      const imports = ECE._jsGet(importsIdx);
+      const module = bytes instanceof WebAssembly.Module
+        ? bytes
+        : new WebAssembly.Module(bytes);
+      const instance = new WebAssembly.Instance(module, imports || {});
+      return ECE._jsAlloc(instance);
+    },
+
+    wasm_export(instanceIdx, ptr, len) {
+      const instance = ECE._jsGet(instanceIdx);
+      const name = ECE._readMem(ptr, len);
+      const exportRef = instance && instance.exports && instance.exports[name];
+      if (typeof exportRef !== "function") {
+        throw new Error(`wasm-host: missing WASM export: ${name}`);
+      }
+      return ECE._jsAlloc(exportRef);
+    },
+
+    native_zone_imports() {
+      return ECE._jsAlloc({
+        ece: {
+          h_fixnum: ECE.wasm.h_fixnum,
+          h_nil: ECE.wasm.h_nil,
+          h_cons: ECE.wasm.h_cons,
+          h_vector: ECE.wasm.h_vector,
+          h_vector_set: ECE.wasm.h_vector_set
+        }
+      });
+    }
+  },
+
   // ── Handle-based WASM interop ──
   // WASM stores GC refs in a handle table, JS gets i32 indices.
 
+  _ensureStringWriteCapacity(codeUnitLength) {
+    const requiredBytes = codeUnitLength * 2;
+    const currentBytes = ECE.wasm.memory.buffer.byteLength;
+    if (requiredBytes > currentBytes) {
+      ECE.wasm.memory.grow(Math.ceil((requiredBytes - currentBytes) / 65536));
+    }
+  },
+
   // Write a JS string to WASM linear memory as UTF-16, return {offset, len}
   writeString(jsStr) {
+    ECE._ensureStringWriteCapacity(jsStr.length);
     const mem = new Uint16Array(ECE.wasm.memory.buffer);
     for (let i = 0; i < jsStr.length; i++) {
       mem[i] = jsStr.charCodeAt(i);
@@ -308,17 +394,8 @@ const ECE = {
   loadArchiveText(text) {
     const w = ECE.wasm;
     text = text.trimEnd();
-    const needed = text.length * 2;
-    const currentBytes = w.memory.buffer.byteLength;
-    if (needed > currentBytes) {
-      const pages = Math.ceil((needed - currentBytes) / 65536);
-      w.memory.grow(pages);
-    }
-    const mem = new Uint16Array(w.memory.buffer);
-    for (let i = 0; i < text.length; i++) {
-      mem[i] = text.charCodeAt(i);
-    }
-    return w.load_archive(0, text.length);
+    const { offset, len } = ECE.writeString(text);
+    return w.load_archive(offset, len);
   },
 
   // Load a multi-archive bundle (one or more (ecec-archive ...) sexps
@@ -367,7 +444,8 @@ const ECE = {
       canvas: ECE.canvas,
       timing: ECE.timing,
       math: ECE.math,
-      ffi: ECE.ffi
+      ffi: ECE.ffi,
+      wasm_host: ECE.wasmHost
     };
 
     const { instance } = await WebAssembly.instantiate(wasmBytes, imports);

@@ -51,6 +51,13 @@
     (func $js-native-zone-call
       (param i32 i32 i32 i32 i32 i32 i32 i32 i32) (result i32)))
 
+  ;; WASM native-zone host capabilities — side-module loading and exports
+  (import "wasm_host" "fetch_text" (func $js-wasm-fetch-text (param i32 i32) (result i32)))
+  (import "wasm_host" "fetch_bytes" (func $js-wasm-fetch-bytes (param i32 i32) (result i32)))
+  (import "wasm_host" "instantiate" (func $js-wasm-instantiate (param i32 i32) (result i32)))
+  (import "wasm_host" "wasm_export" (func $js-wasm-export (param i32 i32 i32) (result i32)))
+  (import "wasm_host" "native_zone_imports" (func $js-wasm-native-zone-imports (result i32)))
+
   ;; localStorage — file I/O backing store
   ;; storage_read: filename (UTF-16 in linear memory, len chars) → content length
   ;;   JS reads localStorage[filename], writes content to linear memory at offset 0, returns char count
@@ -4231,6 +4238,7 @@
     (local $cur (ref null eq))
     (local $key (ref null eq))
     (local $result (ref null eq))
+    (local $wasm-host-string (ref $string))
     ;; --- Code-object primitive locals (ids 241-249) ---
     (local $co-for-labels (ref null $code-object))
     (local $lbl-ht (ref null $hash-table))
@@ -5792,6 +5800,52 @@
       (then (return (call $native-zone-registry-get
         (call $arg1 (local.get $args))
         (call $arg2 (local.get $args))))))
+
+    ;; 263 = %wasm-fetch-text(url) — JS host writes text into memory.
+    (if (i32.eq (local.get $id) (i32.const 263))
+      (then
+        (local.set $wasm-host-string
+          (ref.cast (ref $string) (call $arg1 (local.get $args))))
+        (local.set $id (array.len (local.get $wasm-host-string)))
+        (call $string-to-memory (local.get $wasm-host-string))
+        (local.set $id
+          (call $js-wasm-fetch-text (i32.const 0) (local.get $id)))
+        (return (call $memory-to-string (i32.const 0) (local.get $id)))))
+
+    ;; 264 = %wasm-fetch-bytes(url) — returns an opaque JS bytes ref.
+    (if (i32.eq (local.get $id) (i32.const 264))
+      (then
+        (local.set $wasm-host-string
+          (ref.cast (ref $string) (call $arg1 (local.get $args))))
+        (local.set $id (array.len (local.get $wasm-host-string)))
+        (call $string-to-memory (local.get $wasm-host-string))
+        (return (call $make-js-ref
+          (call $js-wasm-fetch-bytes (i32.const 0) (local.get $id))))))
+
+    ;; 265 = %wasm-instantiate(bytes-js-ref, imports-js-ref) — returns instance js-ref.
+    (if (i32.eq (local.get $id) (i32.const 265))
+      (then
+        (return (call $make-js-ref
+          (call $js-wasm-instantiate
+            (call $js-ref-idx (ref.cast (ref $js-ref) (call $arg1 (local.get $args))))
+            (call $js-ref-idx (ref.cast (ref $js-ref) (call $arg2 (local.get $args)))))))))
+
+    ;; 266 = %wasm-export(instance-js-ref, name) — returns export js-ref.
+    (if (i32.eq (local.get $id) (i32.const 266))
+      (then
+        (local.set $wasm-host-string
+          (ref.cast (ref $string) (call $arg2 (local.get $args))))
+        (local.set $id (array.len (local.get $wasm-host-string)))
+        (call $string-to-memory (local.get $wasm-host-string))
+        (return (call $make-js-ref
+          (call $js-wasm-export
+            (call $js-ref-idx (ref.cast (ref $js-ref) (call $arg1 (local.get $args))))
+            (i32.const 0) (local.get $id))))))
+
+    ;; 267 = %wasm-native-zone-imports() — returns imports js-ref.
+    (if (i32.eq (local.get $id) (i32.const 267))
+      (then
+        (return (call $make-js-ref (call $js-wasm-native-zone-imports)))))
 
     ;; Unknown primitive — return void
     (global.get $void)

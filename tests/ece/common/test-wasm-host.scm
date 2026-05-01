@@ -103,13 +103,18 @@
     (assert-equal "wasm-host: native-zone entry must be a keyword plist"
                   entry-message))))
 
-(test "wasm-host: host capabilities are explicit stubs in phase 1" (lambda ()
-  (let ((message
-         (wasm-host-test-error-message
-          (lambda () (fetch-text "app.ecec")))))
+(test "wasm-host: loader policy keeps host capabilities behind wrappers" (lambda ()
+  (assert-true (procedure? fetch-text))
+  (assert-true (procedure? fetch-bytes))
+  (assert-true (procedure? wasm-instantiate))
+  (assert-true (procedure? wasm-export))
+  (assert-true (procedure? native-zone-imports))))
+
+(test "wasm-host: missing host capability reports wasm-host error" (lambda ()
+  (when (not (platform-has? '%wasm-fetch-text))
     (assert-equal
-     "wasm-host: fetch-text requires browser WASM host capabilities that are not implemented yet"
-     message))))
+     "wasm-host: %wasm-fetch-text requires browser WASM host capabilities that are not implemented yet"
+     (wasm-host-test-error-message (lambda () (fetch-text "missing.ecez")))))))
 
 (test "wasm-host: native-zone registry stores and overwrites refs" (lambda ()
   (let ((unit-id '(module (game main) 0))

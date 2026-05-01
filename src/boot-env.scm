@@ -292,6 +292,13 @@
 (%register-primitive! '%native-zone-register! 261)
 (%register-primitive! '%native-zone-lookup 262)
 
+;; --- WASM native-zone host capabilities ---
+(%register-primitive! '%wasm-fetch-text 263)
+(%register-primitive! '%wasm-fetch-bytes 264)
+(%register-primitive! '%wasm-instantiate 265)
+(%register-primitive! '%wasm-export 266)
+(%register-primitive! '%wasm-native-zone-imports 267)
+
 ;;; ═══════════════════════════════════════════════════════════════════
 ;;; 2. Initialize assembler symbol table
 ;;; ═══════════════════════════════════════════════════════════════════

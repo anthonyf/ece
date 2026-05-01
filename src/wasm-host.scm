@@ -1,11 +1,10 @@
 ;;; wasm-host.scm — ECE-level WASM host/native-zone loading policy.
 ;;;
 ;;; This module defines the ECE-facing surface for dynamic WASM host work.
-;;; The actual browser capabilities (fetch, WebAssembly.instantiate, exported
-;;; function references) are intentionally not implemented here yet; those are
-;;; the next phase's host primitives. This file owns the policy-shaped parts
-;;; that can already be tested in ordinary ECE: native-zone manifest parsing,
-;;; validation, accessors, and the public loading API shape.
+;;; Browser capabilities (fetch/cache reads, WebAssembly instantiation, export
+;;; lookup, and import-object construction) are raw %wasm-* host primitives.
+;;; This file owns the ECE policy above them: native-zone manifest parsing,
+;;; validation, accessors, registration, and loader sequencing.
 
 (define (wasm-host/error message)
   (error (string-append "wasm-host: " message)))
@@ -14,6 +13,11 @@
   (wasm-host/error
    (string-append (symbol->string name)
                   " requires browser WASM host capabilities that are not implemented yet")))
+
+(define (wasm-host/require-capability name thunk)
+  (if (platform-has? name)
+      (thunk)
+      (wasm-host/not-implemented name)))
 
 (define (wasm-host/plist? plist)
   "Return #t when PLIST is a proper keyword plist."
@@ -183,16 +187,24 @@ Optional string fields are :source, :module-url, and per-entry :fingerprint."
   (truncate co-index))
 
 (define (fetch-text url)
-  (wasm-host/not-implemented 'fetch-text))
+  (wasm-host/require-capability
+   '%wasm-fetch-text
+   (lambda () (%wasm-fetch-text url))))
 
 (define (fetch-bytes url)
-  (wasm-host/not-implemented 'fetch-bytes))
+  (wasm-host/require-capability
+   '%wasm-fetch-bytes
+   (lambda () (%wasm-fetch-bytes url))))
 
 (define (wasm-instantiate bytes imports)
-  (wasm-host/not-implemented 'wasm-instantiate))
+  (wasm-host/require-capability
+   '%wasm-instantiate
+   (lambda () (%wasm-instantiate bytes imports))))
 
 (define (wasm-export instance name)
-  (wasm-host/not-implemented 'wasm-export))
+  (wasm-host/require-capability
+   '%wasm-export
+   (lambda () (%wasm-export instance name))))
 
 (define (register-native-zone! unit-id co-index export-ref)
   "Register EXPORT-REF as the native zone for UNIT-ID code object CO-INDEX."
@@ -214,8 +226,10 @@ Optional string fields are :source, :module-url, and per-entry :fingerprint."
 
 (define (native-zone-imports)
   "Return the import object for side-loaded native-zone modules.
-Phase 1 has no host bridge yet, so this is an empty placeholder."
-  '())
+Generated zones import only handle-level constructors from the root runtime."
+  (wasm-host/require-capability
+   '%wasm-native-zone-imports
+   (lambda () (%wasm-native-zone-imports))))
 
 (define (load-native-zone-manifest manifest-url)
   "Fetch, read, and validate a native-zone manifest."

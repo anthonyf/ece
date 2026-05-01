@@ -35,7 +35,8 @@ async function run() {
     canvas: ECE.canvas,
     timing: ECE.timing,
     math: ECE.math,
-    ffi: ECE.ffi
+    ffi: ECE.ffi,
+    wasm_host: ECE.wasmHost
   };
 
   const wasmResp = await fetch(`${baseUrl}/runtime.wasm`);

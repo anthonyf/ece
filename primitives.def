@@ -375,3 +375,13 @@
 
 (261 %native-zone-register!            3  core   "Register native-zone export ref by normalized unit key and co-index")
 (262 %native-zone-lookup               2  core   "Look up native-zone export ref by normalized unit key and co-index; #f if absent")
+
+;;; ═══════════════════════════════════════════════════════════════════════
+;;; WASM NATIVE-ZONE HOST CAPABILITIES (263-267)
+;;; ═══════════════════════════════════════════════════════════════════════
+
+(263 %wasm-fetch-text                  1  browser "Fetch or read cached text for a WASM host URL")
+(264 %wasm-fetch-bytes                 1  browser "Fetch or read cached bytes for a WASM host URL")
+(265 %wasm-instantiate                 2  browser "Synchronously instantiate a side WASM module from bytes and imports")
+(266 %wasm-export                      2  browser "Look up an export from a side WASM instance")
+(267 %wasm-native-zone-imports         0  browser "Return the import object for generated native-zone side modules")
