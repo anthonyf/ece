@@ -345,6 +345,8 @@ const ECE = {
           h_fixnum: ECE.wasm.h_fixnum,
           h_nil: ECE.wasm.h_nil,
           h_cons: ECE.wasm.h_cons,
+          pair_car: ECE.wasm.pair_car,
+          pair_cdr: ECE.wasm.pair_cdr,
           h_vector: ECE.wasm.h_vector,
           h_vector_set: ECE.wasm.h_vector_set
         }
