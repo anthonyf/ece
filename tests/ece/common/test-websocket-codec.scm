@@ -198,9 +198,4 @@ frame-length boundary tests since ECE doesn't expose make-string."
   ;; We can't decode a server-sent frame because the decoder enforces
   ;; MASK=1 for client frames. Instead, verify the encoding piecewise.
   (let ((f (ws-encode-text-frame "ECE")))
-    ;; FIN+text
-    (assert-equal (car f) 129)
-    ;; 7-bit length 3
-    (assert-equal (car (cdr f)) 3)
-    ;; Payload = "ECE" bytes
-    (assert-equal (cdr (cdr f)) '(69 67 69)))))
+    (assert-equal f '(129 3 69 67 69)))))

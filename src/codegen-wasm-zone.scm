@@ -289,6 +289,60 @@ omitted from the manifest, leaving them on the interpreter path."
 (define (wasm-zone-bundle-entries bundle)
   (native-zone-manifest-entries (wasm-zone-bundle-manifest bundle)))
 
+(define (wasm-zone/normalized-manifest manifest)
+  (if (and (pair? manifest)
+           (eq? (car manifest) ':ece-native-zones))
+      (validate-native-zone-manifest manifest)
+      manifest))
+
+(define (wasm-zone/optional-string-field-text key value)
+  (if value
+      (list (string-append " "
+                           (symbol->string key)
+                           " "
+                           (write-to-string-flat value)))
+      '()))
+
+(define (wasm-zone/entry->text entry)
+  (string-append
+   "(:index "
+   (number->string (native-zone-entry-index entry))
+   " :export "
+   (write-to-string-flat (native-zone-entry-export-name entry))
+   (string-join
+    (wasm-zone/optional-string-field-text
+     ':fingerprint
+     (native-zone-entry-fingerprint entry))
+    "")
+   ")"))
+
+(define (wasm-zone-manifest->text manifest)
+  "Return canonical reader-safe text for a native-zone MANIFEST."
+  (let* ((normalized (wasm-zone/normalized-manifest manifest))
+         (entries (native-zone-manifest-entries normalized)))
+    (string-append
+     "(:ece-native-zones"
+     " :version 1"
+     " :unit-id "
+     (write-to-string-flat (native-zone-manifest-unit-id normalized))
+     (string-join
+      (wasm-zone/optional-string-field-text
+       ':source
+       (native-zone-manifest-source normalized))
+      "")
+     (string-join
+      (wasm-zone/optional-string-field-text
+       ':module-url
+       (native-zone-manifest-module-url normalized))
+     "")
+     " :entries ("
+     (string-join (map wasm-zone/entry->text entries) " ")
+     "))")))
+
+(define (wasm-zone-bundle-manifest-text bundle)
+  "Return canonical reader-safe native-zone manifest text for BUNDLE."
+  (wasm-zone-manifest->text (wasm-zone-bundle-manifest bundle)))
+
 (define (generate-register-machine-wasm-zone-manifest unit-id co-index
                                                       export-name
                                                       . maybe-module-url)
