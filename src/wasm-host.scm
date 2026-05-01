@@ -65,6 +65,18 @@
     (wasm-host/error
      (string-append context " " (symbol->string key) " must be a string")))))
 
+(define (wasm-host/optional-fingerprint entry)
+  (cond
+   ((not (wasm-host/plist-has-key? entry ':fingerprint)) '())
+   ((not (wasm-host/plist-get entry ':fingerprint))
+    (wasm-host/error "native-zone entry :fingerprint must not be #f"))
+   (else
+    (let ((fingerprint (wasm-host/plist-get entry ':fingerprint)))
+      (if (or (integer? fingerprint) (string? fingerprint))
+          (list ':fingerprint fingerprint)
+          (wasm-host/error
+           "native-zone entry :fingerprint must be an integer or string"))))))
+
 (define (wasm-host/optional-unit-id entry)
   (cond
    ((not (wasm-host/plist-has-key? entry ':unit-id)) '())
@@ -93,7 +105,7 @@
       (append
        (list ':index index ':export export-name)
        (wasm-host/optional-unit-id entry)
-       (wasm-host/optional-string entry ':fingerprint "native-zone entry"))))))
+       (wasm-host/optional-fingerprint entry))))))
 
 (define (wasm-host/entry-key default-unit-id entry)
   (list (or (native-zone-entry-unit-id entry) default-unit-id)
@@ -189,6 +201,73 @@ archive units. Optional string fields are :source, :module-url, and per-entry
 (define (native-zone-entry-fingerprint entry)
   (wasm-host/plist-get entry ':fingerprint))
 
+(define (wasm-host/fingerprint-mismatch-message unit-id index expected actual)
+  (string-append
+   "native-zone fingerprint mismatch for "
+   (write-to-string-flat unit-id)
+   " index "
+   (number->string index)
+   ": expected "
+   (write-to-string-flat expected)
+   " got "
+   (write-to-string-flat actual)))
+
+(define (wasm-host/fingerprint-equal? a b)
+  (string=? (if (string? a) a (write-to-string-flat a))
+            (if (string? b) b (write-to-string-flat b))))
+
+(define (wasm-host/archive-lookup-unit-id unit-id)
+  "Normalize manifest UNIT-ID the same way archive metadata does for lookup."
+  (if (string? unit-id)
+      (string->symbol unit-id)
+      unit-id))
+
+(define (wasm-host/validate-entry-fingerprint! manifest entry)
+  "Validate ENTRY's fingerprint against the loaded archive, when available.
+Native zones may be registered before an archive is loaded in server-mode web
+startup, so absence of the archive record is not an error. Once the archive is
+registered, fingerprints become a hard stale-artifact check."
+  (let ((expected (native-zone-entry-fingerprint entry)))
+    (when expected
+      (let* ((unit-id (native-zone-entry-effective-unit-id manifest entry))
+             (lookup-unit-id (wasm-host/archive-lookup-unit-id unit-id))
+             (record (archive/registered-unit lookup-unit-id)))
+        (when record
+          (let* ((index (native-zone-entry-index entry))
+                 (cos (hash-ref record ':cos #f))
+                 (stored-fingerprints
+                  (hash-ref record ':native-zone-fingerprints #f)))
+            (cond
+             ((not (and (vector? cos) (< index (vector-length cos))))
+              (wasm-host/error
+               (string-append
+                "native-zone entry references missing archive code object for "
+                (write-to-string-flat unit-id)
+                " index "
+                (number->string index))))
+             (else
+              (let ((actual (if (and (vector? stored-fingerprints)
+                                     (< index (vector-length stored-fingerprints)))
+                                (vector-ref stored-fingerprints index)
+                                (ser/code-object-fingerprint
+                                 (vector-ref cos index)))))
+                (when (not (wasm-host/fingerprint-equal? expected actual))
+                  (wasm-host/error
+                   (wasm-host/fingerprint-mismatch-message
+                    unit-id index expected actual))))))))))))
+
+(define (validate-native-zone-fingerprints! manifest)
+  "Validate MANIFEST entry fingerprints against any registered archive units."
+  (let ((normalized (if (and (pair? manifest)
+                             (eq? (car manifest) ':ece-native-zones))
+                        (validate-native-zone-manifest manifest)
+                        manifest)))
+    (for-each
+     (lambda (entry)
+       (wasm-host/validate-entry-fingerprint! normalized entry))
+     (native-zone-manifest-entries normalized))
+    normalized))
+
 (define (wasm-host/registry-unit-key unit-id)
   "Return an interned key suitable for identity-keyed runtime registries."
   (cond
@@ -256,6 +335,18 @@ Generated zones import only handle-level constructors from the root runtime."
    '%wasm-native-zone-imports
    (lambda () (%wasm-native-zone-imports))))
 
+(define (wasm-host/code-object-fingerprint-vector cos)
+  (let* ((len (vector-length cos))
+         (fingerprints (make-vector len #f)))
+    (let loop ((i 0))
+      (if (>= i len)
+          fingerprints
+          (begin
+            (vector-set! fingerprints
+                         i
+                         (ser/code-object-fingerprint (vector-ref cos i)))
+            (loop (+ i 1)))))))
+
 (define (load-native-zone-manifest manifest-url)
   "Fetch, read, and validate a native-zone manifest."
   (parse-native-zone-manifest (fetch-text manifest-url)))
@@ -263,7 +354,8 @@ Generated zones import only handle-level constructors from the root runtime."
 (define (load-native-zone-module module-url manifest-url)
   "Fetch a native-zone module, instantiate it, and register its exports.
 This policy is ECE-owned, but it depends on future browser host primitives."
-  (let* ((manifest (load-native-zone-manifest manifest-url))
+  (let* ((manifest (validate-native-zone-fingerprints!
+                    (load-native-zone-manifest manifest-url)))
          (bytes (fetch-bytes module-url))
          (instance (wasm-instantiate bytes (native-zone-imports))))
     (for-each
@@ -280,11 +372,15 @@ This policy is ECE-owned, but it depends on future browser host primitives."
   (let* ((unit (archive/section-unit section))
          (cos (archive/section-cos section))
          (unit-id (wasm-host/plist-get unit ':unit-id))
-         (unit-key (archive/unit-key unit-id)))
+         (unit-key (archive/unit-key unit-id))
+         (record (archive/make-unit-record unit cos)))
+    (hash-set! record
+               ':native-zone-fingerprints
+               (wasm-host/code-object-fingerprint-vector cos))
     (hash-remove! *module-instances* unit-key)
     (hash-set! *archive-units*
                unit-key
-               (archive/make-unit-record unit cos))))
+               record)))
 
 (define (reload-archive-bundle-text text)
   "Load and execute all .ecec archive sections from TEXT for reload.

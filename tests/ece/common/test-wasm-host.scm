@@ -15,7 +15,7 @@
              :unit-id (module (game main) 0)
              :source "game/main.scm"
              :module-url "game-main-zones.wasm"
-             :entries ((:index 0 :export "zone_0" :fingerprint "fp0")
+             :entries ((:index 0 :export "zone_0" :fingerprint 1234)
                        (:unit-id (module (game helper) 0)
                         :index 7
                         :export "zone_7")))))
@@ -30,7 +30,7 @@
                   (native-zone-manifest-module-url manifest))
     (assert-equal 0 (native-zone-entry-index first))
     (assert-equal "zone_0" (native-zone-entry-export-name first))
-    (assert-equal "fp0" (native-zone-entry-fingerprint first))
+    (assert-equal 1234 (native-zone-entry-fingerprint first))
     (assert-equal '(module (game main) 0)
                   (native-zone-entry-effective-unit-id manifest first))
     (assert-equal '(module (game helper) 0)
@@ -73,6 +73,21 @@
                :entries ((:index -1 :export "zone_bad"))))))))
     (assert-equal
      "wasm-host: native-zone entry :index must be a non-negative integer"
+     message))))
+
+(test "wasm-host: rejects malformed native-zone fingerprints" (lambda ()
+  (let ((message
+         (wasm-host-test-error-message
+          (lambda ()
+            (validate-native-zone-manifest
+             '(:ece-native-zones
+               :version 1
+               :unit-id app
+               :entries ((:index 0
+                         :export "zone_bad"
+                         :fingerprint (not-stable)))))))))
+    (assert-equal
+     "wasm-host: native-zone entry :fingerprint must be an integer or string"
      message))))
 
 (test "wasm-host: rejects duplicate co-indexes" (lambda ()
@@ -175,6 +190,118 @@
        (wasm-host/register-reload-section! section)
        (assert-equal #f (hash-ref *module-instances* unit-key #f))
        (assert-true (archive/registered-unit unit-id)))
+     (lambda ()
+       (hash-remove! *archive-units* unit-key)
+       (hash-remove! *module-instances* unit-key))))))
+
+(test "wasm-host: native-zone fingerprints validate loaded archive code" (lambda ()
+  (let* ((unit-id '(module (native stale) 0))
+         (unit-key (archive/unit-key unit-id))
+         (co (mc-compile-to-code-object 7))
+         (unit (list ':unit-id unit-id
+                     ':kind ':module
+                     ':phase 0
+                     ':imports '()
+                     ':exports '()
+                     ':init 0))
+         (record (archive/make-unit-record unit (vector co)))
+         (fingerprint (ser/code-object-fingerprint co))
+         (manifest (validate-native-zone-manifest
+                    (list ':ece-native-zones
+                          ':version 1
+                          ':unit-id unit-id
+                          ':entries
+                          (list (list ':index 0
+                                      ':export "zone_0"
+                                      ':fingerprint fingerprint))))))
+    (dynamic-wind
+     (lambda ()
+       (hash-remove! *archive-units* unit-key)
+       (hash-remove! *module-instances* unit-key))
+     (lambda ()
+       (hash-set! *archive-units* unit-key record)
+       (assert-equal manifest
+                     (validate-native-zone-fingerprints! manifest)))
+     (lambda ()
+       (hash-remove! *archive-units* unit-key)
+       (hash-remove! *module-instances* unit-key))))))
+
+(test "wasm-host: native-zone fingerprints reject stale loaded archive code" (lambda ()
+  (let* ((unit-id '(module (native stale-mismatch) 0))
+         (unit-key (archive/unit-key unit-id))
+         (archive-co (mc-compile-to-code-object 7))
+         (unit (list ':unit-id unit-id
+                     ':kind ':module
+                     ':phase 0
+                     ':imports '()
+                     ':exports '()
+                     ':init 0))
+         (record (archive/make-unit-record unit (vector archive-co)))
+         (stale-fingerprint (+ (ser/code-object-fingerprint archive-co) 1))
+         (manifest (validate-native-zone-manifest
+                    (list ':ece-native-zones
+                          ':version 1
+                          ':unit-id unit-id
+                          ':entries
+                          (list (list ':index 0
+                                      ':export "zone_0"
+                                      ':fingerprint stale-fingerprint))))))
+    (dynamic-wind
+     (lambda ()
+       (hash-remove! *archive-units* unit-key)
+       (hash-remove! *module-instances* unit-key))
+     (lambda ()
+       (hash-set! *archive-units* unit-key record)
+       (assert-equal
+        (string-append
+         "wasm-host: native-zone fingerprint mismatch for "
+         (write-to-string-flat unit-id)
+         " index 0: expected "
+         (write-to-string-flat stale-fingerprint)
+         " got "
+         (write-to-string-flat (ser/code-object-fingerprint archive-co)))
+        (wasm-host-test-error-message
+         (lambda () (validate-native-zone-fingerprints! manifest)))))
+     (lambda ()
+       (hash-remove! *archive-units* unit-key)
+       (hash-remove! *module-instances* unit-key))))))
+
+(test "wasm-host: native-zone fingerprints normalize string unit ids for archive lookup" (lambda ()
+  (let* ((unit-id 'string-fingerprint-app)
+         (unit-key (archive/unit-key unit-id))
+         (archive-co (mc-compile-to-code-object 7))
+         (unit (list ':unit-id unit-id
+                     ':kind ':file
+                     ':phase 0
+                     ':imports '()
+                     ':exports ':all
+                     ':init 0))
+         (record (archive/make-unit-record unit (vector archive-co)))
+         (stale-fingerprint (+ (ser/code-object-fingerprint archive-co) 1))
+         (manifest (validate-native-zone-manifest
+                    (list ':ece-native-zones
+                          ':version 1
+                          ':unit-id "string-fingerprint-app"
+                          ':entries
+                          (list (list ':index 0
+                                      ':export "zone_0"
+                                      ':fingerprint stale-fingerprint))))))
+    (dynamic-wind
+     (lambda ()
+       (hash-remove! *archive-units* unit-key)
+       (hash-remove! *module-instances* unit-key))
+     (lambda ()
+       (hash-set! *archive-units* unit-key record)
+       (assert-equal
+        (string-append
+         "wasm-host: native-zone fingerprint mismatch for "
+         "\"string-fingerprint-app\""
+         " index 0: expected "
+         (write-to-string-flat stale-fingerprint)
+         " got "
+         (write-to-string-flat (ser/code-object-fingerprint archive-co)))
+        (wasm-host-test-error-message
+         (lambda () (validate-native-zone-fingerprints! manifest)))))
      (lambda ()
        (hash-remove! *archive-units* unit-key)
        (hash-remove! *module-instances* unit-key))))))

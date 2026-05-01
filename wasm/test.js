@@ -667,20 +667,20 @@ async function runGeneratedZoneIntegrationTests(w, envH) {
     ECE.wasmHost.clearResources();
     const reloadProgramInfo = eceEval(`
       (begin
-        (define reload-program-archive-co (mc-compile-to-code-object 0))
+        (define reload-program-zone-co (mc-compile-to-code-object 91))
         (define reload-program-archive
           (code-object->archive-sexp
-            reload-program-archive-co
+            reload-program-zone-co
             "reload-program.scm"
             (list ':unit-id 'reload-program-unit)))
-        (define reload-program-zone-co (mc-compile-to-code-object 91))
+        (define reload-program-archive-text
+          (write-to-string-flat reload-program-archive))
         (define reload-program-bundle
-          (generate-register-machine-wasm-zone-bundle
-            'reload-program-unit
-            (vector reload-program-zone-co)
+          (generate-register-machine-wasm-zone-archive-text
+            reload-program-archive-text
             "reload-program-zones.wasm"))
         (list
-          (write-to-string-flat reload-program-archive)
+          reload-program-archive-text
           (wasm-zone-bundle-wat reload-program-bundle)
           (wasm-zone-bundle-manifest-text reload-program-bundle)))`);
     const [archiveText, zoneWat, zoneManifest] = ECE._eceListToJsArray(reloadProgramInfo);
