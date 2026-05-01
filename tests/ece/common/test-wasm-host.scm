@@ -122,6 +122,30 @@
    (wasm-host-test-error-message
     (lambda () (reload-program "app.ecec" "app-zones.wasm" #f))))))
 
+(test "wasm-host: reload registration invalidates cached module instances" (lambda ()
+  (let* ((unit-id '(module (reload stale) 0))
+         (unit-key (archive/unit-key unit-id))
+         (unit (list ':unit-id unit-id
+                     ':kind ':module
+                     ':phase 0
+                     ':imports '()
+                     ':exports '()
+                     ':init 0))
+         (section (list ':unit unit
+                        ':cos (vector (mc-compile-to-code-object 1)))))
+    (dynamic-wind
+     (lambda ()
+       (hash-remove! *archive-units* unit-key)
+       (hash-remove! *module-instances* unit-key))
+     (lambda ()
+       (hash-set! *module-instances* unit-key 'stale-instance)
+       (wasm-host/register-reload-section! section)
+       (assert-equal #f (hash-ref *module-instances* unit-key #f))
+       (assert-true (archive/registered-unit unit-id)))
+     (lambda ()
+       (hash-remove! *archive-units* unit-key)
+       (hash-remove! *module-instances* unit-key))))))
+
 (test "wasm-host: native-zone registry stores and overwrites refs" (lambda ()
   (let ((unit-id '(module (game main) 0))
         (same-unit-id (list 'module (list 'game 'main) 0)))

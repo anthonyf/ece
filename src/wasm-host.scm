@@ -254,9 +254,11 @@ This policy is ECE-owned, but it depends on future browser host primitives."
   "Register SECTION for reload, replacing any prior unit record."
   (let* ((unit (archive/section-unit section))
          (cos (archive/section-cos section))
-         (unit-id (wasm-host/plist-get unit ':unit-id)))
+         (unit-id (wasm-host/plist-get unit ':unit-id))
+         (unit-key (archive/unit-key unit-id)))
+    (hash-remove! *module-instances* unit-key)
     (hash-set! *archive-units*
-               (archive/unit-key unit-id)
+               unit-key
                (archive/make-unit-record unit cos))))
 
 (define (reload-archive-bundle-text text)
