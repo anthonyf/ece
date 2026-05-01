@@ -134,6 +134,8 @@
     (assert-true (string-contains? wat "(import \"ece\" \"h_lookup\""))
     (assert-true (string-contains? wat "(import \"ece\" \"h_apply_primitive\""))
     (assert-true (string-contains? wat "(import \"ece\" \"h_primitive_p\""))
+    (assert-true (>= (wasm-zone-test-substring-count wat "h_lookup") 2))
+    (assert-true (>= (wasm-zone-test-substring-count wat "h_apply_primitive") 2))
     (assert-true (string-contains? wat "h_symbol_1"))
     (assert-true (string-contains? wat "(i32.const 43)"))
     (assert-true (string-contains? wat "h_error_sentinel_p")))))

@@ -375,8 +375,10 @@ async function runGeneratedZoneIntegrationTests(w, envH) {
     const watText = ECE._eceToJs(watHandle);
     assert(typeof watText === "string", "expected generated plus WAT string");
     assert(watText.includes('(export "zone_plus_0")'), "generated WAT missing plus export");
-    assert(watText.includes('h_lookup'), "generated WAT must look up + through the VM");
-    assert(watText.includes('h_apply_primitive'), "generated WAT must apply through the VM");
+    assert((watText.match(/h_lookup/g) || []).length >= 2,
+      "generated WAT must look up + through the VM");
+    assert((watText.match(/h_apply_primitive/g) || []).length >= 2,
+      "generated WAT must apply through the VM");
 
     const zoneBytes = compileWat(watText, "generated-plus-zone");
     const { instance } = await WebAssembly.instantiate(zoneBytes, generatedZoneImports());
@@ -390,6 +392,34 @@ async function runGeneratedZoneIntegrationTests(w, envH) {
 
     assert(w.h_fixnum_val(result) === 3,
       `expected generated primitive result 3, got ${w.h_fixnum_val(result)}`);
+  });
+
+  await iTest("generated register-machine WASM zone bails on lookup error sentinel", async () => {
+    const watHandle = eceEval(`
+      (begin
+        (define generated-plus-unbound-co (mc-compile-to-code-object '(+ x 2)))
+        (%code-object-set-archive-key! generated-plus-unbound-co
+          (cons 'generated-plus-unbound 0))
+        (generate-register-machine-wasm-zone generated-plus-unbound-co
+          "zone_plus_unbound_0"))`);
+    const watText = ECE._eceToJs(watHandle);
+    assert(typeof watText === "string", "expected generated plus unbound WAT string");
+    assert(watText.includes('h_error_sentinel_p'), "generated WAT must check lookup errors");
+
+    const zoneBytes = compileWat(watText, "generated-plus-unbound-zone");
+    const { instance } = await WebAssembly.instantiate(zoneBytes, generatedZoneImports());
+
+    globalThis.__eceGeneratedPlusUnboundZone0 = instance.exports.zone_plus_unbound_0;
+    const result = eceEval(`
+      (begin
+        (register-native-zone! 'generated-plus-unbound 0
+          (%js-eval "globalThis.__eceGeneratedPlusUnboundZone0"))
+        (guard (e ((error-object? e) (error-object-message e)))
+          (execute-code-object generated-plus-unbound-co)))`);
+
+    const message = ECE._eceToJs(result);
+    assert(message === "Unbound variable: x",
+      `expected catchable unbound x error, got ${JSON.stringify(message)}`);
   });
 
   await iTest("generated register-machine WASM zone bails if primitive binding changes", async () => {

@@ -124,6 +124,16 @@ reload never sees dollar-prefixed strings as interpolation input."
        "))")
       #f))
 
+(define (wasm-zone/lookup-variable-value-operands? source operands)
+  (and (eq? (wasm-zone/operation-name source) 'lookup-variable-value)
+       (= (length operands) 2)
+       (pair? (car operands))
+       (eq? (caar operands) 'const)
+       (pair? (cdr (car operands)))
+       (pair? (cadr operands))
+       (eq? (car (cadr operands)) 'reg)
+       (eq? (cadr (cadr operands)) 'env)))
+
 (define (wasm-zone/list-value-wat operands)
   (if (null? operands)
       (string-append "(call " (wasm-zone/name "h_nil") ")")
@@ -164,14 +174,7 @@ reload never sees dollar-prefixed strings as interpolation input."
         (if pair-wat
             (string-append "(call " (wasm-zone/name "h_cdr") " " pair-wat ")")
             #f)))
-     ((and (eq? op-name 'lookup-variable-value)
-           (= (length operands) 2)
-           (pair? (car operands))
-           (eq? (caar operands) 'const)
-           (pair? (cdr (car operands)))
-           (pair? (cadr operands))
-           (eq? (car (cadr operands)) 'reg)
-           (eq? (cadr (cadr operands)) 'env))
+     ((wasm-zone/lookup-variable-value-operands? source operands)
       (let ((name-wat (wasm-zone/symbol-handle-wat (cadr (car operands)))))
         (if name-wat
             (string-append "(call " (wasm-zone/name "h_lookup")
@@ -180,7 +183,21 @@ reload never sees dollar-prefixed strings as interpolation input."
             #f)))
      (else #f))))
 
-(define (wasm-zone/emit-assign-wat instr)
+(define (wasm-zone/return-result-call-wat mode next-pc)
+  (string-append
+   "            (return\n"
+   (wasm-zone/result-call-wat mode next-pc)
+   ")\n"))
+
+(define (wasm-zone/error-sentinel-bail-wat target-local pc)
+  (string-append
+   "        (if (call " (wasm-zone/name "h_error_sentinel_p")
+   " (local.get " target-local "))\n"
+   "          (then\n"
+   (wasm-zone/return-result-call-wat 2 pc)
+   "          ))\n"))
+
+(define (wasm-zone/emit-assign-wat instr pc)
   "Return WAT for a supported assign instruction, else #f."
   (if (not (and (pair? instr)
                 (eq? (car instr) 'assign)
@@ -199,7 +216,10 @@ reload never sees dollar-prefixed strings as interpolation input."
                        (wasm-zone/source-value-wat source))))
               (if value-wat
                   (string-append
-                   "        (local.set " target-local " " value-wat ")\n")
+                   "        (local.set " target-local " " value-wat ")\n"
+                   (if (wasm-zone/lookup-variable-value-operands? source operands)
+                       (wasm-zone/error-sentinel-bail-wat target-local pc)
+                       ""))
                   #f))))))
 
 (define (wasm-zone/halt-instruction? instr)
@@ -276,19 +296,19 @@ reload never sees dollar-prefixed strings as interpolation input."
                   (string-append body (wasm-zone/result-call-wat 2 pc))
                   #f)
               (let* ((instr (vector-ref instrs pc))
-                     (assign-wat (wasm-zone/emit-assign-wat instr)))
+                     (assign-wat (wasm-zone/emit-assign-wat instr pc))
+                     (apply-pc
+                      (and emitted?
+                           (wasm-zone/find-primitive-tail instrs len pc))))
                 (cond
                  (assign-wat
                   (loop (+ pc 1) #t (string-append body assign-wat)))
                  ((wasm-zone/halt-instruction? instr)
                   (string-append body (wasm-zone/result-call-wat 0 pc)))
-                 ((and emitted?
-                       (wasm-zone/find-primitive-tail instrs len pc))
+                 (apply-pc
                   (string-append
                    body
-                   (wasm-zone/primitive-tail-wat
-                    pc
-                    (wasm-zone/find-primitive-tail instrs len pc))))
+                   (wasm-zone/primitive-tail-wat pc apply-pc)))
                  (emitted?
                   (string-append body (wasm-zone/result-call-wat 2 pc)))
                  (else #f))))))))
