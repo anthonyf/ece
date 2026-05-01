@@ -14,6 +14,8 @@
 ;;;   (assign <register> (reg <register>))
 ;;;   (assign <register> (op list) <operand> ...)
 ;;;   (assign <register> (op cons) <operand> <operand>)
+;;;   (assign <register> (op car) <operand>)
+;;;   (assign <register> (op cdr) <operand>)
 ;;;   (halt)
 ;;;
 ;;; If a supported prefix reaches an unsupported instruction, the zone returns
@@ -134,6 +136,18 @@ reload never sees dollar-prefixed strings as interpolation input."
         (if (and car-wat cdr-wat)
             (string-append "(call " (wasm-zone/name "h_cons") " " car-wat " " cdr-wat ")")
             #f)))
+     ((and (eq? op-name 'car)
+           (= (length operands) 1))
+      (let ((pair-wat (wasm-zone/source-value-wat (car operands))))
+        (if pair-wat
+            (string-append "(call " (wasm-zone/name "h_car") " " pair-wat ")")
+            #f)))
+     ((and (eq? op-name 'cdr)
+           (= (length operands) 1))
+      (let ((pair-wat (wasm-zone/source-value-wat (car operands))))
+        (if pair-wat
+            (string-append "(call " (wasm-zone/name "h_cdr") " " pair-wat ")")
+            #f)))
      (else #f))))
 
 (define (wasm-zone/emit-assign-wat instr)
@@ -237,6 +251,10 @@ reload never sees dollar-prefixed strings as interpolation input."
    " (result i32)))\n"
    "  (import \"ece\" \"h_cons\" (func " (wasm-zone/name "h_cons")
    " (param i32) (param i32) (result i32)))\n"
+   "  (import \"ece\" \"pair_car\" (func " (wasm-zone/name "h_car")
+   " (param i32) (result i32)))\n"
+   "  (import \"ece\" \"pair_cdr\" (func " (wasm-zone/name "h_cdr")
+   " (param i32) (result i32)))\n"
    "  (import \"ece\" \"h_vector\" (func " (wasm-zone/name "h_vector")
    " (param i32) (result i32)))\n"
    "  (import \"ece\" \"h_vector_set\" (func " (wasm-zone/name "h_vector_set")

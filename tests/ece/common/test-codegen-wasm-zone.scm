@@ -54,6 +54,22 @@
     (%code-object-push-instruction! co (list 'halt))
     co))
 
+(define (wasm-zone-test-pair-access-co)
+  (let ((co (%make-code-object)))
+    (%code-object-push-instruction! co (list 'assign 'val (list 'const 9)))
+    (%code-object-push-instruction! co (list 'assign 'argl (list 'op 'cons)
+                                             (list 'reg 'val)
+                                             (list 'const '())))
+    (%code-object-push-instruction! co (list 'assign 'proc (list 'op 'car)
+                                             (list 'reg 'argl)))
+    (%code-object-push-instruction! co (list 'assign 'argl (list 'op 'cdr)
+                                             (list 'reg 'argl)))
+    (%code-object-push-instruction! co (list 'assign 'val (list 'op 'list)
+                                             (list 'reg 'proc)
+                                             (list 'reg 'argl)))
+    (%code-object-push-instruction! co (list 'halt))
+    co))
+
 (define (wasm-zone-test-bundle-cos)
   (vector
    (wasm-zone-test-constant-co 7)
@@ -98,6 +114,16 @@
     (assert-true (string-contains? wat "(local.set \$argl (call \$h_cons (local.get \$val) (call \$h_nil)))"))
     (assert-true (string-contains? wat "(local.set \$argl (call \$h_cons (local.get \$val) (local.get \$argl)))"))
     (assert-true (>= (wasm-zone-test-substring-count wat "(i32.const 4)") 1)))))
+
+(test "codegen-wasm-zone: emits car and cdr operation assignments" (lambda ()
+  (let ((wat (generate-register-machine-wasm-zone
+              (wasm-zone-test-pair-access-co)
+              "zone_pair_access")))
+    (assert-true (string? wat))
+    (assert-true (string-contains? wat "(import \"ece\" \"pair_car\""))
+    (assert-true (string-contains? wat "(import \"ece\" \"pair_cdr\""))
+    (assert-true (string-contains? wat "(local.set \$proc (call \$h_car (local.get \$argl)))"))
+    (assert-true (string-contains? wat "(local.set \$argl (call \$h_cdr (local.get \$argl)))")))))
 
 (test "codegen-wasm-zone: unsupported code objects decline generation" (lambda ()
   (let ((co (mc-compile-to-code-object '(+ 1 2))))

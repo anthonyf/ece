@@ -323,6 +323,20 @@ async function runGeneratedZoneIntegrationTests(w, envH) {
     }
   }
 
+  function generatedZoneImports() {
+    return {
+      ece: {
+        h_fixnum: w.h_fixnum,
+        h_nil: w.h_nil,
+        h_cons: w.h_cons,
+        pair_car: w.pair_car,
+        pair_cdr: w.pair_cdr,
+        h_vector: w.h_vector,
+        h_vector_set: w.h_vector_set
+      }
+    };
+  }
+
   await iTest("generated register-machine WASM zone dispatches", async () => {
     const watHandle = eceEval(`
       (begin
@@ -334,15 +348,7 @@ async function runGeneratedZoneIntegrationTests(w, envH) {
     assert(watText.includes('(export "zone_0")'), "generated WAT missing export");
 
     const zoneBytes = compileWat(watText, "generated-zone");
-    const { instance } = await WebAssembly.instantiate(zoneBytes, {
-      ece: {
-        h_fixnum: w.h_fixnum,
-        h_nil: w.h_nil,
-        h_cons: w.h_cons,
-        h_vector: w.h_vector,
-        h_vector_set: w.h_vector_set
-      }
-    });
+    const { instance } = await WebAssembly.instantiate(zoneBytes, generatedZoneImports());
 
     globalThis.__eceGeneratedZone0 = instance.exports.zone_0;
     const result = eceEval(`
@@ -370,15 +376,7 @@ async function runGeneratedZoneIntegrationTests(w, envH) {
     assert(watText.includes('(call $h_nil)'), "generated WAT missing direct nil call");
 
     const zoneBytes = compileWat(watText, "generated-nil-zone");
-    const { instance } = await WebAssembly.instantiate(zoneBytes, {
-      ece: {
-        h_fixnum: w.h_fixnum,
-        h_nil: w.h_nil,
-        h_cons: w.h_cons,
-        h_vector: w.h_vector,
-        h_vector_set: w.h_vector_set
-      }
-    });
+    const { instance } = await WebAssembly.instantiate(zoneBytes, generatedZoneImports());
 
     globalThis.__eceGeneratedNilZone0 = instance.exports.zone_nil_0;
     const result = eceEval(`
@@ -411,15 +409,7 @@ async function runGeneratedZoneIntegrationTests(w, envH) {
     assert(watText.includes('(i32.const 2)'), "generated WAT missing bailout mode");
 
     const zoneBytes = compileWat(watText, "generated-bail-zone");
-    const { instance } = await WebAssembly.instantiate(zoneBytes, {
-      ece: {
-        h_fixnum: w.h_fixnum,
-        h_nil: w.h_nil,
-        h_cons: w.h_cons,
-        h_vector: w.h_vector,
-        h_vector_set: w.h_vector_set
-      }
-    });
+    const { instance } = await WebAssembly.instantiate(zoneBytes, generatedZoneImports());
 
     globalThis.__eceGeneratedBailZone0 = instance.exports.zone_bail_0;
     const result = eceEval(`
@@ -457,15 +447,7 @@ async function runGeneratedZoneIntegrationTests(w, envH) {
     assert(watText.includes('h_cons'), "generated WAT missing cons import/call");
 
     const zoneBytes = compileWat(watText, "generated-list-zone");
-    const { instance } = await WebAssembly.instantiate(zoneBytes, {
-      ece: {
-        h_fixnum: w.h_fixnum,
-        h_nil: w.h_nil,
-        h_cons: w.h_cons,
-        h_vector: w.h_vector,
-        h_vector_set: w.h_vector_set
-      }
-    });
+    const { instance } = await WebAssembly.instantiate(zoneBytes, generatedZoneImports());
 
     globalThis.__eceGeneratedListZone0 = instance.exports.zone_list_0;
     const result = eceEval(`
@@ -478,6 +460,44 @@ async function runGeneratedZoneIntegrationTests(w, envH) {
     const values = ECE._eceListToJsArray(result);
     assert(values.length === 2 && values[0] === 3 && values[1] === 5,
       `expected generated list (3 5), got ${JSON.stringify(values)}`);
+  });
+
+  await iTest("generated register-machine WASM zone reads pair car and cdr", async () => {
+    const watHandle = eceEval(`
+      (begin
+        (define generated-pair-co (%make-code-object))
+        (%code-object-push-instruction! generated-pair-co
+          '(assign val (const 9)))
+        (%code-object-push-instruction! generated-pair-co
+          '(assign argl (op cons) (reg val) (const ())))
+        (%code-object-push-instruction! generated-pair-co
+          '(assign proc (op car) (reg argl)))
+        (%code-object-push-instruction! generated-pair-co
+          '(assign argl (op cdr) (reg argl)))
+        (%code-object-push-instruction! generated-pair-co
+          '(assign val (op list) (reg proc) (reg argl)))
+        (%code-object-push-instruction! generated-pair-co '(halt))
+        (%code-object-set-archive-key! generated-pair-co (cons 'generated-pair 0))
+        (generate-register-machine-wasm-zone generated-pair-co "zone_pair_0"))`);
+    const watText = ECE._eceToJs(watHandle);
+    assert(typeof watText === "string", "expected generated pair WAT string");
+    assert(watText.includes('(export "zone_pair_0")'), "generated WAT missing pair export");
+    assert(watText.includes('pair_car'), "generated WAT missing pair_car import");
+    assert(watText.includes('pair_cdr'), "generated WAT missing pair_cdr import");
+
+    const zoneBytes = compileWat(watText, "generated-pair-zone");
+    const { instance } = await WebAssembly.instantiate(zoneBytes, generatedZoneImports());
+
+    globalThis.__eceGeneratedPairZone0 = instance.exports.zone_pair_0;
+    const result = eceEval(`
+      (begin
+        (register-native-zone! 'generated-pair 0
+          (%js-eval "globalThis.__eceGeneratedPairZone0"))
+        (execute-code-object generated-pair-co))`);
+
+    const values = ECE._eceListToJsArray(result);
+    assert(values.length === 2 && values[0] === 9 && values[1] === null,
+      `expected generated pair access result (9 null), got ${JSON.stringify(values)}`);
   });
 
   await iTest("generated register-machine WASM zone bundle registers supported entries", async () => {
@@ -510,15 +530,7 @@ async function runGeneratedZoneIntegrationTests(w, envH) {
     assert(watText.includes('(export "zone_2")'), "bundle WAT missing zone_2");
 
     const zoneBytes = compileWat(watText, "generated-bundle-zones");
-    const { instance } = await WebAssembly.instantiate(zoneBytes, {
-      ece: {
-        h_fixnum: w.h_fixnum,
-        h_nil: w.h_nil,
-        h_cons: w.h_cons,
-        h_vector: w.h_vector,
-        h_vector_set: w.h_vector_set
-      }
-    });
+    const { instance } = await WebAssembly.instantiate(zoneBytes, generatedZoneImports());
 
     globalThis.__eceGeneratedBundleZone0 = instance.exports.zone_0;
     globalThis.__eceGeneratedBundleZone2 = instance.exports.zone_2;
