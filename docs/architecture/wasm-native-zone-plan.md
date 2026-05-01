@@ -321,6 +321,8 @@ register assignments:
 (assign <register> (reg <register>))
 (assign <register> (op list) <operand> ...)
 (assign <register> (op cons) <operand> <operand>)
+(assign <register> (op car) <operand>)
+(assign <register> (op cdr) <operand>)
 (halt)
 ```
 
@@ -340,6 +342,9 @@ stable exports named `zone_<index>`; unsupported indexes are omitted from the
 manifest and keep running through the interpreter. The `.ecec` archive remains
 the semantic source of truth, while the side module is a replaceable
 acceleration artifact keyed by the archive unit id and code-object index.
+Generated manifest entries include code-object fingerprints when the runtime can
+compute them. If the corresponding archive unit is already registered, the
+loader rejects a fingerprint mismatch before registering the side-module export.
 
 ## Testing Strategy
 

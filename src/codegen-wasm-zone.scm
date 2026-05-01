@@ -338,11 +338,18 @@ omitted from the manifest, leaving them on the interpreter path."
                  (body (wasm-zone/body-wat co)))
             (if body
                 (let* ((index (wasm-host/normalize-co-index i))
-                       (export-name (wasm-zone/default-export-name index)))
+                       (export-name (wasm-zone/default-export-name index))
+                       (fingerprint (ser/code-object-fingerprint co))
+                       (fingerprint-fields
+                        (if fingerprint
+                            (list ':fingerprint fingerprint)
+                            '())))
                   (loop (+ i 1)
                         (cons (wasm-zone/export-function-wat export-name body)
                               functions)
-                        (cons (list ':index index ':export export-name)
+                        (cons (append
+                               (list ':index index ':export export-name)
+                               fingerprint-fields)
                               entries)))
                 (loop (+ i 1) functions entries)))))))
 
@@ -369,6 +376,16 @@ omitted from the manifest, leaving them on the interpreter path."
                            (write-to-string-flat value)))
       '()))
 
+(define (wasm-zone/fingerprint-field-text value)
+  (if value
+      (list (string-append
+             " :fingerprint "
+             (write-to-string-flat
+              (if (string? value)
+                  value
+                  (write-to-string-flat value)))))
+      '()))
+
 (define (wasm-zone/entry->text entry)
   (string-append
    "("
@@ -384,8 +401,7 @@ omitted from the manifest, leaving them on the interpreter path."
    " :export "
    (write-to-string-flat (native-zone-entry-export-name entry))
    (string-join
-    (wasm-zone/optional-string-field-text
-     ':fingerprint
+    (wasm-zone/fingerprint-field-text
      (native-zone-entry-fingerprint entry))
     "")
    ")"))
@@ -442,7 +458,12 @@ all supported code objects across all archive sections in the .ecec bundle."
                 (let* ((index (wasm-host/normalize-co-index i))
                        (export-name (wasm-zone/archive-export-name
                                      section-index
-                                     index)))
+                                     index))
+                       (fingerprint (ser/code-object-fingerprint co))
+                       (fingerprint-fields
+                        (if fingerprint
+                            (list ':fingerprint fingerprint)
+                            '())))
                   (scan-code-objects
                    section-index
                    unit-id
@@ -450,9 +471,11 @@ all supported code objects across all archive sections in the .ecec bundle."
                    (+ i 1)
                    (cons (wasm-zone/export-function-wat export-name body)
                          functions)
-                   (cons (list ':unit-id unit-id
-                               ':index index
-                               ':export export-name)
+                   (cons (append
+                          (list ':unit-id unit-id
+                                ':index index
+                                ':export export-name)
+                          fingerprint-fields)
                          entries)))
                 (scan-code-objects section-index unit-id cos (+ i 1)
                                    functions entries)))))

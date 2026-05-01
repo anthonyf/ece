@@ -176,7 +176,13 @@
          (manifest (wasm-zone-bundle-manifest bundle))
          (entries (native-zone-manifest-entries manifest))
          (first (car entries))
-         (second (cadr entries)))
+         (second (cadr entries))
+         (first-fingerprint
+          (ser/code-object-fingerprint
+           (vector-ref (wasm-zone-test-bundle-cos) 0)))
+         (second-fingerprint
+          (ser/code-object-fingerprint
+           (vector-ref (wasm-zone-test-bundle-cos) 2))))
     (assert-true (string? wat))
     (assert-true (string-contains? wat "(export \"zone_0\")"))
     (assert-true (not (string-contains? wat "(export \"zone_1\")")))
@@ -187,8 +193,12 @@
     (assert-equal (length entries) 2)
     (assert-equal (native-zone-entry-index first) 0)
     (assert-equal (native-zone-entry-export-name first) "zone_0")
+    (assert-equal (native-zone-entry-fingerprint first)
+                  first-fingerprint)
     (assert-equal (native-zone-entry-index second) 2)
-    (assert-equal (native-zone-entry-export-name second) "zone_2"))))
+    (assert-equal (native-zone-entry-export-name second) "zone_2")
+    (assert-equal (native-zone-entry-fingerprint second)
+                  second-fingerprint))))
 
 (test "codegen-wasm-zone: emits reader-safe manifest text" (lambda ()
   (let* ((bundle
@@ -208,8 +218,10 @@
     (assert-equal (length entries) 2)
     (assert-equal (native-zone-entry-index (car entries)) 0)
     (assert-equal (native-zone-entry-export-name (car entries)) "zone_0")
+    (assert-true (string? (native-zone-entry-fingerprint (car entries))))
     (assert-equal (native-zone-entry-index (cadr entries)) 2)
-    (assert-equal (native-zone-entry-export-name (cadr entries)) "zone_2"))))
+    (assert-equal (native-zone-entry-export-name (cadr entries)) "zone_2")
+    (assert-true (string? (native-zone-entry-fingerprint (cadr entries)))))))
 
 (test "codegen-wasm-zone: archive text emits one manifest for multiple units" (lambda ()
   (let* ((archive-a
@@ -247,6 +259,8 @@
     (assert-equal (native-zone-entry-unit-id first) 'zone-a)
     (assert-equal (native-zone-entry-index first) 0)
     (assert-equal (native-zone-entry-export-name first) "unit_0_zone_0")
+    (assert-true (string? (native-zone-entry-fingerprint first)))
     (assert-equal (native-zone-entry-unit-id second) 'zone-b)
     (assert-equal (native-zone-entry-index second) 0)
-    (assert-equal (native-zone-entry-export-name second) "unit_1_zone_0"))))
+    (assert-equal (native-zone-entry-export-name second) "unit_1_zone_0")
+    (assert-true (string? (native-zone-entry-fingerprint second))))))
