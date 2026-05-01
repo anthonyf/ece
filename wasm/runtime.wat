@@ -7217,6 +7217,30 @@
       (call $cons (call $deref-handle (local.get $car))
                   (call $deref-handle (local.get $cdr)))))
 
+  (func (export "h_symbol_1") (param $cp i32) (result i32)
+    (local $str (ref $string))
+    (local.set $str (array.new_default $string (i32.const 1)))
+    (array.set $string (local.get $str) (i32.const 0) (local.get $cp))
+    (call $alloc-handle (call $intern (local.get $str))))
+
+  (func (export "h_lookup") (param $name-handle i32) (param $env-handle i32) (result i32)
+    (call $alloc-handle
+      (call $lookup-variable-value
+        (ref.cast (ref $symbol) (call $deref-handle (local.get $name-handle)))
+        (call $deref-handle (local.get $env-handle)))))
+
+  (func (export "h_primitive_p") (param $handle i32) (result i32)
+    (call $is-primitive (call $deref-handle (local.get $handle))))
+
+  (func (export "h_apply_primitive") (param $prim-handle i32) (param $args-handle i32) (result i32)
+    (call $alloc-handle
+      (call $apply-primitive
+        (ref.cast (ref $primitive) (call $deref-handle (local.get $prim-handle)))
+        (call $deref-handle (local.get $args-handle)))))
+
+  (func (export "h_error_sentinel_p") (param $handle i32) (result i32)
+    (ref.test (ref $error-sentinel) (call $deref-handle (local.get $handle))))
+
   (func (export "h_primitive") (param $id i32) (result i32)
     (call $alloc-handle (call $make-primitive (local.get $id))))
 

@@ -329,6 +329,11 @@ async function runGeneratedZoneIntegrationTests(w, envH) {
         h_fixnum: w.h_fixnum,
         h_nil: w.h_nil,
         h_cons: w.h_cons,
+        h_symbol_1: w.h_symbol_1,
+        h_lookup: w.h_lookup,
+        h_primitive_p: w.h_primitive_p,
+        h_apply_primitive: w.h_apply_primitive,
+        h_error_sentinel_p: w.h_error_sentinel_p,
         pair_car: w.pair_car,
         pair_cdr: w.pair_cdr,
         h_vector: w.h_vector,
@@ -359,6 +364,92 @@ async function runGeneratedZoneIntegrationTests(w, envH) {
 
     assert(w.h_fixnum_val(result) === 77,
       `expected generated native return 77, got ${w.h_fixnum_val(result)}`);
+  });
+
+  await iTest("generated register-machine WASM zone applies primitive through VM", async () => {
+    const watHandle = eceEval(`
+      (begin
+        (define generated-plus-co (mc-compile-to-code-object '(+ 1 2)))
+        (%code-object-set-archive-key! generated-plus-co (cons 'generated-plus 0))
+        (generate-register-machine-wasm-zone generated-plus-co "zone_plus_0"))`);
+    const watText = ECE._eceToJs(watHandle);
+    assert(typeof watText === "string", "expected generated plus WAT string");
+    assert(watText.includes('(export "zone_plus_0")'), "generated WAT missing plus export");
+    assert((watText.match(/h_lookup/g) || []).length >= 2,
+      "generated WAT must look up + through the VM");
+    assert((watText.match(/h_apply_primitive/g) || []).length >= 2,
+      "generated WAT must apply through the VM");
+
+    const zoneBytes = compileWat(watText, "generated-plus-zone");
+    const { instance } = await WebAssembly.instantiate(zoneBytes, generatedZoneImports());
+
+    globalThis.__eceGeneratedPlusZone0 = instance.exports.zone_plus_0;
+    const result = eceEval(`
+      (begin
+        (register-native-zone! 'generated-plus 0
+          (%js-eval "globalThis.__eceGeneratedPlusZone0"))
+        (execute-code-object generated-plus-co))`);
+
+    assert(w.h_fixnum_val(result) === 3,
+      `expected generated primitive result 3, got ${w.h_fixnum_val(result)}`);
+  });
+
+  await iTest("generated register-machine WASM zone bails on lookup error sentinel", async () => {
+    const watHandle = eceEval(`
+      (begin
+        (define generated-plus-unbound-co (mc-compile-to-code-object '(+ x 2)))
+        (%code-object-set-archive-key! generated-plus-unbound-co
+          (cons 'generated-plus-unbound 0))
+        (generate-register-machine-wasm-zone generated-plus-unbound-co
+          "zone_plus_unbound_0"))`);
+    const watText = ECE._eceToJs(watHandle);
+    assert(typeof watText === "string", "expected generated plus unbound WAT string");
+    assert(watText.includes('h_error_sentinel_p'), "generated WAT must check lookup errors");
+
+    const zoneBytes = compileWat(watText, "generated-plus-unbound-zone");
+    const { instance } = await WebAssembly.instantiate(zoneBytes, generatedZoneImports());
+
+    globalThis.__eceGeneratedPlusUnboundZone0 = instance.exports.zone_plus_unbound_0;
+    const result = eceEval(`
+      (begin
+        (register-native-zone! 'generated-plus-unbound 0
+          (%js-eval "globalThis.__eceGeneratedPlusUnboundZone0"))
+        (guard (e ((error-object? e) (error-object-message e)))
+          (execute-code-object generated-plus-unbound-co)))`);
+
+    const message = ECE._eceToJs(result);
+    assert(message === "Unbound variable: x",
+      `expected catchable unbound x error, got ${JSON.stringify(message)}`);
+  });
+
+  await iTest("generated register-machine WASM zone bails if primitive binding changes", async () => {
+    const watHandle = eceEval(`
+      (begin
+        (define generated-plus-rebind-co (mc-compile-to-code-object '(+ 1 2)))
+        (%code-object-set-archive-key! generated-plus-rebind-co
+          (cons 'generated-plus-rebind 0))
+        (generate-register-machine-wasm-zone generated-plus-rebind-co
+          "zone_plus_rebind_0"))`);
+    const watText = ECE._eceToJs(watHandle);
+    assert(typeof watText === "string", "expected generated plus rebind WAT string");
+
+    const zoneBytes = compileWat(watText, "generated-plus-rebind-zone");
+    const { instance } = await WebAssembly.instantiate(zoneBytes, generatedZoneImports());
+
+    globalThis.__eceGeneratedPlusRebindZone0 = instance.exports.zone_plus_rebind_0;
+    const result = eceEval(`
+      (begin
+        (register-native-zone! 'generated-plus-rebind 0
+          (%js-eval "globalThis.__eceGeneratedPlusRebindZone0"))
+        (define generated-plus-original +)
+        (set! + (lambda (a b) 44))
+        (define generated-plus-rebound-result
+          (execute-code-object generated-plus-rebind-co))
+        (set! + generated-plus-original)
+        generated-plus-rebound-result)`);
+
+    assert(w.h_fixnum_val(result) === 44,
+      `expected rebound + fallback result 44, got ${w.h_fixnum_val(result)}`);
   });
 
   await iTest("generated register-machine WASM zone returns direct nil constant", async () => {
@@ -526,18 +617,21 @@ async function runGeneratedZoneIntegrationTests(w, envH) {
     const watText = ECE._eceToJs(watHandle);
     assert(typeof watText === "string", "expected generated bundle WAT string");
     assert(watText.includes('(export "zone_0")'), "bundle WAT missing zone_0");
-    assert(!watText.includes('(export "zone_1")'), "bundle WAT should skip unsupported zone_1");
+    assert(watText.includes('(export "zone_1")'), "bundle WAT missing zone_1");
     assert(watText.includes('(export "zone_2")'), "bundle WAT missing zone_2");
 
     const zoneBytes = compileWat(watText, "generated-bundle-zones");
     const { instance } = await WebAssembly.instantiate(zoneBytes, generatedZoneImports());
 
     globalThis.__eceGeneratedBundleZone0 = instance.exports.zone_0;
+    globalThis.__eceGeneratedBundleZone1 = instance.exports.zone_1;
     globalThis.__eceGeneratedBundleZone2 = instance.exports.zone_2;
     const result = eceEval(`
       (begin
         (register-native-zone! 'generated-bundle 0
           (%js-eval "globalThis.__eceGeneratedBundleZone0"))
+        (register-native-zone! 'generated-bundle 1
+          (%js-eval "globalThis.__eceGeneratedBundleZone1"))
         (register-native-zone! 'generated-bundle 2
           (%js-eval "globalThis.__eceGeneratedBundleZone2"))
         (list
