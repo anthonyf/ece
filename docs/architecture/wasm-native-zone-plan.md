@@ -99,9 +99,12 @@ The policy functions should live in ECE:
 ```
 
 The exact async representation can evolve. For the first implementation, the JS
-capability layer can expose callback-accepting or promise-backed primitives, and
-`wasm-host.scm` can wrap them in whatever ECE's browser event model supports at
-that point.
+capability layer exposes synchronous reads from a JS-managed resource cache and
+synchronous `WebAssembly.Module`/`WebAssembly.Instance` construction. That keeps
+`wasm-host.scm` policy synchronous for now: browser or server glue fetches
+artifacts first, seeds the cache, then asks ECE to load the native-zone module.
+A promise-backed API can be layered above this once ECE's browser event model
+needs direct fetch orchestration.
 
 ## Native Zone Manifest
 

@@ -248,11 +248,10 @@ Archive-scale generation emits one side-module WAT plus a manifest that maps
 supported code-object indexes to exports; unsupported entries are simply absent
 from the manifest and remain interpreted.
 
-The intended next step is an ECE-authored WASM host layer plus a WASM native-zone
-registry. JavaScript should provide only browser capabilities such as root VM
-instantiation, `fetch`, side-module instantiation, and promise/import-object
-bridging. ECE code should own archive reload policy, native-zone manifest
-parsing, `(unit-id . co-index)` registration, and interpreter fallback.
+The ECE-authored WASM host layer owns native-zone manifest parsing,
+`(unit-id . co-index)` registration, and interpreter fallback. JavaScript
+provides the raw host capabilities for cached resource reads, side-module
+instantiation, export lookup, and native-zone import-object construction.
 That design is documented in [`wasm-native-zone-plan.md`](wasm-native-zone-plan.md).
 
 ## Current Parity Boundaries
