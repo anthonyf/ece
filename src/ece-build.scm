@@ -81,7 +81,8 @@ to accumulate without quadratic allocation."
 
 (define (parse-build-args argv)
   "Parse ece-build CLI args. Returns
- (list target output-dir standalone? module-name entry-name source-files help?)
+ (list target output-dir standalone? module-name entry-name source-files help?
+       native-zones?)
 or signals error."
   (let loop ((rest argv)
              (target #f)
@@ -90,17 +91,18 @@ or signals error."
              (module-name #f)
              (entry-name #f)
              (sources '())
-             (help? #f))
+             (help? #f)
+             (native-zones? #f))
     (cond
      ((null? rest)
       (list target output-dir standalone? module-name entry-name
-            (reverse sources) help?))
+            (reverse sources) help? native-zones?))
      (else
       (let ((arg (car rest)))
         (cond
          ((or (string=? arg "-h") (string=? arg "--help"))
           (loop (cdr rest) target output-dir standalone? module-name entry-name
-                sources #t))
+                sources #t native-zones?))
          ((string=? arg "--target")
           (if (null? (cdr rest))
               (begin
@@ -108,7 +110,7 @@ or signals error."
                 (newline)
                 (exit 1))
               (loop (cddr rest) (cadr rest) output-dir standalone? module-name
-                    entry-name sources help?)))
+                    entry-name sources help? native-zones?)))
          ((string=? arg "-o")
           (if (null? (cdr rest))
               (begin
@@ -116,9 +118,13 @@ or signals error."
                 (newline)
                 (exit 1))
               (loop (cddr rest) target (cadr rest) standalone? module-name
-                    entry-name sources help?)))
+                    entry-name sources help? native-zones?)))
          ((string=? arg "--standalone")
-          (loop (cdr rest) target output-dir #t module-name entry-name sources help?))
+          (loop (cdr rest) target output-dir #t module-name entry-name sources
+                help? native-zones?))
+         ((string=? arg "--native-zones")
+          (loop (cdr rest) target output-dir standalone? module-name entry-name
+                sources help? #t))
          ((string=? arg "--module")
           (if (null? (cdr rest))
               (begin
@@ -126,7 +132,7 @@ or signals error."
                 (newline)
                 (exit 1))
               (loop (cddr rest) target output-dir standalone? (cadr rest)
-                    entry-name sources help?)))
+                    entry-name sources help? native-zones?)))
          ((string=? arg "--entry")
           (if (null? (cdr rest))
               (begin
@@ -134,7 +140,7 @@ or signals error."
                 (newline)
                 (exit 1))
               (loop (cddr rest) target output-dir standalone? module-name
-                    (cadr rest) sources help?)))
+                    (cadr rest) sources help? native-zones?)))
          ((starts-with? arg "-")
           (display "Error: Unknown option: ")
           (display arg)
@@ -142,7 +148,7 @@ or signals error."
           (exit 1))
          (else
           (loop (cdr rest) target output-dir standalone? module-name entry-name
-                (cons arg sources) help?))))))))
+                (cons arg sources) help? native-zones?))))))))
 
 (define (ece-build-usage)
   (display "Usage: ece-build --target web|cl|test-page -o <dir> [--standalone] <source.scm> ...")
@@ -156,6 +162,8 @@ or signals error."
   (newline)
   (display "  --standalone                Web: base64-encode all assets for file:// use")
   (newline)
+  (display "  --native-zones             Web: emit app-zones.wat + app-zones.manifest")
+  (newline)
   (display "  --module MODULE            CL: run MODULE's --entry export")
   (newline)
   (display "  --entry SYMBOL             CL: exported procedure to run")
@@ -168,7 +176,8 @@ or signals error."
   (display "  <source.scm> ...  One or more .scm source files in dependency order")
   (newline))
 
-(define (build-args-error target output-dir sources module-name entry-name)
+(define (build-args-error/native-zones target output-dir sources module-name entry-name
+                                       native-zones?)
   "Return a CLI validation error string for build args, or #f when valid."
   (cond
    ((not target)
@@ -181,6 +190,8 @@ or signals error."
     "Error: -o is required")
    ((null? sources)
     "Error: At least one source .scm file is required")
+   ((and native-zones? (not (string=? target "web")))
+    "Error: --native-zones is only supported with --target web")
    ((and (or module-name entry-name) (not (string=? target "cl")))
     "Error: --module and --entry are only supported with --target cl")
    ((and module-name (not entry-name))
@@ -189,8 +200,16 @@ or signals error."
     "Error: --entry requires --module")
    (else #f)))
 
-(define (validate-build-args target output-dir sources module-name entry-name)
-  (let ((message (build-args-error target output-dir sources module-name entry-name)))
+(define (build-args-error target output-dir sources module-name entry-name)
+  "Return a CLI validation error string for build args, or #f when valid."
+  (build-args-error/native-zones target output-dir sources module-name entry-name
+                                 #f))
+
+(define (validate-build-args/native-zones target output-dir sources module-name entry-name
+                                          native-zones?)
+  (let ((message (build-args-error/native-zones
+                  target output-dir sources module-name entry-name
+                  native-zones?)))
     (when message
       (display message)
       (newline)
@@ -206,6 +225,10 @@ or signals error."
        (newline)
        (exit 1)))
    sources))
+
+(define (validate-build-args target output-dir sources module-name entry-name)
+  (validate-build-args/native-zones target output-dir sources module-name entry-name
+                                    #f))
 
 ;; ---- Target: web ----
 
@@ -304,6 +327,27 @@ the WASM binary as a base64 constant (standalone mode)."
     (display output-dir)
     (display "/")
     (newline)))
+
+(define (write-web-native-zone-artifacts bundle-path output-dir)
+  "Emit WAT and manifest artifacts for BUNDLE-PATH.
+The WAT file is intentionally left as WAT because ECE has no process primitive
+for invoking wasm-as. The manifest names app-zones.wasm, which is the expected
+assembled side-module filename."
+  (let* ((bundle (generate-register-machine-wasm-zone-archive-file
+                  bundle-path
+                  "app-zones.wasm"))
+         (wat-path (path-join output-dir "app-zones.wat"))
+         (manifest-path (path-join output-dir "app-zones.manifest")))
+    (write-string-to-file (wasm-zone-bundle-wat bundle) wat-path)
+    (write-string-to-file (wasm-zone-bundle-manifest-text bundle)
+                          manifest-path)
+    (display "Native-zone WAT: ")
+    (display wat-path)
+    (newline)
+    (display "Native-zone manifest: ")
+    (display manifest-path)
+    (newline)
+    bundle))
 
 ;; ---- Target: cl ----
 
@@ -416,11 +460,13 @@ the WASM binary as a base64 constant (standalone mode)."
          (module-name (list-ref parsed 3))
          (entry-name (list-ref parsed 4))
          (sources (list-ref parsed 5))
-         (help? (list-ref parsed 6)))
+         (help? (list-ref parsed 6))
+         (native-zones? (list-ref parsed 7)))
     (when help?
       (ece-build-usage)
       (exit 0))
-    (validate-build-args target output-dir sources module-name entry-name)
+    (validate-build-args/native-zones target output-dir sources module-name entry-name
+                                      native-zones?)
     ;; Ensure output directory exists
     (%make-directory output-dir)
     ;; Compile sources into a bundle
@@ -433,6 +479,8 @@ the WASM binary as a base64 constant (standalone mode)."
       (display "Bundle: ")
       (display bundle-path)
       (newline)
+      (when native-zones?
+        (write-web-native-zone-artifacts bundle-path output-dir))
       ;; Package for target
       (let ((home (ece-home)))
         (cond

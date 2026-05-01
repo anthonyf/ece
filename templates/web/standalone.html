@@ -44,7 +44,8 @@
         canvas: ECE.canvas,
         timing: ECE.timing,
         math: ECE.math,
-        ffi: ECE.ffi
+        ffi: ECE.ffi,
+        wasm_host: ECE.wasmHost
       };
       const { instance } = await WebAssembly.instantiate(wasmBytes, imports);
       ECE.wasm = instance.exports;

@@ -16,7 +16,9 @@
              :source "game/main.scm"
              :module-url "game-main-zones.wasm"
              :entries ((:index 0 :export "zone_0" :fingerprint "fp0")
-                       (:index 7 :export "zone_7")))))
+                       (:unit-id (module (game helper) 0)
+                        :index 7
+                        :export "zone_7")))))
          (entries (native-zone-manifest-entries manifest))
          (first (car entries))
          (second (cadr entries)))
@@ -29,6 +31,12 @@
     (assert-equal 0 (native-zone-entry-index first))
     (assert-equal "zone_0" (native-zone-entry-export-name first))
     (assert-equal "fp0" (native-zone-entry-fingerprint first))
+    (assert-equal '(module (game main) 0)
+                  (native-zone-entry-effective-unit-id manifest first))
+    (assert-equal '(module (game helper) 0)
+                  (native-zone-entry-unit-id second))
+    (assert-equal '(module (game helper) 0)
+                  (native-zone-entry-effective-unit-id manifest second))
     (assert-equal 7 (native-zone-entry-index second))
     (assert-equal "zone_7" (native-zone-entry-export-name second))
     (assert-equal #f (native-zone-entry-fingerprint second)))))
@@ -77,7 +85,32 @@
                :unit-id app
                :entries ((:index 0 :export "zone_0")
                          (:index 0 :export "zone_0b"))))))))
-    (assert-equal "wasm-host: native-zone manifest has duplicate :index"
+    (assert-equal "wasm-host: native-zone manifest has duplicate (:unit-id, :index) entry"
+                  message))))
+
+(test "wasm-host: allows duplicate indexes for different entry unit ids" (lambda ()
+  (let* ((manifest
+          (validate-native-zone-manifest
+           '(:ece-native-zones
+             :version 1
+             :unit-id app
+             :entries ((:unit-id app-a :index 0 :export "zone_a_0")
+                       (:unit-id app-b :index 0 :export "zone_b_0")))))
+         (entries (native-zone-manifest-entries manifest)))
+    (assert-equal 2 (length entries))
+    (assert-equal 'app-a (native-zone-entry-unit-id (car entries)))
+    (assert-equal 'app-b (native-zone-entry-unit-id (cadr entries))))))
+
+(test "wasm-host: rejects entry unit-id #f" (lambda ()
+  (let ((message
+         (wasm-host-test-error-message
+          (lambda ()
+            (validate-native-zone-manifest
+             '(:ece-native-zones
+               :version 1
+               :unit-id app
+               :entries ((:unit-id #f :index 0 :export "zone_0"))))))))
+    (assert-equal "wasm-host: native-zone entry :unit-id must not be #f"
                   message))))
 
 (test "wasm-host: rejects improper manifest plists" (lambda ()

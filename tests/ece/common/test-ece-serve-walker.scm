@@ -268,6 +268,10 @@ the path-join of *walker-tmp-dir* is a subdir."
                 "text/css; charset=utf-8")
   (assert-equal (ece-serve/content-type-for "runtime.wasm")
                 "application/wasm")
+  (assert-equal (ece-serve/content-type-for "app-zones.wat")
+                "text/plain; charset=utf-8")
+  (assert-equal (ece-serve/content-type-for "app-zones.manifest")
+                "text/plain; charset=utf-8")
   (assert-equal (ece-serve/content-type-for "whatever.bin")
                 "application/octet-stream")))
 
