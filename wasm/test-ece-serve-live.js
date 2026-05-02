@@ -61,7 +61,7 @@ function expectedWebSocketAccept(key) {
   return crypto.createHash("sha1").update(key + WS_GUID).digest("base64");
 }
 
-function connectDevWebSocket(port) {
+function connectDevWebSocket(port, token) {
   const socket = net.createConnection({ host: "127.0.0.1", port });
   let buffer = Buffer.alloc(0);
 
@@ -140,7 +140,7 @@ function connectDevWebSocket(port) {
 
   const key = crypto.randomBytes(16).toString("base64");
   const request = [
-    "GET /ws HTTP/1.1",
+    `GET /ws?token=${token} HTTP/1.1`,
     `Host: 127.0.0.1:${port}`,
     "Upgrade: websocket",
     "Connection: Upgrade",
@@ -208,9 +208,10 @@ async function runAttempt() {
   await fs.writeFile(ENTRY, "(define live-marker 1)\n", "utf8");
 
   const port = await freePort();
+  const devToken = "smoke-token";
   const server = childProcess.spawn(
     SERVER,
-    [ENTRY, "--port", String(port), "--poll-interval", "50"],
+    [ENTRY, "--port", String(port), "--poll-interval", "50", "--dev-token", devToken],
     { cwd: ROOT, stdio: ["ignore", "pipe", "pipe"] });
   let serverOutput = "";
   server.stdout.on("data", chunk => { serverOutput += chunk.toString(); });
@@ -222,7 +223,7 @@ async function runAttempt() {
     const response = await Promise.race([waitForHttp(port), serverExitBeforeReady(server)]);
     ready = true;
     const html = await response.text();
-    const expectedWsUrl = `ws://127.0.0.1:${port}/ws`;
+    const expectedWsUrl = `ws://127.0.0.1:${port}/ws?token=${devToken}`;
 
     if (!html.includes(`window.ECE_DEV_WS_URL = "${expectedWsUrl}";`)) {
       throw new Error("sandbox index did not include the injected dev WebSocket URL");
@@ -231,9 +232,39 @@ async function runAttempt() {
       throw new Error("sandbox index response did not disable caching");
     }
 
-    wsClient = await connectDevWebSocket(port);
+    wsClient = await connectDevWebSocket(port, devToken);
 
-    const nextMessage = withTimeout(
+    const evalMessage = withTimeout(
+      wsClient.nextTextFrame(),
+      7000,
+      "eval-source");
+
+    const evalResponse = await fetch(`http://127.0.0.1:${port}/__ece_dev/eval-source`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+        "X-ECE-Dev-Token": devToken,
+        "X-ECE-Path": "editor-buffer.scm"
+      },
+      body: "(define editor-live-marker 41)\n(+ editor-live-marker 1)\n"
+    });
+    if (!evalResponse.ok) {
+      throw new Error(`editor eval-source POST failed: HTTP ${evalResponse.status}`);
+    }
+
+    const evalRaw = await evalMessage;
+    const evalUpdate = JSON.parse(evalRaw);
+    if (evalUpdate.type !== "eval-source") {
+      throw new Error(`expected eval-source, got ${evalUpdate.type}`);
+    }
+    if (evalUpdate.path !== "editor-buffer.scm") {
+      throw new Error(`eval-source path mismatch: ${evalUpdate.path}`);
+    }
+    if (!String(evalUpdate.source || "").includes("editor-live-marker")) {
+      throw new Error("eval-source did not include posted source");
+    }
+
+    const updateMessage = withTimeout(
       wsClient.nextTextFrame(),
       7000,
       "source-update");
@@ -243,7 +274,7 @@ async function runAttempt() {
     await delay(1200);
     await fs.writeFile(ENTRY, "(define live-marker 2)\n(display live-marker)\n", "utf8");
 
-    const raw = await nextMessage;
+    const raw = await updateMessage;
     const message = JSON.parse(raw);
     if (message.type !== "source-update") {
       throw new Error(`expected source-update, got ${message.type}`);
@@ -256,8 +287,9 @@ async function runAttempt() {
     }
 
     console.log("PASS: ece-serve injected the dev WebSocket URL");
+    console.log("PASS: ece-serve relayed an editor eval-source command");
     console.log("PASS: ece-serve broadcast a source-update for a watched edit");
-    console.log("ece-serve live reload smoke test: 2 passed, 0 failed");
+    console.log("ece-serve live reload smoke test: 3 passed, 0 failed");
   } catch (err) {
     err.serverOutput = serverOutput;
     err.retryable = !ready;

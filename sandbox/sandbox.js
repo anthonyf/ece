@@ -343,7 +343,7 @@ const Sandbox = {
       Sandbox.appendReplSystem(";; dev server sent malformed JSON");
       return;
     }
-    if (!msg || msg.type !== "source-update") return;
+    if (!msg || (msg.type !== "source-update" && msg.type !== "eval-source")) return;
     Sandbox.applyDevServerSourceUpdate(String(msg.path || ""), String(msg.source || ""));
   },
 

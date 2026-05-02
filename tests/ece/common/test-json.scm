@@ -120,3 +120,8 @@
     ;; escaped in the JSON envelope.
     (assert-equal env
       "{\"type\":\"source-update\",\"path\":\"foo.scm\",\"source\":\"(display \\\"hi\\\")\\n(newline)\"}"))))
+
+(test "json: eval-source envelope" (lambda ()
+  (let ((env (json-eval-source "scratch" "(+ 1 2)")))
+    (assert-equal env
+      "{\"type\":\"eval-source\",\"path\":\"scratch\",\"source\":\"(+ 1 2)\"}"))))

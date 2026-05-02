@@ -96,9 +96,11 @@
 (test "http-codec: parse handles POST method" (lambda ()
   (let ((req (http-parse-request
               (string-append "POST /api HTTP/1.1" crlf
-                             "Content-Length: 5" crlf-crlf))))
+                             "Content-Length: 5" crlf-crlf
+                             "hello"))))
     (assert-equal (http-request-method req) "POST")
-    (assert-equal (http-header-ref req "Content-Length") "5"))))
+    (assert-equal (http-header-ref req "Content-Length") "5")
+    (assert-equal (http-request-body req) "hello"))))
 
 (test "http-codec: parse handles header with colon in value" (lambda ()
   (let ((req (http-parse-request

@@ -2,7 +2,7 @@
 ;;;
 ;;; Pure request parser + response builder. No sockets, no fibers, no
 ;;; streaming — the caller is responsible for accumulating bytes from
-;;; tcp-recv-nowait until a full header block has arrived, then calling
+;;; tcp-recv-nowait until a full request has arrived, then calling
 ;;; http-parse-request on the accumulated string.
 ;;;
 ;;; Scope intentionally narrow: the dev server only needs GET for static
@@ -31,6 +31,7 @@
 ;;;  (http-request-path req)        — "/foo" / "/"
 ;;;  (http-request-version req)     — "HTTP/1.1"
 ;;;  (http-request-headers req)     — alist ((lowercased-name . value) ...)
+;;;  (http-request-body req)        — request body string, or ""
 ;;;  (http-header-ref req name)     — case-insensitive lookup, #f if absent
 ;;;
 ;;;  (http-build-response status reason headers body)
@@ -57,7 +58,7 @@
 
 ;; ---- Record ----
 
-(define-record http-request method path version headers)
+(define-record http-request method path version headers body)
 
 ;; ---- Byte/string conversion helpers at the TCP boundary ----
 
@@ -185,7 +186,7 @@ any line is unparseable."
 
 ;; ---- Request parser ----
 
-(define (%http-build-request req-line headers)
+(define (%http-build-request req-line headers body)
   "Construct an http-request from a parsed request-line list and parsed
 header alist. Factored out of http-parse-request so the nesting level
 stays readable."
@@ -193,7 +194,8 @@ stays readable."
    (car req-line)
    (car (cdr req-line))
    (car (cdr (cdr req-line)))
-   headers))
+   headers
+   body))
 
 (define (http-parse-request s)
   "Parse a complete HTTP/1.1 request header block from string S.
@@ -214,7 +216,10 @@ request line or headers are not parseable."
                     (let ((headers (%http-parse-header-lines (cdr lines))))
                       (if (eq? headers 'malformed)
                           'malformed
-                          (%http-build-request req-line headers))))))))))
+                          (%http-build-request
+                           req-line
+                           headers
+                           (substring s end (string-length s))))))))))))
 
 ;; ---- Case-insensitive header lookup ----
 

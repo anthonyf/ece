@@ -61,6 +61,16 @@ When not on PATH, derived from this file's location (emacs/../bin/ece-repl)."
   :type '(repeat string)
   :group 'geiser-ece)
 
+(geiser-custom--defcustom geiser-ece-dev-server-url "http://127.0.0.1:8080"
+  "Base URL for an ece-serve process used by live browser development."
+  :type 'string
+  :group 'geiser-ece)
+
+(geiser-custom--defcustom geiser-ece-dev-server-token nil
+  "Dev token printed by ece-serve for editor/browser live development."
+  :type '(choice (const nil) string)
+  :group 'geiser-ece)
+
 ;;; Implementation
 
 (defconst geiser-ece--prompt-regexp "ece> "
@@ -300,6 +310,69 @@ and the legacy `eldoc-documentation-function' API."
 
 (add-hook 'geiser-mode-hook #'geiser-ece--setup-eldoc)
 (add-hook 'geiser-repl-mode-hook #'geiser-ece--setup-eldoc)
+
+;;; ece-serve browser dev integration
+
+(defun geiser-ece--dev-post (endpoint body &optional source-path)
+  "POST BODY to ece-serve ENDPOINT.
+When SOURCE-PATH is non-nil, pass it as X-ECE-Path so the browser dev
+client can report where the source came from."
+  (require 'url)
+  (unless (and geiser-ece-dev-server-token
+               (not (string-empty-p geiser-ece-dev-server-token)))
+    (error "Set geiser-ece-dev-server-token to the token printed by ece-serve"))
+  (let* ((url-request-method "POST")
+         (url-request-extra-headers
+          (append '(("Content-Type" . "text/plain; charset=utf-8"))
+                  `(("X-ECE-Dev-Token" . ,geiser-ece-dev-server-token))
+                  (when source-path
+                    `(("X-ECE-Path" . ,source-path)))))
+         (url-request-data (encode-coding-string body 'utf-8))
+         (url (concat (string-remove-suffix "/" geiser-ece-dev-server-url)
+                      endpoint))
+         (buffer (url-retrieve-synchronously url t t 5)))
+    (unless buffer
+      (error "ece-serve did not respond at %s" url))
+    (unwind-protect
+        (with-current-buffer buffer
+          (goto-char (point-min))
+          (unless (looking-at "HTTP/[0-9.]+ 2[0-9][0-9]")
+            (let ((status (buffer-substring-no-properties
+                           (line-beginning-position)
+                           (line-end-position))))
+              (error "ece-serve command failed: %s" status))))
+      (kill-buffer buffer))))
+
+;;;###autoload
+(defun geiser-ece-dev-eval-region (start end)
+  "Send the active region to ece-serve for browser-side evaluation."
+  (interactive "r")
+  (geiser-ece--dev-post "/__ece_dev/eval-source"
+                        (buffer-substring-no-properties start end)
+                        (or buffer-file-name (buffer-name)))
+  (message "Sent region to ece-serve"))
+
+;;;###autoload
+(defun geiser-ece-dev-load-buffer ()
+  "Send the current buffer contents to ece-serve for browser-side evaluation."
+  (interactive)
+  (geiser-ece--dev-post "/__ece_dev/eval-source"
+                        (buffer-substring-no-properties (point-min) (point-max))
+                        (or buffer-file-name (buffer-name)))
+  (message "Sent buffer to ece-serve"))
+
+;;;###autoload
+(defun geiser-ece-dev-reload-file ()
+  "Save the current file and send its source to ece-serve."
+  (interactive)
+  (unless buffer-file-name
+    (error "Current buffer is not visiting a file"))
+  (when (buffer-modified-p)
+    (save-buffer))
+  (geiser-ece--dev-post "/__ece_dev/eval-source"
+                        (buffer-substring-no-properties (point-min) (point-max))
+                        buffer-file-name)
+  (message "Sent %s to ece-serve" buffer-file-name))
 
 ;;; Registration
 
