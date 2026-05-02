@@ -291,7 +291,20 @@ the path-join of *walker-tmp-dir* is a subdir."
     ;; Post-audit: dev server must set no-store so manual reloads pick
     ;; up edits to sandbox/index.html instead of a browser cache.
     (assert-true (string-contains? resp "Cache-Control: no-store"))
-    (assert-true (string-contains? resp "<!DOCTYPE html>")))))
+    (assert-true (string-contains? resp "<!DOCTYPE html>"))
+    (assert-true (string-contains? resp
+                                   "window.ECE_DEV_WS_URL = \"ws://127.0.0.1:8080/ws\";")))))
+
+(test "ece-serve/inject-dev-ws-url: injects current WebSocket URL" (lambda ()
+  (let ((old *ece-serve/current-port*))
+    (set! *ece-serve/current-port* 8123)
+    (let ((html (string-append "<script>"
+                               *ece-serve/dev-ws-placeholder*
+                               "</script>")))
+      (assert-equal
+       (ece-serve/inject-dev-ws-url html)
+       "<script>window.ECE_DEV_WS_URL = \"ws://127.0.0.1:8123/ws\";</script>"))
+    (set! *ece-serve/current-port* old))))
 
 (test "ece-serve/dispatch: GET /nonexistent returns 404" (lambda ()
   (let* ((crlf (string-append (string (integer->char 13)) (string #\newline)))

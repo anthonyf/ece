@@ -4,9 +4,9 @@
 ;;; that (a) serves the sandbox static assets so the browser can load
 ;;; them, and (b) watches the program's `(load ...)` closure for
 ;;; modifications and pushes source-update messages to connected
-;;; WebSocket clients. The browser-side WebSocket client and the
-;;; `eval-string-last` integration land in PR B3 — this file brings the
-;;; server itself up and makes it curl-able and wscat-able.
+;;; WebSocket clients. The browser-side JavaScript remains a thin
+;;; capability bridge; source-update evaluation policy lives in
+;;; browser-lib.scm's browser dev-client helpers.
 ;;;
 ;;; Architecture — four fiber roles cooperating through a single
 ;;; `src/scheduler.scm` instance:
@@ -127,6 +127,8 @@ between http-build-response (string body) and build-binary-response
 ;; supported — other methods return 405.
 
 (define *ece-serve/sandbox-root* "sandbox")
+(define *ece-serve/current-port* 8080)
+(define *ece-serve/dev-ws-placeholder* "window.ECE_DEV_WS_URL = null;")
 
 (define (ece-serve/resolve-path request-path)
   "Map an HTTP request path to a filesystem path under the sandbox
@@ -254,7 +256,54 @@ Returns a 400/404 response STRING on miss (both are text)."
                                        ;; fetched fresh so browser-reload
                                        ;; picks up manual edits.
                                        (cons "Cache-Control" "no-store"))
-                                 body)))))))))
+                                 (if (string=? fs-path
+                                               (path-join *ece-serve/sandbox-root*
+                                                          "index.html"))
+                                     (ece-serve/inject-dev-ws-url body)
+                                     body))))))))))
+
+(define (ece-serve/dev-ws-url)
+  "Return the WebSocket URL injected into sandbox/index.html."
+  (string-append "ws://127.0.0.1:"
+                 (number->string *ece-serve/current-port*)
+                 "/ws"))
+
+(define (ece-serve/inject-dev-ws-url html)
+  "Replace the standalone sandbox dev-server placeholder with this server's
+WebSocket URL. If the placeholder is absent, return HTML unchanged so older
+or hand-edited sandbox files still serve."
+  (let ((idx (ece-serve/%string-index-of html *ece-serve/dev-ws-placeholder*)))
+    (cond
+     ((< idx 0) html)
+     (else
+      (string-append
+       (substring html 0 idx)
+       "window.ECE_DEV_WS_URL = \""
+       (ece-serve/dev-ws-url)
+       "\";"
+       (substring html
+                  (+ idx (string-length *ece-serve/dev-ws-placeholder*))
+                  (string-length html)))))))
+
+(define (ece-serve/%string-index-of haystack needle)
+  "Return the first index of NEEDLE in HAYSTACK, or -1 if absent."
+  (let ((h-len (string-length haystack))
+        (n-len (string-length needle)))
+    (cond
+     ((= n-len 0) 0)
+     ((> n-len h-len) -1)
+     (else
+      (let outer ((i 0))
+        (cond
+         ((> (+ i n-len) h-len) -1)
+         (else
+          (let inner ((j 0))
+            (cond
+             ((>= j n-len) i)
+             ((char=? (string-ref haystack (+ i j))
+                      (string-ref needle j))
+              (inner (+ j 1)))
+             (else (outer (+ i 1))))))))))))
 
 (define (ece-serve/%has-any-extension? path)
   "Test whether PATH has a file extension: a `.` somewhere after the
@@ -812,6 +861,7 @@ Options: :port (default 8080), :poll-interval (milliseconds, default 250)."
            (watch-set (ece-serve/walk-loads entry-file))
            (clients-box (ece-serve/make-clients-box))
            (server (tcp-listen port "127.0.0.1")))
+      (set! *ece-serve/current-port* port)
       (display "Dev server: http://127.0.0.1:")
       (display port)
       (display "/")

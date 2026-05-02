@@ -130,3 +130,40 @@
          (ms (js-ref->number (js-call d "getMilliseconds"))))
     (js-release! d)
     (+ (* (+ (* (+ (* h 60) m) 60) s) 1000) ms)))
+
+;; ── Dev-server live update policy ──
+
+(define (browser-dev-client/%error-message e)
+  (if (error-object? e)
+      (error-object-message e)
+      (write-to-string-flat e)))
+
+(define (browser-dev-client-handle-source-update path source)
+  "Evaluate a source-update delivered by ece-serve. JavaScript owns the
+WebSocket capability and passes decoded message fields here; ECE owns the
+reload/evaluation policy and formats the user-facing status text."
+  (let ((capture (open-output-string)))
+    (guard
+     (e (#t
+         (let ((output (get-output-string capture)))
+           (string-append
+            (if (> (string-length output) 0)
+                (string-append output "\n")
+                "")
+            ";; source update failed: "
+            path
+            "\nError: "
+            (browser-dev-client/%error-message e)))))
+     (let* ((value (parameterize ((current-output-port capture))
+                     (eval-string-last source)))
+            (output (get-output-string capture))
+            (value-text (write-to-string-flat value)))
+       (string-append
+        (if (> (string-length output) 0)
+            (string-append output "\n")
+            "")
+        ";; source updated: "
+        path
+        (if (> (string-length value-text) 0)
+            (string-append "\n" value-text)
+            ""))))))

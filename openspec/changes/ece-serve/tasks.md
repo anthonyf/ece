@@ -64,15 +64,15 @@
 
 ## 6. Browser-side integration
 
-- [ ] 6.1 In `sandbox/sandbox.js`, add a new section `// ── Dev server WebSocket ──` that runs as part of `Sandbox.init()` AFTER `bootECE()`. Check for `window.ECE_DEV_WS_URL`; if present, call a new `Sandbox.connectDevServer(url)` method. If absent, do nothing (standalone behavior unchanged).
-- [ ] 6.2 Implement `Sandbox.connectDevServer(url)`: open a WebSocket, attach `onmessage` / `onerror` / `onclose` handlers. On message: parse JSON, dispatch on `type`. For `"source-update"`: call the same code path `evalRepl()` uses (`call_ece_proc` on `eval-string-last` with the received `source` string).
-- [ ] 6.3 Factor a small helper out of `evalRepl()` — `Sandbox.evalSource(sourceText)` — that does the shared work (reset handles, call eval-string-last, handle yield, render REPL output). Both `evalRepl()` and the dev-server handler call it.
-- [ ] 6.4 On WebSocket error or close, render a brief status line to the REPL output area (`;; dev server disconnected`) and set a flag so the user knows the live loop is no longer active. Auto-reconnect is out of scope for this change.
+- [x] 6.1 In `sandbox/sandbox.js`, add a new section `// ── Dev server WebSocket ──` that runs as part of `Sandbox.init()` AFTER `bootECE()`. Check for `window.ECE_DEV_WS_URL`; if present, call a new `Sandbox.connectDevServer(url)` method. If absent, do nothing (standalone behavior unchanged).
+- [x] 6.2 Implement `Sandbox.connectDevServer(url)`: open a WebSocket, attach `onmessage` / `onerror` / `onclose` handlers. On message: parse JSON, dispatch on `type`. For `"source-update"`: pass the decoded path/source fields into the ECE-owned `browser-dev-client-handle-source-update` policy function rather than adding reload policy in JS.
+- [x] 6.3 Keep source-update policy in ECE. `src/browser-lib.scm` now defines `browser-dev-client-handle-source-update`, which captures output, calls `eval-string-last`, and formats success/error status text. `sandbox.js` remains the browser capability bridge and only handles WebSocket, JSON, DOM rendering, and yield-loop resumption.
+- [x] 6.4 On WebSocket error or close, render a brief status line to the REPL output area (`;; dev server disconnected`) and set a flag so the user knows the live loop is no longer active. Auto-reconnect is out of scope for this change.
 
 ## 7. `sandbox/index.html` injection point
 
-- [ ] 7.1 In `sandbox/index.html`, add a placeholder `<script>window.ECE_DEV_WS_URL = null;</script>` near the top of `<head>`. Standalone loads see `null` and skip the dev-server client.
-- [ ] 7.2 In `ece-serve.scm`'s `/` handler, read `sandbox/index.html`, replace `window.ECE_DEV_WS_URL = null;` with `window.ECE_DEV_WS_URL = "ws://127.0.0.1:<port>/ws";`, and return the modified HTML. A tiny substitution helper is fine; no need for a template language.
+- [x] 7.1 In `sandbox/index.html`, add a placeholder `<script>window.ECE_DEV_WS_URL = null;</script>` near the top of `<head>`. Standalone loads see `null` and skip the dev-server client.
+- [x] 7.2 In `ece-serve.scm`'s `/` handler, read `sandbox/index.html`, replace `window.ECE_DEV_WS_URL = null;` with `window.ECE_DEV_WS_URL = "ws://127.0.0.1:<port>/ws";`, and return the modified HTML. A tiny substitution helper is fine; no need for a template language.
 
 ## 8. Manual validation
 
