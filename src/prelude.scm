@@ -997,15 +997,25 @@ non-code-object atoms and sub-structure unchanged."
 
 (define (ser/stable-string-hash str)
   "Return the deterministic 32-bit FNV-1a hash for STR. This is a
-compatibility fingerprint, not a cryptographic digest."
-  (let loop ((i 0) (h 2166136261))
+compatibility fingerprint, not a cryptographic digest. Keep the intermediate
+arithmetic below the fixnum ceiling so CL and WASM produce the same value."
+  (let loop ((i 0) (hi 33052) (lo 40389))
     (if (>= i (string-length str))
-        h
-        (loop (+ i 1)
-              (modulo (* (bitwise-xor h
-                                       (char->integer (string-ref str i)))
-                         16777619)
-                      4294967296)))))
+        (+ (* hi 65536) lo)
+        (let* ((code (char->integer (string-ref str i)))
+               (xlo (bitwise-xor lo (modulo code 65536)))
+               (xhi (bitwise-xor hi (quotient code 65536)))
+               ;; FNV prime 16777619 = #x01000193 = 256 * 65536 + 403.
+               ;; (xhi * 65536 + xlo) * prime mod 2^32:
+               ;; low word = low 16 bits of xlo * 403
+               ;; high word = carry + xlo * 256 + xhi * 403
+               (p0 (* xlo 403))
+               (next-lo (modulo p0 65536))
+               (next-hi (modulo (+ (quotient p0 65536)
+                                   (* xlo 256)
+                                   (* xhi 403))
+                                65536)))
+          (loop (+ i 1) next-hi next-lo)))))
 
 (define (ser/label-entry<? a b)
   (let ((an (symbol->string (car a)))

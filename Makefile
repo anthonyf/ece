@@ -244,6 +244,28 @@ print(r.stdout, end=""); \
 print(r.stderr, end="", file=sys.stderr); \
 srv.shutdown(); \
 sys.exit(r.returncode)'
+	@echo "Building native-zone reload smoke..."
+	@mkdir -p .tmp/server-mode-reload-src-a .tmp/server-mode-reload-src-b .tmp/server-mode-reload-test .tmp/server-mode-reload-next
+	@printf '11\n' > .tmp/server-mode-reload-src-a/server-reload.scm
+	@printf '22\n' > .tmp/server-mode-reload-src-b/server-reload.scm
+	@bin/ece-build --target web --native-zones -o .tmp/server-mode-reload-test .tmp/server-mode-reload-src-a/server-reload.scm
+	@bin/ece-build --target web --native-zones -o .tmp/server-mode-reload-next .tmp/server-mode-reload-src-b/server-reload.scm
+	@wasm-as --enable-gc --enable-reference-types .tmp/server-mode-reload-test/app-zones.wat -o .tmp/server-mode-reload-test/app-zones.wasm
+	@wasm-as --enable-gc --enable-reference-types .tmp/server-mode-reload-next/app-zones.wat -o .tmp/server-mode-reload-next/app-zones.wasm
+	@echo "Starting HTTP server for native-zone reload smoke..."
+	@python3 -c '\
+import http.server, socketserver, threading, sys, subprocess, functools; \
+handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=".tmp/server-mode-reload-test"); \
+srv = socketserver.TCPServer(("127.0.0.1", 0), handler); \
+port = srv.server_address[1]; \
+print(f"Serving on port {port}"); \
+t = threading.Thread(target=srv.serve_forever, daemon=True); \
+t.start(); \
+r = subprocess.run(["node", "wasm/test-server-reload.js", f"http://127.0.0.1:{port}", ".tmp/server-mode-reload-test", ".tmp/server-mode-reload-next", "server-reload", "11", "22"], capture_output=True, text=True); \
+print(r.stdout, end=""); \
+print(r.stderr, end="", file=sys.stderr); \
+srv.shutdown(); \
+sys.exit(r.returncode)'
 
 test-web-apps: sandbox
 	@echo "Running web apps smoke test..."

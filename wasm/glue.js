@@ -409,6 +409,17 @@ const ECE = {
     return ECE.wasm.make_string(offset, len);
   },
 
+  _schemeStringLiteral(jsStr) {
+    return `"${String(jsStr).replace(/\\/g, "\\\\").replace(/"/g, "\\\"")}"`;
+  },
+
+  evalStringLast(source) {
+    const evalStr = ECE.wasm.env_lookup(ECE.globalEnvHandle, ECE.internSym("eval-string-last"));
+    return ECE.wasm.call_ece_proc(
+      evalStr,
+      ECE.wasm.h_cons(ECE.makeString(source), ECE._hNil));
+  },
+
   // Load a .ecec archive (single top-level sexp).
   // Returns a handle wrapping the init code-object.
   loadArchiveText(text) {
@@ -440,6 +451,43 @@ const ECE = {
       w.run_code_object(co, ECE.globalEnvHandle);
     }
     return co;
+  },
+
+  async reloadProgramFromUrls(archiveUrl, zoneModuleUrl = null, manifestUrl = null) {
+    if ((zoneModuleUrl && !manifestUrl) || (!zoneModuleUrl && manifestUrl)) {
+      throw new Error("reloadProgramFromUrls requires both native-zone URLs or neither");
+    }
+
+    const archiveResp = await fetch(archiveUrl, { cache: "no-store" });
+    if (!archiveResp.ok) {
+      throw new Error(`reloadProgramFromUrls failed to fetch archive: ${archiveResp.status}`);
+    }
+    ECE.wasmHost.setText(archiveUrl, await archiveResp.text());
+
+    if (zoneModuleUrl && manifestUrl) {
+      const [zoneResp, manifestResp] = await Promise.all([
+        fetch(zoneModuleUrl, { cache: "no-store" }),
+        fetch(manifestUrl, { cache: "no-store" })
+      ]);
+      if (!zoneResp.ok) {
+        throw new Error(`reloadProgramFromUrls failed to fetch zone module: ${zoneResp.status}`);
+      }
+      if (!manifestResp.ok) {
+        throw new Error(`reloadProgramFromUrls failed to fetch zone manifest: ${manifestResp.status}`);
+      }
+      ECE.wasmHost.setBytes(zoneModuleUrl, await zoneResp.arrayBuffer());
+      ECE.wasmHost.setText(manifestUrl, await manifestResp.text());
+    }
+
+    ECE.wasm.reset_handles();
+    ECE._symCache = {};
+
+    const args = [
+      ECE._schemeStringLiteral(archiveUrl),
+      zoneModuleUrl ? ECE._schemeStringLiteral(zoneModuleUrl) : "#f",
+      manifestUrl ? ECE._schemeStringLiteral(manifestUrl) : "#f"
+    ].join(" ");
+    return ECE.evalStringLast(`(reload-program ${args})`);
   },
 
   // Execute a loaded archive's init code-object.
