@@ -344,6 +344,9 @@ const ECE = {
         ece: {
           h_fixnum: ECE.wasm.h_fixnum,
           h_nil: ECE.wasm.h_nil,
+          h_true: ECE.wasm.h_true,
+          h_false: ECE.wasm.h_false,
+          h_false_p: ECE.wasm.h_false_p,
           h_char: ECE.wasm.h_char,
           h_cons: ECE.wasm.h_cons,
           h_symbol_1: ECE.wasm.h_symbol_1,

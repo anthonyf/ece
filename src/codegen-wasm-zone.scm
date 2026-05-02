@@ -7,10 +7,12 @@
 ;;;   zone(pc, val, env, proc, argl, continue, stack, co) -> result-vector
 ;;;
 ;;; Unsupported code objects return #f from the generator, leaving execution on
-;;; the interpreter path. The supported subset is a straight-line prefix:
+;;; the interpreter path. The supported subset is a register-machine PC loop:
 ;;;
 ;;;   (assign <register> (const <fixnum>))
 ;;;   (assign <register> (const ()))
+;;;   (assign <register> (const #t))
+;;;   (assign <register> (const #f))
 ;;;   (assign <register> (reg <register>))
 ;;;   (assign <register> (op list) <operand> ...)
 ;;;   (assign <register> (op cons) <operand> <operand>)
@@ -18,6 +20,9 @@
 ;;;   (assign <register> (op cdr) <operand>)
 ;;;   (assign <register> (op lookup-variable-value)
 ;;;                      (const <symbol>) (reg env))
+;;;   (test (op false?) <operand>)
+;;;   (branch (label <local-label>))
+;;;   (goto (label <local-label>))
 ;;;   primitive tail application of a previously looked-up proc
 ;;;   (halt)
 ;;;
@@ -96,6 +101,10 @@ reload never sees dollar-prefixed strings as interpolation input."
                         "))"))
         ((null? value)
          (string-append "(call " (wasm-zone/name "h_nil") ")"))
+        ((eq? value #t)
+         (string-append "(call " (wasm-zone/name "h_true") ")"))
+        ((eq? value #f)
+         (string-append "(call " (wasm-zone/name "h_false") ")"))
         (else #f)))
 
 (define (wasm-zone/source-value-wat source)
@@ -149,6 +158,14 @@ reload never sees dollar-prefixed strings as interpolation input."
        (pair? (cadr operands))
        (eq? (car (cadr operands)) 'reg)
        (eq? (cadr (cadr operands)) 'env)))
+
+(define (wasm-zone/label-target-pc co target)
+  (if (and (pair? target)
+           (eq? (car target) 'label)
+           (pair? (cdr target)))
+      (let ((pc (code-object-label-ref co (cadr target))))
+        (if (number? pc) pc #f))
+      #f))
 
 (define (wasm-zone/list-value-wat operands)
   (if (null? operands)
@@ -213,6 +230,12 @@ reload never sees dollar-prefixed strings as interpolation input."
    (wasm-zone/return-result-call-wat 2 pc)
    "          ))\n"))
 
+(define (wasm-zone/set-next-pc-wat next-pc)
+  (string-append
+   "        (local.set " (wasm-zone/name "pc")
+   " (i32.const " (number->string next-pc) "))\n"
+   "        (br " (wasm-zone/name "dispatch") ")\n"))
+
 (define (wasm-zone/emit-assign-wat instr pc)
   "Return WAT for a supported assign instruction, else #f."
   (if (not (and (pair? instr)
@@ -237,6 +260,48 @@ reload never sees dollar-prefixed strings as interpolation input."
                        (wasm-zone/error-sentinel-bail-wat target-local pc)
                        ""))
                   #f))))))
+
+(define (wasm-zone/test-value-wat source operands)
+  (let ((op-name (wasm-zone/operation-name source)))
+    (cond
+     ((and (eq? op-name 'false?)
+           (= (length operands) 1))
+      (let ((value-wat (wasm-zone/source-value-wat (car operands))))
+        (if value-wat
+            (string-append "(call " (wasm-zone/name "h_false_p")
+                           " " value-wat ")")
+            #f)))
+     ((and (eq? op-name 'primitive-procedure?)
+           (= (length operands) 1))
+      (let ((value-wat (wasm-zone/source-value-wat (car operands))))
+        (if value-wat
+            (string-append "(call " (wasm-zone/name "h_primitive_p")
+                           " " value-wat ")")
+            #f)))
+     (else #f))))
+
+(define (wasm-zone/emit-test-wat instr)
+  "Return WAT for a supported test instruction, else #f."
+  (if (not (and (pair? instr)
+                (eq? (car instr) 'test)
+                (pair? (cdr instr))))
+      #f
+      (let ((test-wat (wasm-zone/test-value-wat (cadr instr) (cddr instr))))
+        (if test-wat
+            (string-append
+             "        (local.set " (wasm-zone/name "flag")
+             " " test-wat ")\n")
+            #f))))
+
+(define (wasm-zone/branch-instruction? instr)
+  (and (pair? instr)
+       (eq? (car instr) 'branch)
+       (pair? (cdr instr))))
+
+(define (wasm-zone/goto-instruction? instr)
+  (and (pair? instr)
+       (eq? (car instr) 'goto)
+       (pair? (cdr instr))))
 
 (define (wasm-zone/halt-instruction? instr)
   (and (pair? instr) (eq? (car instr) 'halt)))
@@ -300,34 +365,82 @@ reload never sees dollar-prefixed strings as interpolation input."
    "          (else\n"
    (wasm-zone/result-call-wat 2 test-pc) "))"))
 
+(define (wasm-zone/instruction-body-wat co instrs len pc)
+  "Return WAT for instruction PC, else #f when the interpreter should handle it."
+  (let* ((instr (vector-ref instrs pc))
+         (assign-wat (wasm-zone/emit-assign-wat instr pc))
+         (test-wat (wasm-zone/emit-test-wat instr))
+         (apply-pc (wasm-zone/find-primitive-tail instrs len pc)))
+    (cond
+     (assign-wat
+      (string-append assign-wat (wasm-zone/set-next-pc-wat (+ pc 1))))
+     (apply-pc
+      (string-append
+       "        (return\n"
+       (wasm-zone/primitive-tail-wat pc apply-pc)
+       ")\n"))
+     (test-wat
+      (string-append test-wat (wasm-zone/set-next-pc-wat (+ pc 1))))
+     ((wasm-zone/branch-instruction? instr)
+      (let ((target-pc (wasm-zone/label-target-pc co (cadr instr))))
+        (if target-pc
+            (string-append
+             "        (if (local.get " (wasm-zone/name "flag") ")\n"
+             "          (then\n"
+             "            (local.set " (wasm-zone/name "pc")
+             " (i32.const " (number->string target-pc) "))\n"
+             "            (br " (wasm-zone/name "dispatch") ")))\n"
+             (wasm-zone/set-next-pc-wat (+ pc 1)))
+            #f)))
+     ((wasm-zone/goto-instruction? instr)
+      (let ((target-pc (wasm-zone/label-target-pc co (cadr instr))))
+        (if target-pc
+            (wasm-zone/set-next-pc-wat target-pc)
+            #f)))
+     ((wasm-zone/halt-instruction? instr)
+      (string-append
+       "        (return\n"
+       (wasm-zone/result-call-wat 0 pc)
+       ")\n"))
+     (else #f))))
+
+(define (wasm-zone/instruction-case-wat co instrs len pc)
+  (let ((body (wasm-zone/instruction-body-wat co instrs len pc)))
+    (if body
+        (string-append
+         "        (if (i32.eq (local.get " (wasm-zone/name "pc")
+         ") (i32.const " (number->string pc) "))\n"
+         "          (then\n"
+         body
+         "          ))\n")
+        "")))
+
 (define (wasm-zone/body-wat co)
-  "Return WAT for CO's supported prefix, or #f when no prefix is supported."
+  "Return WAT for CO's supported register-machine dispatch, or #f when PC 0
+is unsupported."
   (if (not (code-object? co))
       #f
       (let ((instrs (code-object-instructions co))
             (len (code-object-length co)))
-        (let loop ((pc 0) (emitted? #f) (body ""))
-          (if (>= pc len)
-              (if emitted?
-                  (string-append body (wasm-zone/result-call-wat 2 pc))
-                  #f)
-              (let* ((instr (vector-ref instrs pc))
-                     (assign-wat (wasm-zone/emit-assign-wat instr pc))
-                     (apply-pc
-                      (and emitted?
-                           (wasm-zone/find-primitive-tail instrs len pc))))
-                (cond
-                 (assign-wat
-                  (loop (+ pc 1) #t (string-append body assign-wat)))
-                 ((wasm-zone/halt-instruction? instr)
-                  (string-append body (wasm-zone/result-call-wat 0 pc)))
-                 (apply-pc
+        (if (or (= len 0)
+                (not (wasm-zone/instruction-body-wat co instrs len 0)))
+            #f
+            (let loop ((pc 0) (body ""))
+              (if (>= pc len)
                   (string-append
+                   "    (block " (wasm-zone/name "exit") "\n"
+                   "      (loop " (wasm-zone/name "dispatch") "\n"
                    body
-                   (wasm-zone/primitive-tail-wat pc apply-pc)))
-                 (emitted?
-                  (string-append body (wasm-zone/result-call-wat 2 pc)))
-                 (else #f))))))))
+                   "        (return\n"
+                   (wasm-zone/result-call-current-pc-wat 2)
+                   ")\n"
+                   "      ))\n"
+                   "    (unreachable)\n")
+                  (loop (+ pc 1)
+                        (string-append
+                         body
+                         (wasm-zone/instruction-case-wat
+                          co instrs len pc)))))))))
 
 (define (wasm-zone/supported? co)
   (if (wasm-zone/body-wat co) #t #f))
@@ -381,6 +494,12 @@ reload never sees dollar-prefixed strings as interpolation input."
    " (param i32) (result i32)))\n"
    "  (import \"ece\" \"h_nil\" (func " (wasm-zone/name "h_nil")
    " (result i32)))\n"
+   "  (import \"ece\" \"h_true\" (func " (wasm-zone/name "h_true")
+   " (result i32)))\n"
+   "  (import \"ece\" \"h_false\" (func " (wasm-zone/name "h_false")
+   " (result i32)))\n"
+   "  (import \"ece\" \"h_false_p\" (func " (wasm-zone/name "h_false_p")
+   " (param i32) (result i32)))\n"
    "  (import \"ece\" \"h_char\" (func " (wasm-zone/name "h_char")
    " (param i32) (result i32)))\n"
    "  (import \"ece\" \"h_cons\" (func " (wasm-zone/name "h_cons")
@@ -417,6 +536,7 @@ reload never sees dollar-prefixed strings as interpolation input."
    " i32) (param " (wasm-zone/name "cont") " i32)\n"
    "        (param " (wasm-zone/name "stack")
    " i32) (param " (wasm-zone/name "co") " i32) (result i32)\n"
+   "    (local " (wasm-zone/name "flag") " i32)\n"
    "    (if (result i32) (i32.eq (local.get " (wasm-zone/name "pc")
    ") (i32.const 0))\n"
    "      (then\n"
