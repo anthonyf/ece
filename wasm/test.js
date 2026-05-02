@@ -399,6 +399,71 @@ async function runGeneratedZoneIntegrationTests(w, envH) {
       `expected generated primitive result 3, got ${w.h_fixnum_val(result)}`);
   });
 
+  await iTest("generated register-machine WASM zone applies nested primitives with stack", async () => {
+    const watHandle = eceEval(`
+      (begin
+        (define generated-nested-prims-co
+          (mc-compile-to-code-object '(+ (* 2 3) 4)))
+        (%code-object-set-archive-key! generated-nested-prims-co
+          (cons 'generated-nested-prims 0))
+        (generate-register-machine-wasm-zone generated-nested-prims-co
+          "zone_nested_prims_0"))`);
+    const watText = ECE._eceToJs(watHandle);
+    assert(typeof watText === "string", "expected generated nested primitive WAT string");
+    assert((watText.match(/h_apply_primitive/g) || []).length >= 2,
+      "generated WAT must apply primitives beyond the import");
+    assert((watText.match(/local\.set \$stack/g) || []).length >= 3,
+      "generated WAT must push and pop the ECE stack register");
+    assert((watText.match(/call \$h_cons/g) || []).length >= 2,
+      "generated WAT must push saved registers with h_cons");
+    assert((watText.match(/call \$h_car/g) || []).length >= 2 &&
+      (watText.match(/call \$h_cdr/g) || []).length >= 2,
+      "generated WAT must restore registers with h_car/h_cdr");
+
+    const zoneBytes = compileWat(watText, "generated-nested-prims-zone");
+    const { instance } = await WebAssembly.instantiate(zoneBytes, generatedZoneImports());
+
+    globalThis.__eceGeneratedNestedPrimsZone0 = instance.exports.zone_nested_prims_0;
+    const result = eceEval(`
+      (begin
+        (register-native-zone! 'generated-nested-prims 0
+          (%js-eval "globalThis.__eceGeneratedNestedPrimsZone0"))
+        (execute-code-object generated-nested-prims-co))`);
+
+    assert(w.h_fixnum_val(result) === 10,
+      `expected generated nested primitive result 10, got ${w.h_fixnum_val(result)}`);
+  });
+
+  await iTest("generated register-machine WASM zone bails before non-primitive call dispatch", async () => {
+    const watHandle = eceEval(`
+      (begin
+        (define generated-nested-rebind-co
+          (mc-compile-to-code-object '(+ (* 2 3) 4)))
+        (%code-object-set-archive-key! generated-nested-rebind-co
+          (cons 'generated-nested-rebind 0))
+        (generate-register-machine-wasm-zone generated-nested-rebind-co
+          "zone_nested_rebind_0"))`);
+    const watText = ECE._eceToJs(watHandle);
+    assert(typeof watText === "string", "expected generated nested rebind WAT string");
+
+    const zoneBytes = compileWat(watText, "generated-nested-rebind-zone");
+    const { instance } = await WebAssembly.instantiate(zoneBytes, generatedZoneImports());
+
+    globalThis.__eceGeneratedNestedRebindZone0 = instance.exports.zone_nested_rebind_0;
+    const result = eceEval(`
+      (begin
+        (register-native-zone! 'generated-nested-rebind 0
+          (%js-eval "globalThis.__eceGeneratedNestedRebindZone0"))
+        (define generated-nested-plus-original +)
+        (dynamic-wind
+          (lambda () (set! + (lambda (a b) 44)))
+          (lambda () (execute-code-object generated-nested-rebind-co))
+          (lambda () (set! + generated-nested-plus-original))))`);
+
+    assert(w.h_fixnum_val(result) === 44,
+      `expected rebound nested primitive fallback result 44, got ${w.h_fixnum_val(result)}`);
+  });
+
   await iTest("generated register-machine WASM zone runs conditional control flow", async () => {
     const watHandle = eceEval(`
       (begin
