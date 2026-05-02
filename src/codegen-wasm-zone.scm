@@ -22,6 +22,11 @@
 ;;;                      (const <symbol>) (reg env))
 ;;;   (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
 ;;;   (assign val (op compiled-procedure-entry) (reg proc))
+;;;   (assign env (op compiled-procedure-env) (reg proc))
+;;;   (assign env (op extend-environment)
+;;;               (const <params>) (reg argl) (reg env) (const <extra-slots>))
+;;;   (assign <register> (op lexical-ref)
+;;;                      (const <depth>) (const <offset>) (reg env))
 ;;;   (assign continue (label <local-label>))
 ;;;   (test (op false?) <operand>)
 ;;;   (test (op continuation?) <operand>)
@@ -112,6 +117,15 @@ reload never sees dollar-prefixed strings as interpolation input."
          (string-append "(call " (wasm-zone/name "h_true") ")"))
         ((eq? value #f)
          (string-append "(call " (wasm-zone/name "h_false") ")"))
+        ((symbol? value)
+         (wasm-zone/symbol-handle-wat value))
+        ((pair? value)
+         (let ((car-wat (wasm-zone/const-value-wat (car value)))
+               (cdr-wat (wasm-zone/const-value-wat (cdr value))))
+           (if (and car-wat cdr-wat)
+               (string-append "(call " (wasm-zone/name "h_cons")
+                              " " car-wat " " cdr-wat ")")
+               #f)))
         (else #f)))
 
 (define (wasm-zone/source-value-wat source)
@@ -258,6 +272,57 @@ reload never sees dollar-prefixed strings as interpolation input."
            (eq? (cadr (car operands)) 'proc))
       (string-append "(call " (wasm-zone/name "h_compiled_entry")
                      " (local.get " (wasm-zone/name "proc") "))"))
+     ((and (eq? op-name 'compiled-procedure-env)
+           (= (length operands) 1)
+           (pair? (car operands))
+           (eq? (car (car operands)) 'reg)
+           (eq? (cadr (car operands)) 'proc))
+      (string-append "(call " (wasm-zone/name "h_compiled_env")
+                     " (local.get " (wasm-zone/name "proc") "))"))
+     ((and (eq? op-name 'extend-environment)
+           (= (length operands) 4)
+           (pair? (car operands))
+           (eq? (caar operands) 'const)
+           (pair? (cdr (car operands)))
+           (pair? (cadr operands))
+           (eq? (car (cadr operands)) 'reg)
+           (eq? (cadr (cadr operands)) 'argl)
+           (pair? (caddr operands))
+           (eq? (car (caddr operands)) 'reg)
+           (eq? (cadr (caddr operands)) 'env)
+           (pair? (cadddr operands))
+           (eq? (car (cadddr operands)) 'const)
+           (pair? (cdr (cadddr operands)))
+           (wasm-zone/fixnum-immediate? (cadr (cadddr operands))))
+      (let ((names-wat (wasm-zone/const-value-wat (cadr (car operands)))))
+        (if names-wat
+            (string-append "(call " (wasm-zone/name "h_extend_env")
+                           " " names-wat
+                           " (local.get " (wasm-zone/name "argl") ")"
+                           " (local.get " (wasm-zone/name "env") ")"
+                           " (i32.const "
+                           (number->string (cadr (cadddr operands)))
+                           "))")
+            #f)))
+     ((and (eq? op-name 'lexical-ref)
+           (= (length operands) 3)
+           (pair? (car operands))
+           (eq? (caar operands) 'const)
+           (pair? (cdr (car operands)))
+           (wasm-zone/fixnum-immediate? (cadr (car operands)))
+           (pair? (cadr operands))
+           (eq? (car (cadr operands)) 'const)
+           (pair? (cdr (cadr operands)))
+           (wasm-zone/fixnum-immediate? (cadr (cadr operands)))
+           (pair? (caddr operands))
+           (eq? (car (caddr operands)) 'reg)
+           (eq? (cadr (caddr operands)) 'env))
+      (string-append "(call " (wasm-zone/name "h_lexical_ref")
+                     " (i32.const "
+                     (number->string (cadr (car operands)))
+                     ") (i32.const "
+                     (number->string (cadr (cadr operands)))
+                     ") (local.get " (wasm-zone/name "env") "))"))
      (else #f))))
 
 (define (wasm-zone/return-result-call-wat mode next-pc)
@@ -279,7 +344,43 @@ reload never sees dollar-prefixed strings as interpolation input."
       (and (eq? (wasm-zone/operation-name source) 'apply-primitive-procedure)
            (= (length operands) 2))
       (and (eq? (wasm-zone/operation-name source) 'compiled-procedure-entry)
+           (= (length operands) 1))
+      (and (eq? (wasm-zone/operation-name source) 'compiled-procedure-env)
            (= (length operands) 1))))
+
+(define (wasm-zone/perform-lexical-set? instr)
+  (and (pair? instr)
+       (eq? (car instr) 'perform)
+       (pair? (cdr instr))
+       (eq? (wasm-zone/operation-name (cadr instr)) 'lexical-set!)
+       (= (length (cddr instr)) 4)
+       (let ((operands (cddr instr)))
+         (and (pair? (car operands))
+              (eq? (caar operands) 'const)
+              (pair? (cdr (car operands)))
+              (wasm-zone/fixnum-immediate? (cadr (car operands)))
+              (pair? (cadr operands))
+              (eq? (car (cadr operands)) 'const)
+              (pair? (cdr (cadr operands)))
+              (wasm-zone/fixnum-immediate? (cadr (cadr operands)))
+              (pair? (caddr operands))
+              (eq? (car (caddr operands)) 'reg)
+              (wasm-zone/register-local (cadr (caddr operands)))
+              (pair? (cadddr operands))
+              (eq? (car (cadddr operands)) 'reg)
+              (eq? (cadr (cadddr operands)) 'env)))))
+
+(define (wasm-zone/perform-lexical-set-wat instr)
+  (let* ((operands (cddr instr))
+         (depth (cadr (car operands)))
+         (offset (cadr (cadr operands)))
+         (value-local (wasm-zone/register-local (cadr (caddr operands)))))
+    (string-append
+     "        (call " (wasm-zone/name "h_lexical_set")
+     " (i32.const " (number->string depth) ")"
+     " (i32.const " (number->string offset) ")"
+     " (local.get " value-local ")"
+     " (local.get " (wasm-zone/name "env") "))\n")))
 
 (define (wasm-zone/set-next-pc-wat next-pc)
   (string-append
@@ -472,6 +573,10 @@ reload never sees dollar-prefixed strings as interpolation input."
       (string-append
        (wasm-zone/restore-wat instr)
        (wasm-zone/set-next-pc-wat (+ pc 1))))
+     ((wasm-zone/perform-lexical-set? instr)
+      (string-append
+       (wasm-zone/perform-lexical-set-wat instr)
+       (wasm-zone/set-next-pc-wat (+ pc 1))))
      (else #f))))
 
 (define (wasm-zone/instruction-case-wat co instrs len pc)
@@ -588,6 +693,14 @@ is unsupported."
    " (param i32) (result i32)))\n"
    "  (import \"ece\" \"h_compiled_entry\" (func " (wasm-zone/name "h_compiled_entry")
    " (param i32) (result i32)))\n"
+   "  (import \"ece\" \"h_compiled_env\" (func " (wasm-zone/name "h_compiled_env")
+   " (param i32) (result i32)))\n"
+   "  (import \"ece\" \"h_extend_env\" (func " (wasm-zone/name "h_extend_env")
+   " (param i32) (param i32) (param i32) (param i32) (result i32)))\n"
+   "  (import \"ece\" \"h_lexical_ref\" (func " (wasm-zone/name "h_lexical_ref")
+   " (param i32) (param i32) (param i32) (result i32)))\n"
+   "  (import \"ece\" \"h_lexical_set\" (func " (wasm-zone/name "h_lexical_set")
+   " (param i32) (param i32) (param i32) (param i32)))\n"
    "  (import \"ece\" \"h_apply_primitive\" (func " (wasm-zone/name "h_apply_primitive")
    " (param i32) (param i32) (result i32)))\n"
    "  (import \"ece\" \"h_error_sentinel_p\" (func " (wasm-zone/name "h_error_sentinel_p")

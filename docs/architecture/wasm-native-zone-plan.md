@@ -327,7 +327,14 @@ register-machine subset:
 (assign <register> (op cdr) <operand>)
 (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
 (assign val (op compiled-procedure-entry) (reg proc))
+(assign env (op compiled-procedure-env) (reg proc))
+(assign env (op extend-environment)
+        (const <params>) (reg argl) (reg env) (const <extra-slots>))
+(assign <register> (op lexical-ref)
+        (const <depth>) (const <offset>) (reg env))
 (assign continue (label <local-label>))
+(perform (op lexical-set!)
+         (const <depth>) (const <offset>) (reg <register>) (reg env))
 (test (op false?) <operand>)
 (test (op continuation?) <operand>)
 (test (op parameter?) <operand>)
@@ -361,6 +368,12 @@ the current code object, and fetch the compiled-procedure entry. Register-valued
 `goto` remains an interpreter bailout point, so cross-code-object transfer,
 tail-call behavior, and continuation semantics still run through the existing
 register-machine executor.
+
+Simple procedure bodies can run native after that transfer. Generated zones can
+load the compiled procedure environment, extend the lexical frame from `argl`,
+and read or write lexical slots through VM helpers. This keeps the environment
+representation owned by the runtime while allowing normal callee prologues and
+lexical variable reads to stay inside generated WASM.
 
 The generator can also walk an archive code-object vector and produce one
 side-module WAT plus a native-zone manifest. Supported code-object indexes get

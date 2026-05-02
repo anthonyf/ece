@@ -292,6 +292,13 @@
       (i32.const 101)(i32.const 100)(i32.const 45)(i32.const 112)(i32.const 114)(i32.const 111)
       (i32.const 99)(i32.const 101)(i32.const 100)(i32.const 117)(i32.const 114)(i32.const 101)
       (i32.const 45)(i32.const 101)(i32.const 110)(i32.const 116)(i32.const 114)(i32.const 121)))
+  ;; "compiled-procedure-env" (22 chars)
+  (global $name-compiled-procedure-env (ref $string)
+    (array.new_fixed $string 22
+      (i32.const 99)(i32.const 111)(i32.const 109)(i32.const 112)(i32.const 105)(i32.const 108)
+      (i32.const 101)(i32.const 100)(i32.const 45)(i32.const 112)(i32.const 114)(i32.const 111)
+      (i32.const 99)(i32.const 101)(i32.const 100)(i32.const 117)(i32.const 114)(i32.const 101)
+      (i32.const 45)(i32.const 101)(i32.const 110)(i32.const 118)))
 
   ;; Archive loader error messages (used by $load-archive-impl and
   ;; $archive-patch-co-refs — actionable text surfaced to JS via runtime_error).
@@ -2860,7 +2867,13 @@
 
     ;; 9 = compiled-procedure-env(proc)
     (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 9))
-      (then (call $compiled-proc-env (ref.cast (ref $compiled-proc) (local.get $a))))
+      (then
+        (if (i32.eqz (ref.test (ref $compiled-proc) (local.get $a)))
+          (then (return (call $make-type-error
+            (global.get $name-compiled-procedure-env)
+            (global.get $err-not-compiled-procedure)
+            (local.get $a)))))
+        (call $compiled-proc-env (ref.cast (ref $compiled-proc) (local.get $a))))
 
     ;; 10 = primitive-procedure?(val) → bool
     (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 10))
@@ -7410,6 +7423,48 @@
       (struct.get $compiled-proc $code-obj
         (ref.cast (ref $compiled-proc)
           (local.get $proc)))))
+
+  (func (export "h_compiled_env") (param $proc-handle i32) (result i32)
+    (local $proc (ref null eq))
+    (local.set $proc (call $deref-handle (local.get $proc-handle)))
+    (if (i32.eqz (ref.test (ref $compiled-proc) (local.get $proc)))
+      (then
+        (return (call $alloc-handle
+          (call $make-type-error
+            (global.get $name-compiled-procedure-env)
+            (global.get $err-not-compiled-procedure)
+            (local.get $proc))))))
+    (call $alloc-handle
+      (call $compiled-proc-env
+        (ref.cast (ref $compiled-proc) (local.get $proc)))))
+
+  (func (export "h_extend_env")
+        (param $names-handle i32) (param $vals-handle i32)
+        (param $env-handle i32) (param $extra-slots i32) (result i32)
+    (call $alloc-handle
+      (call $extend-env
+        (call $deref-handle (local.get $names-handle))
+        (call $deref-handle (local.get $vals-handle))
+        (call $deref-handle (local.get $env-handle))
+        (local.get $extra-slots))))
+
+  (func (export "h_lexical_ref")
+        (param $depth i32) (param $offset i32) (param $env-handle i32)
+        (result i32)
+    (call $alloc-handle
+      (call $lexical-ref
+        (local.get $depth)
+        (local.get $offset)
+        (call $deref-handle (local.get $env-handle)))))
+
+  (func (export "h_lexical_set")
+        (param $depth i32) (param $offset i32)
+        (param $value-handle i32) (param $env-handle i32)
+    (call $lexical-set!
+      (local.get $depth)
+      (local.get $offset)
+      (call $deref-handle (local.get $value-handle))
+      (call $deref-handle (local.get $env-handle))))
 
   (func (export "h_apply_primitive") (param $prim-handle i32) (param $args-handle i32) (result i32)
     (call $alloc-handle
