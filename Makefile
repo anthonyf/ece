@@ -1,4 +1,4 @@
-.PHONY: all ece install uninstall test test-rove test-ece test-wasm test-conformance test-golden test-web-server repl run run-lisp bootstrap wasm sandbox site slides fmt check-fmt setup clean clean-fasl update-golden
+.PHONY: all ece install uninstall test test-rove test-ece test-wasm test-conformance test-golden test-web-server test-ece-serve-live repl run run-lisp bootstrap wasm sandbox site slides fmt check-fmt setup clean clean-fasl update-golden
 
 PREFIX ?= /usr/local
 DESTDIR ?=
@@ -111,7 +111,7 @@ BOOTSTRAP_SRCS := src/boot-env.scm src/prelude.scm src/compiler.scm src/reader.s
 
 GOLDEN_SRCS := $(wildcard tests/golden/*.scm)
 
-test: test-rove test-ece test-wasm test-conformance test-golden test-web-server test-web-apps
+test: test-rove test-ece test-wasm test-conformance test-golden test-web-server test-web-apps test-ece-serve-live
 
 # Note: rove:run doesn't discover suites from FASL-cached files, so we use
 # call-with-suite/all-suites/run-suite which work after asdf:load-system.
@@ -270,6 +270,10 @@ sys.exit(r.returncode)'
 test-web-apps: sandbox
 	@echo "Running web apps smoke test..."
 	@node wasm/test-web-apps.js
+
+test-ece-serve-live: ece
+	@echo "Running ece-serve live reload smoke test..."
+	@node wasm/test-ece-serve-live.js
 
 repl: share/ece/ece-main.ecec | .qlot/qlot.conf
 	qlot exec sbcl --dynamic-space-size 4096 --load ece.asd --eval '(asdf:load-system :ece)' \
