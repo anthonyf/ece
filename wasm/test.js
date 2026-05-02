@@ -328,6 +328,9 @@ async function runGeneratedZoneIntegrationTests(w, envH) {
       ece: {
         h_fixnum: w.h_fixnum,
         h_nil: w.h_nil,
+        h_true: w.h_true,
+        h_false: w.h_false,
+        h_false_p: w.h_false_p,
         h_char: w.h_char,
         h_cons: w.h_cons,
         h_symbol_1: w.h_symbol_1,
@@ -394,6 +397,87 @@ async function runGeneratedZoneIntegrationTests(w, envH) {
 
     assert(w.h_fixnum_val(result) === 3,
       `expected generated primitive result 3, got ${w.h_fixnum_val(result)}`);
+  });
+
+  await iTest("generated register-machine WASM zone runs conditional control flow", async () => {
+    const watHandle = eceEval(`
+      (begin
+        (define generated-if-false-co (mc-compile-to-code-object '(if #f 1 2)))
+        (%code-object-set-archive-key! generated-if-false-co
+          (cons 'generated-if-false 0))
+        (define generated-if-true-co (mc-compile-to-code-object '(if 7 11 22)))
+        (%code-object-set-archive-key! generated-if-true-co
+          (cons 'generated-if-true 0))
+        (define generated-if-bundle
+          (generate-register-machine-wasm-zone-bundle
+            'generated-if
+            (vector generated-if-false-co generated-if-true-co)
+            "generated-if-zones.wasm"))
+        (wasm-zone-bundle-wat generated-if-bundle))`);
+    const watText = ECE._eceToJs(watHandle);
+    assert(typeof watText === "string", "expected generated if WAT string");
+    assert(watText.includes('h_false_p'), "generated WAT must test false? through handle helper");
+    assert(watText.includes('(loop $dispatch'), "generated WAT must keep logical pc dispatch");
+
+    const zoneBytes = compileWat(watText, "generated-if-zones");
+    const { instance } = await WebAssembly.instantiate(zoneBytes, generatedZoneImports());
+
+    globalThis.__eceGeneratedIfFalseZone0 = instance.exports.zone_0;
+    globalThis.__eceGeneratedIfTrueZone0 = instance.exports.zone_1;
+    const result = eceEval(`
+      (begin
+        (register-native-zone! 'generated-if-false 0
+          (%js-eval "globalThis.__eceGeneratedIfFalseZone0"))
+        (register-native-zone! 'generated-if-true 0
+          (%js-eval "globalThis.__eceGeneratedIfTrueZone0"))
+        (list
+          (execute-code-object generated-if-false-co)
+          (execute-code-object generated-if-true-co)))`);
+
+    const values = ECE._eceListToJsArray(result);
+    assert(values.length === 2 && values[0] === 2 && values[1] === 11,
+      `expected generated if results (2 11), got ${JSON.stringify(values)}`);
+  });
+
+  await iTest("generated register-machine WASM zone bails after native branch", async () => {
+    const watHandle = eceEval(`
+      (begin
+        (define generated-branch-bail-co (%make-code-object))
+        (%code-object-push-instruction! generated-branch-bail-co
+          '(assign val (const #f)))
+        (%code-object-push-instruction! generated-branch-bail-co
+          '(test (op false?) (reg val)))
+        (%code-object-push-instruction! generated-branch-bail-co
+          '(branch (label branch-bail-target)))
+        (%code-object-push-instruction! generated-branch-bail-co
+          '(assign val (const 9)))
+        (%code-object-push-instruction! generated-branch-bail-co '(halt))
+        (%code-object-set-label! generated-branch-bail-co 'branch-bail-target 5)
+        (%code-object-push-instruction! generated-branch-bail-co
+          '(perform (op define-variable!) (const generated-branch-bail-value)
+                    (reg val) (reg env)))
+        (%code-object-push-instruction! generated-branch-bail-co '(halt))
+        (%code-object-set-archive-key! generated-branch-bail-co
+          (cons 'generated-branch-bail 0))
+        (generate-register-machine-wasm-zone generated-branch-bail-co
+          "zone_branch_bail_0"))`);
+    const watText = ECE._eceToJs(watHandle);
+    assert(typeof watText === "string", "expected generated branch bailout WAT string");
+    assert(watText.includes('(br $dispatch)'), "generated WAT must loop after branch");
+
+    const zoneBytes = compileWat(watText, "generated-branch-bail-zone");
+    const { instance } = await WebAssembly.instantiate(zoneBytes, generatedZoneImports());
+
+    globalThis.__eceGeneratedBranchBailZone0 = instance.exports.zone_branch_bail_0;
+    const result = eceEval(`
+      (begin
+        (register-native-zone! 'generated-branch-bail 0
+          (%js-eval "globalThis.__eceGeneratedBranchBailZone0"))
+        (execute-code-object generated-branch-bail-co)
+        (if generated-branch-bail-value 1 0))`);
+
+    assert(w.h_fixnum_val(result) === 0,
+      `expected branch bailout to preserve #f val, got ${w.h_fixnum_val(result)}`);
   });
 
   await iTest("generated register-machine WASM zone applies longer-name primitive", async () => {

@@ -312,17 +312,22 @@ returns the normal native-zone result vector. Tail calls, `call/cc`,
 stack is an implementation detail, not the Scheme continuation model.
 
 The first generator slice is intentionally tiny. It emits a side-module WAT
-function for a code object whose instruction stream begins with straight-line
-register assignments:
+function for a code object whose instruction stream stays within a small
+register-machine subset:
 
 ```scheme
 (assign <register> (const <fixnum>))
 (assign <register> (const ()))
+(assign <register> (const #t))
+(assign <register> (const #f))
 (assign <register> (reg <register>))
 (assign <register> (op list) <operand> ...)
 (assign <register> (op cons) <operand> <operand>)
 (assign <register> (op car) <operand>)
 (assign <register> (op cdr) <operand>)
+(test (op false?) <operand>)
+(branch (label <local-label>))
+(goto (label <local-label>))
 (halt)
 ```
 
@@ -330,6 +335,9 @@ If the first instruction is unsupported, the code object declines generation and
 continues through the interpreter. If a supported prefix reaches an unsupported
 instruction, the generated zone returns `:bail` with updated registers and the
 unsupported instruction's PC, so the interpreter continues from that point.
+Generated WASM preserves the logical register machine: branch and goto update a
+native-zone `pc` local and loop through a dispatch block rather than compiling
+Scheme control flow onto the host WASM call stack.
 
 The first operation support is limited to pure data construction, not primitive
 procedure dispatch. Arithmetic such as `+` still compiles through ordinary
