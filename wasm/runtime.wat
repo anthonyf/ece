@@ -277,6 +277,21 @@
       (i32.const 58)(i32.const 32)(i32.const 110)(i32.const 111)(i32.const 116)(i32.const 32)
       (i32.const 97)(i32.const 32)(i32.const 115)(i32.const 116)(i32.const 114)(i32.const 105)
       (i32.const 110)(i32.const 103)))
+  ;; ": not a compiled procedure" (26 chars)
+  (global $err-not-compiled-procedure (ref $string)
+    (array.new_fixed $string 26
+      (i32.const 58)(i32.const 32)(i32.const 110)(i32.const 111)(i32.const 116)(i32.const 32)
+      (i32.const 97)(i32.const 32)(i32.const 99)(i32.const 111)(i32.const 109)(i32.const 112)
+      (i32.const 105)(i32.const 108)(i32.const 101)(i32.const 100)(i32.const 32)(i32.const 112)
+      (i32.const 114)(i32.const 111)(i32.const 99)(i32.const 101)(i32.const 100)(i32.const 117)
+      (i32.const 114)(i32.const 101)))
+  ;; "compiled-procedure-entry" (24 chars)
+  (global $name-compiled-procedure-entry (ref $string)
+    (array.new_fixed $string 24
+      (i32.const 99)(i32.const 111)(i32.const 109)(i32.const 112)(i32.const 105)(i32.const 108)
+      (i32.const 101)(i32.const 100)(i32.const 45)(i32.const 112)(i32.const 114)(i32.const 111)
+      (i32.const 99)(i32.const 101)(i32.const 100)(i32.const 117)(i32.const 114)(i32.const 101)
+      (i32.const 45)(i32.const 101)(i32.const 110)(i32.const 116)(i32.const 114)(i32.const 121)))
 
   ;; Archive loader error messages (used by $load-archive-impl and
   ;; $archive-patch-co-refs — actionable text surfaced to JS via runtime_error).
@@ -2834,8 +2849,14 @@
 
     ;; 8 = compiled-procedure-entry(proc) → $code-object.
     (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 8))
-      (then (struct.get $compiled-proc $code-obj
-              (ref.cast (ref $compiled-proc) (local.get $a))))
+      (then
+        (if (i32.eqz (ref.test (ref $compiled-proc) (local.get $a)))
+          (then (return (call $make-type-error
+            (global.get $name-compiled-procedure-entry)
+            (global.get $err-not-compiled-procedure)
+            (local.get $a)))))
+        (struct.get $compiled-proc $code-obj
+          (ref.cast (ref $compiled-proc) (local.get $a))))
 
     ;; 9 = compiled-procedure-env(proc)
     (else (if (result (ref null eq)) (i32.eq (local.get $op-id) (i32.const 9))
@@ -6555,6 +6576,23 @@
                     (call $reg-id-sym (struct.get $instr $c (local.get $i)))
                     (global.get $nil)))
                 (global.get $nil)))))))
+    ;; (assign <reg> (label <pc>))
+    (if (i32.and
+          (i32.eqz (struct.get $instr $opcode (local.get $i)))
+          (i32.eq (struct.get $instr $b (local.get $i)) (i32.const 2)))
+      (then
+        (return
+          (call $cons
+            (call $asm-sym-ref (i32.const 0))
+            (call $cons
+              (call $reg-id-sym (struct.get $instr $a (local.get $i)))
+              (call $cons
+                (call $cons
+                  (call $asm-sym-ref (i32.const 15))
+                  (call $cons
+                    (call $make-fixnum (struct.get $instr $c (local.get $i)))
+                    (global.get $nil)))
+                (global.get $nil)))))))
     ;; (assign <reg> (op <name>) <operands>...)
     (if (i32.and
           (i32.eqz (struct.get $instr $opcode (local.get $i)))
@@ -7351,6 +7389,27 @@
 
   (func (export "h_primitive_p") (param $handle i32) (result i32)
     (call $is-primitive (call $deref-handle (local.get $handle))))
+
+  (func (export "h_continuation_p") (param $handle i32) (result i32)
+    (call $is-continuation (call $deref-handle (local.get $handle))))
+
+  (func (export "h_parameter_p") (param $handle i32) (result i32)
+    (call $is-parameter (call $deref-handle (local.get $handle))))
+
+  (func (export "h_compiled_entry") (param $proc-handle i32) (result i32)
+    (local $proc (ref null eq))
+    (local.set $proc (call $deref-handle (local.get $proc-handle)))
+    (if (i32.eqz (ref.test (ref $compiled-proc) (local.get $proc)))
+      (then
+        (return (call $alloc-handle
+          (call $make-type-error
+            (global.get $name-compiled-procedure-entry)
+            (global.get $err-not-compiled-procedure)
+            (local.get $proc))))))
+    (call $alloc-handle
+      (struct.get $compiled-proc $code-obj
+        (ref.cast (ref $compiled-proc)
+          (local.get $proc)))))
 
   (func (export "h_apply_primitive") (param $prim-handle i32) (param $args-handle i32) (result i32)
     (call $alloc-handle

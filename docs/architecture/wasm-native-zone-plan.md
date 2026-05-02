@@ -326,7 +326,11 @@ register-machine subset:
 (assign <register> (op car) <operand>)
 (assign <register> (op cdr) <operand>)
 (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
+(assign val (op compiled-procedure-entry) (reg proc))
+(assign continue (label <local-label>))
 (test (op false?) <operand>)
+(test (op continuation?) <operand>)
+(test (op parameter?) <operand>)
 (branch (label <local-label>))
 (goto (label <local-label>))
 (save <register>)
@@ -350,6 +354,13 @@ Arithmetic such as `+` is not inlined or shortcut: generated zones still look
 up the current binding, verify it is still primitive, call the VM primitive
 dispatcher, and bail to the interpreter if rebinding or primitive errors require
 the normal register-machine path.
+
+Compiled-procedure call setup is also native for the caller side: generated
+zones can perform the callable dispatch tests, qualify `continue` labels with
+the current code object, and fetch the compiled-procedure entry. Register-valued
+`goto` remains an interpreter bailout point, so cross-code-object transfer,
+tail-call behavior, and continuation semantics still run through the existing
+register-machine executor.
 
 The generator can also walk an archive code-object vector and produce one
 side-module WAT plus a native-zone manifest. Supported code-object indexes get

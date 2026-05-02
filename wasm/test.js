@@ -191,6 +191,10 @@ function runIntegrationTests(w, envH) {
     const r = w.test_lookup_returns_sentinel(h);
     assert(r === 0, `expected value (0), got ${r}`);
   });
+  iTest("compiled entry helper rejects non-compiled procedures with sentinel", () => {
+    const r = w.h_compiled_entry(w.h_fixnum(41));
+    assert(w.h_error_sentinel_p(r) === 1, "expected compiled entry type error sentinel");
+  });
 
   // ── Native-zone entry dispatch smoke ──
   iTest("native zone dispatch returns value", () => {
@@ -337,6 +341,9 @@ async function runGeneratedZoneIntegrationTests(w, envH) {
         h_symbol_from_chars: w.h_symbol_from_chars,
         h_lookup: w.h_lookup,
         h_primitive_p: w.h_primitive_p,
+        h_continuation_p: w.h_continuation_p,
+        h_parameter_p: w.h_parameter_p,
+        h_compiled_entry: w.h_compiled_entry,
         h_apply_primitive: w.h_apply_primitive,
         h_error_sentinel_p: w.h_error_sentinel_p,
         pair_car: w.pair_car,
@@ -462,6 +469,74 @@ async function runGeneratedZoneIntegrationTests(w, envH) {
 
     assert(w.h_fixnum_val(result) === 44,
       `expected rebound nested primitive fallback result 44, got ${w.h_fixnum_val(result)}`);
+  });
+
+  await iTest("generated register-machine WASM zone prepares compiled procedure calls", async () => {
+    const watHandle = eceEval(`
+      (begin
+        (define (generated-call-target x) (+ x 1))
+        (define generated-call-co
+          (mc-compile-to-code-object '(generated-call-target 41)))
+        (%code-object-set-archive-key! generated-call-co
+          (cons 'generated-call 0))
+        (generate-register-machine-wasm-zone generated-call-co
+          "zone_call_0"))`);
+    const watText = ECE._eceToJs(watHandle);
+    assert(typeof watText === "string", "expected generated call WAT string");
+    assert(watText.includes('h_continuation_p'),
+      "generated WAT must test continuation dispatch");
+    assert(watText.includes('h_parameter_p'),
+      "generated WAT must test parameter dispatch");
+    assert(watText.includes('h_compiled_entry'),
+      "generated WAT must prepare compiled-procedure entry");
+    assert(watText.includes('(call $h_cons (local.get $co)'),
+      "generated WAT must qualify continue labels with the current code object");
+
+    const zoneBytes = compileWat(watText, "generated-call-zone");
+    const { instance } = await WebAssembly.instantiate(zoneBytes, generatedZoneImports());
+
+    globalThis.__eceGeneratedCallZone0 = instance.exports.zone_call_0;
+    const result = eceEval(`
+      (begin
+        (register-native-zone! 'generated-call 0
+          (%js-eval "globalThis.__eceGeneratedCallZone0"))
+        (execute-code-object generated-call-co))`);
+
+    assert(w.h_fixnum_val(result) === 42,
+      `expected compiled procedure call result 42, got ${w.h_fixnum_val(result)}`);
+  });
+
+  await iTest("generated register-machine WASM zone bails on non-procedure call", async () => {
+    const watHandle = eceEval(`
+      (begin
+        (define generated-not-proc 41)
+        (define generated-not-proc-co
+          (mc-compile-to-code-object '(generated-not-proc)))
+        (%code-object-set-archive-key! generated-not-proc-co
+          (cons 'generated-not-proc 0))
+        (generate-register-machine-wasm-zone generated-not-proc-co
+          "zone_not_proc_0"))`);
+    const watText = ECE._eceToJs(watHandle);
+    assert(typeof watText === "string", "expected generated non-procedure WAT string");
+    assert(watText.includes('h_compiled_entry'),
+      "generated WAT must prepare compiled-procedure entry");
+    assert(watText.includes('h_error_sentinel_p'),
+      "generated WAT must check compiled-entry type errors");
+
+    const zoneBytes = compileWat(watText, "generated-not-proc-zone");
+    const { instance } = await WebAssembly.instantiate(zoneBytes, generatedZoneImports());
+
+    globalThis.__eceGeneratedNotProcZone0 = instance.exports.zone_not_proc_0;
+    const result = eceEval(`
+      (begin
+        (register-native-zone! 'generated-not-proc 0
+          (%js-eval "globalThis.__eceGeneratedNotProcZone0"))
+        (guard (e ((error-object? e) (error-object-message e)))
+          (execute-code-object generated-not-proc-co)))`);
+
+    const message = ECE._eceToJs(result);
+    assert(message === "compiled-procedure-entry: not a compiled procedure",
+      `expected catchable non-procedure call error, got ${JSON.stringify(message)}`);
   });
 
   await iTest("generated register-machine WASM zone runs conditional control flow", async () => {

@@ -21,7 +21,11 @@
 ;;;   (assign <register> (op lookup-variable-value)
 ;;;                      (const <symbol>) (reg env))
 ;;;   (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
+;;;   (assign val (op compiled-procedure-entry) (reg proc))
+;;;   (assign continue (label <local-label>))
 ;;;   (test (op false?) <operand>)
+;;;   (test (op continuation?) <operand>)
+;;;   (test (op parameter?) <operand>)
 ;;;   (branch (label <local-label>))
 ;;;   (goto (label <local-label>))
 ;;;   (save <register>)
@@ -122,6 +126,22 @@ reload never sees dollar-prefixed strings as interpolation input."
          (wasm-zone/register-local (cadr source)))
     (string-append "(local.get " (wasm-zone/register-local (cadr source)) ")"))
    (else #f)))
+
+(define (wasm-zone/label-source-value-wat target source co)
+  (and (pair? source)
+       (eq? (car source) 'label)
+       (pair? (cdr source))
+       (let ((target-pc (wasm-zone/label-target-pc co source)))
+         (and target-pc
+              (if (eq? target 'continue)
+                  (string-append
+                   "(call " (wasm-zone/name "h_cons")
+                   " (local.get " (wasm-zone/name "co") ")"
+                   " (call " (wasm-zone/name "h_fixnum")
+                   " (i32.const " (number->string target-pc) ")))")
+                  (string-append
+                   "(call " (wasm-zone/name "h_fixnum")
+                   " (i32.const " (number->string target-pc) "))"))))))
 
 (define (wasm-zone/char-list-value-wat name)
   (let ((tail "(i32.const 0)"))
@@ -231,6 +251,13 @@ reload never sees dollar-prefixed strings as interpolation input."
       (string-append "(call " (wasm-zone/name "h_apply_primitive")
                      " (local.get " (wasm-zone/name "proc") ")"
                      " (local.get " (wasm-zone/name "argl") "))"))
+     ((and (eq? op-name 'compiled-procedure-entry)
+           (= (length operands) 1)
+           (pair? (car operands))
+           (eq? (car (car operands)) 'reg)
+           (eq? (cadr (car operands)) 'proc))
+      (string-append "(call " (wasm-zone/name "h_compiled_entry")
+                     " (local.get " (wasm-zone/name "proc") "))"))
      (else #f))))
 
 (define (wasm-zone/return-result-call-wat mode next-pc)
@@ -250,7 +277,9 @@ reload never sees dollar-prefixed strings as interpolation input."
 (define (wasm-zone/error-sentinel-operation? source operands)
   (or (wasm-zone/lookup-variable-value-operands? source operands)
       (and (eq? (wasm-zone/operation-name source) 'apply-primitive-procedure)
-           (= (length operands) 2))))
+           (= (length operands) 2))
+      (and (eq? (wasm-zone/operation-name source) 'compiled-procedure-entry)
+           (= (length operands) 1))))
 
 (define (wasm-zone/set-next-pc-wat next-pc)
   (string-append
@@ -258,7 +287,7 @@ reload never sees dollar-prefixed strings as interpolation input."
    " (i32.const " (number->string next-pc) "))\n"
    "        (br " (wasm-zone/name "dispatch") ")\n"))
 
-(define (wasm-zone/emit-assign-wat instr pc)
+(define (wasm-zone/emit-assign-wat co instr pc)
   "Return WAT for a supported assign instruction, else #f."
   (if (not (and (pair? instr)
                 (eq? (car instr) 'assign)
@@ -272,9 +301,13 @@ reload never sees dollar-prefixed strings as interpolation input."
         (if (not target-local)
             #f
             (let ((value-wat
-                   (if (wasm-zone/operation-name source)
-                       (wasm-zone/op-value-wat source operands)
-                       (wasm-zone/source-value-wat source))))
+                   (cond
+                    ((wasm-zone/operation-name source)
+                     (wasm-zone/op-value-wat source operands))
+                    ((and (pair? source) (eq? (car source) 'label))
+                     (wasm-zone/label-source-value-wat target source co))
+                    (else
+                     (wasm-zone/source-value-wat source)))))
               (if value-wat
                   (string-append
                    "        (local.set " target-local " " value-wat ")\n"
@@ -311,6 +344,20 @@ reload never sees dollar-prefixed strings as interpolation input."
       (let ((value-wat (wasm-zone/source-value-wat (car operands))))
         (if value-wat
             (string-append "(call " (wasm-zone/name "h_primitive_p")
+                           " " value-wat ")")
+            #f)))
+     ((and (eq? op-name 'continuation?)
+           (= (length operands) 1))
+      (let ((value-wat (wasm-zone/source-value-wat (car operands))))
+        (if value-wat
+            (string-append "(call " (wasm-zone/name "h_continuation_p")
+                           " " value-wat ")")
+            #f)))
+     ((and (eq? op-name 'parameter?)
+           (= (length operands) 1))
+      (let ((value-wat (wasm-zone/source-value-wat (car operands))))
+        (if value-wat
+            (string-append "(call " (wasm-zone/name "h_parameter_p")
                            " " value-wat ")")
             #f)))
      (else #f))))
@@ -386,7 +433,7 @@ reload never sees dollar-prefixed strings as interpolation input."
 (define (wasm-zone/instruction-body-wat co instrs len pc)
   "Return WAT for instruction PC, else #f when the interpreter should handle it."
   (let* ((instr (vector-ref instrs pc))
-         (assign-wat (wasm-zone/emit-assign-wat instr pc))
+         (assign-wat (wasm-zone/emit-assign-wat co instr pc))
          (primitive-test-wat (wasm-zone/emit-primitive-procedure-test-wat instr pc))
          (test-wat (wasm-zone/emit-test-wat instr)))
     (cond
@@ -534,6 +581,12 @@ is unsupported."
    "  (import \"ece\" \"h_lookup\" (func " (wasm-zone/name "h_lookup")
    " (param i32) (param i32) (result i32)))\n"
    "  (import \"ece\" \"h_primitive_p\" (func " (wasm-zone/name "h_primitive_p")
+   " (param i32) (result i32)))\n"
+   "  (import \"ece\" \"h_continuation_p\" (func " (wasm-zone/name "h_continuation_p")
+   " (param i32) (result i32)))\n"
+   "  (import \"ece\" \"h_parameter_p\" (func " (wasm-zone/name "h_parameter_p")
+   " (param i32) (result i32)))\n"
+   "  (import \"ece\" \"h_compiled_entry\" (func " (wasm-zone/name "h_compiled_entry")
    " (param i32) (result i32)))\n"
    "  (import \"ece\" \"h_apply_primitive\" (func " (wasm-zone/name "h_apply_primitive")
    " (param i32) (param i32) (result i32)))\n"
