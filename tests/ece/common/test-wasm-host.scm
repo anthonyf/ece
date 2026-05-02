@@ -7,6 +7,12 @@
     (thunk)
     #f))
 
+(test "wasm-host: code-object fingerprints are portable across runtimes" (lambda ()
+  (assert-equal
+   (ser/stable-string-hash
+    "(:ece-code-object-fingerprint-v1 :name #f :arity #f :source-loc #f :labels () :instructions ((assign val (const 11)) (halt)))")
+   491869788)))
+
 (test "wasm-host: validates native-zone manifest" (lambda ()
   (let* ((manifest
           (validate-native-zone-manifest
