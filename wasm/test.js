@@ -344,6 +344,10 @@ async function runGeneratedZoneIntegrationTests(w, envH) {
         h_continuation_p: w.h_continuation_p,
         h_parameter_p: w.h_parameter_p,
         h_compiled_entry: w.h_compiled_entry,
+        h_compiled_env: w.h_compiled_env,
+        h_extend_env: w.h_extend_env,
+        h_lexical_ref: w.h_lexical_ref,
+        h_lexical_set: w.h_lexical_set,
         h_apply_primitive: w.h_apply_primitive,
         h_error_sentinel_p: w.h_error_sentinel_p,
         pair_car: w.pair_car,
@@ -504,6 +508,159 @@ async function runGeneratedZoneIntegrationTests(w, envH) {
 
     assert(w.h_fixnum_val(result) === 42,
       `expected compiled procedure call result 42, got ${w.h_fixnum_val(result)}`);
+  });
+
+  await iTest("generated register-machine WASM zones run lexical procedure bodies", async () => {
+    const watHandle = eceEval(`
+      (begin
+        (define (generated-body-target x) (+ x 1))
+        (define generated-body-call-co
+          (mc-compile-to-code-object '(generated-body-target 41)))
+        (define generated-body-co
+          (compiled-procedure-entry generated-body-target))
+        (%code-object-set-archive-key! generated-body-call-co
+          (cons 'generated-body 0))
+        (%code-object-set-archive-key! generated-body-co
+          (cons 'generated-body 1))
+        (define generated-body-bundle
+          (generate-register-machine-wasm-zone-bundle
+            'generated-body
+            (vector generated-body-call-co generated-body-co)
+            "generated-body-zones.wasm"))
+        (wasm-zone-bundle-wat generated-body-bundle))`);
+    const watText = ECE._eceToJs(watHandle);
+    assert(typeof watText === "string", "expected generated procedure-body WAT string");
+    assert(watText.includes('(export "zone_0")'), "generated WAT missing caller zone");
+    assert(watText.includes('(export "zone_1")'), "generated WAT missing body zone");
+    assert(watText.includes('h_compiled_env'),
+      "generated body WAT must fetch compiled-procedure env");
+    assert(watText.includes('h_extend_env'),
+      "generated body WAT must extend lexical environment");
+    assert(watText.includes('h_lexical_ref'),
+      "generated body WAT must read lexical bindings");
+
+    const zoneBytes = compileWat(watText, "generated-body-zones");
+    const { instance } = await WebAssembly.instantiate(zoneBytes, generatedZoneImports());
+
+    globalThis.__eceGeneratedBodyZoneHits = 0;
+    globalThis.__eceGeneratedBodyCallerZone0 = instance.exports.zone_0;
+    globalThis.__eceGeneratedBodyCalleeZone1 = (regs) => {
+      globalThis.__eceGeneratedBodyZoneHits += 1;
+      return instance.exports.zone_1(
+        regs.pc, regs.val, regs.env, regs.proc,
+        regs.argl, regs.cont, regs.stack, regs.co);
+    };
+    const result = eceEval(`
+      (begin
+        (register-native-zone! 'generated-body 0
+          (%js-eval "globalThis.__eceGeneratedBodyCallerZone0"))
+        (register-native-zone! 'generated-body 1
+          (%js-eval "globalThis.__eceGeneratedBodyCalleeZone1"))
+        (execute-code-object generated-body-call-co))`);
+
+    assert(w.h_fixnum_val(result) === 42,
+      `expected generated lexical body result 42, got ${w.h_fixnum_val(result)}`);
+    assert(globalThis.__eceGeneratedBodyZoneHits === 1,
+      `expected generated body zone to run once, got ${globalThis.__eceGeneratedBodyZoneHits}`);
+  });
+
+  await iTest("generated register-machine WASM zones run lexical mutation", async () => {
+    const watHandle = eceEval(`
+      (begin
+        (define (generated-set-target x) (set! x (+ x 1)) x)
+        (define generated-set-call-co
+          (mc-compile-to-code-object '(generated-set-target 41)))
+        (define generated-set-body-co
+          (compiled-procedure-entry generated-set-target))
+        (%code-object-set-archive-key! generated-set-call-co
+          (cons 'generated-set 0))
+        (%code-object-set-archive-key! generated-set-body-co
+          (cons 'generated-set 1))
+        (define generated-set-bundle
+          (generate-register-machine-wasm-zone-bundle
+            'generated-set
+            (vector generated-set-call-co generated-set-body-co)
+            "generated-set-zones.wasm"))
+        (wasm-zone-bundle-wat generated-set-bundle))`);
+    const watText = ECE._eceToJs(watHandle);
+    assert(typeof watText === "string", "expected generated lexical-set WAT string");
+    assert(watText.includes('h_lexical_set'),
+      "generated body WAT must write lexical bindings");
+
+    const zoneBytes = compileWat(watText, "generated-set-zones");
+    const { instance } = await WebAssembly.instantiate(zoneBytes, generatedZoneImports());
+
+    globalThis.__eceGeneratedSetZoneHits = 0;
+    globalThis.__eceGeneratedSetCallerZone0 = instance.exports.zone_0;
+    globalThis.__eceGeneratedSetCalleeZone1 = (regs) => {
+      globalThis.__eceGeneratedSetZoneHits += 1;
+      return instance.exports.zone_1(
+        regs.pc, regs.val, regs.env, regs.proc,
+        regs.argl, regs.cont, regs.stack, regs.co);
+    };
+    const result = eceEval(`
+      (begin
+        (register-native-zone! 'generated-set 0
+          (%js-eval "globalThis.__eceGeneratedSetCallerZone0"))
+        (register-native-zone! 'generated-set 1
+          (%js-eval "globalThis.__eceGeneratedSetCalleeZone1"))
+        (execute-code-object generated-set-call-co))`);
+
+    assert(w.h_fixnum_val(result) === 42,
+      `expected generated lexical mutation result 42, got ${w.h_fixnum_val(result)}`);
+    assert(globalThis.__eceGeneratedSetZoneHits === 1,
+      `expected generated set body zone to run once, got ${globalThis.__eceGeneratedSetZoneHits}`);
+  });
+
+  await iTest("generated register-machine WASM zones run dotted parameters", async () => {
+    const watHandle = eceEval(`
+      (begin
+        (define (generated-rest-target x . rest) rest)
+        (define generated-rest-call-co
+          (mc-compile-to-code-object '(generated-rest-target 1 2 3)))
+        (define generated-rest-body-co
+          (compiled-procedure-entry generated-rest-target))
+        (%code-object-set-archive-key! generated-rest-call-co
+          (cons 'generated-rest 0))
+        (%code-object-set-archive-key! generated-rest-body-co
+          (cons 'generated-rest 1))
+        (define generated-rest-bundle
+          (generate-register-machine-wasm-zone-bundle
+            'generated-rest
+            (vector generated-rest-call-co generated-rest-body-co)
+            "generated-rest-zones.wasm"))
+        (wasm-zone-bundle-wat generated-rest-bundle))`);
+    const watText = ECE._eceToJs(watHandle);
+    assert(typeof watText === "string", "expected generated rest-parameter WAT string");
+    assert(watText.includes('h_symbol_from_chars'),
+      "generated WAT must lower multi-character rest parameter symbols");
+    assert(watText.includes('h_extend_env'),
+      "generated WAT must extend lexical environment for rest parameters");
+
+    const zoneBytes = compileWat(watText, "generated-rest-zones");
+    const { instance } = await WebAssembly.instantiate(zoneBytes, generatedZoneImports());
+
+    globalThis.__eceGeneratedRestZoneHits = 0;
+    globalThis.__eceGeneratedRestCallerZone0 = instance.exports.zone_0;
+    globalThis.__eceGeneratedRestCalleeZone1 = (regs) => {
+      globalThis.__eceGeneratedRestZoneHits += 1;
+      return instance.exports.zone_1(
+        regs.pc, regs.val, regs.env, regs.proc,
+        regs.argl, regs.cont, regs.stack, regs.co);
+    };
+    const result = eceEval(`
+      (begin
+        (register-native-zone! 'generated-rest 0
+          (%js-eval "globalThis.__eceGeneratedRestCallerZone0"))
+        (register-native-zone! 'generated-rest 1
+          (%js-eval "globalThis.__eceGeneratedRestCalleeZone1"))
+        (execute-code-object generated-rest-call-co))`);
+
+    const values = ECE._eceListToJsArray(result);
+    assert(JSON.stringify(values) === JSON.stringify([2, 3]),
+      `expected generated rest result (2 3), got ${JSON.stringify(values)}`);
+    assert(globalThis.__eceGeneratedRestZoneHits === 1,
+      `expected generated rest body zone to run once, got ${globalThis.__eceGeneratedRestZoneHits}`);
   });
 
   await iTest("generated register-machine WASM zone bails on non-procedure call", async () => {
