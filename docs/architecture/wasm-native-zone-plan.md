@@ -328,6 +328,8 @@ register-machine subset:
 (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
 (assign val (op compiled-procedure-entry) (reg proc))
 (assign env (op compiled-procedure-env) (reg proc))
+(assign <register> (op make-compiled-procedure)
+        (const <code-object>) (reg env))
 (assign env (op extend-environment)
         (const <params>) (reg argl) (reg env) (const <extra-slots>))
 (assign <register> (op lexical-ref)
@@ -368,6 +370,13 @@ the current code object, and fetch the compiled-procedure entry. Register-valued
 `goto` remains an interpreter bailout point, so cross-code-object transfer,
 tail-call behavior, and continuation semantics still run through the existing
 register-machine executor.
+
+Generated zones can also allocate closures for code-object constants emitted by
+`make-compiled-procedure`. The side module does not embed object handles;
+instead it passes the current code object and PC back to the runtime helper,
+which reads the already-materialized instruction constant. That keeps raw
+compiled code and archive-loaded `.ecec` code on the same code-object identity
+path.
 
 Simple procedure bodies can run native after that transfer. Generated zones can
 load the compiled procedure environment, extend the lexical frame from `argl`,

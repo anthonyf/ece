@@ -357,6 +357,7 @@ const ECE = {
           h_parameter_p: ECE.wasm.h_parameter_p,
           h_compiled_entry: ECE.wasm.h_compiled_entry,
           h_compiled_env: ECE.wasm.h_compiled_env,
+          h_make_compiled_proc: ECE.wasm.h_make_compiled_proc,
           h_extend_env: ECE.wasm.h_extend_env,
           h_lexical_ref: ECE.wasm.h_lexical_ref,
           h_lexical_set: ECE.wasm.h_lexical_set,
