@@ -10,6 +10,7 @@ const Sandbox = {
   replOutputEl: null,
   running: false,
   envHandle: null,
+  ready: false,
 
   // ── Initialize ──
 
@@ -66,7 +67,8 @@ const Sandbox = {
       canvas: ECE.canvas,
       timing: ECE.timing,
       math: ECE.math,
-      ffi: ECE.ffi
+      ffi: ECE.ffi,
+      wasm_host: ECE.wasmHost
     };
 
     const { instance } = await WebAssembly.instantiate(wasmBytes, imports);
@@ -79,6 +81,7 @@ const Sandbox = {
     const bootText = atob(ECE_BOOTSTRAP_BUNDLE);
     ECE.loadArchiveBundle(bootText);
     ECE.wasm.mark_handles();
+    Sandbox.ready = true;
   },
 
   // ── Console output ──
@@ -176,6 +179,11 @@ const Sandbox = {
   },
 
   run(source) {
+    if (!Sandbox.ready || !ECE.wasm) {
+      Sandbox.appendConsole("\nError: ECE runtime is still loading\n");
+      return;
+    }
+
     Sandbox.clearConsole();
     Sandbox.running = true;
     document.getElementById("run-btn").textContent = "\u25A0 Stop";
@@ -299,6 +307,15 @@ const Sandbox = {
   evalRepl() {
     const input = Sandbox.replInputEl.value.trim();
     if (!input) return;
+    if (!Sandbox.ready || !ECE.wasm) {
+      const entry = document.createElement("div");
+      entry.className = "repl-entry";
+      entry.innerHTML = '<div class="repl-input-echo">' + Sandbox.escapeHtml(input) + '</div>' +
+        '<div class="repl-result">Error: ECE runtime is still loading</div>';
+      Sandbox.replOutputEl.appendChild(entry);
+      Sandbox.replOutputEl.scrollTop = Sandbox.replOutputEl.scrollHeight;
+      return;
+    }
 
     const w = ECE.wasm;
 

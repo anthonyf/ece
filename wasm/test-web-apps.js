@@ -45,6 +45,12 @@ async function run() {
     console.log("FAIL: sandbox.js still uses old ECE_BOOTSTRAP[name] format");
     failed++;
   }
+  if (sandboxJs.includes("wasm_host: ECE.wasmHost")) {
+    console.log("PASS: sandbox.js provides wasm_host imports");
+  } else {
+    console.log("FAIL: sandbox.js missing wasm_host imports");
+    failed++;
+  }
 
   // --- Test 3: WASM instantiation with full imports ---
   const wasmBytes = fs.readFileSync(path.join(ROOT, "wasm", "runtime.wasm"));
@@ -131,9 +137,9 @@ async function run() {
   // --- Summary ---
   console.log("");
   if (failed === 0) {
-    console.log("Web apps smoke test: 6 passed, 0 failed");
+    console.log("Web apps smoke test: 7 passed, 0 failed");
   } else {
-    console.log(`Web apps smoke test: ${6 - failed} passed, ${failed} failed`);
+    console.log(`Web apps smoke test: ${7 - failed} passed, ${failed} failed`);
     process.exit(1);
   }
 }
