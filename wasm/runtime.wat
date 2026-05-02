@@ -292,6 +292,13 @@
       (i32.const 97)(i32.const 32)(i32.const 99)(i32.const 111)(i32.const 100)(i32.const 101)
       (i32.const 32)(i32.const 111)(i32.const 98)(i32.const 106)(i32.const 101)(i32.const 99)
       (i32.const 116)))
+  ;; ": pc out of range" (17 chars)
+  (global $err-pc-out-of-range (ref $string)
+    (array.new_fixed $string 17
+      (i32.const 58)(i32.const 32)(i32.const 112)(i32.const 99)(i32.const 32)
+      (i32.const 111)(i32.const 117)(i32.const 116)(i32.const 32)(i32.const 111)
+      (i32.const 102)(i32.const 32)(i32.const 114)(i32.const 97)(i32.const 110)
+      (i32.const 103)(i32.const 101)))
   ;; "compiled-procedure-entry" (24 chars)
   (global $name-compiled-procedure-entry (ref $string)
     (array.new_fixed $string 24
@@ -7469,8 +7476,8 @@
         (return (call $alloc-handle
           (call $make-type-error
             (global.get $name-make-compiled-procedure)
-            (global.get $err-not-code-object)
-            (local.get $co))))))
+            (global.get $err-pc-out-of-range)
+            (call $make-fixnum (local.get $pc)))))))
     (if (i32.ge_u
           (local.get $pc)
           (struct.get $code-object $len
@@ -7493,7 +7500,7 @@
         (return (call $alloc-handle
           (call $make-type-error
             (global.get $name-make-compiled-procedure)
-            (global.get $err-not-code-object)
+            (global.get $err-not-pair)
             (local.get $operands))))))
     (local.set $entry
       (call $eval-operand
