@@ -193,6 +193,15 @@
     (assert-true (string-contains? wat "(call \$h_cons (local.get \$co)"))
     (assert-true (>= (wasm-zone-test-substring-count wat "h_lookup") 2)))))
 
+(test "codegen-wasm-zone: emits closure creation" (lambda ()
+  (let* ((co (mc-compile-to-code-object '((lambda (x) (+ x 1)) 41)))
+         (wat (generate-register-machine-wasm-zone co "zone_inline_lambda")))
+    (assert-true (wasm-zone/supported? co))
+    (assert-true (string? wat))
+    (assert-true (string-contains? wat "(export \"zone_inline_lambda\")"))
+    (assert-true (string-contains? wat "h_make_compiled_proc"))
+    (assert-true (string-contains? wat "h_error_sentinel_p")))))
+
 (test "codegen-wasm-zone: emits lexical procedure body setup" (lambda ()
   (eval-string "(define (wasm-zone-body-target x) (+ x 1))")
   (let* ((co (compiled-procedure-entry wasm-zone-body-target))

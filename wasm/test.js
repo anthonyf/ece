@@ -345,6 +345,7 @@ async function runGeneratedZoneIntegrationTests(w, envH) {
         h_parameter_p: w.h_parameter_p,
         h_compiled_entry: w.h_compiled_entry,
         h_compiled_env: w.h_compiled_env,
+        h_make_compiled_proc: w.h_make_compiled_proc,
         h_extend_env: w.h_extend_env,
         h_lexical_ref: w.h_lexical_ref,
         h_lexical_set: w.h_lexical_set,
@@ -562,6 +563,94 @@ async function runGeneratedZoneIntegrationTests(w, envH) {
       `expected generated lexical body result 42, got ${w.h_fixnum_val(result)}`);
     assert(globalThis.__eceGeneratedBodyZoneHits === 1,
       `expected generated body zone to run once, got ${globalThis.__eceGeneratedBodyZoneHits}`);
+  });
+
+  await iTest("generated register-machine WASM zones create captured closures", async () => {
+    const watHandle = eceEval(`
+      (begin
+        (define (generated-first-child-code-object co)
+          (let ((instrs (code-object-instructions co))
+                (len (code-object-length co))
+                (found #f))
+            (let loop ((i 0))
+              (when (< i len)
+                (let ((instr (vector-ref instrs i)))
+                  (when (and (pair? instr)
+                             (eq? (car instr) 'assign)
+                             (pair? (caddr instr))
+                             (eq? (car (caddr instr)) 'op)
+                             (eq? (cadr (caddr instr)) 'make-compiled-procedure))
+                    (let ((operand (cadddr instr)))
+                      (when (and (pair? operand)
+                                 (eq? (car operand) 'const)
+                                 (code-object? (cadr operand))
+                                 (not found))
+                        (set! found (cadr operand))))))
+                (loop (+ i 1))))
+            found))
+        (define (generated-closure-make-adder x)
+          (lambda (y) (+ x y)))
+        (define generated-closure-call-co
+          (mc-compile-to-code-object '((generated-closure-make-adder 10) 32)))
+        (define generated-closure-maker-co
+          (compiled-procedure-entry generated-closure-make-adder))
+        (define generated-closure-inner-co
+          (generated-first-child-code-object generated-closure-maker-co))
+        (%code-object-set-archive-key! generated-closure-call-co
+          (cons 'generated-closure 0))
+        (%code-object-set-archive-key! generated-closure-maker-co
+          (cons 'generated-closure 1))
+        (%code-object-set-archive-key! generated-closure-inner-co
+          (cons 'generated-closure 2))
+        (define generated-closure-bundle
+          (generate-register-machine-wasm-zone-bundle
+            'generated-closure
+            (vector generated-closure-call-co
+                    generated-closure-maker-co
+                    generated-closure-inner-co)
+            "generated-closure-zones.wasm"))
+        (wasm-zone-bundle-wat generated-closure-bundle))`);
+    const watText = ECE._eceToJs(watHandle);
+    assert(typeof watText === "string", "expected generated closure WAT string");
+    assert(watText.includes('h_make_compiled_proc'),
+      "generated WAT must create closures through the VM helper");
+    assert(watText.includes('h_lexical_ref'),
+      "generated WAT must read captured lexical bindings");
+
+    const zoneBytes = compileWat(watText, "generated-closure-zones");
+    const { instance } = await WebAssembly.instantiate(zoneBytes, generatedZoneImports());
+
+    globalThis.__eceGeneratedClosureMakerHits = 0;
+    globalThis.__eceGeneratedClosureInnerHits = 0;
+    globalThis.__eceGeneratedClosureCallerZone0 = instance.exports.zone_0;
+    globalThis.__eceGeneratedClosureMakerZone1 = (regs) => {
+      globalThis.__eceGeneratedClosureMakerHits += 1;
+      return instance.exports.zone_1(
+        regs.pc, regs.val, regs.env, regs.proc,
+        regs.argl, regs.cont, regs.stack, regs.co);
+    };
+    globalThis.__eceGeneratedClosureInnerZone2 = (regs) => {
+      globalThis.__eceGeneratedClosureInnerHits += 1;
+      return instance.exports.zone_2(
+        regs.pc, regs.val, regs.env, regs.proc,
+        regs.argl, regs.cont, regs.stack, regs.co);
+    };
+    const result = eceEval(`
+      (begin
+        (register-native-zone! 'generated-closure 0
+          (%js-eval "globalThis.__eceGeneratedClosureCallerZone0"))
+        (register-native-zone! 'generated-closure 1
+          (%js-eval "globalThis.__eceGeneratedClosureMakerZone1"))
+        (register-native-zone! 'generated-closure 2
+          (%js-eval "globalThis.__eceGeneratedClosureInnerZone2"))
+        (execute-code-object generated-closure-call-co))`);
+
+    assert(w.h_fixnum_val(result) === 42,
+      `expected generated captured closure result 42, got ${w.h_fixnum_val(result)}`);
+    assert(globalThis.__eceGeneratedClosureMakerHits === 1,
+      `expected generated closure maker zone to run once, got ${globalThis.__eceGeneratedClosureMakerHits}`);
+    assert(globalThis.__eceGeneratedClosureInnerHits === 1,
+      `expected generated closure body zone to run once, got ${globalThis.__eceGeneratedClosureInnerHits}`);
   });
 
   await iTest("generated register-machine WASM zones run lexical mutation", async () => {

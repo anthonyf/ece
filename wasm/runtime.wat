@@ -285,6 +285,13 @@
       (i32.const 105)(i32.const 108)(i32.const 101)(i32.const 100)(i32.const 32)(i32.const 112)
       (i32.const 114)(i32.const 111)(i32.const 99)(i32.const 101)(i32.const 100)(i32.const 117)
       (i32.const 114)(i32.const 101)))
+  ;; ": not a code object" (19 chars)
+  (global $err-not-code-object (ref $string)
+    (array.new_fixed $string 19
+      (i32.const 58)(i32.const 32)(i32.const 110)(i32.const 111)(i32.const 116)(i32.const 32)
+      (i32.const 97)(i32.const 32)(i32.const 99)(i32.const 111)(i32.const 100)(i32.const 101)
+      (i32.const 32)(i32.const 111)(i32.const 98)(i32.const 106)(i32.const 101)(i32.const 99)
+      (i32.const 116)))
   ;; "compiled-procedure-entry" (24 chars)
   (global $name-compiled-procedure-entry (ref $string)
     (array.new_fixed $string 24
@@ -299,6 +306,14 @@
       (i32.const 101)(i32.const 100)(i32.const 45)(i32.const 112)(i32.const 114)(i32.const 111)
       (i32.const 99)(i32.const 101)(i32.const 100)(i32.const 117)(i32.const 114)(i32.const 101)
       (i32.const 45)(i32.const 101)(i32.const 110)(i32.const 118)))
+  ;; "make-compiled-procedure" (23 chars)
+  (global $name-make-compiled-procedure (ref $string)
+    (array.new_fixed $string 23
+      (i32.const 109)(i32.const 97)(i32.const 107)(i32.const 101)(i32.const 45)
+      (i32.const 99)(i32.const 111)(i32.const 109)(i32.const 112)(i32.const 105)
+      (i32.const 108)(i32.const 101)(i32.const 100)(i32.const 45)(i32.const 112)
+      (i32.const 114)(i32.const 111)(i32.const 99)(i32.const 101)(i32.const 100)
+      (i32.const 117)(i32.const 114)(i32.const 101)))
 
   ;; Archive loader error messages (used by $load-archive-impl and
   ;; $archive-patch-co-refs — actionable text surfaced to JS via runtime_error).
@@ -7437,6 +7452,81 @@
     (call $alloc-handle
       (call $compiled-proc-env
         (ref.cast (ref $compiled-proc) (local.get $proc)))))
+
+  (func (export "h_make_compiled_proc")
+        (param $co-handle i32) (param $pc i32) (param $env-handle i32)
+        (result i32)
+    (local $co (ref null eq))
+    (local $env (ref null eq))
+    (local $instr (ref $instr))
+    (local $operands (ref null eq))
+    (local $entry (ref null eq))
+    (local $entry-head (ref null eq))
+    (local.set $co (call $deref-handle (local.get $co-handle)))
+    (local.set $env (call $deref-handle (local.get $env-handle)))
+    (if (i32.eqz (ref.test (ref $code-object) (local.get $co)))
+      (then
+        (return (call $alloc-handle
+          (call $make-type-error
+            (global.get $name-make-compiled-procedure)
+            (global.get $err-not-code-object)
+            (local.get $co))))))
+    (if (i32.ge_u
+          (local.get $pc)
+          (struct.get $code-object $len
+            (ref.cast (ref $code-object) (local.get $co))))
+      (then
+        (return (call $alloc-handle
+          (call $make-type-error
+            (global.get $name-make-compiled-procedure)
+            (global.get $err-not-code-object)
+            (local.get $co))))))
+    (local.set $instr
+      (ref.as_non_null
+        (array.get $instr-vec
+          (struct.get $code-object $instrs
+            (ref.cast (ref $code-object) (local.get $co)))
+          (local.get $pc))))
+    (local.set $operands (struct.get $instr $val (local.get $instr)))
+    (if (i32.eqz (ref.test (ref $pair) (local.get $operands)))
+      (then
+        (return (call $alloc-handle
+          (call $make-type-error
+            (global.get $name-make-compiled-procedure)
+            (global.get $err-not-code-object)
+            (local.get $operands))))))
+    (local.set $entry
+      (call $eval-operand
+        (call $xcar (local.get $operands))
+        (ref.null eq)
+        (local.get $env)
+        (ref.null eq)
+        (ref.null eq)
+        (ref.null eq)
+        (global.get $nil)
+        (local.get $co)))
+    (if (ref.test (ref $code-object) (local.get $entry))
+      (then
+        (return (call $alloc-handle
+          (struct.new $compiled-proc
+            (i32.const 0) (i32.const 0)
+            (local.get $env)
+            (local.get $entry))))))
+    (if (ref.test (ref $pair) (local.get $entry))
+      (then
+        (local.set $entry-head (call $xcar (local.get $entry)))
+        (if (ref.test (ref $code-object) (local.get $entry-head))
+          (then
+            (return (call $alloc-handle
+              (struct.new $compiled-proc
+                (i32.const 0) (i32.const 0)
+                (local.get $env)
+                (local.get $entry-head))))))))
+    (call $alloc-handle
+      (call $make-type-error
+        (global.get $name-make-compiled-procedure)
+        (global.get $err-not-code-object)
+        (local.get $entry))))
 
   (func (export "h_extend_env")
         (param $names-handle i32) (param $vals-handle i32)

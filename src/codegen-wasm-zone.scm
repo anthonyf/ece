@@ -23,6 +23,8 @@
 ;;;   (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
 ;;;   (assign val (op compiled-procedure-entry) (reg proc))
 ;;;   (assign env (op compiled-procedure-env) (reg proc))
+;;;   (assign <register> (op make-compiled-procedure)
+;;;                      (const <code-object>) (reg env))
 ;;;   (assign env (op extend-environment)
 ;;;               (const <params>) (reg argl) (reg env) (const <extra-slots>))
 ;;;   (assign <register> (op lexical-ref)
@@ -196,6 +198,17 @@ reload never sees dollar-prefixed strings as interpolation input."
        (eq? (car (cadr operands)) 'reg)
        (eq? (cadr (cadr operands)) 'env)))
 
+(define (wasm-zone/make-compiled-procedure-operands? source operands)
+  (and (eq? (wasm-zone/operation-name source) 'make-compiled-procedure)
+       (= (length operands) 2)
+       (pair? (car operands))
+       (eq? (caar operands) 'const)
+       (pair? (cdr (car operands)))
+       (code-object? (cadr (car operands)))
+       (pair? (cadr operands))
+       (eq? (car (cadr operands)) 'reg)
+       (eq? (cadr (cadr operands)) 'env)))
+
 (define (wasm-zone/label-target-pc co target)
   (if (and (pair? target)
            (eq? (car target) 'label)
@@ -223,7 +236,7 @@ reload never sees dollar-prefixed strings as interpolation input."
       (cadr source)
       #f))
 
-(define (wasm-zone/op-value-wat source operands)
+(define (wasm-zone/op-value-wat source operands pc)
   (let ((op-name (wasm-zone/operation-name source)))
     (cond
      ((eq? op-name 'list)
@@ -254,6 +267,11 @@ reload never sees dollar-prefixed strings as interpolation input."
                            " " name-wat
                            " (local.get " (wasm-zone/name "env") "))")
             #f)))
+     ((wasm-zone/make-compiled-procedure-operands? source operands)
+      (string-append "(call " (wasm-zone/name "h_make_compiled_proc")
+                     " (local.get " (wasm-zone/name "co") ")"
+                     " (i32.const " (number->string pc) ")"
+                     " (local.get " (wasm-zone/name "env") "))"))
      ((and (eq? op-name 'apply-primitive-procedure)
            (= (length operands) 2)
            (pair? (car operands))
@@ -341,6 +359,7 @@ reload never sees dollar-prefixed strings as interpolation input."
 
 (define (wasm-zone/error-sentinel-operation? source operands)
   (or (wasm-zone/lookup-variable-value-operands? source operands)
+      (wasm-zone/make-compiled-procedure-operands? source operands)
       (and (eq? (wasm-zone/operation-name source) 'apply-primitive-procedure)
            (= (length operands) 2))
       (and (eq? (wasm-zone/operation-name source) 'compiled-procedure-entry)
@@ -404,7 +423,7 @@ reload never sees dollar-prefixed strings as interpolation input."
             (let ((value-wat
                    (cond
                     ((wasm-zone/operation-name source)
-                     (wasm-zone/op-value-wat source operands))
+                     (wasm-zone/op-value-wat source operands pc))
                     ((and (pair? source) (eq? (car source) 'label))
                      (wasm-zone/label-source-value-wat target source co))
                     (else
@@ -695,6 +714,8 @@ is unsupported."
    " (param i32) (result i32)))\n"
    "  (import \"ece\" \"h_compiled_env\" (func " (wasm-zone/name "h_compiled_env")
    " (param i32) (result i32)))\n"
+   "  (import \"ece\" \"h_make_compiled_proc\" (func " (wasm-zone/name "h_make_compiled_proc")
+   " (param i32) (param i32) (param i32) (result i32)))\n"
    "  (import \"ece\" \"h_extend_env\" (func " (wasm-zone/name "h_extend_env")
    " (param i32) (param i32) (param i32) (param i32) (result i32)))\n"
    "  (import \"ece\" \"h_lexical_ref\" (func " (wasm-zone/name "h_lexical_ref")
