@@ -325,9 +325,12 @@ register-machine subset:
 (assign <register> (op cons) <operand> <operand>)
 (assign <register> (op car) <operand>)
 (assign <register> (op cdr) <operand>)
+(assign val (op apply-primitive-procedure) (reg proc) (reg argl))
 (test (op false?) <operand>)
 (branch (label <local-label>))
 (goto (label <local-label>))
+(save <register>)
+(restore <register>)
 (halt)
 ```
 
@@ -338,11 +341,15 @@ unsupported instruction's PC, so the interpreter continues from that point.
 Generated WASM preserves the logical register machine: branch and goto update a
 native-zone `pc` local and loop through a dispatch block rather than compiling
 Scheme control flow onto the host WASM call stack.
+Save and restore manipulate the ECE `stack` register as an ECE list, so
+non-tail primitive calls can stay native without using the host WASM call stack
+as Scheme control state.
 
-The first operation support is limited to pure data construction, not primitive
-procedure dispatch. Arithmetic such as `+` still compiles through ordinary
-primitive lookup/application so the generator should not shortcut it until it
-can preserve Scheme's mutable binding semantics and primitive error behavior.
+Primitive operation support goes through ordinary VM lookup/application helpers.
+Arithmetic such as `+` is not inlined or shortcut: generated zones still look
+up the current binding, verify it is still primitive, call the VM primitive
+dispatcher, and bail to the interpreter if rebinding or primitive errors require
+the normal register-machine path.
 
 The generator can also walk an archive code-object vector and produce one
 side-module WAT plus a native-zone manifest. Supported code-object indexes get

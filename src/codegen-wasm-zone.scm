@@ -20,9 +20,12 @@
 ;;;   (assign <register> (op cdr) <operand>)
 ;;;   (assign <register> (op lookup-variable-value)
 ;;;                      (const <symbol>) (reg env))
+;;;   (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
 ;;;   (test (op false?) <operand>)
 ;;;   (branch (label <local-label>))
 ;;;   (goto (label <local-label>))
+;;;   (save <register>)
+;;;   (restore <register>)
 ;;;   primitive tail application of a previously looked-up proc
 ;;;   (halt)
 ;;;
@@ -163,8 +166,11 @@ reload never sees dollar-prefixed strings as interpolation input."
   (if (and (pair? target)
            (eq? (car target) 'label)
            (pair? (cdr target)))
-      (let ((pc (code-object-label-ref co (cadr target))))
-        (if (number? pc) pc #f))
+      (let ((label (cadr target)))
+        (if (number? label)
+            label
+            (let ((pc (code-object-label-ref co label)))
+              (if (number? pc) pc #f))))
       #f))
 
 (define (wasm-zone/list-value-wat operands)
@@ -214,6 +220,17 @@ reload never sees dollar-prefixed strings as interpolation input."
                            " " name-wat
                            " (local.get " (wasm-zone/name "env") "))")
             #f)))
+     ((and (eq? op-name 'apply-primitive-procedure)
+           (= (length operands) 2)
+           (pair? (car operands))
+           (eq? (car (car operands)) 'reg)
+           (eq? (cadr (car operands)) 'proc)
+           (pair? (cadr operands))
+           (eq? (car (cadr operands)) 'reg)
+           (eq? (cadr (cadr operands)) 'argl))
+      (string-append "(call " (wasm-zone/name "h_apply_primitive")
+                     " (local.get " (wasm-zone/name "proc") ")"
+                     " (local.get " (wasm-zone/name "argl") "))"))
      (else #f))))
 
 (define (wasm-zone/return-result-call-wat mode next-pc)
@@ -229,6 +246,11 @@ reload never sees dollar-prefixed strings as interpolation input."
    "          (then\n"
    (wasm-zone/return-result-call-wat 2 pc)
    "          ))\n"))
+
+(define (wasm-zone/error-sentinel-operation? source operands)
+  (or (wasm-zone/lookup-variable-value-operands? source operands)
+      (and (eq? (wasm-zone/operation-name source) 'apply-primitive-procedure)
+           (= (length operands) 2))))
 
 (define (wasm-zone/set-next-pc-wat next-pc)
   (string-append
@@ -256,10 +278,23 @@ reload never sees dollar-prefixed strings as interpolation input."
               (if value-wat
                   (string-append
                    "        (local.set " target-local " " value-wat ")\n"
-                   (if (wasm-zone/lookup-variable-value-operands? source operands)
+                   (if (wasm-zone/error-sentinel-operation? source operands)
                        (wasm-zone/error-sentinel-bail-wat target-local pc)
                        ""))
                   #f))))))
+
+(define (wasm-zone/emit-primitive-procedure-test-wat instr pc)
+  (if (wasm-zone/test-primitive-procedure? instr)
+      (string-append
+       "        (if (call " (wasm-zone/name "h_primitive_p")
+       " (local.get " (wasm-zone/name "proc") "))\n"
+       "          (then\n"
+       "            (local.set " (wasm-zone/name "flag") " (i32.const 1))\n"
+       "          )\n"
+       "          (else\n"
+       (wasm-zone/return-result-call-wat 2 pc)
+       "          ))\n")
+      #f))
 
 (define (wasm-zone/test-value-wat source operands)
   (let ((op-name (wasm-zone/operation-name source)))
@@ -303,6 +338,36 @@ reload never sees dollar-prefixed strings as interpolation input."
        (eq? (car instr) 'goto)
        (pair? (cdr instr))))
 
+(define (wasm-zone/save-instruction? instr)
+  (and (pair? instr)
+       (eq? (car instr) 'save)
+       (pair? (cdr instr))
+       (wasm-zone/register-local (cadr instr))))
+
+(define (wasm-zone/restore-instruction? instr)
+  (and (pair? instr)
+       (eq? (car instr) 'restore)
+       (pair? (cdr instr))
+       (wasm-zone/register-local (cadr instr))))
+
+(define (wasm-zone/save-wat instr)
+  (let ((source-local (wasm-zone/register-local (cadr instr))))
+    (string-append
+     "        (local.set " (wasm-zone/name "stack")
+     " (call " (wasm-zone/name "h_cons")
+     " (local.get " source-local ")"
+     " (local.get " (wasm-zone/name "stack") ")))\n")))
+
+(define (wasm-zone/restore-wat instr)
+  (let ((target-local (wasm-zone/register-local (cadr instr))))
+    (string-append
+     "        (local.set " target-local
+     " (call " (wasm-zone/name "h_car")
+     " (local.get " (wasm-zone/name "stack") ")))\n"
+     "        (local.set " (wasm-zone/name "stack")
+     " (call " (wasm-zone/name "h_cdr")
+     " (local.get " (wasm-zone/name "stack") ")))\n")))
+
 (define (wasm-zone/halt-instruction? instr)
   (and (pair? instr) (eq? (car instr) 'halt)))
 
@@ -318,67 +383,17 @@ reload never sees dollar-prefixed strings as interpolation input."
        (eq? (car (caddr instr)) 'reg)
        (eq? (cadr (caddr instr)) 'proc)))
 
-(define (wasm-zone/apply-primitive-assign? instr)
-  (and (pair? instr)
-       (eq? (car instr) 'assign)
-       (pair? (cdr instr))
-       (eq? (cadr instr) 'val)
-       (pair? (cddr instr))
-       (pair? (caddr instr))
-       (eq? (car (caddr instr)) 'op)
-       (eq? (cadr (caddr instr)) 'apply-primitive-procedure)
-       (pair? (cdddr instr))
-       (pair? (cadddr instr))
-       (eq? (car (cadddr instr)) 'reg)
-       (eq? (cadr (cadddr instr)) 'proc)
-       (pair? (cdr (cdddr instr)))
-       (pair? (car (cdr (cdddr instr))))
-       (eq? (car (car (cdr (cdddr instr)))) 'reg)
-       (eq? (cadr (car (cdr (cdddr instr)))) 'argl)))
-
-(define (wasm-zone/find-primitive-tail instrs len pc)
-  "Return the apply-primitive PC when PC starts a primitive tail, else #f."
-  (and (wasm-zone/test-primitive-procedure? (vector-ref instrs pc))
-       (let loop ((i (+ pc 1)))
-         (cond
-          ((>= i (- len 1)) #f)
-          ((and (wasm-zone/apply-primitive-assign? (vector-ref instrs i))
-                (wasm-zone/halt-instruction? (vector-ref instrs (+ i 1))))
-           i)
-          (else (loop (+ i 1)))))))
-
-(define (wasm-zone/primitive-tail-wat test-pc apply-pc)
-  (string-append
-   "        (if (result i32) (call " (wasm-zone/name "h_primitive_p")
-   " (local.get " (wasm-zone/name "proc") "))\n"
-   "          (then\n"
-   "            (local.set " (wasm-zone/name "val")
-   " (call " (wasm-zone/name "h_apply_primitive")
-   " (local.get " (wasm-zone/name "proc")
-   ") (local.get " (wasm-zone/name "argl") ")))\n"
-   "            (if (result i32) (call " (wasm-zone/name "h_error_sentinel_p")
-   " (local.get " (wasm-zone/name "val") "))\n"
-   "              (then\n"
-   (wasm-zone/result-call-wat 2 apply-pc) ")\n"
-   "              (else\n"
-   (wasm-zone/result-call-wat 0 apply-pc) ")))\n"
-   "          (else\n"
-   (wasm-zone/result-call-wat 2 test-pc) "))"))
-
 (define (wasm-zone/instruction-body-wat co instrs len pc)
   "Return WAT for instruction PC, else #f when the interpreter should handle it."
   (let* ((instr (vector-ref instrs pc))
          (assign-wat (wasm-zone/emit-assign-wat instr pc))
-         (test-wat (wasm-zone/emit-test-wat instr))
-         (apply-pc (wasm-zone/find-primitive-tail instrs len pc)))
+         (primitive-test-wat (wasm-zone/emit-primitive-procedure-test-wat instr pc))
+         (test-wat (wasm-zone/emit-test-wat instr)))
     (cond
      (assign-wat
       (string-append assign-wat (wasm-zone/set-next-pc-wat (+ pc 1))))
-     (apply-pc
-      (string-append
-       "        (return\n"
-       (wasm-zone/primitive-tail-wat pc apply-pc)
-       ")\n"))
+     (primitive-test-wat
+      (string-append primitive-test-wat (wasm-zone/set-next-pc-wat (+ pc 1))))
      (test-wat
       (string-append test-wat (wasm-zone/set-next-pc-wat (+ pc 1))))
      ((wasm-zone/branch-instruction? instr)
@@ -402,6 +417,14 @@ reload never sees dollar-prefixed strings as interpolation input."
        "        (return\n"
        (wasm-zone/result-call-wat 0 pc)
        ")\n"))
+     ((wasm-zone/save-instruction? instr)
+      (string-append
+       (wasm-zone/save-wat instr)
+       (wasm-zone/set-next-pc-wat (+ pc 1))))
+     ((wasm-zone/restore-instruction? instr)
+      (string-append
+       (wasm-zone/restore-wat instr)
+       (wasm-zone/set-next-pc-wat (+ pc 1))))
      (else #f))))
 
 (define (wasm-zone/instruction-case-wat co instrs len pc)
