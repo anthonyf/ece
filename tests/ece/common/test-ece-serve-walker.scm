@@ -297,14 +297,16 @@ the path-join of *walker-tmp-dir* is a subdir."
 
 (test "ece-serve/inject-dev-ws-url: injects current WebSocket URL" (lambda ()
   (let ((old *ece-serve/current-port*))
-    (set! *ece-serve/current-port* 8123)
-    (let ((html (string-append "<script>"
-                               *ece-serve/dev-ws-placeholder*
-                               "</script>")))
-      (assert-equal
-       (ece-serve/inject-dev-ws-url html)
-       "<script>window.ECE_DEV_WS_URL = \"ws://127.0.0.1:8123/ws\";</script>"))
-    (set! *ece-serve/current-port* old))))
+    (dynamic-wind
+      (lambda () (set! *ece-serve/current-port* 8123))
+      (lambda ()
+        (let ((html (string-append "<script>"
+                                   *ece-serve/dev-ws-placeholder*
+                                   "</script>")))
+          (assert-equal
+           (ece-serve/inject-dev-ws-url html)
+           "<script>window.ECE_DEV_WS_URL = \"ws://127.0.0.1:8123/ws\";</script>")))
+      (lambda () (set! *ece-serve/current-port* old))))))
 
 (test "ece-serve/dispatch: GET /nonexistent returns 404" (lambda ()
   (let* ((crlf (string-append (string (integer->char 13)) (string #\newline)))

@@ -358,6 +358,15 @@ const Sandbox = {
       w.reset_handles();
       ECE._symCache = {};
       const proc = w.env_lookup(Sandbox.envHandle, ECE.internSym("browser-dev-client-handle-source-update"));
+      if (!proc) {
+        Sandbox.appendReplSystem(";; dev server unavailable: browser dev-client helper is missing; rebuild sandbox assets");
+        if (Sandbox.devServerSocket) {
+          const socket = Sandbox.devServerSocket;
+          Sandbox.devServerSocket = null;
+          socket.close();
+        }
+        return;
+      }
       const result = w.call_ece_proc(
         proc,
         w.h_cons(ECE.makeString(path),
