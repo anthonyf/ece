@@ -113,7 +113,7 @@ the path-join of *walker-tmp-dir* is a subdir."
   (let* ((crlf (string-append (string (integer->char 13)) (string #\newline)))
          (crlf-crlf (string-append crlf crlf))
          (raw (string-append
-               "GET /ws HTTP/1.1" crlf
+               "GET /ws?token=test-token HTTP/1.1" crlf
                "Host: localhost" crlf
                "Upgrade: websocket" crlf
                "Connection: Upgrade" crlf
@@ -126,7 +126,7 @@ the path-join of *walker-tmp-dir* is a subdir."
   (let* ((crlf (string-append (string (integer->char 13)) (string #\newline)))
          (crlf-crlf (string-append crlf crlf))
          (raw (string-append
-               "GET /ws HTTP/1.1" crlf
+               "GET /ws?token=test-token HTTP/1.1" crlf
                "Host: localhost" crlf
                "Upgrade: WebSocket" crlf  ; mixed case
                "Connection: keep-alive, Upgrade" crlf
@@ -142,7 +142,7 @@ the path-join of *walker-tmp-dir* is a subdir."
   (let* ((crlf (string-append (string (integer->char 13)) (string #\newline)))
          (crlf-crlf (string-append crlf crlf))
          (raw (string-append
-               "GET /ws HTTP/1.1" crlf
+               "GET /ws?token=test-token HTTP/1.1" crlf
                "Host: localhost" crlf
                "Upgrade: websocket" crlf
                "Connection: Upgrade" crlf
@@ -155,7 +155,7 @@ the path-join of *walker-tmp-dir* is a subdir."
   (let* ((crlf (string-append (string (integer->char 13)) (string #\newline)))
          (crlf-crlf (string-append crlf crlf))
          (raw (string-append
-               "GET /ws HTTP/1.1" crlf
+               "GET /ws?token=test-token HTTP/1.1" crlf
                "Upgrade: websocket" crlf
                "Connection: Upgrade" crlf
                "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" crlf
@@ -167,7 +167,7 @@ the path-join of *walker-tmp-dir* is a subdir."
   (let* ((crlf (string-append (string (integer->char 13)) (string #\newline)))
          (crlf-crlf (string-append crlf crlf))
          (raw (string-append
-               "GET /ws HTTP/1.1" crlf
+               "GET /ws?token=test-token HTTP/1.1" crlf
                "Upgrade: websocket" crlf
                "Connection: Upgrade" crlf
                "Sec-WebSocket-Key: abc==" crlf-crlf))  ; no version
@@ -178,10 +178,23 @@ the path-join of *walker-tmp-dir* is a subdir."
   (let* ((crlf (string-append (string (integer->char 13)) (string #\newline)))
          (crlf-crlf (string-append crlf crlf))
          (raw (string-append
-               "GET /ws HTTP/1.1" crlf
+               "GET /ws?token=test-token HTTP/1.1" crlf
                "Upgrade: websocket" crlf
                "Connection: Upgrade" crlf
                "Sec-WebSocket-Key: " crlf
+               "Sec-WebSocket-Version: 13" crlf-crlf))
+         (req (http-parse-request raw)))
+    (assert-false (ece-serve/is-websocket-upgrade? req)))))
+
+(test "ece-serve/is-websocket-upgrade?: rejects missing dev token" (lambda ()
+  (let* ((crlf (string-append (string (integer->char 13)) (string #\newline)))
+         (crlf-crlf (string-append crlf crlf))
+         (raw (string-append
+               "GET /ws HTTP/1.1" crlf
+               "Host: localhost" crlf
+               "Upgrade: websocket" crlf
+               "Connection: Upgrade" crlf
+               "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" crlf
                "Sec-WebSocket-Version: 13" crlf-crlf))
          (req (http-parse-request raw)))
     (assert-false (ece-serve/is-websocket-upgrade? req)))))
@@ -293,7 +306,7 @@ the path-join of *walker-tmp-dir* is a subdir."
     (assert-true (string-contains? resp "Cache-Control: no-store"))
     (assert-true (string-contains? resp "<!DOCTYPE html>"))
     (assert-true (string-contains? resp
-                                   "window.ECE_DEV_WS_URL = \"ws://127.0.0.1:8080/ws\";")))))
+                                   "window.ECE_DEV_WS_URL = \"ws://127.0.0.1:8080/ws?token=test-token\";")))))
 
 (test "ece-serve/inject-dev-ws-url: injects current WebSocket URL" (lambda ()
   (let ((old *ece-serve/current-port*))
@@ -305,7 +318,7 @@ the path-join of *walker-tmp-dir* is a subdir."
                                    "</script>")))
           (assert-equal
            (ece-serve/inject-dev-ws-url html)
-           "<script>window.ECE_DEV_WS_URL = \"ws://127.0.0.1:8123/ws\";</script>")))
+           "<script>window.ECE_DEV_WS_URL = \"ws://127.0.0.1:8123/ws?token=test-token\";</script>")))
       (lambda () (set! *ece-serve/current-port* old))))))
 
 (test "ece-serve/dispatch: GET /nonexistent returns 404" (lambda ()
@@ -323,6 +336,35 @@ the path-join of *walker-tmp-dir* is a subdir."
          (req (http-parse-request raw))
          (resp (ece-serve/dispatch req)))
     (assert-true (starts-with? resp (string-append "HTTP/1.1 405 Method Not Allowed" crlf))))))
+
+(test "ece-serve/dispatch: editor eval-source POST returns JSON OK" (lambda ()
+  (let* ((crlf (string-append (string (integer->char 13)) (string #\newline)))
+         (crlf-crlf (string-append crlf crlf))
+         (body "(define x 1)")
+         (raw (string-append "POST /__ece_dev/eval-source HTTP/1.1" crlf
+                             "Content-Length: " (number->string (string-length body)) crlf
+                             "X-ECE-Dev-Token: test-token" crlf
+                             "X-ECE-Path: scratch.scm" crlf-crlf
+                             body))
+         (req (http-parse-request raw))
+         (clients (ece-serve/make-clients-box))
+         (resp (ece-serve/dispatch req clients)))
+    (assert-true (starts-with? resp (string-append "HTTP/1.1 200 OK" crlf)))
+    (assert-true (string-contains? resp "Content-Type: application/json"))
+    (assert-true (string-contains? resp "\"type\":\"eval-source\"")))))
+
+(test "ece-serve/dispatch: editor eval-source POST rejects missing dev token" (lambda ()
+  (let* ((crlf (string-append (string (integer->char 13)) (string #\newline)))
+         (crlf-crlf (string-append crlf crlf))
+         (body "(define x 1)")
+         (raw (string-append "POST /__ece_dev/eval-source HTTP/1.1" crlf
+                             "Content-Length: " (number->string (string-length body)) crlf-crlf
+                             body))
+         (req (http-parse-request raw))
+         (clients (ece-serve/make-clients-box))
+         (resp (ece-serve/dispatch req clients)))
+    (assert-true (starts-with? resp (string-append "HTTP/1.1 403 Forbidden" crlf)))
+    (assert-true (string-contains? resp "invalid dev token")))))
 
 (test "ece-serve/dispatch: /foo?query=bar strips query before resolving" (lambda ()
   (let* ((crlf (string-append (string (integer->char 13)) (string #\newline)))
@@ -344,7 +386,7 @@ the path-join of *walker-tmp-dir* is a subdir."
   (let* ((crlf (string-append (string (integer->char 13)) (string #\newline)))
          (crlf-crlf (string-append crlf crlf))
          (raw (string-append
-               "GET /ws HTTP/1.1" crlf
+               "GET /ws?token=test-token HTTP/1.1" crlf
                "Host: localhost" crlf
                "Upgrade: websocket" crlf
                "Connection: Upgrade" crlf
@@ -377,6 +419,10 @@ the path-join of *walker-tmp-dir* is a subdir."
   (let ((result (ece-serve/parse-options (list ':port 9090 ':poll-interval 500))))
     (assert-equal (car result) 9090)
     (assert-equal (car (cdr result)) 500))))
+
+(test "ece-serve/parse-options: accepts valid :dev-token" (lambda ()
+  (let ((result (ece-serve/parse-options (list ':dev-token "abc123"))))
+    (assert-equal (car (cdr (cdr result))) "abc123"))))
 
 (test "ece-serve/parse-options: defaults when no options given" (lambda ()
   (let ((result (ece-serve/parse-options '())))

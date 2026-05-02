@@ -166,3 +166,12 @@ file-change event. PATH and SOURCE must be strings."
    (list (cons "type" "source-update")
          (cons "path" path)
          (cons "source" source))))
+
+(define (json-eval-source path source)
+  "Build the JSON envelope {\"type\": \"eval-source\", \"path\": PATH,
+\"source\": SOURCE} that ece-serve broadcasts when an editor asks the
+browser dev client to evaluate unsaved source text."
+  (json-encode-object
+   (list (cons "type" "eval-source")
+         (cons "path" path)
+         (cons "source" source))))

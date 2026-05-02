@@ -123,12 +123,15 @@ between http-build-response (string body) and build-binary-response
 ;;   - "/programs/starfield.scm" → sandbox/programs/starfield.scm
 ;;   - any path containing ".." is rejected with 400 (path traversal)
 ;;
-;; Missing files return 404. Bad request returns 400. Only GET is
-;; supported — other methods return 405.
+;; Missing files return 404. Bad request returns 400. Static assets are
+;; served with GET. Editor commands are accepted as localhost POSTs under
+;; /__ece_dev/* only when they include this server's dev token; accepted
+;; commands are relayed to connected browser WebSocket clients.
 
 (define *ece-serve/sandbox-root* "sandbox")
 (define *ece-serve/current-port* 8080)
 (define *ece-serve/dev-ws-placeholder* "window.ECE_DEV_WS_URL = null;")
+(define *ece-serve/dev-token* "test-token")
 
 (define (ece-serve/resolve-path request-path)
   "Map an HTTP request path to a filesystem path under the sandbox
@@ -164,7 +167,7 @@ root. Returns a string path, or #f if the path is unsafe (contains
 
 ;; ---- Request → response dispatcher ----
 
-(define (ece-serve/dispatch req)
+(define (ece-serve/dispatch req . opts)
   "Given a parsed http-request REQ, return one of:
   - the symbol 'upgrade — caller should run the WebSocket handshake path
   - a response STRING — text content type; caller writes via %send-string
@@ -173,12 +176,68 @@ The non-404/400 cases come from ece-serve/serve-static which chooses
 between the two based on the resolved file's content type. 405 for
 non-GET, 400 for path traversal, 404 for missing files — all text
 string responses."
+  (let ((clients-box (if (null? opts) #f (car opts))))
+    (cond
+     ((and (string=? (http-request-method req) "POST")
+           (ece-serve/editor-command-path? (http-request-path req)))
+      (ece-serve/handle-editor-command req clients-box))
+     ((not (string=? (http-request-method req) "GET"))
+      (http-build-response 405 "Method Not Allowed" '() "Method Not Allowed"))
+     ((ece-serve/is-websocket-upgrade? req) 'upgrade)
+     (else
+      (ece-serve/serve-static req)))))
+
+(define (ece-serve/editor-command-path? path)
+  "Return #t if PATH is one of the localhost editor command endpoints."
+  (string=? path "/__ece_dev/eval-source"))
+
+(define (ece-serve/editor-path-header req)
+  "Return the editor-supplied source path header, or a stable fallback."
+  (let ((path (http-header-ref req "x-ece-path")))
+    (if (and path (> (string-length path) 0)) path "<editor>")))
+
+(define (ece-serve/valid-dev-token? token)
+  "Return #t when TOKEN matches the per-server dev token."
+  (and *ece-serve/dev-token*
+       token
+       (string=? token *ece-serve/dev-token*)))
+
+(define (ece-serve/request-dev-token req)
+  "Return the dev token supplied by REQ, if any."
+  (http-header-ref req "x-ece-dev-token"))
+
+(define (ece-serve/handle-editor-command req clients-box)
+  "Handle a POST from an editor integration. The request body is source
+text for /__ece_dev/eval-source. The command is relayed to connected
+browser WebSocket clients and acknowledged with a tiny JSON response."
   (cond
-   ((not (string=? (http-request-method req) "GET"))
-    (http-build-response 405 "Method Not Allowed" '() "Method Not Allowed"))
-   ((ece-serve/is-websocket-upgrade? req) 'upgrade)
+   ((not (ece-serve/valid-dev-token? (ece-serve/request-dev-token req)))
+    (ece-serve/json-response 403 "Forbidden"
+                             (list (cons "ok" #f)
+                                   (cons "error" "invalid dev token"))))
+   ((not clients-box)
+    (ece-serve/json-response 500 "Internal Server Error"
+                             (list (cons "ok" #f)
+                                   (cons "error" "missing clients box"))))
+   ((string=? (http-request-path req) "/__ece_dev/eval-source")
+    (ece-serve/broadcast-eval-source
+     clients-box
+     (ece-serve/editor-path-header req)
+     (http-request-body req))
+    (ece-serve/json-response 200 "OK"
+                             (list (cons "ok" #t)
+                                   (cons "type" "eval-source"))))
    (else
-    (ece-serve/serve-static req))))
+    (ece-serve/json-response 404 "Not Found"
+                             (list (cons "ok" #f)
+                                   (cons "error" "unknown editor command"))))))
+
+(define (ece-serve/json-response status reason obj)
+  "Build a JSON HTTP response with no-store semantics."
+  (http-build-response status reason
+                       (list (cons "Content-Type" "application/json; charset=utf-8")
+                             (cons "Cache-Control" "no-store"))
+                       (json-encode-object obj)))
 
 (define (ece-serve/is-websocket-upgrade? req)
   "Detect an RFC 6455 WebSocket upgrade request. Returns #t only if ALL
@@ -188,6 +247,7 @@ of the required handshake headers are present and valid:
   - Sec-WebSocket-Key: present (any non-empty value — the codec will
     base64+sha1 it against the magic GUID)
   - Sec-WebSocket-Version: exactly '13' per RFC 6455 §4.1
+  - token query parameter matching this server's dev token
 
 If any header is missing or invalid, returns #f and the caller falls
 through to `ece-serve/serve-static`, which produces a 404 for `/ws`.
@@ -205,7 +265,35 @@ into the handshake builder, where a #f Sec-WebSocket-Key would crash
          version
          (string=? (string-downcase upgrade) "websocket")
          (string-contains? (string-downcase connection) "upgrade")
-         (string=? version "13"))))
+         (string=? version "13")
+         (ece-serve/ws-request-token-valid? req))))
+
+(define (ece-serve/ws-request-token-valid? req)
+  "Return #t if REQ's /ws query string contains this server's dev token."
+  (ece-serve/valid-dev-token?
+   (ece-serve/query-param (http-request-path req) "token")))
+
+(define (ece-serve/query-param request-path name)
+  "Return NAME's value from REQUEST-PATH's query string, or #f.
+This tiny parser intentionally supports only the unescaped token values
+ece-serve generates for its own dev WebSocket URL."
+  (let ((qmark (ece-serve/%find-char request-path #\?)))
+    (cond
+     ((< qmark 0) #f)
+     (else
+      (let ((query (substring request-path (+ qmark 1)
+                              (string-length request-path))))
+        (let loop ((parts (string-split query "&")))
+          (cond
+           ((null? parts) #f)
+           (else
+            (let* ((part (car parts))
+                   (eq-idx (ece-serve/%find-char part #\=)))
+              (cond
+               ((< eq-idx 0) (loop (cdr parts)))
+               ((string=? (substring part 0 eq-idx) name)
+                (substring part (+ eq-idx 1) (string-length part)))
+               (else (loop (cdr parts)))))))))))))
 
 (define (ece-serve/serve-static req)
   "Serve a static file from the sandbox root. Returns either a response
@@ -266,7 +354,24 @@ Returns a 400/404 response STRING on miss (both are text)."
   "Return the WebSocket URL injected into sandbox/index.html."
   (string-append "ws://127.0.0.1:"
                  (number->string *ece-serve/current-port*)
-                 "/ws"))
+                 "/ws?token="
+                 *ece-serve/dev-token*))
+
+(define (ece-serve/generate-dev-token)
+  "Generate a per-process dev token for browser and editor clients.
+This is not a long-term authentication system; it prevents unrelated
+browser origins from driving a developer's localhost ece-serve by
+requiring an unguessable-ish token that is printed in the terminal and
+injected only into same-origin sandbox HTML."
+  (random-seed! (current-milliseconds))
+  (let ((chars "0123456789abcdef"))
+    (let loop ((n 32) (acc ""))
+      (cond
+       ((<= n 0) acc)
+       (else
+        (let ((i (random 16)))
+          (loop (- n 1)
+                (string-append acc (string (string-ref chars i))))))))))
 
 (define (ece-serve/inject-dev-ws-url html)
   "Replace the standalone sandbox dev-server placeholder with this server's
@@ -518,7 +623,7 @@ and either write a static response + close, or upgrade to WebSocket."
                                   (http-build-response 400 "Bad Request" '() "Malformed request"))
           (ece-serve/%try-close conn))
          (else
-          (let ((result (ece-serve/dispatch req)))
+          (let ((result (ece-serve/dispatch req clients-box)))
             (cond
              ((eq? result 'upgrade)
               (ece-serve/upgrade-to-websocket sched conn req clients-box))
@@ -533,20 +638,20 @@ and either write a static response + close, or upgrade to WebSocket."
               (ece-serve/%try-close conn)))))))))))
 
 (define (ece-serve/read-http-request sched conn)
-  "Read bytes from CONN until a complete HTTP header block (terminated
-by CRLF CRLF) has arrived. Returns the header block as a string on
-success, the symbol 'closed if the peer closed before the header
-completed, or 'malformed if the request exceeds a sane byte limit
-(1 MiB — protects against slowloris-ish pile-ups even on localhost).
+  "Read bytes from CONN until a complete HTTP request has arrived.
+For GET / WebSocket requests this means the header block; for POST
+editor commands this means headers plus Content-Length bytes of body.
+Returns the request as a string on success, the symbol 'closed if the
+peer closed before the request completed, or 'malformed if the request
+exceeds a sane byte limit (1 MiB — protects against slowloris-ish
+pile-ups even on localhost) or has a bad Content-Length.
 
-Accumulation is O(n), not O(n²): chunks are stored in REVERSE order
-without flattening, and the CRLF CRLF terminator is searched for in
-a small tail window (last 3 bytes from the prior chunk + the current
-chunk) so a terminator that straddles a chunk boundary is still
-detected. Only the successful path flattens + converts to a string,
-and that happens exactly once."
+Chunks are kept in reverse order while reading. After each new chunk,
+the accumulated bytes are flattened and checked for a complete request.
+That is intentionally simple: the request size is capped at 1 MiB and
+editor command bodies are expected to be small."
   (let ((max-bytes 1048576))
-    (let loop ((chunks-rev '()) (byte-count 0) (tail '()))
+    (let loop ((chunks-rev '()) (byte-count 0))
       (cond
        ((> byte-count max-bytes) 'malformed)
        (else
@@ -557,7 +662,7 @@ and that happens exactly once."
             ;; Stage 1 uses a shared 'tcp-read-ready tag; every waiting
             ;; handler wakes on each poll and re-checks its own conn.
             (wait-for sched 'tcp-read-ready)
-            (loop chunks-rev byte-count tail))
+            (loop chunks-rev byte-count))
            ((eq? chunk (ece-serve/%ece-eof))
             ;; EOF without a terminator is always 'closed — every
             ;; successful-read branch already scans for the sentinel
@@ -567,18 +672,48 @@ and that happens exactly once."
            ((pair? chunk)
             (let* ((chunk-len (length chunk))
                    (new-byte-count (+ byte-count chunk-len))
-                   (window (append tail chunk)))
+                   (all-bytes (ece-serve/%flatten-chunks-in-order
+                               (cons chunk chunks-rev)))
+                   (complete (ece-serve/%complete-http-request all-bytes)))
               (cond
                ((> new-byte-count max-bytes) 'malformed)
-               ((http-header-end-bytes window)
-                (ascii-bytes->string
-                 (ece-serve/%flatten-chunks-in-order
-                  (cons chunk chunks-rev))))
+               ((eq? complete 'malformed) 'malformed)
+               (complete complete)
                (else
                 (loop (cons chunk chunks-rev)
-                      new-byte-count
-                      (ece-serve/%tail-bytes window 3))))))
-           (else (loop chunks-rev byte-count tail)))))))))
+                      new-byte-count)))))
+           (else (loop chunks-rev byte-count)))))))))
+
+(define (ece-serve/%complete-http-request bytes)
+  "Given accumulated request BYTES, return the complete request string
+if all declared body bytes are present, #f if more bytes are needed,
+or 'malformed if Content-Length is invalid."
+  (let ((header-end (http-header-end-bytes bytes)))
+    (cond
+     ((not header-end) #f)
+     (else
+      (let* ((raw (ascii-bytes->string bytes))
+             (req (http-parse-request raw)))
+        (cond
+         ((eq? req 'malformed) 'malformed)
+         ((eq? req 'incomplete) #f)
+         (else
+          (let* ((len-str (http-header-ref req "content-length"))
+                 (body-len (if len-str (string->number len-str) 0)))
+            (cond
+             ((or (not body-len) (not (integer? body-len)) (< body-len 0))
+              'malformed)
+             ((>= (length bytes) (+ header-end body-len))
+              (ascii-bytes->string
+               (ece-serve/%list-take bytes (+ header-end body-len))))
+             (else #f))))))))))
+
+(define (ece-serve/%list-take lst n)
+  "Return the first N elements of LST, or all of LST if shorter."
+  (let loop ((rest lst) (k n) (acc '()))
+    (cond
+     ((or (null? rest) (<= k 0)) (reverse acc))
+     (else (loop (cdr rest) (- k 1) (cons (car rest) acc))))))
 
 (define (ece-serve/%flatten-chunks-in-order chunks-rev)
   "Given a list of byte chunks in REVERSE order, return a flat byte
@@ -593,18 +728,6 @@ exactly once."
       ;; (via append first=chunk) puts the chunks back in original
       ;; order by the time the loop terminates.
       (loop (cdr rest) (append (car rest) acc))))))
-
-(define (ece-serve/%tail-bytes xs n)
-  "Return the last N elements of XS. XS is bounded by chunk size
-(~4096 + carry) so this is effectively O(1) relative to the total
-bytes read across the whole slowloris scan."
-  (let* ((len (length xs))
-         (skip (if (> len n) (- len n) 0)))
-    (let inner ((rest xs) (k skip))
-      (cond
-       ((<= k 0) rest)
-       ((null? rest) rest)
-       (else (inner (cdr rest) (- k 1)))))))
 
 ;; Cached references to the 'would-block / 'eof sentinels returned by
 ;; the tcp-recv-nowait primitive. Both are interned in the :ece package
@@ -746,18 +869,31 @@ don't accumulate dead clients and waste a send-attempt per poll."
   (guard
    (e (#t 'read-error))
    (let* ((source (ece-serve/read-file-as-string path))
-          (envelope (json-source-update path source))
-          (frame (ws-encode-text-frame envelope)))
-     (for-each
-      (lambda (conn)
-        (let ((ok?
-               (guard (e (#t #f))
-                      (ece-serve/%send-bytes conn frame)
-                      #t)))
-          (when (not ok?)
-            (ece-serve/clients-remove! clients-box conn)
-            (ece-serve/%try-close conn))))
-      (ece-serve/clients-list clients-box)))))
+          (envelope (json-source-update path source)))
+     (ece-serve/broadcast-json-envelope clients-box envelope))))
+
+(define (ece-serve/broadcast-eval-source clients-box path source)
+  "Send an eval-source message to every connected browser client. This
+is the editor-driven path: unlike source-update, SOURCE does not need
+to be saved on disk first."
+  (ece-serve/broadcast-json-envelope
+   clients-box
+   (json-eval-source path source)))
+
+(define (ece-serve/broadcast-json-envelope clients-box envelope)
+  "Send JSON ENVELOPE as a WebSocket text frame to every connected
+client. Dead clients are removed just like the file-watch path."
+  (let ((frame (ws-encode-text-frame envelope)))
+    (for-each
+     (lambda (conn)
+       (let ((ok?
+              (guard (e (#t #f))
+                     (ece-serve/%send-bytes conn frame)
+                     #t)))
+         (when (not ok?)
+           (ece-serve/clients-remove! clients-box conn)
+           (ece-serve/%try-close conn))))
+     (ece-serve/clients-list clients-box))))
 
 ;; ---- Event sources ----
 ;;
@@ -806,18 +942,20 @@ surface."
 
 (define (ece-serve/parse-options opts)
   "Parse the keyword args passed to (ece-serve entry . opts). Returns
-a record-like list (port poll-interval-ms). Options:
+a record-like list (port poll-interval-ms dev-token). Options:
   :port INT          listen port (integer in [1, 65535], default 8080)
   :poll-interval INT ms between file-watch polls (non-negative integer,
                      default 250)
+  :dev-token STRING  shared token for browser/editor dev commands
 
 All values are validated and any failure raises an error that names
 the offending option key (and value, where relevant) so programmatic
 callers can diagnose the miscall without reading this source."
   (let loop ((rest opts) (port *ece-serve/default-port*)
-             (interval *ece-serve/default-poll-interval-ms*))
+             (interval *ece-serve/default-poll-interval-ms*)
+             (dev-token #f))
     (cond
-     ((null? rest) (list port interval))
+     ((null? rest) (list port interval dev-token))
      ((null? (cdr rest))
       (error (string-append "ece-serve: option "
                             (ece-serve/%show (car rest))
@@ -830,7 +968,7 @@ callers can diagnose the miscall without reading this source."
          ((eq? key ':port)
           (cond
            ((and (integer? val) (>= val 1) (<= val 65535))
-            (loop more val interval))
+            (loop more val interval dev-token))
            (else
             (error (string-append
                     "ece-serve: :port must be an integer in [1, 65535], got "
@@ -838,10 +976,18 @@ callers can diagnose the miscall without reading this source."
          ((eq? key ':poll-interval)
           (cond
            ((and (integer? val) (>= val 0))
-            (loop more port val))
+            (loop more port val dev-token))
            (else
             (error (string-append
                     "ece-serve: :poll-interval must be a non-negative integer, got "
+                    (ece-serve/%show val))))))
+         ((eq? key ':dev-token)
+          (cond
+           ((and (string? val) (> (string-length val) 0))
+            (loop more port interval val))
+           (else
+            (error (string-append
+                    "ece-serve: :dev-token must be a non-empty string, got "
                     (ece-serve/%show val))))))
          (else
           (error (string-append "ece-serve: unknown option "
@@ -849,7 +995,8 @@ callers can diagnose the miscall without reading this source."
 
 (define (ece-serve entry-file . opts)
   "Start the dev server for ENTRY-FILE. Blocks until interrupted.
-Options: :port (default 8080), :poll-interval (milliseconds, default 250)."
+Options: :port (default 8080), :poll-interval (milliseconds, default 250),
+and :dev-token (generated by default)."
   (cond
    ((not (%file-exists? entry-file))
     (error (string-append "ece-serve: entry file does not exist: " entry-file)))
@@ -857,14 +1004,20 @@ Options: :port (default 8080), :poll-interval (milliseconds, default 250)."
     (let* ((parsed (ece-serve/parse-options opts))
            (port (car parsed))
            (poll-interval (car (cdr parsed)))
+           (dev-token (car (cdr (cdr parsed))))
            (sched (make-scheduler))
            (watch-set (ece-serve/walk-loads entry-file))
            (clients-box (ece-serve/make-clients-box))
            (server (tcp-listen port "127.0.0.1")))
       (set! *ece-serve/current-port* port)
+      (set! *ece-serve/dev-token*
+            (if dev-token dev-token (ece-serve/generate-dev-token)))
       (display "Dev server: http://127.0.0.1:")
       (display port)
       (display "/")
+      (newline)
+      (display "Dev token: ")
+      (display *ece-serve/dev-token*)
       (newline)
       (display "Watching ")
       (display (length watch-set))
@@ -892,16 +1045,18 @@ Parses --port / --poll-interval flags and a positional entry file,
 then calls (ece-serve). Unknown flags print an error and exit."
   (let loop ((rest argv) (port *ece-serve/default-port*)
              (interval *ece-serve/default-poll-interval-ms*)
+             (dev-token #f)
              (entry #f))
     (cond
      ((null? rest)
       (cond
        ((not entry)
-        (display "Usage: ece-serve <entry.scm> [--port N] [--poll-interval N]")
+        (display "Usage: ece-serve <entry.scm> [--port N] [--poll-interval N] [--dev-token TOKEN]")
         (newline)
         (exit 2))
        (else
-        (ece-serve entry ':port port ':poll-interval interval))))
+        (ece-serve entry ':port port ':poll-interval interval ':dev-token
+                   (if dev-token dev-token (ece-serve/generate-dev-token))))))
      (else
       (let ((arg (car rest)))
         (cond
@@ -917,7 +1072,7 @@ then calls (ece-serve). Unknown flags print an error and exit."
                 (display "Error: --port value must be an integer in [1, 65535]")
                 (newline)
                 (exit 2))
-               (else (loop (cdr (cdr rest)) n interval entry)))))))
+               (else (loop (cdr (cdr rest)) n interval dev-token entry)))))))
          ((string=? arg "--poll-interval")
           (cond
            ((null? (cdr rest))
@@ -930,9 +1085,20 @@ then calls (ece-serve). Unknown flags print an error and exit."
                 (display "Error: --poll-interval value must be an integer >= 0")
                 (newline)
                 (exit 2))
-               (else (loop (cdr (cdr rest)) port n entry)))))))
+               (else (loop (cdr (cdr rest)) port n dev-token entry)))))))
+         ((string=? arg "--dev-token")
+          (cond
+           ((null? (cdr rest))
+            (display "Error: --dev-token requires an argument") (newline)
+            (exit 2))
+           ((= (string-length (car (cdr rest))) 0)
+            (display "Error: --dev-token value must be non-empty")
+            (newline)
+            (exit 2))
+           (else
+            (loop (cdr (cdr rest)) port interval (car (cdr rest)) entry))))
          ((or (string=? arg "-h") (string=? arg "--help"))
-          (display "Usage: ece-serve <entry.scm> [--port N] [--poll-interval N]")
+          (display "Usage: ece-serve <entry.scm> [--port N] [--poll-interval N] [--dev-token TOKEN]")
           (newline)
           (display "  Dev server for ECE programs. Serves sandbox static assets")
           (newline)
@@ -945,7 +1111,7 @@ then calls (ece-serve). Unknown flags print an error and exit."
           (display "Error: unknown option: ") (display arg) (newline)
           (exit 2))
          (else
-          (loop (cdr rest) port interval arg))))))))
+          (loop (cdr rest) port interval dev-token arg))))))))
 
 ;; No custom gensym / intern helpers — ECE's prelude gensym is nullary
 ;; and returns a unique symbol, and literal quoted symbols in this file
