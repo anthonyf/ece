@@ -140,6 +140,18 @@
     (assert-true (string-contains? wat "(i32.const 43)"))
     (assert-true (string-contains? wat "h_error_sentinel_p")))))
 
+(test "codegen-wasm-zone: emits arbitrary symbol lookup helpers" (lambda ()
+  (let ((wat (generate-register-machine-wasm-zone
+              (mc-compile-to-code-object '(string-length s))
+              "zone_string_length")))
+    (assert-true (string? wat))
+    (assert-true (string-contains? wat "(export \"zone_string_length\")"))
+    (assert-true (string-contains? wat "(import \"ece\" \"h_char\""))
+    (assert-true (string-contains? wat "(import \"ece\" \"h_symbol_from_chars\""))
+    (assert-true (>= (wasm-zone-test-substring-count wat "h_symbol_from_chars") 2))
+    (assert-true (string-contains? wat "(i32.const 115)"))
+    (assert-true (string-contains? wat "(i32.const 116)")))))
+
 (test "codegen-wasm-zone: unsupported code objects decline generation" (lambda ()
   (let ((co (mc-compile-to-code-object "unsupported string")))
     (assert-equal (generate-register-machine-wasm-zone co "zone_unsupported")

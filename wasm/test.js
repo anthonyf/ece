@@ -328,8 +328,10 @@ async function runGeneratedZoneIntegrationTests(w, envH) {
       ece: {
         h_fixnum: w.h_fixnum,
         h_nil: w.h_nil,
+        h_char: w.h_char,
         h_cons: w.h_cons,
         h_symbol_1: w.h_symbol_1,
+        h_symbol_from_chars: w.h_symbol_from_chars,
         h_lookup: w.h_lookup,
         h_primitive_p: w.h_primitive_p,
         h_apply_primitive: w.h_apply_primitive,
@@ -392,6 +394,93 @@ async function runGeneratedZoneIntegrationTests(w, envH) {
 
     assert(w.h_fixnum_val(result) === 3,
       `expected generated primitive result 3, got ${w.h_fixnum_val(result)}`);
+  });
+
+  await iTest("generated register-machine WASM zone applies longer-name primitive", async () => {
+    const watHandle = eceEval(`
+      (begin
+        (define generated-string-co (mc-compile-to-code-object '(string-length generated-string-input)))
+        (%code-object-set-archive-key! generated-string-co
+          (cons 'generated-string 0))
+        (generate-register-machine-wasm-zone generated-string-co
+          "zone_string_0"))`);
+    const watText = ECE._eceToJs(watHandle);
+    assert(typeof watText === "string", "expected generated string WAT string");
+    assert(watText.includes('h_symbol_from_chars'),
+      "generated WAT must build longer symbols through character handles");
+
+    const zoneBytes = compileWat(watText, "generated-string-zone");
+    const { instance } = await WebAssembly.instantiate(zoneBytes, generatedZoneImports());
+
+    globalThis.__eceGeneratedStringZone0 = instance.exports.zone_string_0;
+    const result = eceEval(`
+      (begin
+        (define generated-string-input "hello")
+        (register-native-zone! 'generated-string 0
+          (%js-eval "globalThis.__eceGeneratedStringZone0"))
+        (execute-code-object generated-string-co))`);
+
+    assert(w.h_fixnum_val(result) === 5,
+      `expected generated string-length result 5, got ${w.h_fixnum_val(result)}`);
+  });
+
+  await iTest("generated register-machine WASM zone bails if longer-name primitive changes", async () => {
+    const watHandle = eceEval(`
+      (begin
+        (define generated-string-rebind-co
+          (mc-compile-to-code-object '(string-length generated-string-rebind-input)))
+        (%code-object-set-archive-key! generated-string-rebind-co
+          (cons 'generated-string-rebind 0))
+        (generate-register-machine-wasm-zone generated-string-rebind-co
+          "zone_string_rebind_0"))`);
+    const watText = ECE._eceToJs(watHandle);
+    assert(typeof watText === "string", "expected generated string rebind WAT string");
+
+    const zoneBytes = compileWat(watText, "generated-string-rebind-zone");
+    const { instance } = await WebAssembly.instantiate(zoneBytes, generatedZoneImports());
+
+    globalThis.__eceGeneratedStringRebindZone0 = instance.exports.zone_string_rebind_0;
+    const result = eceEval(`
+      (begin
+        (define generated-string-rebind-input "hello")
+        (register-native-zone! 'generated-string-rebind 0
+          (%js-eval "globalThis.__eceGeneratedStringRebindZone0"))
+        (define generated-string-length-original string-length)
+        (dynamic-wind
+          (lambda () (set! string-length (lambda (s) 44)))
+          (lambda () (execute-code-object generated-string-rebind-co))
+          (lambda () (set! string-length generated-string-length-original))))`);
+
+    assert(w.h_fixnum_val(result) === 44,
+      `expected rebound string-length fallback result 44, got ${w.h_fixnum_val(result)}`);
+  });
+
+  await iTest("generated register-machine WASM zone applies primitive to variable list value", async () => {
+    const watHandle = eceEval(`
+      (begin
+        (define generated-car-co (mc-compile-to-code-object '(car generated-car-input)))
+        (%code-object-set-archive-key! generated-car-co
+          (cons 'generated-car 0))
+        (generate-register-machine-wasm-zone generated-car-co
+          "zone_car_0"))`);
+    const watText = ECE._eceToJs(watHandle);
+    assert(typeof watText === "string", "expected generated car WAT string");
+    assert(watText.includes('h_symbol_from_chars'),
+      "generated WAT must build car/generated-car-input symbols");
+
+    const zoneBytes = compileWat(watText, "generated-car-zone");
+    const { instance } = await WebAssembly.instantiate(zoneBytes, generatedZoneImports());
+
+    globalThis.__eceGeneratedCarZone0 = instance.exports.zone_car_0;
+    const result = eceEval(`
+      (begin
+        (define generated-car-input (list 9 8))
+        (register-native-zone! 'generated-car 0
+          (%js-eval "globalThis.__eceGeneratedCarZone0"))
+        (execute-code-object generated-car-co))`);
+
+    assert(w.h_fixnum_val(result) === 9,
+      `expected generated car result 9, got ${w.h_fixnum_val(result)}`);
   });
 
   await iTest("generated register-machine WASM zone bails on lookup error sentinel", async () => {

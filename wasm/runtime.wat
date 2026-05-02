@@ -7223,6 +7223,36 @@
     (array.set $string (local.get $str) (i32.const 0) (local.get $cp))
     (call $alloc-handle (call $intern (local.get $str))))
 
+  (func (export "h_symbol_from_chars") (param $chars-handle i32) (result i32)
+    (local $chars (ref null eq))
+    (local $cur (ref null eq))
+    (local $str (ref $string))
+    (local $len i32)
+    (local $i i32)
+    (local $ch (ref $char))
+    (local.set $chars (call $deref-handle (local.get $chars-handle)))
+    (local.set $cur (local.get $chars))
+    (block $counted
+      (loop $count
+        (br_if $counted (ref.is_null (local.get $cur)))
+        (br_if $counted (call $is-null (local.get $cur)))
+        (local.set $len (i32.add (local.get $len) (i32.const 1)))
+        (local.set $cur (call $xcdr (local.get $cur)))
+        (br $count)))
+    (local.set $str (array.new_default $string (local.get $len)))
+    (local.set $cur (local.get $chars))
+    (local.set $i (i32.const 0))
+    (block $filled
+      (loop $fill
+        (br_if $filled (i32.ge_u (local.get $i) (local.get $len)))
+        (local.set $ch (ref.cast (ref $char) (call $xcar (local.get $cur))))
+        (array.set $string (local.get $str) (local.get $i)
+          (call $char-codepoint (local.get $ch)))
+        (local.set $cur (call $xcdr (local.get $cur)))
+        (local.set $i (i32.add (local.get $i) (i32.const 1)))
+        (br $fill)))
+    (call $alloc-handle (call $intern (local.get $str))))
+
   (func (export "h_lookup") (param $name-handle i32) (param $env-handle i32) (result i32)
     (call $alloc-handle
       (call $lookup-variable-value

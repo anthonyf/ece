@@ -17,7 +17,7 @@
 ;;;   (assign <register> (op car) <operand>)
 ;;;   (assign <register> (op cdr) <operand>)
 ;;;   (assign <register> (op lookup-variable-value)
-;;;                      (const <single-char-symbol>) (reg env))
+;;;                      (const <symbol>) (reg env))
 ;;;   primitive tail application of a previously looked-up proc
 ;;;   (halt)
 ;;;
@@ -111,17 +111,33 @@ reload never sees dollar-prefixed strings as interpolation input."
     (string-append "(local.get " (wasm-zone/register-local (cadr source)) ")"))
    (else #f)))
 
-(define (wasm-zone/single-char-symbol? value)
-  (and (symbol? value)
-       (= (string-length (symbol->string value)) 1)))
+(define (wasm-zone/char-list-value-wat name)
+  (let ((tail "(i32.const 0)"))
+    (do ((index (- (string-length name) 1) (- index 1)))
+        ((< index 0) tail)
+      (set! tail
+            (string-append
+             "(call " (wasm-zone/name "h_cons")
+             " (call " (wasm-zone/name "h_char")
+             " (i32.const "
+             (number->string (char->integer (string-ref name index)))
+             ")) "
+             tail
+             ")")))))
 
 (define (wasm-zone/symbol-handle-wat value)
-  (if (wasm-zone/single-char-symbol? value)
-      (string-append
-       "(call " (wasm-zone/name "h_symbol_1")
-       " (i32.const "
-       (number->string (char->integer (string-ref (symbol->string value) 0)))
-       "))")
+  (if (symbol? value)
+      (let ((name (symbol->string value)))
+        (if (= (string-length name) 1)
+            (string-append
+             "(call " (wasm-zone/name "h_symbol_1")
+             " (i32.const "
+             (number->string (char->integer (string-ref name 0)))
+             "))")
+            (string-append
+             "(call " (wasm-zone/name "h_symbol_from_chars")
+             " " (wasm-zone/char-list-value-wat name)
+             ")")))
       #f))
 
 (define (wasm-zone/lookup-variable-value-operands? source operands)
@@ -365,9 +381,13 @@ reload never sees dollar-prefixed strings as interpolation input."
    " (param i32) (result i32)))\n"
    "  (import \"ece\" \"h_nil\" (func " (wasm-zone/name "h_nil")
    " (result i32)))\n"
+   "  (import \"ece\" \"h_char\" (func " (wasm-zone/name "h_char")
+   " (param i32) (result i32)))\n"
    "  (import \"ece\" \"h_cons\" (func " (wasm-zone/name "h_cons")
    " (param i32) (param i32) (result i32)))\n"
    "  (import \"ece\" \"h_symbol_1\" (func " (wasm-zone/name "h_symbol_1")
+   " (param i32) (result i32)))\n"
+   "  (import \"ece\" \"h_symbol_from_chars\" (func " (wasm-zone/name "h_symbol_from_chars")
    " (param i32) (result i32)))\n"
    "  (import \"ece\" \"h_lookup\" (func " (wasm-zone/name "h_lookup")
    " (param i32) (param i32) (result i32)))\n"
