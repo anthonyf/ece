@@ -16,6 +16,10 @@ if (!baseUrl || !servedDir || !nextDir || !unitName || !firstValueRaw || !second
 
 const firstValue = Number(firstValueRaw);
 const secondValue = Number(secondValueRaw);
+if (!/^[A-Za-z0-9_+\-*\/<>=!?$%&:.~^]+$/.test(unitName)) {
+  console.error(`Unsafe unit name for Scheme symbol interpolation: ${unitName}`);
+  process.exit(1);
+}
 
 function copyReloadArtifacts(fromDir, toDir) {
   for (const name of ["app.ecec", "app-zones.manifest", "app-zones.wasm"]) {

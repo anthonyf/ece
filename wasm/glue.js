@@ -417,7 +417,7 @@ const ECE = {
     const evalStr = ECE.wasm.env_lookup(ECE.globalEnvHandle, ECE.internSym("eval-string-last"));
     return ECE.wasm.call_ece_proc(
       evalStr,
-      ECE.wasm.h_cons(ECE.makeString(source), ECE.wasm.h_nil()));
+      ECE.wasm.h_cons(ECE.makeString(source), ECE._hNil));
   },
 
   // Load a .ecec archive (single top-level sexp).
@@ -478,6 +478,9 @@ const ECE = {
       ECE.wasmHost.setBytes(zoneModuleUrl, await zoneResp.arrayBuffer());
       ECE.wasmHost.setText(manifestUrl, await manifestResp.text());
     }
+
+    ECE.wasm.reset_handles();
+    ECE._symCache = {};
 
     const args = [
       ECE._schemeStringLiteral(archiveUrl),
