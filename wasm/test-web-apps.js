@@ -51,6 +51,21 @@ async function run() {
     console.log("FAIL: sandbox.js missing wasm_host imports");
     failed++;
   }
+  if (sandboxJs.includes("connectDevServer") &&
+      sandboxJs.includes("browser-dev-client-handle-source-update")) {
+    console.log("PASS: sandbox.js has thin dev-server WebSocket bridge");
+  } else {
+    console.log("FAIL: sandbox.js missing dev-server WebSocket bridge");
+    failed++;
+  }
+
+  const sandboxHtml = fs.readFileSync(path.join(SANDBOX_DIR, "index.html"), "utf8");
+  if (sandboxHtml.includes("window.ECE_DEV_WS_URL = null;")) {
+    console.log("PASS: sandbox index has dev-server URL injection point");
+  } else {
+    console.log("FAIL: sandbox index missing dev-server URL injection point");
+    failed++;
+  }
 
   // --- Test 3: WASM instantiation with full imports ---
   const wasmBytes = fs.readFileSync(path.join(ROOT, "wasm", "runtime.wasm"));
@@ -109,7 +124,23 @@ async function run() {
     failed++;
   }
 
-  // --- Test 6: Pre-compiled program loading (same path as sandbox Run with compiled) ---
+  // --- Test 6: browser dev-client source update policy lives in ECE ---
+  try {
+    const result = ECE.evalStringLast(
+      '(browser-dev-client-handle-source-update "probe.scm" "(define *dev-client-probe* 41) (+ *dev-client-probe* 1)")');
+    const text = ECE._eceToJs(result);
+    if (text.includes(";; source updated: probe.scm") && text.includes("42")) {
+      console.log("PASS: browser dev-client handles source updates in ECE");
+    } else {
+      console.log("FAIL: browser dev-client result:", JSON.stringify(text));
+      failed++;
+    }
+  } catch(e) {
+    console.log("FAIL: browser dev-client source update failed:", e.message);
+    failed++;
+  }
+
+  // --- Test 7: Pre-compiled program loading (same path as sandbox Run with compiled) ---
   const compiledJs = fs.readFileSync(path.join(SANDBOX_DIR, "ece-compiled.js"), "utf8");
   const match = compiledJs.match(/ECE_COMPILED\["Hello World"\]\s*=\s*"([^"]+)"/);
   if (match) {
@@ -137,9 +168,9 @@ async function run() {
   // --- Summary ---
   console.log("");
   if (failed === 0) {
-    console.log("Web apps smoke test: 7 passed, 0 failed");
+    console.log("Web apps smoke test: 10 passed, 0 failed");
   } else {
-    console.log(`Web apps smoke test: ${7 - failed} passed, ${failed} failed`);
+    console.log(`Web apps smoke test: ${10 - failed} passed, ${failed} failed`);
     process.exit(1);
   }
 }
