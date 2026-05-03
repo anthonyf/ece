@@ -490,6 +490,61 @@ the path-join of *walker-tmp-dir* is a subdir."
     (assert-true (string-contains? resp "Content-Type: application/json"))
     (assert-true (string-contains? resp "\"type\":\"eval-source\"")))))
 
+(test "ece-serve/dispatch: editor eval-source includes request id" (lambda ()
+  (let* ((crlf (string-append (string (integer->char 13)) (string #\newline)))
+         (crlf-crlf (string-append crlf crlf))
+         (body "(+ 1 2)")
+         (raw (string-append "POST /__ece_dev/eval-source HTTP/1.1" crlf
+                             "Content-Length: " (number->string (string-length body)) crlf
+                             "X-ECE-Dev-Token: test-token" crlf
+                             "X-ECE-Request-Id: unit-eval-1" crlf-crlf
+                             body))
+         (req (http-parse-request raw))
+         (clients (ece-serve/make-clients-box))
+         (resp (ece-serve/dispatch req clients)))
+    (assert-true (starts-with? resp (string-append "HTTP/1.1 200 OK" crlf)))
+    (assert-true (string-contains? resp "\"id\":\"unit-eval-1\"")))))
+
+(test "ece-serve/dispatch: waiting eval rejects missing browser client" (lambda ()
+  (let* ((crlf (string-append (string (integer->char 13)) (string #\newline)))
+         (crlf-crlf (string-append crlf crlf))
+         (body "(+ 1 2)")
+         (raw (string-append "POST /__ece_dev/eval-source HTTP/1.1" crlf
+                             "Content-Length: " (number->string (string-length body)) crlf
+                             "X-ECE-Dev-Token: test-token" crlf
+                             "X-ECE-Request-Id: unit-eval-2" crlf
+                             "X-ECE-Wait-Result: 1" crlf-crlf
+                             body))
+         (req (http-parse-request raw))
+         (clients (ece-serve/make-clients-box))
+         (resp (ece-serve/dispatch req clients)))
+    (assert-true
+     (starts-with? resp (string-append "HTTP/1.1 503 Service Unavailable" crlf)))
+    (assert-true (string-contains? resp "no browser clients connected")))))
+
+(test "ece-serve/json-string-field: extracts escaped browser result fields" (lambda ()
+  (let ((raw "{\"type\":\"eval-result\",\"id\":\"abc\\\"1\",\"result\":\"line\\n42\"}"))
+    (assert-equal (ece-serve/json-string-field raw "type") "eval-result")
+    (assert-equal (ece-serve/json-string-field raw "id") "abc\"1")
+    (assert-equal (ece-serve/json-string-field raw "result")
+                  (string-append "line" (string #\newline) "42"))
+    (assert-false (ece-serve/json-string-field raw "missing")))))
+
+(test "ece-serve/dev results: ignores unsolicited browser result frames" (lambda ()
+  (let ((clients (ece-serve/make-clients-box)))
+    (ece-serve/handle-browser-text-frame
+     #f clients "{\"type\":\"eval-result\",\"id\":\"not-awaited\",\"result\":\"42\"}")
+    (assert-false (ece-serve/dev-result-ref clients "not-awaited"))
+    (ece-serve/dev-result-await! clients "awaited")
+    (ece-serve/handle-browser-text-frame
+     #f clients "{\"type\":\"eval-result\",\"id\":\"awaited\",\"result\":\"42\"}")
+    (assert-equal (ece-serve/dev-result-ref clients "awaited")
+                  "{\"type\":\"eval-result\",\"id\":\"awaited\",\"result\":\"42\"}")
+    (ece-serve/dev-result-remove! clients "awaited")
+    (ece-serve/handle-browser-text-frame
+     #f clients "{\"type\":\"eval-result\",\"id\":\"awaited\",\"result\":\"late\"}")
+    (assert-false (ece-serve/dev-result-ref clients "awaited")))))
+
 (test "ece-serve/dispatch: editor eval-source POST rejects missing dev token" (lambda ()
   (let* ((crlf (string-append (string (integer->char 13)) (string #\newline)))
          (crlf-crlf (string-append crlf crlf))

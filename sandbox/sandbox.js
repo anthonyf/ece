@@ -354,7 +354,10 @@ const Sandbox = {
     }
     if (!msg) return;
     if (msg.type === "source-update" || msg.type === "eval-source") {
-      Sandbox.applyDevServerSourceUpdate(String(msg.path || ""), String(msg.source || ""));
+      Sandbox.applyDevServerSourceUpdate(
+        String(msg.path || ""),
+        String(msg.source || ""),
+        msg.id ? String(msg.id) : null);
       return;
     }
     if (msg.type === "program-reload") {
@@ -393,9 +396,24 @@ const Sandbox = {
     }
   },
 
-  applyDevServerSourceUpdate(path, source) {
+  sendDevServerResult(message) {
+    const socket = Sandbox.devServerSocket;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    socket.send(JSON.stringify(message));
+  },
+
+  applyDevServerSourceUpdate(path, source, requestId) {
     if (!Sandbox.ready || !ECE.wasm) {
       Sandbox.appendReplSystem("Error: ECE runtime is still loading");
+      if (requestId) {
+        Sandbox.sendDevServerResult({
+          type: "eval-error",
+          id: requestId,
+          ok: false,
+          path,
+          error: "ECE runtime is still loading"
+        });
+      }
       return;
     }
     const w = ECE.wasm;
@@ -420,6 +438,15 @@ const Sandbox = {
                  w.h_cons(ECE.makeString(source), ECE._hNil)));
       const text = ECE._eceToJs(result);
       if (text) Sandbox.appendReplSystem(text);
+      if (requestId) {
+        Sandbox.sendDevServerResult({
+          type: "eval-result",
+          id: requestId,
+          ok: true,
+          path,
+          result: text || ""
+        });
+      }
       if (!wasRunning && (ECE.wasm.get_yield_flag() || Sandbox.hasYieldCont())) {
         Sandbox.running = true;
         document.getElementById("run-btn").textContent = "\u25A0 Stop";
@@ -427,7 +454,17 @@ const Sandbox = {
         Sandbox.animationLoop();
       }
     } catch(e) {
-      Sandbox.appendReplSystem("Error: " + Sandbox.errorMessage(e));
+      const message = Sandbox.errorMessage(e);
+      Sandbox.appendReplSystem("Error: " + message);
+      if (requestId) {
+        Sandbox.sendDevServerResult({
+          type: "eval-error",
+          id: requestId,
+          ok: false,
+          path,
+          error: message
+        });
+      }
     }
   },
 

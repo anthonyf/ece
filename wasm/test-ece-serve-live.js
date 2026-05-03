@@ -96,6 +96,20 @@ async function bootBrowserRuntime(output) {
   ECE._symCache = {};
 }
 
+function browserApplySourceUpdate(pathname, source) {
+  const w = ECE.wasm;
+  w.reset_handles();
+  ECE._refreshSingletonHandles();
+  ECE._symCache = {};
+  const proc = w.env_lookup(ECE.globalEnvHandle, ECE.internSym("browser-dev-client-handle-source-update"));
+  if (!proc) throw new Error("browser dev-client helper is missing");
+  const result = w.call_ece_proc(
+    proc,
+    w.h_cons(ECE.makeString(pathname),
+             w.h_cons(ECE.makeString(source), ECE._hNil)));
+  return ECE._eceToJs(result);
+}
+
 function expectedWebSocketAccept(key) {
   return crypto.createHash("sha1").update(key + WS_GUID).digest("base64");
 }
@@ -177,6 +191,27 @@ function connectDevWebSocket(port, token) {
     return undefined;
   }
 
+  function sendTextFrame(text) {
+    const payload = Buffer.from(text, "utf8");
+    const mask = crypto.randomBytes(4);
+    let header;
+    if (payload.length < 126) {
+      header = Buffer.from([0x81, 0x80 | payload.length]);
+    } else if (payload.length < 65536) {
+      header = Buffer.alloc(4);
+      header[0] = 0x81;
+      header[1] = 0x80 | 126;
+      header.writeUInt16BE(payload.length, 2);
+    } else {
+      throw new Error("client WebSocket frame too large for this smoke test");
+    }
+    const masked = Buffer.alloc(payload.length);
+    for (let i = 0; i < payload.length; i++) {
+      masked[i] = payload[i] ^ mask[i % 4];
+    }
+    socket.write(Buffer.concat([header, mask, masked]));
+  }
+
   const key = crypto.randomBytes(16).toString("base64");
   const request = [
     `GET /ws?token=${token} HTTP/1.1`,
@@ -207,6 +242,7 @@ function connectDevWebSocket(port, token) {
           }
           resolve({
             nextTextFrame: () => waitUntil(consumeTextFrame, "WebSocket text frame"),
+            sendTextFrame,
             close: () => socket.destroy()
           });
         })
@@ -273,24 +309,27 @@ async function runAttempt() {
     }
 
     wsClient = await connectDevWebSocket(port, devToken);
+    await bootBrowserRuntime(browserOutput);
+    browserOutput.length = 0;
 
     const evalMessage = withTimeout(
       wsClient.nextTextFrame(),
       7000,
       "eval-source");
 
-    const evalResponse = await fetch(`http://127.0.0.1:${port}/__ece_dev/eval-source`, {
+    const evalSource = "(define editor-live-marker 41)\n(+ editor-live-marker 1)\n";
+    const evalResponsePromise = fetch(`http://127.0.0.1:${port}/__ece_dev/eval-source`, {
       method: "POST",
       headers: {
         "Content-Type": "text/plain; charset=utf-8",
         "X-ECE-Dev-Token": devToken,
-        "X-ECE-Path": "editor-buffer.scm"
+        "X-ECE-Path": "editor-buffer.scm",
+        "X-ECE-Request-Id": "smoke-eval-1",
+        "X-ECE-Wait-Result": "1",
+        "X-ECE-Timeout-Ms": "7000"
       },
-      body: "(define editor-live-marker 41)\n(+ editor-live-marker 1)\n"
+      body: evalSource
     });
-    if (!evalResponse.ok) {
-      throw new Error(`editor eval-source POST failed: HTTP ${evalResponse.status}`);
-    }
 
     const evalRaw = await evalMessage;
     const evalUpdate = JSON.parse(evalRaw);
@@ -300,8 +339,31 @@ async function runAttempt() {
     if (evalUpdate.path !== "editor-buffer.scm") {
       throw new Error(`eval-source path mismatch: ${evalUpdate.path}`);
     }
+    if (evalUpdate.id !== "smoke-eval-1") {
+      throw new Error(`eval-source id mismatch: ${evalUpdate.id}`);
+    }
     if (!String(evalUpdate.source || "").includes("editor-live-marker")) {
       throw new Error("eval-source did not include posted source");
+    }
+    const browserEvalText = browserApplySourceUpdate(evalUpdate.path, evalUpdate.source);
+    wsClient.sendTextFrame(JSON.stringify({
+      type: "eval-result",
+      id: evalUpdate.id,
+      ok: true,
+      path: evalUpdate.path,
+      result: browserEvalText
+    }));
+
+    const evalResponse = await evalResponsePromise;
+    if (!evalResponse.ok) {
+      throw new Error(`editor eval-source POST failed: HTTP ${evalResponse.status}`);
+    }
+    const evalResult = await evalResponse.json();
+    if (evalResult.type !== "eval-result" || evalResult.id !== "smoke-eval-1") {
+      throw new Error(`editor eval-source result mismatch: ${JSON.stringify(evalResult)}`);
+    }
+    if (!String(evalResult.result || "").includes("42")) {
+      throw new Error(`editor eval-source result did not include browser value: ${JSON.stringify(evalResult)}`);
     }
 
     const programReloadMessage = withTimeout(
@@ -392,7 +454,6 @@ async function runAttempt() {
       throw new Error("dev native-zone manifest did not look like a manifest");
     }
 
-    await bootBrowserRuntime(browserOutput);
     browserOutput.length = 0;
 
     const origin = `http://127.0.0.1:${port}`;
@@ -418,7 +479,7 @@ async function runAttempt() {
     }
 
     console.log("PASS: ece-serve injected the dev WebSocket URL");
-    console.log("PASS: ece-serve relayed an editor eval-source command");
+    console.log("PASS: ece-serve relayed an editor eval-source command and returned browser result");
     console.log("PASS: ece-serve relayed an editor program-reload command");
     console.log("PASS: ece-serve built and broadcast program-reload artifacts for a watched edit");
     console.log("PASS: browser runtime applied watched program-reload artifacts");

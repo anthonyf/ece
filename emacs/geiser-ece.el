@@ -313,11 +313,13 @@ and the legacy `eldoc-documentation-function' API."
 
 ;;; ece-serve browser dev integration
 
-(defun geiser-ece--dev-post (endpoint body &optional source-path)
+(defun geiser-ece--dev-post (endpoint body &optional source-path wait-result)
   "POST BODY to ece-serve ENDPOINT.
 When SOURCE-PATH is non-nil, pass it as X-ECE-Path so the browser dev
-client can report where the source came from."
+client can report where the source came from. When WAIT-RESULT is non-nil,
+ask ece-serve to return the browser eval result/error JSON."
   (require 'url)
+  (require 'json)
   (unless (and geiser-ece-dev-server-token
                (not (string-empty-p geiser-ece-dev-server-token)))
     (error "Set geiser-ece-dev-server-token to the token printed by ece-serve"))
@@ -326,40 +328,71 @@ client can report where the source came from."
           (append '(("Content-Type" . "text/plain; charset=utf-8"))
                   `(("X-ECE-Dev-Token" . ,geiser-ece-dev-server-token))
                   (when source-path
-                    `(("X-ECE-Path" . ,source-path)))))
+                    `(("X-ECE-Path" . ,source-path)))
+                  (when wait-result
+                    '(("X-ECE-Wait-Result" . "1")))))
          (url-request-data (encode-coding-string body 'utf-8))
          (url (concat (string-remove-suffix "/" geiser-ece-dev-server-url)
                       endpoint))
-         (buffer (url-retrieve-synchronously url t t 5)))
+         (buffer (url-retrieve-synchronously url t t 8)))
     (unless buffer
       (error "ece-serve did not respond at %s" url))
     (unwind-protect
         (with-current-buffer buffer
           (goto-char (point-min))
-          (unless (looking-at "HTTP/[0-9.]+ 2[0-9][0-9]")
-            (let ((status (buffer-substring-no-properties
-                           (line-beginning-position)
-                           (line-end-position))))
-              (error "ece-serve command failed: %s" status))))
+          (let ((ok (looking-at "HTTP/[0-9.]+ 2[0-9][0-9]"))
+                (status (buffer-substring-no-properties
+                         (line-beginning-position)
+                         (line-end-position))))
+            (re-search-forward "\r?\n\r?\n" nil t)
+            (let ((json-object-type 'alist)
+                  (json-array-type 'list)
+                  (json-false :false))
+              (let ((payload
+                     (condition-case nil
+                         (json-read)
+                       (error nil))))
+                (unless ok
+                  (let ((err (or (cdr (assq 'error payload)) status)))
+                    (error "ece-serve command failed: %s" err)))
+                payload))))
       (kill-buffer buffer))))
+
+(defun geiser-ece--dev-result-message (payload fallback)
+  "Return a concise user message for ece-serve browser result PAYLOAD."
+  (let ((ok (cdr (assq 'ok payload)))
+        (result (cdr (assq 'result payload)))
+        (error-text (cdr (assq 'error payload))))
+    (cond
+     ((eq ok :false)
+      (format "ECE browser eval failed: %s" (or error-text "unknown error")))
+     ((and result (not (string-empty-p result)))
+      result)
+     (t fallback))))
 
 ;;;###autoload
 (defun geiser-ece-dev-eval-region (start end)
   "Send the active region to ece-serve for browser-side evaluation."
   (interactive "r")
-  (geiser-ece--dev-post "/__ece_dev/eval-source"
-                        (buffer-substring-no-properties start end)
-                        (or buffer-file-name (buffer-name)))
-  (message "Sent region to ece-serve"))
+  (message "%s"
+           (geiser-ece--dev-result-message
+            (geiser-ece--dev-post "/__ece_dev/eval-source"
+                                  (buffer-substring-no-properties start end)
+                                  (or buffer-file-name (buffer-name))
+                                  t)
+            "Sent region to ece-serve")))
 
 ;;;###autoload
 (defun geiser-ece-dev-load-buffer ()
   "Send the current buffer contents to ece-serve for browser-side evaluation."
   (interactive)
-  (geiser-ece--dev-post "/__ece_dev/eval-source"
-                        (buffer-substring-no-properties (point-min) (point-max))
-                        (or buffer-file-name (buffer-name)))
-  (message "Sent buffer to ece-serve"))
+  (message "%s"
+           (geiser-ece--dev-result-message
+            (geiser-ece--dev-post "/__ece_dev/eval-source"
+                                  (buffer-substring-no-properties (point-min) (point-max))
+                                  (or buffer-file-name (buffer-name))
+                                  t)
+            "Sent buffer to ece-serve")))
 
 ;;;###autoload
 (defun geiser-ece-dev-reload-file ()
@@ -369,10 +402,13 @@ client can report where the source came from."
     (error "Current buffer is not visiting a file"))
   (when (buffer-modified-p)
     (save-buffer))
-  (geiser-ece--dev-post "/__ece_dev/eval-source"
-                        (buffer-substring-no-properties (point-min) (point-max))
-                        buffer-file-name)
-  (message "Sent %s to ece-serve" buffer-file-name))
+  (message "%s"
+           (geiser-ece--dev-result-message
+            (geiser-ece--dev-post "/__ece_dev/eval-source"
+                                  (buffer-substring-no-properties (point-min) (point-max))
+                                  buffer-file-name
+                                  t)
+            (format "Sent %s to ece-serve" buffer-file-name))))
 
 ;;; Registration
 

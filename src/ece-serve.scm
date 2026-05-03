@@ -220,11 +220,12 @@ The non-404/400 cases come from ece-serve/serve-static which chooses
 between the two based on the resolved file's content type. 405 for
 non-GET, 400 for path traversal, 404 for missing files — all text
 string responses."
-  (let ((clients-box (if (null? opts) #f (car opts))))
+  (let ((clients-box (if (null? opts) #f (car opts)))
+        (sched (if (or (null? opts) (null? (cdr opts))) #f (car (cdr opts)))))
     (cond
      ((and (string=? (http-request-method req) "POST")
            (ece-serve/editor-command-path? (http-request-path req)))
-      (ece-serve/handle-editor-command req clients-box))
+      (ece-serve/handle-editor-command req clients-box sched))
      ((not (string=? (http-request-method req) "GET"))
       (http-build-response 405 "Method Not Allowed" '() "Method Not Allowed"))
      ((ece-serve/dev-artifact-request-path? (http-request-path req))
@@ -258,7 +259,7 @@ string responses."
   "Return the dev token supplied by REQ, if any."
   (http-header-ref req "x-ece-dev-token"))
 
-(define (ece-serve/handle-editor-command req clients-box)
+(define (ece-serve/handle-editor-command req clients-box sched)
   "Handle a POST from an editor integration.
 /__ece_dev/eval-source relays request body source text.
 /__ece_dev/program-reload relays artifact URLs for browser-side archive reload."
@@ -272,13 +273,43 @@ string responses."
                              (list (cons "ok" #f)
                                    (cons "error" "missing clients box"))))
    ((string=? (http-request-path req) "/__ece_dev/eval-source")
-    (ece-serve/broadcast-eval-source
-     clients-box
-     (ece-serve/editor-path-header req)
-     (http-request-body req))
-    (ece-serve/json-response 200 "OK"
-                             (list (cons "ok" #t)
-                                   (cons "type" "eval-source"))))
+    (let ((request-id (ece-serve/editor-request-id req))
+          (wait? (ece-serve/editor-wait-result? req)))
+      (cond
+       ((and wait? (null? (ece-serve/clients-list clients-box)))
+        (ece-serve/json-response 503 "Service Unavailable"
+                                 (list (cons "ok" #f)
+                                       (cons "type" "eval-source")
+                                       (cons "id" request-id)
+                                       (cons "error" "no browser clients connected"))))
+       (else
+        (when wait?
+          (ece-serve/dev-result-await! clients-box request-id))
+        (ece-serve/broadcast-eval-source
+         clients-box
+         request-id
+         (ece-serve/editor-path-header req)
+         (http-request-body req))
+        (cond
+         (wait?
+          (let ((result
+                 (ece-serve/wait-for-dev-result
+                  clients-box sched request-id
+                  (ece-serve/editor-result-timeout-ms req))))
+            (cond
+             (result
+              (ece-serve/json-text-response 200 "OK" result))
+             (else
+              (ece-serve/json-response 504 "Gateway Timeout"
+                                       (list (cons "ok" #f)
+                                             (cons "type" "eval-source")
+                                             (cons "id" request-id)
+                                             (cons "error" "timed out waiting for browser eval result")))))))
+         (else
+          (ece-serve/json-response 200 "OK"
+                                   (list (cons "ok" #t)
+                                         (cons "type" "eval-source")
+                                         (cons "id" request-id)))))))))
    ((string=? (http-request-path req) "/__ece_dev/program-reload")
     (let ((archive-url (http-request-body req))
           (zone-module-url
@@ -313,10 +344,44 @@ string responses."
 
 (define (ece-serve/json-response status reason obj)
   "Build a JSON HTTP response with no-store semantics."
+  (ece-serve/json-text-response status reason (json-encode-object obj)))
+
+(define (ece-serve/json-text-response status reason text)
+  "Build a JSON HTTP response with pre-encoded JSON TEXT."
   (http-build-response status reason
                        (list (cons "Content-Type" "application/json; charset=utf-8")
                              (cons "Cache-Control" "no-store"))
-                       (json-encode-object obj)))
+                       text))
+
+(define *ece-serve/next-editor-request-id* 0)
+
+(define (ece-serve/editor-request-id req)
+  "Return the editor-supplied request id or allocate one."
+  (let ((id (ece-serve/optional-header req "x-ece-request-id")))
+    (cond
+     (id id)
+     (else
+      (set! *ece-serve/next-editor-request-id*
+            (+ *ece-serve/next-editor-request-id* 1))
+      (string-append "eval-" (number->string *ece-serve/next-editor-request-id*))))))
+
+(define (ece-serve/editor-wait-result? req)
+  "Return #t when the editor wants the HTTP request to wait for browser eval."
+  (let ((value (ece-serve/optional-header req "x-ece-wait-result")))
+    (and value
+         (or (string=? value "1")
+             (string=? (string-downcase value) "true")))))
+
+(define (ece-serve/editor-result-timeout-ms req)
+  "Return the browser eval wait timeout requested by REQ, or the default."
+  (let ((value (ece-serve/optional-header req "x-ece-timeout-ms")))
+    (cond
+     ((not value) 5000)
+     (else
+      (let ((parsed (string->number value)))
+        (if (and parsed (integer? parsed) (> parsed 0))
+            parsed
+            5000))))))
 
 (define (ece-serve/is-websocket-upgrade? req)
   "Detect an RFC 6455 WebSocket upgrade request. Returns #t only if ALL
@@ -516,6 +581,98 @@ or hand-edited sandbox files still serve."
                       (string-ref needle j))
               (inner (+ j 1)))
              (else (outer (+ i 1))))))))))))
+
+(define (ece-serve/%json-skip-space s i)
+  "Return the first index >= I in S that is not JSON whitespace."
+  (let ((len (string-length s)))
+    (let loop ((j i))
+      (cond
+       ((>= j len) j)
+       ((or (char=? (string-ref s j) #\space)
+            (char=? (string-ref s j) (integer->char 9))
+            (char=? (string-ref s j) (integer->char 10))
+            (char=? (string-ref s j) (integer->char 13)))
+        (loop (+ j 1)))
+       (else j)))))
+
+(define (ece-serve/%json-hex-value ch)
+  "Return CH's hex value, or -1 if CH is not a hex digit."
+  (let ((n (char->integer ch)))
+    (cond
+     ((and (>= n 48) (<= n 57)) (- n 48))
+     ((and (>= n 65) (<= n 70)) (+ 10 (- n 65)))
+     ((and (>= n 97) (<= n 102)) (+ 10 (- n 97)))
+     (else -1))))
+
+(define (ece-serve/%json-read-string-at s start)
+  "Read a JSON string beginning at START.
+Returns (value . next-index), or #f if the string is malformed."
+  (let ((len (string-length s)))
+    (cond
+     ((or (>= start len) (not (char=? (string-ref s start) #\"))) #f)
+     (else
+      (let ((out (open-output-string)))
+        (let loop ((i (+ start 1)))
+          (cond
+           ((>= i len) #f)
+           ((char=? (string-ref s i) #\")
+            (cons (get-output-string out) (+ i 1)))
+           ((char=? (string-ref s i) #\\)
+            (cond
+             ((>= (+ i 1) len) #f)
+             (else
+              (let ((esc (string-ref s (+ i 1))))
+                (cond
+                 ((char=? esc #\") (write-char #\" out) (loop (+ i 2)))
+                 ((char=? esc #\\) (write-char #\\ out) (loop (+ i 2)))
+                 ((char=? esc #\/) (write-char #\/ out) (loop (+ i 2)))
+                 ((char=? esc #\b) (write-char (integer->char 8) out) (loop (+ i 2)))
+                 ((char=? esc #\f) (write-char (integer->char 12) out) (loop (+ i 2)))
+                 ((char=? esc #\n) (write-char (integer->char 10) out) (loop (+ i 2)))
+                 ((char=? esc #\r) (write-char (integer->char 13) out) (loop (+ i 2)))
+                 ((char=? esc #\t) (write-char (integer->char 9) out) (loop (+ i 2)))
+                 ((char=? esc #\u)
+                  (cond
+                   ((>= (+ i 6) len) #f)
+                   (else
+                    (let ((h1 (ece-serve/%json-hex-value (string-ref s (+ i 2))))
+                          (h2 (ece-serve/%json-hex-value (string-ref s (+ i 3))))
+                          (h3 (ece-serve/%json-hex-value (string-ref s (+ i 4))))
+                          (h4 (ece-serve/%json-hex-value (string-ref s (+ i 5)))))
+                      (cond
+                       ((or (< h1 0) (< h2 0) (< h3 0) (< h4 0)) #f)
+                       (else
+                        (write-char
+                         (integer->char
+                          (+ (* h1 4096) (* h2 256) (* h3 16) h4))
+                         out)
+                        (loop (+ i 6))))))))
+                 (else #f))))))
+           (else
+            (write-char (string-ref s i) out)
+            (loop (+ i 1))))))))))
+
+(define (ece-serve/json-string-field raw key)
+  "Return string field KEY from a small JSON object RAW, or #f.
+This is intentionally a field extractor, not a general JSON decoder. It is
+used only to match browser result frames to editor request ids."
+  (let* ((needle (json-encode-string key))
+         (idx (ece-serve/%string-index-of raw needle)))
+    (cond
+     ((< idx 0) #f)
+     (else
+      (let* ((after-key (+ idx (string-length needle)))
+             (colon (ece-serve/%json-skip-space raw after-key)))
+        (cond
+         ((or (>= colon (string-length raw))
+              (not (char=? (string-ref raw colon) #\:)))
+          #f)
+         (else
+          (let* ((value-start
+                  (ece-serve/%json-skip-space raw (+ colon 1)))
+                 (parsed
+                  (ece-serve/%json-read-string-at raw value-start)))
+            (and parsed (car parsed))))))))))
 
 (define (ece-serve/%has-any-extension? path)
   "Test whether PATH has a file extension: a `.` somewhere after the
@@ -730,7 +887,7 @@ and either write a static response + close, or upgrade to WebSocket."
                                   (http-build-response 400 "Bad Request" '() "Malformed request"))
           (ece-serve/%try-close conn))
          (else
-          (let ((result (ece-serve/dispatch req clients-box)))
+          (let ((result (ece-serve/dispatch req clients-box sched)))
             (cond
              ((eq? result 'upgrade)
               (ece-serve/upgrade-to-websocket sched conn req clients-box))
@@ -863,9 +1020,8 @@ file-watch fiber can broadcast to it."
 
 (define (ece-serve/websocket-loop sched conn clients-box)
   "WebSocket message loop for a single client CONN. Reads frames,
-handles close / ping / pong, ignores text frames (we don't expect
-the browser to speak back in Stage 1), and terminates on close or
-peer disconnect."
+handles close / ping / pong, records browser result text frames, and
+terminates on close or peer disconnect."
   (let loop ((buffered '()))
     (let ((chunk (tcp-recv-nowait conn 4096)))
       (cond
@@ -897,6 +1053,10 @@ peer disconnect."
                 (ece-serve/%send-bytes conn
                                        (ws-encode-pong-frame (ws-frame-payload-bytes frame)))
                 (loop (ece-serve/%list-drop combined total)))
+               ((= op 1) ; text
+                (ece-serve/handle-browser-text-frame
+                 sched clients-box (ws-frame-payload-text frame))
+                (loop (ece-serve/%list-drop combined total)))
                (else
                 (loop (ece-serve/%list-drop combined total)))))))))
        (else (loop buffered))))))
@@ -915,22 +1075,127 @@ peer disconnect."
 ;; ---- Clients box (shared state between handlers and file-watch fiber) ----
 
 (define (ece-serve/make-clients-box)
-  "Return a fresh clients box (a one-cell mutable list)."
-  (cons '() '()))
+  "Return a fresh clients box.
+Slot 0 holds connected WebSocket clients. Slot 1 holds request ids currently
+awaiting browser eval results. Slot 2 holds ((request-id . raw-json) ...).
+Only request ids in the awaited set can store result JSON; late or unsolicited
+browser result frames are ignored so long-running sessions do not leak memory."
+  (vector '() '() '()))
 
 (define (ece-serve/clients-list box)
-  (car box))
+  (vector-ref box 0))
 
 (define (ece-serve/clients-add! box conn)
-  (set-car! box (cons conn (car box))))
+  (vector-set! box 0 (cons conn (ece-serve/clients-list box))))
 
 (define (ece-serve/clients-remove! box conn)
-  (set-car! box
-            (let loop ((rest (car box)) (acc '()))
-              (cond
-               ((null? rest) (reverse acc))
-               ((eq? (car rest) conn) (loop (cdr rest) acc))
-               (else (loop (cdr rest) (cons (car rest) acc)))))))
+  (vector-set! box 0
+               (let loop ((rest (ece-serve/clients-list box)) (acc '()))
+                 (cond
+                  ((null? rest) (reverse acc))
+                  ((eq? (car rest) conn) (loop (cdr rest) acc))
+                  (else (loop (cdr rest) (cons (car rest) acc)))))))
+
+(define (ece-serve/dev-results box)
+  (vector-ref box 2))
+
+(define (ece-serve/dev-awaited-ids box)
+  (vector-ref box 1))
+
+(define (ece-serve/dev-awaiting-result? box request-id)
+  "Return #t if REQUEST-ID is currently expected by a waiting editor request."
+  (let loop ((rest (ece-serve/dev-awaited-ids box)))
+    (cond
+     ((null? rest) #f)
+     ((string=? (car rest) request-id) #t)
+     (else (loop (cdr rest))))))
+
+(define (ece-serve/dev-result-await! box request-id)
+  "Mark REQUEST-ID as eligible to store one browser result."
+  (when (not (ece-serve/dev-awaiting-result? box request-id))
+    (vector-set! box 1
+                 (cons request-id (ece-serve/dev-awaited-ids box)))))
+
+(define (ece-serve/dev-result-ref box request-id)
+  "Return the raw browser result JSON for REQUEST-ID, or #f."
+  (let loop ((rest (ece-serve/dev-results box)))
+    (cond
+     ((null? rest) #f)
+     ((string=? (car (car rest)) request-id) (cdr (car rest)))
+     (else (loop (cdr rest))))))
+
+(define (ece-serve/dev-result-put! box request-id raw-json)
+  "Store RAW-JSON for REQUEST-ID only if an editor request is waiting for it."
+  (when (ece-serve/dev-awaiting-result? box request-id)
+    (vector-set!
+     box 2
+     (cons
+      (cons request-id raw-json)
+      (let loop ((rest (ece-serve/dev-results box)) (acc '()))
+        (cond
+         ((null? rest) (reverse acc))
+         ((string=? (car (car rest)) request-id)
+          (loop (cdr rest) acc))
+         (else
+          (loop (cdr rest) (cons (car rest) acc)))))))))
+
+(define (ece-serve/dev-result-unawait! box request-id)
+  "Remove REQUEST-ID from the awaited set."
+  (vector-set!
+   box 1
+   (let loop ((rest (ece-serve/dev-awaited-ids box)) (acc '()))
+     (cond
+      ((null? rest) (reverse acc))
+      ((string=? (car rest) request-id)
+       (loop (cdr rest) acc))
+      (else
+       (loop (cdr rest) (cons (car rest) acc)))))))
+
+(define (ece-serve/dev-result-remove! box request-id)
+  "Remove any stored browser result and pending wait marker for REQUEST-ID."
+  (ece-serve/dev-result-unawait! box request-id)
+  (vector-set!
+   box 2
+   (let loop ((rest (ece-serve/dev-results box)) (acc '()))
+     (cond
+      ((null? rest) (reverse acc))
+      ((string=? (car (car rest)) request-id)
+       (loop (cdr rest) acc))
+      (else
+       (loop (cdr rest) (cons (car rest) acc)))))))
+
+(define (ece-serve/handle-browser-text-frame sched clients-box raw)
+  "Record browser eval result/error JSON frames.
+Only the `type` and `id` fields are parsed here; the full browser JSON is
+returned unchanged to the waiting editor request."
+  (let ((type (ece-serve/json-string-field raw "type"))
+        (request-id (ece-serve/json-string-field raw "id")))
+    (when (and request-id
+               (or (and type (string=? type "eval-result"))
+                   (and type (string=? type "eval-error"))))
+      (ece-serve/dev-result-put! clients-box request-id raw)
+      (when sched
+        (scheduler-notify! sched 'dev-result)))))
+
+(define (ece-serve/wait-for-dev-result clients-box sched request-id timeout-ms)
+  "Wait for REQUEST-ID to appear in CLIENTS-BOX and return its raw JSON.
+Returns #f on timeout or when called without a scheduler."
+  (cond
+   ((not sched) #f)
+   (else
+    (let ((deadline (+ (current-milliseconds) timeout-ms)))
+      (let loop ()
+        (let ((result (ece-serve/dev-result-ref clients-box request-id)))
+          (cond
+           (result
+            (ece-serve/dev-result-remove! clients-box request-id)
+            result)
+           ((>= (current-milliseconds) deadline)
+            (ece-serve/dev-result-remove! clients-box request-id)
+            #f)
+           (else
+            (wait-for sched 'dev-result)
+            (loop)))))))))
 
 ;; ---- File-watch fiber ----
 
@@ -1047,13 +1312,13 @@ don't accumulate dead clients and waste a send-attempt per poll."
           (envelope (json-source-update path source)))
      (ece-serve/broadcast-json-envelope clients-box envelope))))
 
-(define (ece-serve/broadcast-eval-source clients-box path source)
+(define (ece-serve/broadcast-eval-source clients-box request-id path source)
   "Send an eval-source message to every connected browser client. This
 is the editor-driven path: unlike source-update, SOURCE does not need
 to be saved on disk first."
   (ece-serve/broadcast-json-envelope
    clients-box
-   (json-eval-source path source)))
+   (json-eval-source path source request-id)))
 
 (define (ece-serve/broadcast-program-reload clients-box archive-url
                                             zone-module-url manifest-url)
@@ -1106,9 +1371,11 @@ re-checks its own connection via tcp-recv-nowait."
 (define (ece-serve/make-timer-source)
   "Build an event source that notifies 'file-watch-timer on every poll.
 The file-watch fiber uses current-milliseconds to enforce its own
-poll interval; this source just gives it a heartbeat."
+poll interval; waiting editor eval requests also use it as a timeout
+heartbeat while they wait for browser result frames."
   (lambda (sched)
-    (scheduler-notify! sched 'file-watch-timer)))
+    (scheduler-notify! sched 'file-watch-timer)
+    (scheduler-notify! sched 'dev-result)))
 
 ;; ---- Top-level entry ----
 
