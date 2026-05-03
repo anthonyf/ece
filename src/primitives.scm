@@ -1001,6 +1001,9 @@
 (define-host-primitive (fs-watch-stop watcher)
   :cl `(ece-fs-watch-stop-impl ,watcher))
 
+(define-host-primitive (wasm-as wat-path wasm-path)
+  :cl `(ece-wasm-as-impl ,wat-path ,wasm-path))
+
 ;;; ─────────────────────────────────────────────────────────────────────────
 ;;; Introspection (id 237+) — global environment inspection
 ;;; ─────────────────────────────────────────────────────────────────────────

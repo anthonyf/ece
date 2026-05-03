@@ -573,6 +573,9 @@
 (defun ece-wall-clock-ms ()
   (cl:multiple-value-bind (sec min hour) (cl:get-decoded-time) (cl:+ (cl:* hour 3600000) (cl:* min 60000) (cl:* sec 1000))))
 
+(defun ece-wasm-as (wat-path wasm-path)
+  (ece-wasm-as-impl wat-path wasm-path))
+
 (defun ece-with-input-from-file (filename thunk)
   (let ((port (ece-open-input-file filename))) (cl:unwind-protect (let ((cl:*standard-input* (ece-port-stream port))) (apply-ece-procedure thunk cl:nil)) (ece-close-input-port port))))
 

@@ -1911,6 +1911,31 @@ return an empty list."
   (remhash watcher *fs-watchers*)
   nil)
 
+(defun ece-wasm-as-impl (wat-path wasm-path)
+  "Assemble WAT-PATH to WASM-PATH using the host wasm-as tool.
+Returns T on success and Scheme #f on failure so Scheme callers can raise an
+ECE-level error instead of letting a CL condition escape the executor."
+  (handler-case
+      (progn
+        (uiop:run-program
+         (list "wasm-as"
+               "--enable-gc"
+               "--enable-reference-types"
+               wat-path
+               "-o"
+               wasm-path)
+         :output *standard-output*
+         :error-output *error-output*)
+        t)
+    (error (e)
+      (format *error-output*
+              "wasm-as failed for ~A -> ~A: ~A~%"
+              wat-path
+              wasm-path
+              e)
+      (finish-output *error-output*)
+      *scheme-false*)))
+
 ;;; Load auto-generated primitive defuns. The file contains one (defun ece-NAME ...)
 ;;; per core/cl primitive in primitives.def. It is regenerated from
 ;;; src/primitives.scm via `make bootstrap` and committed under bootstrap/.
@@ -1963,6 +1988,10 @@ return an empty list."
   (eval `(defun ,(intern "ECE-%NATIVE-ZONE-LOOKUP" :ece) (unit-key index)
            (or (gethash (cons unit-key index) *native-zone-registry*)
                *scheme-false*))))
+(unless (and (find-symbol "ECE-WASM-AS" :ece)
+             (fboundp (find-symbol "ECE-WASM-AS" :ece)))
+  (eval `(defun ,(intern "ECE-WASM-AS" :ece) (wat-path wasm-path)
+           (ece-wasm-as-impl wat-path wasm-path))))
 
 ;;; Now that all primitives and wrapper functions are defined, initialize
 ;;; the dispatch tables from the manifest, then build *global-env*.
