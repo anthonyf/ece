@@ -167,14 +167,18 @@ file-change event. PATH and SOURCE must be strings."
          (cons "path" path)
          (cons "source" source))))
 
-(define (json-eval-source path source)
-  "Build the JSON envelope {\"type\": \"eval-source\", \"path\": PATH,
-\"source\": SOURCE} that ece-serve broadcasts when an editor asks the
-browser dev client to evaluate unsaved source text."
+(define (json-eval-source path source . maybe-id)
+  "Build the JSON envelope ece-serve broadcasts for browser eval.
+When MAYBE-ID is supplied, include it as \"id\" so the browser can send a
+matching eval-result/eval-error frame back to the waiting editor request."
   (json-encode-object
-   (list (cons "type" "eval-source")
-         (cons "path" path)
-         (cons "source" source))))
+   (append
+    (list (cons "type" "eval-source")
+          (cons "path" path)
+          (cons "source" source))
+    (if (null? maybe-id)
+        '()
+        (list (cons "id" (car maybe-id)))))))
 
 (define (json-program-reload archive-url zone-module-url manifest-url)
   "Build the JSON envelope for a browser-side program reload.
