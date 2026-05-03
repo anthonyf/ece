@@ -2,13 +2,15 @@
 // ECE Serve Live Reload Smoke Test
 // Starts bin/ece-serve, verifies sandbox dev URL injection, connects to the
 // WebSocket endpoint, edits the watched source, and expects a program-reload
-// artifact broadcast.
+// artifact broadcast that the browser runtime can apply.
 
 const childProcess = require("child_process");
 const crypto = require("crypto");
+const fsSync = require("fs");
 const fs = require("fs/promises");
 const net = require("net");
 const path = require("path");
+const ECE = require("./glue.js");
 
 const ROOT = path.resolve(__dirname, "..");
 const WORK_DIR = path.join(ROOT, ".tmp", "ece-serve-live-test");
@@ -56,6 +58,42 @@ async function waitForHttp(port) {
   }
 
   throw new Error(`ece-serve did not become ready: ${lastError ? lastError.message : "no response"}`);
+}
+
+async function bootBrowserRuntime(output) {
+  ECE.io.display_string = function(len) {
+    const mem = new Uint16Array(ECE.wasm.memory.buffer, 0, len);
+    output.push(String.fromCharCode(...mem));
+  };
+  ECE.io.display_number = function(n) {
+    output.push(String(n));
+  };
+  ECE.io.newline = function() {
+    output.push("\n");
+  };
+  ECE.io.runtime_error = function(len) {
+    const mem = new Uint16Array(ECE.wasm.memory.buffer, 0, len);
+    throw new Error(String.fromCharCode(...mem));
+  };
+
+  const wasmBytes = fsSync.readFileSync(path.join(ROOT, "wasm", "runtime.wasm"));
+  const imports = {
+    io: ECE.io,
+    loader: ECE.loader,
+    storage: ECE.storage,
+    canvas: ECE.canvas,
+    timing: ECE.timing,
+    math: ECE.math,
+    ffi: ECE.ffi,
+    wasm_host: ECE.wasmHost
+  };
+  const { instance } = await WebAssembly.instantiate(wasmBytes, imports);
+  ECE.wasm = instance.exports;
+  ECE.globalEnvHandle = ECE.buildGlobalEnv();
+  ECE.loadArchiveBundle(fsSync.readFileSync(path.join(ROOT, "bootstrap", "bootstrap.ecec"), "utf8"));
+  ECE.wasm.mark_handles();
+  ECE.wasmHost.clearResources();
+  ECE._symCache = {};
 }
 
 function expectedWebSocketAccept(key) {
@@ -207,6 +245,7 @@ function serverExitBeforeReady(server) {
 
 async function runAttempt() {
   await fs.writeFile(ENTRY, "(define live-marker 1)\n", "utf8");
+  const browserOutput = [];
 
   const port = await freePort();
   const devToken = "smoke-token";
@@ -353,11 +392,37 @@ async function runAttempt() {
       throw new Error("dev native-zone manifest did not look like a manifest");
     }
 
+    await bootBrowserRuntime(browserOutput);
+    browserOutput.length = 0;
+
+    const origin = `http://127.0.0.1:${port}`;
+    await ECE.reloadProgramFromUrls(
+      new URL(message.archiveUrl, origin).toString(),
+      new URL(message.zoneModuleUrl, origin).toString(),
+      new URL(message.manifestUrl, origin).toString());
+
+    const reloadedOutput = browserOutput.join("");
+    if (reloadedOutput !== "2") {
+      throw new Error(`browser runtime reload output mismatch: ${JSON.stringify(reloadedOutput)}`);
+    }
+
+    const liveMarker = ECE._eceToJs(ECE.evalStringLast("live-marker"));
+    if (liveMarker !== 2) {
+      throw new Error(`browser runtime did not expose reloaded live-marker: ${liveMarker}`);
+    }
+
+    const nativeZoneRegistered =
+      ECE._eceToJs(ECE.evalStringLast("(native-zone-registered? 'live 0)"));
+    if (nativeZoneRegistered !== true) {
+      throw new Error("browser runtime did not register the reloaded native zone");
+    }
+
     console.log("PASS: ece-serve injected the dev WebSocket URL");
     console.log("PASS: ece-serve relayed an editor eval-source command");
     console.log("PASS: ece-serve relayed an editor program-reload command");
     console.log("PASS: ece-serve built and broadcast program-reload artifacts for a watched edit");
-    console.log("ece-serve live reload smoke test: 4 passed, 0 failed");
+    console.log("PASS: browser runtime applied watched program-reload artifacts");
+    console.log("ece-serve live reload smoke test: 5 passed, 0 failed");
   } catch (err) {
     err.serverOutput = serverOutput;
     err.retryable = !ready;

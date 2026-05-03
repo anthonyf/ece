@@ -236,6 +236,7 @@ const Sandbox = {
   animationLoop() {
     if (!Sandbox.running) return;
     ECE.wasm.reset_handles();  // recycle temporary handles from last frame
+    ECE._refreshSingletonHandles();
     ECE._symCache = {};  // clear stale symbol handle cache
     if (!Sandbox.hasYieldCont()) {
       Sandbox.finishRun();
@@ -270,6 +271,7 @@ const Sandbox = {
   evalECE(source, progName) {
     const w = ECE.wasm;
     w.reset_handles();  // recycle temporary handles from previous run
+    ECE._refreshSingletonHandles();
     ECE._symCache = {};  // clear stale symbol handle cache
     // Try pre-compiled .ecec first (only if source hasn't been edited)
     const key = progName || "";
@@ -400,6 +402,7 @@ const Sandbox = {
     const wasRunning = Sandbox.running;
     try {
       w.reset_handles();
+      ECE._refreshSingletonHandles();
       ECE._symCache = {};
       const proc = w.env_lookup(Sandbox.envHandle, ECE.internSym("browser-dev-client-handle-source-update"));
       if (!proc) {
