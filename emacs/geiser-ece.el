@@ -66,6 +66,16 @@ When not on PATH, derived from this file's location (emacs/../bin/ece-repl)."
   :type 'string
   :group 'geiser-ece)
 
+(geiser-custom--defcustom geiser-ece-dev-server-port 8080
+  "Default port used by `geiser-ece-dev-start'."
+  :type 'integer
+  :group 'geiser-ece)
+
+(geiser-custom--defcustom geiser-ece-dev-poll-interval-ms 250
+  "Default ece-serve file-watch poll interval used by `geiser-ece-dev-start'."
+  :type 'integer
+  :group 'geiser-ece)
+
 (geiser-custom--defcustom geiser-ece-dev-server-token nil
   "Dev token printed by ece-serve for editor/browser live development."
   :type '(choice (const nil) string)
@@ -78,6 +88,11 @@ When not on PATH, derived from this file's location (emacs/../bin/ece-repl)."
 
 (geiser-custom--defcustom geiser-ece-dev-result-buffer "*ECE Browser Eval*"
   "Buffer used for multiline or long browser eval results."
+  :type 'string
+  :group 'geiser-ece)
+
+(geiser-custom--defcustom geiser-ece-dev-server-buffer "*ECE Serve*"
+  "Process buffer used by `geiser-ece-dev-start'."
   :type 'string
   :group 'geiser-ece)
 
@@ -323,9 +338,92 @@ and the legacy `eldoc-documentation-function' API."
 
 ;;; ece-serve browser dev integration
 
+(defvar geiser-ece-dev--server-process nil
+  "Current ece-serve process started by `geiser-ece-dev-start'.")
+
+(defvar geiser-ece-dev--pending-url nil
+  "Dev server URL parsed from the current ece-serve process output.")
+
+(defvar geiser-ece-dev--pending-token nil
+  "Dev token parsed from the current ece-serve process output.")
+
+(defvar geiser-ece-dev--startup-output nil
+  "ece-serve startup output accumulated until URL/token discovery completes.")
+
+(defvar geiser-ece-dev--server-ready nil
+  "Non-nil once the current managed ece-serve process is configured.")
+
+(defvar geiser-ece-dev--source-buffer nil
+  "Buffer that started the current managed ece-serve process.")
+
 (defun geiser-ece--dev-server-base-url ()
   "Return `geiser-ece-dev-server-url' without a trailing slash."
   (string-remove-suffix "/" geiser-ece-dev-server-url))
+
+(defun geiser-ece--dev-server-binary ()
+  "Return the ece-serve binary path."
+  (or (let ((repl (geiser-ece--binary)))
+        (when (and repl (string-match-p "ece-repl\\'" repl))
+          (let ((candidate
+                 (expand-file-name "ece-serve"
+                                   (file-name-directory repl))))
+            (when (file-executable-p candidate)
+              candidate))))
+      (let ((dir (file-name-directory (or load-file-name buffer-file-name ""))))
+        (when dir
+          (let ((candidate
+                 (expand-file-name "bin/ece-serve"
+                                   (file-name-directory
+                                    (directory-file-name dir)))))
+            (when (file-executable-p candidate)
+              candidate))))
+      (executable-find "ece-serve")))
+
+(defun geiser-ece--dev-server-live-p ()
+  "Return non-nil when the managed ece-serve process is live."
+  (and geiser-ece-dev--server-process
+       (process-live-p geiser-ece-dev--server-process)))
+
+(defun geiser-ece--dev-server-output-filter (proc output)
+  "Collect ece-serve PROC OUTPUT and discover URL/token settings."
+  (when (buffer-live-p (process-buffer proc))
+    (with-current-buffer (process-buffer proc)
+      (let ((inhibit-read-only t))
+        (goto-char (point-max))
+        (insert output))))
+  (unless geiser-ece-dev--server-ready
+    (setq geiser-ece-dev--startup-output
+          (concat geiser-ece-dev--startup-output output))
+    (when (and (not geiser-ece-dev--pending-url)
+               (string-match "Dev server: \\(http://[^[:space:]\n]+\\)"
+                             geiser-ece-dev--startup-output))
+      (setq geiser-ece-dev--pending-url
+            (match-string 1 geiser-ece-dev--startup-output)))
+    (when (and (not geiser-ece-dev--pending-token)
+               (string-match "Dev token: \\([^[:space:]\n]+\\)"
+                             geiser-ece-dev--startup-output))
+      (setq geiser-ece-dev--pending-token
+            (match-string 1 geiser-ece-dev--startup-output))))
+  (when (and geiser-ece-dev--pending-url
+             geiser-ece-dev--pending-token
+             (not geiser-ece-dev--server-ready))
+    (setq geiser-ece-dev-server-url
+          (string-remove-suffix "/" geiser-ece-dev--pending-url))
+    (setq geiser-ece-dev-server-token geiser-ece-dev--pending-token)
+    (setq geiser-ece-dev--server-ready t)
+    (setq geiser-ece-dev--startup-output nil)
+    (when (buffer-live-p geiser-ece-dev--source-buffer)
+      (with-current-buffer geiser-ece-dev--source-buffer
+        (geiser-ece-dev-mode 1)))
+    (message "ECE dev server ready at %s" geiser-ece-dev-server-url)))
+
+(defun geiser-ece--dev-server-sentinel (proc event)
+  "Report ece-serve PROC lifecycle EVENT."
+  (unless (process-live-p proc)
+    (when (eq proc geiser-ece-dev--server-process)
+      (setq geiser-ece-dev--server-process nil))
+    (unless (string= event "finished\n")
+      (message "ECE dev server exited: %s" (string-trim event)))))
 
 (defun geiser-ece--dev-require-connected ()
   "Signal unless ece-serve connection settings are usable."
@@ -452,6 +550,64 @@ ask ece-serve to return the browser eval result/error JSON."
   (browse-url (geiser-ece--dev-server-base-url)))
 
 ;;;###autoload
+(defun geiser-ece-dev-start (entry-file &optional port)
+  "Start ece-serve for ENTRY-FILE and configure browser dev integration.
+When PORT is nil, use `geiser-ece-dev-server-port'. Interactively, a prefix
+argument prompts for the port. The dev token is generated by ece-serve and
+parsed from its startup output."
+  (interactive
+   (let ((entry-file (read-file-name "ECE entry file: "
+                                     nil nil t
+                                     (when buffer-file-name
+                                       (file-name-nondirectory buffer-file-name)))))
+     (list entry-file
+           (when current-prefix-arg
+             (read-number "ECE dev server port: "
+                          geiser-ece-dev-server-port)))))
+  (when (geiser-ece--dev-server-live-p)
+    (error "ece-serve is already running; use geiser-ece-dev-stop first"))
+  (let ((binary (geiser-ece--dev-server-binary)))
+    (unless binary
+      (error "Could not find ece-serve; build ECE or customize geiser-ece-binary"))
+    (let* ((listen-port (or port geiser-ece-dev-server-port))
+           (buffer (get-buffer-create geiser-ece-dev-server-buffer))
+           (args (list (expand-file-name entry-file)
+                       "--port" (number-to-string listen-port)
+                       "--poll-interval"
+                       (number-to-string geiser-ece-dev-poll-interval-ms))))
+      (setq geiser-ece-dev--pending-url nil)
+      (setq geiser-ece-dev--pending-token nil)
+      (setq geiser-ece-dev--startup-output nil)
+      (setq geiser-ece-dev--server-ready nil)
+      (setq geiser-ece-dev--source-buffer (current-buffer))
+      (with-current-buffer buffer
+        (let ((inhibit-read-only t))
+          (erase-buffer)
+          (insert
+           (format "$ %s\n\n"
+                   (mapconcat #'shell-quote-argument
+                              (cons binary args)
+                              " ")))))
+      (setq geiser-ece-dev--server-process
+            (apply #'start-process "ece-serve" buffer binary args))
+      (set-process-filter geiser-ece-dev--server-process
+                          #'geiser-ece--dev-server-output-filter)
+      (set-process-sentinel geiser-ece-dev--server-process
+                            #'geiser-ece--dev-server-sentinel)
+      (message "Starting ece-serve on port %s..." listen-port))))
+
+;;;###autoload
+(defun geiser-ece-dev-stop ()
+  "Stop the ece-serve process started by `geiser-ece-dev-start'."
+  (interactive)
+  (if (geiser-ece--dev-server-live-p)
+      (progn
+        (delete-process geiser-ece-dev--server-process)
+        (setq geiser-ece-dev--server-process nil)
+        (message "Stopped ece-serve"))
+    (message "No managed ece-serve process is running")))
+
+;;;###autoload
 (defun geiser-ece-dev-eval-region (start end)
   "Send the active region to ece-serve for browser-side evaluation."
   (interactive "r")
@@ -519,6 +675,8 @@ ask ece-serve to return the browser eval result/error JSON."
 
 (defvar geiser-ece-dev-mode-map
   (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "C-c C-z S") #'geiser-ece-dev-start)
+    (define-key map (kbd "C-c C-z K") #'geiser-ece-dev-stop)
     (define-key map (kbd "C-c C-z c") #'geiser-ece-dev-connect)
     (define-key map (kbd "C-c C-z o") #'geiser-ece-dev-open-browser)
     (define-key map (kbd "C-c C-z ?") #'geiser-ece-dev-status)
@@ -526,6 +684,7 @@ ask ece-serve to return the browser eval result/error JSON."
     (define-key map (kbd "C-c C-z r") #'geiser-ece-dev-eval-region)
     (define-key map (kbd "C-c C-z d") #'geiser-ece-dev-eval-definition)
     (define-key map (kbd "C-c C-z b") #'geiser-ece-dev-load-buffer)
+    (define-key map (kbd "C-c C-z l") #'geiser-ece-dev-reload-file)
     (define-key map (kbd "C-c C-z s") #'geiser-ece-dev-save-buffer-and-reload)
     map)
   "Keymap for `geiser-ece-dev-mode'.")

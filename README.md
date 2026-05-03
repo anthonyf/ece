@@ -322,25 +322,34 @@ Customize I/O by overriding `ECE.io.display_string`, `ECE.io.display_number`, an
 ### Live browser development from Emacs
 
 `ece-serve` serves a web build, watches the source files, and accepts dev
-commands from an editor. Start it with your app entry file:
+commands from an editor. From Emacs, load `emacs/geiser-ece.el`, open your app
+entry file, then run:
+
+```elisp
+M-x geiser-ece-dev-mode
+M-x geiser-ece-dev-start
+```
+
+`geiser-ece-dev-start` starts `ece-serve`, parses the printed URL and dev token,
+and configures the Emacs dev commands. Open the browser with:
+
+```elisp
+M-x geiser-ece-dev-open-browser
+```
+
+You can also start `ece-serve` yourself:
 
 ```sh
 ece-serve main.scm --port 8080
 ```
 
-Open the printed URL in a browser, then load `emacs/geiser-ece.el` in Emacs and
-run:
-
-```elisp
-M-x geiser-ece-dev-connect
-M-x geiser-ece-dev-mode
-```
-
-Paste the URL and dev token printed by `ece-serve`. In `geiser-ece-dev-mode`,
-the `C-c C-z` prefix sends code to the running browser:
+Then use `M-x geiser-ece-dev-connect` and paste the printed URL and token. In
+`geiser-ece-dev-mode`, the `C-c C-z` prefix sends code to the running browser:
 
 | Key | Command |
 | --- | --- |
+| `C-c C-z S` | Start `ece-serve` for an entry file and capture URL/token |
+| `C-c C-z K` | Stop the managed `ece-serve` process |
 | `C-c C-z c` | Connect or update the URL/token |
 | `C-c C-z o` | Open the configured browser URL |
 | `C-c C-z ?` | Show the configured URL and token status |
@@ -348,6 +357,7 @@ the `C-c C-z` prefix sends code to the running browser:
 | `C-c C-z d` | Evaluate the current definition in the browser |
 | `C-c C-z r` | Evaluate the active region in the browser |
 | `C-c C-z b` | Evaluate the whole buffer in the browser |
+| `C-c C-z l` | Send the current file contents to the browser |
 | `C-c C-z s` | Save the file; the `ece-serve` watcher rebuilds and reloads |
 
 Snippet evals return the browser result or error to Emacs. Saving a source file
