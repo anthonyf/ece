@@ -50,9 +50,9 @@ jobs:
 
       - name: Warm FASL cache
         run: |
-          # Pre-compile generated zone FASLs in a dedicated session so
-          # subsequent SBCL invocations load from cache instead of compiling
-          # thousands of generated zone sources in 4GB heap processes.
+          # Pre-compile ordinary project FASLs in a dedicated session. The
+          # aggregate generated zone bundle is source-loaded because compiling
+          # it as one file exhausts SBCL's 4GB test-process heap.
           ASDF_OUTPUT_TRANSLATIONS='(:output-translations ("'$PWD'/" "'$PWD'/.fasl-cache/") :inherit-configuration)' \
           qlot exec sbcl --dynamic-space-size 8192 --non-interactive --disable-debugger \
             --eval '(asdf:load-system :ece)' --quit

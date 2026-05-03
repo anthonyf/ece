@@ -108,6 +108,7 @@ TEST_OUTPUT_DIR := .tmp/test-output
 
 BOOTSTRAP_DIR := bootstrap
 BOOTSTRAP_ZONE_DIR := .tmp/bootstrap-zones
+BOOTSTRAP_ZONE_BUNDLE := $(BOOTSTRAP_ZONE_DIR)/bootstrap-zones.lisp
 BOOTSTRAP_SRCS := src/boot-env.scm src/prelude.scm src/compiler.scm src/reader.scm src/assembler.scm src/compilation-unit.scm src/syntax-rules.scm src/browser-lib.scm src/wasm-host.scm src/disassemble.scm
 
 GOLDEN_SRCS := $(wildcard tests/golden/*.scm)
@@ -286,14 +287,10 @@ repl: share/ece/ece-main.ecec | .qlot/qlot.conf
 run-lisp: | .qlot/qlot.conf
 	qlot exec sbcl --dynamic-space-size 4096 --disable-debugger --eval '(asdf:load-system :ece)' $(ARGS)
 
-# Per-code-object codegen produces ~1000 disposable zone files named
-# <file-stem>-<index>-zone.lisp (with an optional -NAME- prefix for named
-# code-objects). They live under $(BOOTSTRAP_ZONE_DIR), not bootstrap/, so
-# the stable bootstrap artifacts stay visible and the generated CL cache
-# remains clearly disposable. The first assembler code-object is always
-# index 0, so assembler-0-zone.lisp is a stable sentinel the recipe always
-# creates. Enumerating every zone file as a make target does not scale.
-ZONE_SENTINEL := $(BOOTSTRAP_ZONE_DIR)/assembler-0-zone.lisp
+# Code-object native CL generation emits one disposable aggregate zone bundle
+# under $(BOOTSTRAP_ZONE_DIR), not bootstrap/, so stable bootstrap artifacts
+# stay visible and the generated CL cache remains clearly disposable.
+ZONE_SENTINEL := $(BOOTSTRAP_ZONE_BUNDLE)
 
 bootstrap: $(BOOTSTRAP_DIR)/primitives-auto.lisp $(BOOTSTRAP_DIR)/bootstrap.ecec $(ZONE_SENTINEL)
 
@@ -328,17 +325,14 @@ $(BOOTSTRAP_DIR)/primitives-auto.lisp: primitives.def src/primitives.scm src/cod
 	  --quit
 	@echo "Generated $(BOOTSTRAP_DIR)/primitives-auto.lisp"
 
-# Archive-driven per-code-object compiled-zone generation. Reads the archive
-# at $(BOOTSTRAP_DIR)/bootstrap.ecec and emits one zone .lisp per code-object
-# contained in it (~1000 files) under $(BOOTSTRAP_ZONE_DIR). The sentinel
-# assembler-0-zone.lisp stands in for the whole set: index 0 of the assembler
-# section is always emitted when the recipe runs, so its mtime is a reliable
-# signal that regeneration has happened.
+# Archive-driven compiled-zone generation. Reads the archive at
+# $(BOOTSTRAP_DIR)/bootstrap.ecec and emits one aggregate CL native-zone bundle
+# containing one defun and registration per code-object.
 $(ZONE_SENTINEL): primitives.def src/primitives.scm src/codegen-cl.scm src/codegen-cl-inline.scm $(BOOTSTRAP_SRCS) $(BOOTSTRAP_DIR)/bootstrap.ecec | .qlot/qlot.conf
 	@rm -rf $(BOOTSTRAP_ZONE_DIR)
 	@mkdir -p $(BOOTSTRAP_ZONE_DIR)
 	@rm -f $(BOOTSTRAP_DIR)/*-zone.lisp 2>/dev/null || true
-	@echo "Regenerating all compiled zones in $(BOOTSTRAP_ZONE_DIR)/..."
+	@echo "Regenerating compiled zone bundle $(BOOTSTRAP_ZONE_BUNDLE)..."
 	qlot exec sbcl --dynamic-space-size 4096 --non-interactive --disable-debugger \
 	  --eval '(asdf:load-system :ece)' \
 	  --eval '(ece:evaluate (list (quote load) "src/codegen-cl.scm"))' \
@@ -346,7 +340,7 @@ $(ZONE_SENTINEL): primitives.def src/primitives.scm src/codegen-cl.scm src/codeg
 	  --eval '(ece:evaluate (list (quote load) "src/codegen-cl-inline.scm"))' \
 	  --eval '(ece:evaluate (list (intern "generate-all-zones-from-archive!" :ece) "$(BOOTSTRAP_DIR)/bootstrap.ecec" "$(BOOTSTRAP_ZONE_DIR)"))' \
 	  --quit
-	@echo "Generated all compiled zones"
+	@echo "Generated $(BOOTSTRAP_ZONE_BUNDLE)"
 
 sandbox: ece
 	@mkdir -p .tmp/sandbox-build sandbox
