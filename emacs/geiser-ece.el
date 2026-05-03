@@ -115,36 +115,95 @@ When not on PATH, derived from this file's location (emacs/../bin/ece-repl)."
   "Return the version string from BINARY."
   (car (process-lines binary "--version")))
 
+(defun geiser-ece--redirect-active-p ()
+  "Return non-nil while comint is redirecting REPL output elsewhere."
+  (and (boundp 'comint-redirect-output-buffer)
+       comint-redirect-output-buffer
+       (boundp 'comint-redirect-completed)
+       (not comint-redirect-completed)))
+
+(defun geiser-ece--wire-response-p (value)
+  "Return non-nil when VALUE is an ECE Geiser wire response."
+  (and (listp value)
+       (assq 'result value)
+       (assq 'output value)))
+
+(defun geiser-ece--find-wire-response (output)
+  "Find an ECE Geiser wire response inside OUTPUT.
+Returns (START END VALUE), or nil when OUTPUT has no parseable response.
+Comint can deliver prompt text and the response alist in the same chunk, so
+the response is not guaranteed to start at character 0."
+  (catch 'found
+    (let ((pos 0))
+      (while (string-match "((" output pos)
+        (let ((start (match-beginning 0)))
+          (condition-case nil
+              (let* ((read-result (read-from-string output start))
+                     (value (car read-result))
+                     (end (cdr read-result)))
+                (when (geiser-ece--wire-response-p value)
+                  (throw 'found (list start end value))))
+            (error nil))
+          (setq pos (1+ start))))
+      nil)))
+
+(defun geiser-ece--format-wire-response (value)
+  "Format parsed ECE Geiser wire response VALUE for REPL display."
+  (let* ((result-entry (assq 'result value))
+         (output-entry (assq 'output value))
+         (result-str (and (consp (cdr result-entry))
+                          (cadr result-entry)))
+         (output-str (cdr output-entry)))
+    (concat
+     (if (and output-str (not (string= output-str "")))
+         (concat output-str "\n")
+       "")
+     (if (and result-str (not (string= result-str ""))
+              (not (string-prefix-p "(compiled-procedure " result-str))
+              (not (string-prefix-p "(primitive " result-str)))
+         (concat result-str "\n")
+       ""))))
+
+(defun geiser-ece--wire-response-tail (prefix formatted suffix)
+  "Return SUFFIX text after replacing a wire response.
+PREFIX is the text before the response in the same process chunk and FORMATTED
+is the replacement response text. When FORMATTED is empty, preserve one newline
+between an earlier prompt and the next prompt instead of collapsing them onto
+one line."
+  (let ((trimmed (string-trim-left suffix)))
+    (if (and (string-empty-p formatted)
+             (not (string-empty-p prefix))
+             (string-match-p "\\`[ \t]*\r?\n" suffix))
+        (concat "\n" trimmed)
+      trimmed)))
+
+(defun geiser-ece--filter-wire-responses (output)
+  "Replace all ECE Geiser wire responses in OUTPUT with display text."
+  (let ((rest output)
+        (filtered ""))
+    (while (let ((match (geiser-ece--find-wire-response rest)))
+             (when match
+               (let* ((start (nth 0 match))
+                      (end (nth 1 match))
+                      (value (nth 2 match))
+                      (prefix (substring rest 0 start))
+                      (formatted (geiser-ece--format-wire-response value))
+                      (suffix (substring rest end)))
+                 (setq filtered (concat filtered prefix formatted))
+                 (setq rest
+                       (geiser-ece--wire-response-tail
+                        prefix formatted suffix))
+                 t))))
+    (concat filtered rest)))
+
 (defun geiser-ece--output-filter (output)
   "Clean up raw alist wire protocol in the REPL buffer.
 Parses ((result \"...\") (output . \"...\")) responses and displays
 just the result value, with any side-effect output prepended.
-Preserves trailing text (e.g., the prompt) after the parsed alist."
-  (if (and (boundp 'comint-redirect-completed)
-           (not comint-redirect-completed))
+Preserves surrounding text, such as prompts, from the same process chunk."
+  (if (geiser-ece--redirect-active-p)
       output
-  (condition-case nil
-      (let* ((read-result (read-from-string output))
-             (parsed (car read-result))
-             (end-pos (cdr read-result))
-             (remaining (string-trim-left (substring output end-pos)))
-             (result-entry (assq 'result parsed))
-             (output-entry (assq 'output parsed)))
-        (if (and result-entry output-entry)
-            (let ((result-str (cadr result-entry))
-                  (output-str (cdr output-entry)))
-              (concat
-               (if (and output-str (not (string= output-str "")))
-                   (concat output-str "\n")
-                 "")
-               (if (and result-str (not (string= result-str ""))
-                        (not (string-prefix-p "(compiled-procedure " result-str))
-                        (not (string-prefix-p "(primitive " result-str)))
-                   (concat result-str "\n")
-                 "")
-               remaining))
-          output))
-    (error output))))
+    (geiser-ece--filter-wire-responses output)))
 
 (defun geiser-ece--startup (_remote)
   "Actions run after the ECE REPL process starts."
