@@ -330,8 +330,9 @@ the WASM binary as a base64 constant (standalone mode)."
 
 (define (write-web-native-zone-artifacts bundle-path output-dir)
   "Emit WAT and manifest artifacts for BUNDLE-PATH.
-The WAT file is intentionally left as WAT because ECE has no process primitive
-for invoking wasm-as. The manifest names app-zones.wasm, which is the expected
+The WAT file is intentionally left as WAT for ece-build's portable packaging
+flow. Callers such as ece-serve may assemble it with the CL-only wasm-as
+dev primitive. The manifest names app-zones.wasm, which is the expected
 assembled side-module filename."
   (let* ((bundle (generate-register-machine-wasm-zone-archive-file
                   bundle-path

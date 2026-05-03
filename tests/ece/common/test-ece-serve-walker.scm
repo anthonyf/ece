@@ -145,6 +145,61 @@ the path-join of *walker-tmp-dir* is a subdir."
                              ":ecec-archive"))))
       (lambda () (set! *ece-serve/artifact-root* old))))))
 
+(test "ece-serve/build-program-artifacts!: emits native-zone reload artifacts" (lambda ()
+  (let ((old *ece-serve/artifact-root*)
+        (entry (path-join *walker-tmp-dir* "artifact-native-entry.scm"))
+        (artifact-root (path-join *walker-tmp-dir* "artifacts-native")))
+    (walker-test/write entry "(define artifact-native-marker 42)")
+    (dynamic-wind
+      (lambda () (set! *ece-serve/artifact-root* artifact-root))
+      (lambda ()
+        (let ((urls (ece-serve/build-program-artifacts! entry)))
+          (assert-equal urls
+                        '("/__ece_dev/artifacts/app.ecec"
+                          "/__ece_dev/artifacts/app-zones.wasm"
+                          "/__ece_dev/artifacts/app-zones.manifest"))
+          (assert-true (%file-exists? (path-join artifact-root "app.ecec")))
+          (assert-true (%file-exists? (path-join artifact-root "app-zones.wat")))
+          (assert-true (%file-exists? (path-join artifact-root "app-zones.wasm")))
+          (assert-true (%file-exists? (path-join artifact-root "app-zones.manifest")))
+          (assert-true
+           (string-contains?
+            (ece-serve/read-file-as-string
+             (path-join artifact-root "app-zones.manifest"))
+            ":ece-native-zones"))))
+      (lambda () (set! *ece-serve/artifact-root* old))))))
+
+(test "wasm-as: returns #f when assembly fails" (lambda ()
+  (assert-false
+   (wasm-as (path-join *walker-tmp-dir* "missing-input.wat")
+            (path-join *walker-tmp-dir* "missing-output.wasm")))))
+
+(test "ece-serve/build-program-artifacts!: raises ECE error when wasm-as fails" (lambda ()
+  (let ((old-root *ece-serve/artifact-root*)
+        (old-writer ece-serve/write-native-zone-artifacts!)
+        (entry (path-join *walker-tmp-dir* "artifact-native-bad-wat-entry.scm"))
+        (artifact-root (path-join *walker-tmp-dir* "artifacts-native-bad-wat")))
+    (walker-test/write entry "(define artifact-native-bad-wat-marker 43)")
+    (dynamic-wind
+      (lambda ()
+        (set! *ece-serve/artifact-root* artifact-root)
+        (set! ece-serve/write-native-zone-artifacts!
+              (lambda (bundle-path)
+                (ece-serve/write-string-to-file
+                 "(module (func"
+                 (ece-serve/artifact-path *ece-serve/artifact-zone-wat-name*))
+                (ece-serve/write-string-to-file
+                 "(:ece-native-zones)"
+                 (ece-serve/artifact-path *ece-serve/artifact-zone-manifest-name*))
+                #t)))
+      (lambda ()
+        (assert-error-message
+         (ece-serve/build-program-artifacts! entry)
+         "wasm-as failed while building native-zone reload artifact"))
+      (lambda ()
+        (set! ece-serve/write-native-zone-artifacts! old-writer)
+        (set! *ece-serve/artifact-root* old-root))))))
+
 (test "ece-serve/build-program-artifact!: includes literal load closure" (lambda ()
   (let ((old *ece-serve/artifact-root*)
         (entry (path-join *walker-tmp-dir* "artifact-entry-with-load.scm"))

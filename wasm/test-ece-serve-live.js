@@ -317,8 +317,11 @@ async function runAttempt() {
     if (message.archiveUrl !== "/__ece_dev/artifacts/app.ecec") {
       throw new Error(`watched program-reload archiveUrl mismatch: ${message.archiveUrl}`);
     }
-    if (message.zoneModuleUrl !== null || message.manifestUrl !== null) {
-      throw new Error("watched program-reload should be archive-only");
+    if (message.zoneModuleUrl !== "/__ece_dev/artifacts/app-zones.wasm") {
+      throw new Error(`watched program-reload zoneModuleUrl mismatch: ${message.zoneModuleUrl}`);
+    }
+    if (message.manifestUrl !== "/__ece_dev/artifacts/app-zones.manifest") {
+      throw new Error(`watched program-reload manifestUrl mismatch: ${message.manifestUrl}`);
     }
 
     const artifactResp = await fetch(`http://127.0.0.1:${port}${message.archiveUrl}`);
@@ -329,11 +332,31 @@ async function runAttempt() {
     if (!artifactText.includes(":ecec-archive") || !artifactText.includes("live.scm")) {
       throw new Error("dev artifact did not look like a compiled live.scm archive");
     }
+    const zoneResp = await fetch(`http://127.0.0.1:${port}${message.zoneModuleUrl}`);
+    if (!zoneResp.ok) {
+      throw new Error(`dev native-zone artifact fetch failed: HTTP ${zoneResp.status}`);
+    }
+    const zoneBytes = new Uint8Array(await zoneResp.arrayBuffer());
+    if (zoneBytes.length < 4 ||
+        zoneBytes[0] !== 0x00 ||
+        zoneBytes[1] !== 0x61 ||
+        zoneBytes[2] !== 0x73 ||
+        zoneBytes[3] !== 0x6d) {
+      throw new Error("dev native-zone artifact did not look like a WASM module");
+    }
+    const manifestResp = await fetch(`http://127.0.0.1:${port}${message.manifestUrl}`);
+    if (!manifestResp.ok) {
+      throw new Error(`dev native-zone manifest fetch failed: HTTP ${manifestResp.status}`);
+    }
+    const manifestText = await manifestResp.text();
+    if (!manifestText.includes(":ece-native-zones")) {
+      throw new Error("dev native-zone manifest did not look like a manifest");
+    }
 
     console.log("PASS: ece-serve injected the dev WebSocket URL");
     console.log("PASS: ece-serve relayed an editor eval-source command");
     console.log("PASS: ece-serve relayed an editor program-reload command");
-    console.log("PASS: ece-serve built and broadcast a program-reload artifact for a watched edit");
+    console.log("PASS: ece-serve built and broadcast program-reload artifacts for a watched edit");
     console.log("ece-serve live reload smoke test: 4 passed, 0 failed");
   } catch (err) {
     err.serverOutput = serverOutput;
