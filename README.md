@@ -319,6 +319,41 @@ dist/
 
 Customize I/O by overriding `ECE.io.display_string`, `ECE.io.display_number`, and `ECE.io.newline` before booting. See `$PREFIX/share/ece/templates/web/` for reference.
 
+### Live browser development from Emacs
+
+`ece-serve` serves a web build, watches the source files, and accepts dev
+commands from an editor. Start it with your app entry file:
+
+```sh
+ece-serve main.scm --port 8080
+```
+
+Open the printed URL in a browser, then load `emacs/geiser-ece.el` in Emacs and
+run:
+
+```elisp
+M-x geiser-ece-dev-connect
+M-x geiser-ece-dev-mode
+```
+
+Paste the URL and dev token printed by `ece-serve`. In `geiser-ece-dev-mode`,
+the `C-c C-z` prefix sends code to the running browser:
+
+| Key | Command |
+| --- | --- |
+| `C-c C-z c` | Connect or update the URL/token |
+| `C-c C-z o` | Open the configured browser URL |
+| `C-c C-z ?` | Show the configured URL and token status |
+| `C-c C-z e` | Evaluate the expression before point in the browser |
+| `C-c C-z d` | Evaluate the current definition in the browser |
+| `C-c C-z r` | Evaluate the active region in the browser |
+| `C-c C-z b` | Evaluate the whole buffer in the browser |
+| `C-c C-z s` | Save the file; the `ece-serve` watcher rebuilds and reloads |
+
+Snippet evals return the browser result or error to Emacs. Saving a source file
+uses the normal watcher path, so the browser reloads the rebuilt `.ecec` bundle
+and native WASM zone artifacts when they change.
+
 ### CL target
 
 Produces a tiny bundle that runs via the installed `ece` binary:
