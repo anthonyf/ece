@@ -71,6 +71,16 @@ When not on PATH, derived from this file's location (emacs/../bin/ece-repl)."
   :type '(choice (const nil) string)
   :group 'geiser-ece)
 
+(geiser-custom--defcustom geiser-ece-dev-timeout-ms 8000
+  "Milliseconds ece-serve should wait for a browser eval result."
+  :type 'integer
+  :group 'geiser-ece)
+
+(geiser-custom--defcustom geiser-ece-dev-result-buffer "*ECE Browser Eval*"
+  "Buffer used for multiline or long browser eval results."
+  :type 'string
+  :group 'geiser-ece)
+
 ;;; Implementation
 
 (defconst geiser-ece--prompt-regexp "ece> "
@@ -313,6 +323,19 @@ and the legacy `eldoc-documentation-function' API."
 
 ;;; ece-serve browser dev integration
 
+(defun geiser-ece--dev-server-base-url ()
+  "Return `geiser-ece-dev-server-url' without a trailing slash."
+  (string-remove-suffix "/" geiser-ece-dev-server-url))
+
+(defun geiser-ece--dev-require-connected ()
+  "Signal unless ece-serve connection settings are usable."
+  (unless (and geiser-ece-dev-server-url
+               (not (string-empty-p geiser-ece-dev-server-url)))
+    (error "Set geiser-ece-dev-server-url to the ece-serve URL"))
+  (unless (and geiser-ece-dev-server-token
+               (not (string-empty-p geiser-ece-dev-server-token)))
+    (error "Run geiser-ece-dev-connect with the token printed by ece-serve")))
+
 (defun geiser-ece--dev-post (endpoint body &optional source-path wait-result)
   "POST BODY to ece-serve ENDPOINT.
 When SOURCE-PATH is non-nil, pass it as X-ECE-Path so the browser dev
@@ -320,9 +343,7 @@ client can report where the source came from. When WAIT-RESULT is non-nil,
 ask ece-serve to return the browser eval result/error JSON."
   (require 'url)
   (require 'json)
-  (unless (and geiser-ece-dev-server-token
-               (not (string-empty-p geiser-ece-dev-server-token)))
-    (error "Set geiser-ece-dev-server-token to the token printed by ece-serve"))
+  (geiser-ece--dev-require-connected)
   (let* ((url-request-method "POST")
          (url-request-extra-headers
           (append '(("Content-Type" . "text/plain; charset=utf-8"))
@@ -330,11 +351,12 @@ ask ece-serve to return the browser eval result/error JSON."
                   (when source-path
                     `(("X-ECE-Path" . ,source-path)))
                   (when wait-result
-                    '(("X-ECE-Wait-Result" . "1")))))
+                    `(("X-ECE-Wait-Result" . "1")
+                      ("X-ECE-Timeout-Ms" . ,(number-to-string geiser-ece-dev-timeout-ms))))))
          (url-request-data (encode-coding-string body 'utf-8))
-         (url (concat (string-remove-suffix "/" geiser-ece-dev-server-url)
-                      endpoint))
-         (buffer (url-retrieve-synchronously url t t 8)))
+         (url (concat (geiser-ece--dev-server-base-url) endpoint))
+         (buffer (url-retrieve-synchronously
+                  url t t (+ 2 (/ geiser-ece-dev-timeout-ms 1000.0)))))
     (unless buffer
       (error "ece-serve did not respond at %s" url))
     (unwind-protect
@@ -370,45 +392,149 @@ ask ece-serve to return the browser eval result/error JSON."
       result)
      (t fallback))))
 
+(defun geiser-ece--dev-display-result (payload fallback)
+  "Display browser eval PAYLOAD, using FALLBACK when it has no result text."
+  (let ((text (geiser-ece--dev-result-message payload fallback)))
+    (if (or (string-match-p "\n" text)
+            (> (length text) 90))
+        (with-current-buffer (get-buffer-create geiser-ece-dev-result-buffer)
+          (let ((inhibit-read-only t))
+            (erase-buffer)
+            (insert text)
+            (goto-char (point-min))
+            (special-mode))
+          (display-buffer (current-buffer))
+          (message "ECE browser result in %s" geiser-ece-dev-result-buffer))
+      (message "%s" text))))
+
+(defun geiser-ece--dev-source-path ()
+  "Return the source path to report to ece-serve for the current buffer."
+  (or buffer-file-name (buffer-name)))
+
+(defun geiser-ece--dev-eval-source (source fallback)
+  "Send SOURCE to ece-serve for browser-side evaluation and display the result."
+  (geiser-ece--dev-display-result
+   (geiser-ece--dev-post "/__ece_dev/eval-source"
+                         source
+                         (geiser-ece--dev-source-path)
+                         t)
+   fallback))
+
+;;;###autoload
+(defun geiser-ece-dev-connect (url token)
+  "Set the ece-serve URL and dev TOKEN for live browser development."
+  (interactive
+   (let ((url (read-string "ece-serve URL: " geiser-ece-dev-server-url)))
+     (list url
+           (read-passwd "ece-serve dev token: "
+                        nil
+                        geiser-ece-dev-server-token))))
+  (setq geiser-ece-dev-server-url (string-remove-suffix "/" url))
+  (setq geiser-ece-dev-server-token token)
+  (message "ECE dev connected to %s" geiser-ece-dev-server-url))
+
+;;;###autoload
+(defun geiser-ece-dev-status ()
+  "Show current ece-serve live browser development settings."
+  (interactive)
+  (message "ECE dev URL: %s; token: %s"
+           (or geiser-ece-dev-server-url "unset")
+           (if (and geiser-ece-dev-server-token
+                    (not (string-empty-p geiser-ece-dev-server-token)))
+               "set"
+             "unset")))
+
+;;;###autoload
+(defun geiser-ece-dev-open-browser ()
+  "Open the configured ece-serve URL in a browser."
+  (interactive)
+  (require 'browse-url)
+  (browse-url (geiser-ece--dev-server-base-url)))
+
 ;;;###autoload
 (defun geiser-ece-dev-eval-region (start end)
   "Send the active region to ece-serve for browser-side evaluation."
   (interactive "r")
-  (message "%s"
-           (geiser-ece--dev-result-message
-            (geiser-ece--dev-post "/__ece_dev/eval-source"
-                                  (buffer-substring-no-properties start end)
-                                  (or buffer-file-name (buffer-name))
-                                  t)
-            "Sent region to ece-serve")))
+  (geiser-ece--dev-eval-source
+   (buffer-substring-no-properties start end)
+   "Sent region to ece-serve"))
+
+;;;###autoload
+(defun geiser-ece-dev-eval-last-sexp ()
+  "Send the expression before point to ece-serve for browser-side evaluation."
+  (interactive)
+  (let ((end (point))
+        beg)
+    (save-excursion
+      (backward-sexp)
+      (setq beg (point)))
+    (geiser-ece-dev-eval-region beg end)))
+
+;;;###autoload
+(defun geiser-ece-dev-eval-definition ()
+  "Send the top-level definition at point to ece-serve for browser eval."
+  (interactive)
+  (let ((bounds (or (bounds-of-thing-at-point 'defun)
+                    (save-excursion
+                      (beginning-of-defun)
+                      (let ((beg (point)))
+                        (end-of-defun)
+                        (cons beg (point)))))))
+    (unless bounds
+      (error "No definition at point"))
+    (geiser-ece-dev-eval-region (car bounds) (cdr bounds))))
 
 ;;;###autoload
 (defun geiser-ece-dev-load-buffer ()
   "Send the current buffer contents to ece-serve for browser-side evaluation."
   (interactive)
-  (message "%s"
-           (geiser-ece--dev-result-message
-            (geiser-ece--dev-post "/__ece_dev/eval-source"
-                                  (buffer-substring-no-properties (point-min) (point-max))
-                                  (or buffer-file-name (buffer-name))
-                                  t)
-            "Sent buffer to ece-serve")))
+  (geiser-ece--dev-eval-source
+   (buffer-substring-no-properties (point-min) (point-max))
+   "Sent buffer to ece-serve"))
+
+;;;###autoload
+(defun geiser-ece-dev-save-buffer-and-reload ()
+  "Save the current file for ece-serve watcher reload."
+  (interactive)
+  (unless buffer-file-name
+    (error "Current buffer is not visiting a file"))
+  (save-buffer)
+  (message "Saved %s; ece-serve watcher will rebuild and reload the browser"
+           buffer-file-name))
 
 ;;;###autoload
 (defun geiser-ece-dev-reload-file ()
-  "Save the current file and send its source to ece-serve."
+  "Save the current file and send its source to ece-serve for browser eval."
   (interactive)
   (unless buffer-file-name
     (error "Current buffer is not visiting a file"))
   (when (buffer-modified-p)
     (save-buffer))
-  (message "%s"
-           (geiser-ece--dev-result-message
-            (geiser-ece--dev-post "/__ece_dev/eval-source"
-                                  (buffer-substring-no-properties (point-min) (point-max))
-                                  buffer-file-name
-                                  t)
-            (format "Sent %s to ece-serve" buffer-file-name))))
+  (geiser-ece--dev-display-result
+   (geiser-ece--dev-post "/__ece_dev/eval-source"
+                         (buffer-substring-no-properties (point-min) (point-max))
+                         buffer-file-name
+                         t)
+   (format "Sent %s to ece-serve" buffer-file-name)))
+
+(defvar geiser-ece-dev-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "C-c C-z c") #'geiser-ece-dev-connect)
+    (define-key map (kbd "C-c C-z o") #'geiser-ece-dev-open-browser)
+    (define-key map (kbd "C-c C-z ?") #'geiser-ece-dev-status)
+    (define-key map (kbd "C-c C-z e") #'geiser-ece-dev-eval-last-sexp)
+    (define-key map (kbd "C-c C-z r") #'geiser-ece-dev-eval-region)
+    (define-key map (kbd "C-c C-z d") #'geiser-ece-dev-eval-definition)
+    (define-key map (kbd "C-c C-z b") #'geiser-ece-dev-load-buffer)
+    (define-key map (kbd "C-c C-z s") #'geiser-ece-dev-save-buffer-and-reload)
+    map)
+  "Keymap for `geiser-ece-dev-mode'.")
+
+;;;###autoload
+(define-minor-mode geiser-ece-dev-mode
+  "Minor mode for live browser development through ece-serve."
+  :lighter " ECE-Dev"
+  :keymap geiser-ece-dev-mode-map)
 
 ;;; Registration
 
