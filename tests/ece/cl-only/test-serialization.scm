@@ -380,6 +380,6 @@
     (assert-equal expected -1)
     (assert (number? actual) "actual fingerprint should be reported"))))
 
-(test "stable string hash uses 32-bit FNV-1a" (lambda ()
-  (assert-equal (ser/stable-string-hash "") 2166136261)
+(test "stable string hash uses portable FNV-1a-derived fingerprints" (lambda ()
+  (assert-equal (ser/stable-string-hash "") 18652613)
   (assert-equal (ser/stable-string-hash "hello") 1335831723)))

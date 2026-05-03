@@ -7359,6 +7359,8 @@
   ;; Singleton handles
   (func (export "h_nil")   (result i32) (call $alloc-handle (global.get $nil)))
   (func (export "h_true")  (result i32) (call $alloc-handle (global.get $true)))
+  (func (export "h_true_p") (param $handle i32) (result i32)
+    (ref.eq (call $deref-handle (local.get $handle)) (global.get $true)))
   (func (export "h_false") (result i32) (call $alloc-handle (global.get $false)))
   (func (export "h_false_p") (param $handle i32) (result i32)
     (call $is-false (call $deref-handle (local.get $handle))))

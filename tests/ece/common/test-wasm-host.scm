@@ -13,6 +13,26 @@
     "(:ece-code-object-fingerprint-v1 :name #f :arity #f :source-loc #f :labels () :instructions ((assign val (const 11)) (halt)))")
    491869788)))
 
+(test "wasm-host: code-object fingerprints stay in portable integer range" (lambda ()
+  (assert-equal
+   (ser/stable-string-hash
+    "(:ece-code-object-fingerprint-v1 :name #f :arity #f :source-loc #f :labels ((L16 23) (L17 20) (L18 15) (L19 12) (L20 22)) :instructions ((assign val (const 2)) (perform (op define-variable!) (const live-marker) (reg val) (reg env)) (assign val (reg val)) (assign proc (op lookup-variable-value) (const display) (reg env)) (assign val (op lookup-variable-value) (const live-marker) (reg env)) (assign argl (op list) (reg val)) (test (op primitive-procedure?) (reg proc)) (branch (label 22)) (test (op continuation?) (reg proc)) (branch (label 15)) (test (op parameter?) (reg proc)) (branch (label 20)) (assign continue (label 23)) (assign val (op compiled-procedure-entry) (reg proc)) (goto (reg val)) (assign val (op car) (reg argl)) (perform (op do-continuation-winds) (reg proc)) (assign stack (op continuation-stack) (reg proc)) (assign continue (op continuation-conts) (reg proc)) (goto (reg continue)) (assign val (op apply-parameter) (reg proc) (reg argl)) (goto (label 23)) (assign val (op apply-primitive-procedure) (reg proc) (reg argl)) (halt)))")
+   1856025457)))
+
+(test "wasm-host: fingerprint labels avoid dotted-pair printer differences" (lambda ()
+  (assert-equal
+   (write-to-string-flat
+    (ser/fingerprint-label-entries '((L16 . 23) (L17 . 20))))
+   "((L16 23) (L17 20))")))
+
+(test "wasm-host: fingerprint instructions normalize label operands" (lambda ()
+  (let* ((co (mc-compile-to-code-object
+              '(begin
+                 (define fingerprint-label-marker 2)
+                 (display fingerprint-label-marker))))
+         (text (write-to-string-flat (ser/fingerprint-instructions co))))
+    (assert-false (string-contains? text "(label L")))))
+
 (test "wasm-host: validates native-zone manifest" (lambda ()
   (let* ((manifest
           (validate-native-zone-manifest

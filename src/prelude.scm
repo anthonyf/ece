@@ -996,12 +996,13 @@ non-code-object atoms and sub-structure unchanged."
                (ser/walk-instruction (cdr instr))))))
 
 (define (ser/stable-string-hash str)
-  "Return the deterministic 32-bit FNV-1a hash for STR. This is a
-compatibility fingerprint, not a cryptographic digest. Keep the intermediate
-arithmetic below the fixnum ceiling so CL and WASM produce the same value."
+  "Return a deterministic 31-bit FNV-1a-derived hash for STR. This is a
+compatibility fingerprint, not a cryptographic digest. Keep the public result
+inside the WASM runtime's reliable integer range so CL and WASM produce the
+same value."
   (let loop ((i 0) (hi 33052) (lo 40389))
     (if (>= i (string-length str))
-        (+ (* hi 65536) lo)
+        (+ (* (modulo hi 32768) 65536) lo)
         (let* ((code (char->integer (string-ref str i)))
                (xlo (bitwise-xor lo (modulo code 65536)))
                (xhi (bitwise-xor hi (quotient code 65536)))
@@ -1038,29 +1039,66 @@ arithmetic below the fixnum ceiling so CL and WASM produce the same value."
         (loop (cdr remaining)
               (ser/insert-label-entry (car remaining) sorted)))))
 
+(define (ser/fingerprint-label-entries entries)
+  "Return sorted label entries in a printer-stable shape.
+Code-object labels are stored as dotted pairs, and host printers may render
+the dot separator with different whitespace. Fingerprints use proper
+two-element lists so CL and WASM hash the same archive text."
+  (map (lambda (entry) (list (car entry) (cdr entry)))
+       (ser/sort-label-entries entries)))
+
+(define (ser/fingerprint-label-target co target)
+  "Return TARGET as a stable program counter when CO knows the label."
+  (if (number? target)
+      target
+      (let ((pc (code-object-label-ref co target)))
+        (if (number? pc) pc target))))
+
+(define (ser/fingerprint-walk-instruction co instr)
+  "Return INSTR in a fingerprint-stable shape.
+Different runtimes may expose label operands either as their symbolic archive
+labels or as already-resolved program counters. Fingerprints normalize label
+operands through CO's label table so both forms hash identically."
+  (cond
+   ((code-object? instr)
+    (ser/code-object->sexp instr))
+   ((and (pair? instr)
+         (eq? (car instr) 'label)
+         (pair? (cdr instr)))
+    (list 'label (ser/fingerprint-label-target co (cadr instr))))
+   ((pair? instr)
+    (cons (ser/fingerprint-walk-instruction co (car instr))
+          (ser/fingerprint-walk-instruction co (cdr instr))))
+   (else instr)))
+
+(define (ser/fingerprint-instructions co)
+  "Return CO's instruction list in a fingerprint-stable shape."
+  (let ((instrs (code-object-instructions co))
+        (len (code-object-length co)))
+    (let loop ((i 0) (acc '()))
+      (if (>= i len)
+          (reverse acc)
+          (loop (+ i 1)
+                (cons (ser/fingerprint-walk-instruction
+                       co
+                       (vector-ref instrs i))
+                      acc))))))
+
 (define (ser/code-object-fingerprint co)
   "Return a deterministic fingerprint for CO, or #f when the runtime cannot
 expose enough code-object structure to verify it."
   (let ((instrs (code-object-instructions co)))
     (if (not (vector? instrs))
         #f
-        (let ((len (code-object-length co)))
-          (ser/stable-string-hash
-           (write-to-string-flat
-            (list ':ece-code-object-fingerprint-v1
-                  ':name (code-object-name co)
-                  ':arity (code-object-arity co)
-                  ':source-loc (code-object-source-loc co)
-                  ':labels (ser/sort-label-entries
-                            (code-object-label-entries co))
-                  ':instructions
-                  (let loop ((i 0) (acc '()))
-                    (if (>= i len)
-                        (reverse acc)
-                        (loop (+ i 1)
-                              (cons (ser/walk-instruction
-                                     (vector-ref instrs i))
-                                    acc)))))))))))
+        (ser/stable-string-hash
+         (write-to-string-flat
+          (list ':ece-code-object-fingerprint-v1
+                ':name (code-object-name co)
+                ':arity (code-object-arity co)
+                ':source-loc (code-object-source-loc co)
+                ':labels (ser/fingerprint-label-entries
+                          (code-object-label-entries co))
+                ':instructions (ser/fingerprint-instructions co)))))))
 
 (define (ser/code-object->sexp co)
   "Dispatch a code-object to its reader-safe sexp form. Returns either

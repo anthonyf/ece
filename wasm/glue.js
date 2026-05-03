@@ -151,9 +151,20 @@ const ECE = {
     return String.fromCharCode(...mem);
   },
 
+  _refreshSingletonHandles() {
+    const w = ECE.wasm;
+    ECE._hNil = w.h_nil();
+    ECE._hTrue = w.h_true();
+    ECE._hFalse = w.h_false();
+    ECE._hEof = w.h_eof();
+    ECE._hVoid = w.h_void();
+  },
+
   // Convert an ECE value handle to a JS value (for FFI arg marshalling)
   _eceToJs(handle) {
     const w = ECE.wasm;
+    if (typeof w.h_false_p === "function" && w.h_false_p(handle)) return false;
+    if (typeof w.h_true_p === "function" && w.h_true_p(handle)) return true;
     const t = w.dbg_type(handle);
     switch (t) {
       case 12: return ECE._jsGet(w.js_ref_idx(handle));  // js-ref → unwrap
@@ -165,17 +176,7 @@ const ECE = {
         return ECE._readMem(0, len);
       }
       case 0:  return null;                               // null/nil → null
-      default: {
-        // Check for booleans (i31 special tags)
-        if (t === 10) {
-          // other-i31: could be #t, #f, void, nil, eof
-          // Use handle comparison
-          if (handle === ECE._hTrue) return true;
-          if (handle === ECE._hFalse) return false;
-          return null;
-        }
-        return null;
-      }
+      default: return null;
     }
   },
 
@@ -480,6 +481,7 @@ const ECE = {
     }
 
     ECE.wasm.reset_handles();
+    ECE._refreshSingletonHandles();
     ECE._symCache = {};
 
     const args = [
@@ -531,11 +533,7 @@ const ECE = {
     const envHandle = w.build_global_env(0);
 
     // Cache singleton handles for JS-side use
-    ECE._hNil   = w.h_nil();
-    ECE._hTrue  = w.h_true();
-    ECE._hFalse = w.h_false();
-    ECE._hEof   = w.h_eof();
-    ECE._hVoid  = w.h_void();
+    ECE._refreshSingletonHandles();
 
     // Pre-register boot-registration primitives so boot-env.ecec can call them
     w.env_define(envHandle, ECE.internSym("%register-primitive!"), w.h_primitive(222));
