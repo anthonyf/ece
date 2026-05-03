@@ -335,6 +335,7 @@ $(BOOTSTRAP_DIR)/primitives-auto.lisp: primitives.def src/primitives.scm src/cod
 # section is always emitted when the recipe runs, so its mtime is a reliable
 # signal that regeneration has happened.
 $(ZONE_SENTINEL): primitives.def src/primitives.scm src/codegen-cl.scm src/codegen-cl-inline.scm $(BOOTSTRAP_SRCS) $(BOOTSTRAP_DIR)/bootstrap.ecec | .qlot/qlot.conf
+	@rm -rf $(BOOTSTRAP_ZONE_DIR)
 	@mkdir -p $(BOOTSTRAP_ZONE_DIR)
 	@rm -f $(BOOTSTRAP_DIR)/*-zone.lisp 2>/dev/null || true
 	@echo "Regenerating all compiled zones in $(BOOTSTRAP_ZONE_DIR)/..."

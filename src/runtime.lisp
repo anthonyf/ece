@@ -2633,7 +2633,8 @@ to produce cached FASLs so subsequent loads skip compilation. Errors during
 load are propagated with a hint about regeneration."
   (let* ((zone-dir (asdf:system-relative-pathname :ece ".tmp/bootstrap-zones/"))
          (pattern (merge-pathnames "*-zone.lisp" zone-dir))
-         (files (sort (directory pattern) #'string< :key #'namestring))
+         (files (when (probe-file zone-dir)
+                  (sort (directory pattern) #'string< :key #'namestring)))
          (fasl-dir (asdf:apply-output-translations zone-dir)))
     (ensure-directories-exist (merge-pathnames "x" fasl-dir))
     (dolist (path files)
