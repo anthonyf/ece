@@ -3,8 +3,8 @@
 /.tmp/
 /.qlot/
 /.worktrees/
-# Generated per-code-object zone files (archive-driven codegen, §12).
-# Regenerated from bootstrap.ecec when ECE_ZONES=1 make bootstrap runs.
+# Legacy location for generated per-code-object zone files. Current builds
+# write them under ignored .tmp/bootstrap-zones/.
 bootstrap/*-zone.lisp
 wasm/runtime.wasm
 sandbox/ece-runtime.js

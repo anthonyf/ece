@@ -18,7 +18,7 @@ The normal source path is:
 The major boot path is:
 
 1. CL loads generated host primitive functions from [`bootstrap/primitives-auto.lisp`](../../bootstrap/primitives-auto.lisp), produced from [`primitives.def`](../../primitives.def) and [`src/primitives.scm`](../../src/primitives.scm).
-2. CL loads generated `bootstrap/*-zone.lisp` files, when present, so native-zone functions register themselves.
+2. CL loads generated `.tmp/bootstrap-zones/*-zone.lisp` files, when present, so native-zone functions register themselves.
 3. CL loads [`bootstrap/bootstrap.ecec`](../../bootstrap/bootstrap.ecec), a concatenated bundle of `.ecec` archive sections for the self-hosted modules listed in `BOOTSTRAP_SRCS` in [`Makefile`](../../Makefile).
 4. The WASM browser path builds an initial environment in [`wasm/glue.js`](../../wasm/glue.js), fetches `bootstrap.ecec`, and iterates the archive sections with `load_archive`, `load_archive_continue`, and `run_code_object`.
 

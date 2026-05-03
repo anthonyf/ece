@@ -1547,7 +1547,7 @@ variables inline."
 Each entry is a function of (initial-pc initial-val initial-env initial-proc
 initial-argl initial-continue initial-stack) returning
 (values pc val env proc argl continue stack) on zone exit. Populated by
-bootstrap/*-zone.lisp files at load time. Spaces without a registered
+.tmp/bootstrap-zones/*-zone.lisp files at load time. Spaces without a registered
 entry fall through to the interpreted dispatch loop unchanged.")
 
 (defvar *archive-zone-fns* (make-hash-table :test #'equal)
@@ -2605,8 +2605,8 @@ Uses the CL reader (not the ECE reader) so this works at boot before the ECE rea
 ;;; Compiled-zone loader (Stage 1)
 ;;; ─────────────────────────────────────────────────────────────────────────
 ;;;
-;;; Scan bootstrap/ for any *-zone.lisp files and load them. Each file's
-;;; load-time effects register a zone-NAME function in one of two
+;;; Scan .tmp/bootstrap-zones/ for any *-zone.lisp files and load them. Each
+;;; file's load-time effects register a zone-NAME function in one of two
 ;;; registries:
 ;;;   - *compiled-zone-functions* (legacy space path) — keyed on space-id
 ;;;     symbol. Consulted by execute-instructions on space entry.
@@ -2626,15 +2626,15 @@ Uses the CL reader (not the ECE reader) so this works at boot before the ECE rea
 ;;; compiled zones depending on the build state.
 
 (defun load-compiled-zones ()
-  "Find and load every bootstrap/*-zone.lisp file. Each file is expected
+  "Find and load every generated bootstrap zone .lisp file. Each file is expected
 to define a zone-NAME function and register it in *compiled-zone-functions*
 (legacy space path) or *archive-zone-fns* (archive path). Uses compile-file
 to produce cached FASLs so subsequent loads skip compilation. Errors during
 load are propagated with a hint about regeneration."
-  (let* ((bootstrap-dir (asdf:system-relative-pathname :ece "bootstrap/"))
-         (pattern (merge-pathnames "*-zone.lisp" bootstrap-dir))
+  (let* ((zone-dir (asdf:system-relative-pathname :ece ".tmp/bootstrap-zones/"))
+         (pattern (merge-pathnames "*-zone.lisp" zone-dir))
          (files (sort (directory pattern) #'string< :key #'namestring))
-         (fasl-dir (asdf:apply-output-translations bootstrap-dir)))
+         (fasl-dir (asdf:apply-output-translations zone-dir)))
     (ensure-directories-exist (merge-pathnames "x" fasl-dir))
     (dolist (path files)
       (handler-case
@@ -2647,8 +2647,8 @@ load are propagated with a hint about regeneration."
         (error (e)
           (error "Failed to load compiled-zone file ~A: ~A~%~
                   The file may be stale — try `make bootstrap` to regenerate, ~
-                  or `git checkout ~A` to restore."
-                 path e (file-namestring path)))))))
+                  or `make clean` to remove generated zone artifacts."
+                 path e))))))
 
 (load-compiled-zones)
 

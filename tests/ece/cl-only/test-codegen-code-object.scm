@@ -17,7 +17,7 @@
   (define in (open-input-file tmp-path))
   (define line1 (read-line in))
   (close-input-port in)
-  (assert-equal ";;;; bootstrap/test-square-zone.lisp" line1)))
+  (assert-equal ";;;; .tmp/bootstrap-zones/test-square-zone.lisp" line1)))
 
 (test "codegen: emitted zone contains a defun whose name matches" (lambda ()
   (define co (mc-compile-to-code-object '(+ 1 2)))

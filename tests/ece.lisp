@@ -3760,16 +3760,16 @@ defun's archive key in O(1) instead of O(N) per lookup (N ~= 1000)."
     inv))
 
 (deftest test-shipped-zone-files-load-and-register
-    (testing "every bootstrap/*-zone.lisp file installs an fbound zone-NAME function registered in *archive-zone-fns*"
-             (let* ((bootstrap-dir
-                     (asdf:system-relative-pathname :ece "bootstrap/"))
-                    (pattern (merge-pathnames "*-zone.lisp" bootstrap-dir))
+    (testing "every generated bootstrap zone file installs an fbound zone-NAME function registered in *archive-zone-fns*"
+             (let* ((zone-dir
+                     (asdf:system-relative-pathname :ece ".tmp/bootstrap-zones/"))
+                    (pattern (merge-pathnames "*-zone.lisp" zone-dir))
                     (files (directory pattern))
                     ;; Build fn→key inverse once — with ~1000 zone files,
                     ;; a per-file maphash scan would be O(N^2).
                     (fn-to-key (build-archive-zone-fn-inverse)))
                (ok (>= (length files) 1)
-                   "at least one bootstrap/*-zone.lisp file ships with the build")
+                   "at least one generated bootstrap zone file exists")
                (dolist (file files)
                  ;; Post-Phase-D naming: filenames look like
                  ;; <file-stem>-<co-name?>-<index>-zone.lisp, and the emitted
