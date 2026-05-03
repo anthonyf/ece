@@ -200,6 +200,33 @@
        (hash-remove! *archive-units* unit-key)
        (hash-remove! *module-instances* unit-key))))))
 
+(test "wasm-host: reload registration clears stale native zones" (lambda ()
+  (let* ((unit-id '(module (reload native-stale) 0))
+         (unit-key (archive/unit-key unit-id))
+         (unit (list ':unit-id unit-id
+                     ':kind ':module
+                     ':phase 0
+                     ':imports '()
+                     ':exports '()
+                     ':init 0))
+         (section (list ':unit unit
+                        ':cos (vector (mc-compile-to-code-object 1)))))
+    (dynamic-wind
+     (lambda ()
+       (hash-remove! *archive-units* unit-key)
+       (hash-remove! *module-instances* unit-key)
+       (clear-native-zones-for-unit! unit-id))
+     (lambda ()
+       (register-native-zone! unit-id 0 'stale-zone)
+       (assert-true (native-zone-registered? unit-id 0))
+       (wasm-host/register-reload-section! section)
+       (assert-false (native-zone-registered? unit-id 0))
+       (assert-true (archive/registered-unit unit-id)))
+     (lambda ()
+       (hash-remove! *archive-units* unit-key)
+       (hash-remove! *module-instances* unit-key)
+       (clear-native-zones-for-unit! unit-id))))))
+
 (test "wasm-host: native-zone fingerprints validate loaded archive code" (lambda ()
   (let* ((unit-id '(module (native stale) 0))
          (unit-key (archive/unit-key unit-id))

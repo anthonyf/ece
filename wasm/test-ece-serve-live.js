@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // ECE Serve Live Reload Smoke Test
 // Starts bin/ece-serve, verifies sandbox dev URL injection, connects to the
-// WebSocket endpoint, edits the watched source, and expects a source-update.
+// WebSocket endpoint, edits the watched source, and expects a program-reload
+// artifact broadcast.
 
 const childProcess = require("child_process");
 const crypto = require("crypto");
@@ -134,7 +135,7 @@ function connectDevWebSocket(port, token) {
     const payload = buffer.subarray(offset, offset + len);
     buffer = buffer.subarray(offset + len);
     if (opcode === 1) return payload.toString("utf8");
-    if (opcode === 8) throw new Error("server closed WebSocket before source-update");
+    if (opcode === 8) throw new Error("server closed WebSocket before expected message");
     return undefined;
   }
 
@@ -298,32 +299,41 @@ async function runAttempt() {
       throw new Error(`program-reload manifestUrl mismatch: ${programReload.manifestUrl}`);
     }
 
-    const updateMessage = withTimeout(
+    const watchedReloadMessage = withTimeout(
       wsClient.nextTextFrame(),
       7000,
-      "source-update");
+      "watched program-reload");
 
     // CL file-write-date commonly has one-second granularity. Give the
     // watcher baseline a distinct timestamp before rewriting the source.
     await delay(1200);
     await fs.writeFile(ENTRY, "(define live-marker 2)\n(display live-marker)\n", "utf8");
 
-    const raw = await updateMessage;
+    const raw = await watchedReloadMessage;
     const message = JSON.parse(raw);
-    if (message.type !== "source-update") {
-      throw new Error(`expected source-update, got ${message.type}`);
+    if (message.type !== "program-reload") {
+      throw new Error(`expected watched program-reload, got ${message.type}`);
     }
-    if (!String(message.path || "").endsWith("live.scm")) {
-      throw new Error(`source-update path did not identify live.scm: ${message.path}`);
+    if (message.archiveUrl !== "/__ece_dev/artifacts/app.ecec") {
+      throw new Error(`watched program-reload archiveUrl mismatch: ${message.archiveUrl}`);
     }
-    if (!String(message.source || "").includes("(display live-marker)")) {
-      throw new Error("source-update source did not include rewritten source");
+    if (message.zoneModuleUrl !== null || message.manifestUrl !== null) {
+      throw new Error("watched program-reload should be archive-only");
+    }
+
+    const artifactResp = await fetch(`http://127.0.0.1:${port}${message.archiveUrl}`);
+    if (!artifactResp.ok) {
+      throw new Error(`dev artifact fetch failed: HTTP ${artifactResp.status}`);
+    }
+    const artifactText = await artifactResp.text();
+    if (!artifactText.includes(":ecec-archive") || !artifactText.includes("live.scm")) {
+      throw new Error("dev artifact did not look like a compiled live.scm archive");
     }
 
     console.log("PASS: ece-serve injected the dev WebSocket URL");
     console.log("PASS: ece-serve relayed an editor eval-source command");
     console.log("PASS: ece-serve relayed an editor program-reload command");
-    console.log("PASS: ece-serve broadcast a source-update for a watched edit");
+    console.log("PASS: ece-serve built and broadcast a program-reload artifact for a watched edit");
     console.log("ece-serve live reload smoke test: 4 passed, 0 failed");
   } catch (err) {
     err.serverOutput = serverOutput;

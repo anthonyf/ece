@@ -290,6 +290,34 @@ registered, fingerprints become a hard stale-artifact check."
   (wasm-host/validate-co-index co-index)
   (truncate co-index))
 
+(define *native-zone-registered-keys* '())
+
+(define (wasm-host/native-zone-key unit-id co-index)
+  (cons (wasm-host/registry-unit-key unit-id)
+        (wasm-host/normalize-co-index co-index)))
+
+(define (wasm-host/remember-native-zone-key! key)
+  (when (not (member key *native-zone-registered-keys*))
+    (set! *native-zone-registered-keys*
+          (cons key *native-zone-registered-keys*))))
+
+(define (clear-native-zones-for-unit! unit-id)
+  "Clear tracked native-zone exports for UNIT-ID.
+Archive reloads replace code objects before native-zone side artifacts are
+reloaded. Clearing prevents stale native code from continuing to shadow the
+new bytecode when a reload is archive-only."
+  (let ((unit-key (wasm-host/registry-unit-key unit-id)))
+    (let loop ((rest *native-zone-registered-keys*)
+               (kept '()))
+      (cond
+       ((null? rest)
+        (set! *native-zone-registered-keys* (reverse kept)))
+       ((eq? (car (car rest)) unit-key)
+        (%native-zone-register! unit-key (cdr (car rest)) #f)
+        (loop (cdr rest) kept))
+       (else
+        (loop (cdr rest) (cons (car rest) kept)))))))
+
 (define (fetch-text url)
   (wasm-host/require-capability
    '%wasm-fetch-text
@@ -314,10 +342,12 @@ registered, fingerprints become a hard stale-artifact check."
   "Register EXPORT-REF as the native zone for UNIT-ID code object CO-INDEX."
   (when (not export-ref)
     (wasm-host/error "native-zone export-ref must not be #f"))
-  (%native-zone-register!
-   (wasm-host/registry-unit-key unit-id)
-   (wasm-host/normalize-co-index co-index)
-   export-ref))
+  (let ((key (wasm-host/native-zone-key unit-id co-index)))
+    (wasm-host/remember-native-zone-key! key)
+    (%native-zone-register!
+     (car key)
+     (cdr key)
+     export-ref)))
 
 (define (native-zone-lookup unit-id co-index)
   "Return the registered native-zone export ref, or #f when absent."
@@ -378,6 +408,7 @@ This policy is ECE-owned, but it depends on future browser host primitives."
                ':native-zone-fingerprints
                (wasm-host/code-object-fingerprint-vector cos))
     (hash-remove! *module-instances* unit-key)
+    (clear-native-zones-for-unit! unit-id)
     (hash-set! *archive-units*
                unit-key
                record)))
