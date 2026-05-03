@@ -125,3 +125,13 @@
   (let ((env (json-eval-source "scratch" "(+ 1 2)")))
     (assert-equal env
       "{\"type\":\"eval-source\",\"path\":\"scratch\",\"source\":\"(+ 1 2)\"}"))))
+
+(test "json: program-reload envelope without native zones" (lambda ()
+  (let ((env (json-program-reload "/app.ecec" #f #f)))
+    (assert-equal env
+      "{\"type\":\"program-reload\",\"archiveUrl\":\"/app.ecec\",\"zoneModuleUrl\":null,\"manifestUrl\":null}"))))
+
+(test "json: program-reload envelope with native zones" (lambda ()
+  (let ((env (json-program-reload "/app.ecec" "/app-zones.wasm" "/app-zones.manifest")))
+    (assert-equal env
+      "{\"type\":\"program-reload\",\"archiveUrl\":\"/app.ecec\",\"zoneModuleUrl\":\"/app-zones.wasm\",\"manifestUrl\":\"/app-zones.manifest\"}"))))

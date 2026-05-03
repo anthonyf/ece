@@ -1,13 +1,13 @@
-;;; json.scm — Minimal JSON encoder for ece-serve's source-update envelope.
+;;; json.scm — Minimal JSON encoder for ece-serve dev-server envelopes.
 ;;;
 ;;; Scope: encoder only, no decoder. Supports the value types the dev
-;;; server's WebSocket broadcast needs — strings (with full RFC 8259
+;;; server's WebSocket broadcasts need — strings (with full RFC 8259
 ;;; string escaping for the ASCII control range plus `"`, `\`, `\n`,
 ;;; `\r`, `\t`, `\b`, `\f`), integers, booleans (#t / #f), JSON null
 ;;; (the symbol `'null` or the empty list `'()`), arrays (Scheme lists),
 ;;; and objects (alists with string keys). Unicode beyond ASCII is
-;;; emitted as-is — the dev server's traffic is UTF-8 source text, and
-;;; RFC 8259 permits UTF-8 literals in strings.
+;;; emitted as-is — the dev server's traffic is UTF-8 source text and
+;;; artifact URLs, and RFC 8259 permits UTF-8 literals in strings.
 ;;;
 ;;; ─────────────────────────────────────────────────────────────────────
 ;;; API
@@ -156,8 +156,8 @@ Keys must be strings; non-string keys raise an error."
           (display (json-encode value) out)
           (loop (cdr rest) #f)))))))
 
-;; Helper for the ece-serve source-update envelope: used from
-;; ece-serve.scm to avoid duplicating the shape in multiple places.
+;; Helpers for ece-serve dev-server envelopes: used from ece-serve.scm to avoid
+;; duplicating source-update, eval-source, and program-reload shapes.
 (define (json-source-update path source)
   "Build the JSON envelope {\"type\": \"source-update\", \"path\": PATH,
 \"source\": SOURCE} that ece-serve broadcasts over WebSocket on each
@@ -175,3 +175,13 @@ browser dev client to evaluate unsaved source text."
    (list (cons "type" "eval-source")
          (cons "path" path)
          (cons "source" source))))
+
+(define (json-program-reload archive-url zone-module-url manifest-url)
+  "Build the JSON envelope for a browser-side program reload.
+ARCHIVE-URL is required. ZONE-MODULE-URL and MANIFEST-URL may be #f, in which
+case they are encoded as JSON null."
+  (json-encode-object
+   (list (cons "type" "program-reload")
+         (cons "archiveUrl" archive-url)
+         (cons "zoneModuleUrl" (if zone-module-url zone-module-url 'null))
+         (cons "manifestUrl" (if manifest-url manifest-url 'null)))))

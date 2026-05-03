@@ -366,6 +366,38 @@ the path-join of *walker-tmp-dir* is a subdir."
     (assert-true (starts-with? resp (string-append "HTTP/1.1 403 Forbidden" crlf)))
     (assert-true (string-contains? resp "invalid dev token")))))
 
+(test "ece-serve/dispatch: editor program-reload POST returns JSON OK" (lambda ()
+  (let* ((crlf (string-append (string (integer->char 13)) (string #\newline)))
+         (crlf-crlf (string-append crlf crlf))
+         (body "/app.ecec")
+         (raw (string-append "POST /__ece_dev/program-reload HTTP/1.1" crlf
+                             "Content-Length: " (number->string (string-length body)) crlf
+                             "X-ECE-Dev-Token: test-token" crlf
+                             "X-ECE-Zone-Module-Url: /app-zones.wasm" crlf
+                             "X-ECE-Manifest-Url: /app-zones.manifest" crlf-crlf
+                             body))
+         (req (http-parse-request raw))
+         (clients (ece-serve/make-clients-box))
+         (resp (ece-serve/dispatch req clients)))
+    (assert-true (starts-with? resp (string-append "HTTP/1.1 200 OK" crlf)))
+    (assert-true (string-contains? resp "Content-Type: application/json"))
+    (assert-true (string-contains? resp "\"type\":\"program-reload\"")))))
+
+(test "ece-serve/dispatch: editor program-reload rejects unpaired native-zone URL" (lambda ()
+  (let* ((crlf (string-append (string (integer->char 13)) (string #\newline)))
+         (crlf-crlf (string-append crlf crlf))
+         (body "/app.ecec")
+         (raw (string-append "POST /__ece_dev/program-reload HTTP/1.1" crlf
+                             "Content-Length: " (number->string (string-length body)) crlf
+                             "X-ECE-Dev-Token: test-token" crlf
+                             "X-ECE-Zone-Module-Url: /app-zones.wasm" crlf-crlf
+                             body))
+         (req (http-parse-request raw))
+         (clients (ece-serve/make-clients-box))
+         (resp (ece-serve/dispatch req clients)))
+    (assert-true (starts-with? resp (string-append "HTTP/1.1 400 Bad Request" crlf)))
+    (assert-true (string-contains? resp "supplied together")))))
+
 (test "ece-serve/dispatch: /foo?query=bar strips query before resolving" (lambda ()
   (let* ((crlf (string-append (string (integer->char 13)) (string #\newline)))
          (crlf-crlf (string-append crlf crlf))
