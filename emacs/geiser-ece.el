@@ -96,6 +96,15 @@ When not on PATH, derived from this file's location (emacs/../bin/ece-repl)."
   :type 'string
   :group 'geiser-ece)
 
+(geiser-custom--defcustom geiser-ece-dev-session-directory
+  (let ((dir (file-name-directory (or load-file-name buffer-file-name ""))))
+    (if dir
+        (expand-file-name "../.tmp/ece-serve-sessions" dir)
+      ".tmp/ece-serve-sessions"))
+  "Directory where ece-serve writes local editor attach session files."
+  :type 'directory
+  :group 'geiser-ece)
+
 ;;; Implementation
 
 (defconst geiser-ece--prompt-regexp "ece> "
@@ -577,6 +586,98 @@ ask ece-serve to return the browser eval result/error JSON."
                          t)
    fallback))
 
+(defun geiser-ece--dev-entry-file-p (path)
+  "Return non-nil when PATH is a usable ece-serve entry source file."
+  (and path
+       (file-regular-p path)
+       (string-match-p "\\.scm\\'" path)))
+
+(defun geiser-ece--dev-read-entry-file ()
+  "Read and validate an ece-serve entry source file path."
+  (let ((entry-file (read-file-name
+                     "ECE entry .scm file: "
+                     nil nil t
+                     (when buffer-file-name
+                       (file-name-nondirectory buffer-file-name))
+                     #'geiser-ece--dev-entry-file-p)))
+    (unless (geiser-ece--dev-entry-file-p entry-file)
+      (error "ECE dev entry must be a regular .scm file, not a directory"))
+    entry-file))
+
+(defun geiser-ece--dev-session-files ()
+  "Return readable ece-serve local attach session files."
+  (let ((dir (expand-file-name geiser-ece-dev-session-directory)))
+    (when (file-directory-p dir)
+      (cl-remove-if-not
+       #'file-readable-p
+       (directory-files dir t "\\.sexp\\'")))))
+
+(defun geiser-ece--dev-read-session (path)
+  "Read and validate an ece-serve local attach session from PATH."
+  (let ((session
+         (with-temp-buffer
+           (insert-file-contents path)
+           (goto-char (point-min))
+           (read (current-buffer)))))
+    (unless (and (consp session)
+                 (equal (cdr (assoc "type" session)) "ece-serve-session"))
+      (error "Not an ece-serve session file: %s" path))
+    (let ((url (cdr (assoc "url" session)))
+          (token (cdr (assoc "token" session))))
+      (unless (and (stringp url)
+                   (not (string-empty-p url))
+                   (stringp token)
+                   (not (string-empty-p token)))
+        (error "Invalid ece-serve session file: %s" path))
+      session)))
+
+(defun geiser-ece--dev-session-get (session key)
+  "Return string KEY from ece-serve attach SESSION."
+  (cdr (assoc key session)))
+
+(defun geiser-ece--dev-session-label (path)
+  "Return a completion label for ece-serve session file PATH."
+  (condition-case nil
+      (let* ((session (geiser-ece--dev-read-session path))
+             (port (geiser-ece--dev-session-get session "port"))
+             (entry (geiser-ece--dev-session-get session "entry"))
+             (url (geiser-ece--dev-session-get session "url")))
+        (format "%s  %s  %s"
+                (or port (file-name-base path))
+                url
+                (or entry "")))
+    (error (file-name-nondirectory path))))
+
+(defun geiser-ece--dev-select-session-file ()
+  "Return an ece-serve session file selected for attach."
+  (let ((files (geiser-ece--dev-session-files)))
+    (cond
+     ((null files)
+      (read-file-name "ECE session file: "
+                      geiser-ece-dev-session-directory nil t nil
+                      (lambda (path)
+                        (and (file-regular-p path)
+                             (string-match-p "\\.sexp\\'" path)))))
+     ((null (cdr files)) (car files))
+     (t
+      (let* ((choices
+              (mapcar (lambda (path)
+                        (cons (geiser-ece--dev-session-label path) path))
+                      files))
+             (label (completing-read "ECE session: " choices nil t)))
+        (cdr (assoc label choices)))))))
+
+(defun geiser-ece--dev-apply-session (session)
+  "Apply ece-serve attach SESSION settings to the current Emacs session."
+  (setq geiser-ece-dev-server-url
+        (string-remove-suffix "/" (geiser-ece--dev-session-get session "url")))
+  (setq geiser-ece-dev-server-token (geiser-ece--dev-session-get session "token"))
+  (when (integerp (geiser-ece--dev-session-get session "port"))
+    (setq geiser-ece-dev-server-port (geiser-ece--dev-session-get session "port")))
+  (setq geiser-ece-dev--server-ready t)
+  (setq geiser-ece-dev--source-buffer (current-buffer))
+  (geiser-ece-dev-mode 1))
+
 ;;;###autoload
 (defun geiser-ece-dev-connect (url token)
   "Set the ece-serve URL and dev TOKEN for live browser development."
@@ -589,6 +690,18 @@ ask ece-serve to return the browser eval result/error JSON."
   (setq geiser-ece-dev-server-url (string-remove-suffix "/" url))
   (setq geiser-ece-dev-server-token token)
   (message "ECE dev connected to %s" geiser-ece-dev-server-url))
+
+;;;###autoload
+(defun geiser-ece-dev-attach (&optional session-file)
+  "Attach to an existing ece-serve process via its local SESSION-FILE.
+Interactively, use the only session in `geiser-ece-dev-session-directory', or
+prompt when there are several. This configures the dev URL/token without
+displaying or prompting for the token."
+  (interactive)
+  (let* ((path (or session-file (geiser-ece--dev-select-session-file)))
+         (session (geiser-ece--dev-read-session path)))
+    (geiser-ece--dev-apply-session session)
+    (message "ECE dev attached to %s" geiser-ece-dev-server-url)))
 
 ;;;###autoload
 (defun geiser-ece-dev-status ()
@@ -615,16 +728,15 @@ When PORT is nil, use `geiser-ece-dev-server-port'. Interactively, a prefix
 argument prompts for the port. The dev token is generated by ece-serve and
 parsed from its startup output."
   (interactive
-   (let ((entry-file (read-file-name "ECE entry file: "
-                                     nil nil t
-                                     (when buffer-file-name
-                                       (file-name-nondirectory buffer-file-name)))))
+   (let ((entry-file (geiser-ece--dev-read-entry-file)))
      (list entry-file
            (when current-prefix-arg
              (read-number "ECE dev server port: "
                           geiser-ece-dev-server-port)))))
   (when (geiser-ece--dev-server-live-p)
     (error "ece-serve is already running; use geiser-ece-dev-stop first"))
+  (unless (geiser-ece--dev-entry-file-p entry-file)
+    (error "ECE dev entry must be a regular .scm file, not a directory"))
   (let ((binary (geiser-ece--dev-server-binary)))
     (unless binary
       (error "Could not find ece-serve; build ECE or customize geiser-ece-binary"))
@@ -737,6 +849,7 @@ parsed from its startup output."
     (define-key map (kbd "C-c C-z S") #'geiser-ece-dev-start)
     (define-key map (kbd "C-c C-z K") #'geiser-ece-dev-stop)
     (define-key map (kbd "C-c C-z c") #'geiser-ece-dev-connect)
+    (define-key map (kbd "C-c C-z a") #'geiser-ece-dev-attach)
     (define-key map (kbd "C-c C-z o") #'geiser-ece-dev-open-browser)
     (define-key map (kbd "C-c C-z ?") #'geiser-ece-dev-status)
     (define-key map (kbd "C-c C-z e") #'geiser-ece-dev-eval-last-sexp)
