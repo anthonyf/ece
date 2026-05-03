@@ -12,7 +12,7 @@
 ;;;; openspec/changes/stage-1-inline-primitive-codegen/ for the design.
 ;;;;
 ;;;; Regenerate via the Makefile:
-;;;;   make bootstrap/<space>-zone.lisp
+;;;;   make bootstrap
 ;;;;
 ;;;; The generator is itself an ECE program. It is loaded by the build:
 ;;;;   (load "src/codegen-cl.scm")       ;; brings in *host-primitives*
@@ -169,7 +169,7 @@ stays stable for future modes."
   (let ((name-str (if (symbol? space-name)
                       (symbol->string space-name)
                       space-name)))
-    (write-string ";;;; bootstrap/" out)
+    (write-string ";;;; .tmp/bootstrap-zones/" out)
     (write-string name-str out)
     (write-string "-zone.lisp" out) (newline out)
     (write-string ";;;;" out) (newline out)
@@ -178,9 +178,7 @@ stays stable for future modes."
     (write-string ";;;; Source space: " out)
     (write-string name-str out) (newline out)
     (write-string ";;;; Generator: src/codegen-cl-inline.scm" out) (newline out)
-    (write-string ";;;; Regenerate: make bootstrap/" out)
-    (write-string name-str out)
-    (write-string "-zone.lisp" out) (newline out)
+    (write-string ";;;; Regenerate: make bootstrap" out) (newline out)
     (write-string ";;;;" out) (newline out)
     (write-string ";;;; The CL runtime loads this file at boot and registers the defun" out) (newline out)
     (write-string ";;;; below under (unit-id . co-key) in *archive-zone-fns*; archive" out) (newline out)

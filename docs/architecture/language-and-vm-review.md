@@ -50,7 +50,7 @@ Hash-table literals, string interpolation, and record generation are nonstandard
 
 **The WAT runtime is large and manually maintained.** A hand-written WAT runtime is portable to browsers and avoids a separate compiler dependency, but it is expensive to evolve. Changes to code-object layout, archive parsing, primitive IDs, error bridging, or continuation shape must be mirrored precisely.
 
-**Native zones add stale-artifact failure modes.** Zone files are generated from `bootstrap.ecec`, loaded before archives, then attached by `(file-stem . index)`. This is a good design for fast lookup, but stale zone files can be semantically dangerous. The code has checks and regeneration hints, but the architecture still depends on build recipes keeping archive traversal and zone traversal in lockstep.
+**Native zones add stale-artifact failure modes.** Zone files are generated from `bootstrap.ecec` into `.tmp/bootstrap-zones/`, loaded before archives, then attached by `(file-stem . index)`. This is a good design for fast lookup, but stale zone files can be semantically dangerous. The code has checks and regeneration hints, but the architecture still depends on build recipes keeping archive traversal and zone traversal in lockstep.
 
 **Continuation serialization depends on archive registry state.** Code objects can serialize by reference as `(stem . index)`. This is compact, but deserialization requires the relevant archive to already be loaded. That coupling is acceptable for a controlled app bundle, but it needs user-facing failure handling for save files, especially when code changes between save and restore.
 

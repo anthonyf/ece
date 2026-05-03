@@ -33,33 +33,26 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .fasl-cache
-          key: fasl-${{ hashFiles('src/*.lisp', 'ece.asd', 'bootstrap/*-zone.lisp') }}
+          key: fasl-${{ hashFiles('src/*.lisp', 'ece.asd', 'primitives.def', 'src/*.scm', 'bootstrap/bootstrap.ecec') }}
           restore-keys: fasl-
 
       - name: Mark bootstrap outputs as up-to-date
-        # Must run BEFORE Warm FASL cache so that the zone sources touched here
-        # stay OLDER than the FASLs that Warm FASL cache compiles next. If the
-        # order is reversed, touch sets source mtimes newer than the freshly
-        # compiled FASLs, and the subsequent `make ece` step's SBCL invocation
-        # (at 4GB heap) redundantly recompiles all 7 zones from scratch —
-        # which is right at the memory margin and OOMs non-deterministically.
+        # Must run before `make bootstrap` so checkout mtimes do not force
+        # regeneration of the stable bootstrap archive when the checked-in
+        # outputs already match the sources.
         run: |
           sleep 1
           touch bootstrap/primitives-auto.lisp
           touch bootstrap/bootstrap.ecec
-          # Zone files are gitignored — the glob usually expands to nothing
-          # at clone time. Use `find` instead of `touch bootstrap/*-zone.lisp`
-          # because bash's default glob passes unmatched patterns through
-          # literally, which `touch` would then CREATE as a file named
-          # `bootstrap/*-zone.lisp` — later picked up by the test suite as
-          # a bogus zone file.
-          find bootstrap -maxdepth 1 -name '*-zone.lisp' -type f -exec touch {} +
+
+      - name: Generate bootstrap artifacts
+        run: make bootstrap
 
       - name: Warm FASL cache
         run: |
-          # Pre-compile zone FASLs in a dedicated session so subsequent
-          # SBCL invocations load from cache (~2s) instead of compiling
-          # 376k lines from source (~3min each).
+          # Pre-compile generated zone FASLs in a dedicated session so
+          # subsequent SBCL invocations load from cache instead of compiling
+          # thousands of generated zone sources in 4GB heap processes.
           ASDF_OUTPUT_TRANSLATIONS='(:output-translations ("'$PWD'/" "'$PWD'/.fasl-cache/") :inherit-configuration)' \
           qlot exec sbcl --dynamic-space-size 8192 --non-interactive --disable-debugger \
             --eval '(asdf:load-system :ece)' --quit
