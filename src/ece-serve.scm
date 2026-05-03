@@ -535,8 +535,12 @@ Returns a 400/404 response STRING on miss (both are text)."
 
 (define (ece-serve/dev-ws-url)
   "Return the WebSocket URL injected into sandbox/index.html."
+  (ece-serve/dev-ws-url-for-port *ece-serve/current-port*))
+
+(define (ece-serve/dev-ws-url-for-port port)
+  "Return the WebSocket URL for PORT and the current dev token."
   (string-append "ws://127.0.0.1:"
-                 (number->string *ece-serve/current-port*)
+                 (number->string port)
                  "/ws?token="
                  *ece-serve/dev-token*))
 
@@ -1227,8 +1231,6 @@ Returns #f on timeout or when called without a scheduler."
 
 (define (ece-serve/ensure-session-root!)
   "Ensure the local ece-serve session directory exists."
-  (when (not (%file-exists? ".tmp"))
-    (%make-directory ".tmp"))
   (when (not (%file-exists? *ece-serve/session-root*))
     (%make-directory *ece-serve/session-root*)))
 
@@ -1242,7 +1244,7 @@ Returns #f on timeout or when called without a scheduler."
   (list (cons "type" "ece-serve-session")
         (cons "version" 1)
         (cons "url" (string-append "http://127.0.0.1:" (number->string port)))
-        (cons "ws-url" (ece-serve/dev-ws-url))
+        (cons "ws-url" (ece-serve/dev-ws-url-for-port port))
         (cons "token" *ece-serve/dev-token*)
         (cons "entry" entry-file)
         (cons "port" port)
@@ -1251,9 +1253,11 @@ Returns #f on timeout or when called without a scheduler."
 (define (ece-serve/write-session-file! entry-file port)
   "Write the local editor attach session file for ENTRY-FILE on PORT."
   (ece-serve/ensure-session-root!)
-  (ece-serve/write-sexp-to-file
-   (ece-serve/session-data entry-file port)
-   (ece-serve/session-path port)))
+  (let ((path (ece-serve/session-path port)))
+    (ece-serve/write-sexp-to-file
+     (ece-serve/session-data entry-file port)
+     path)
+    (%chmod path 384)))
 
 (define (ece-serve/artifact-source-list entry-file)
   "Return the source list used for a dev artifact build."

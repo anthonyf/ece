@@ -615,10 +615,15 @@ ask ece-serve to return the browser eval result/error JSON."
 (defun geiser-ece--dev-read-session (path)
   "Read and validate an ece-serve local attach session from PATH."
   (let ((session
-         (with-temp-buffer
-           (insert-file-contents path)
-           (goto-char (point-min))
-           (read (current-buffer)))))
+         (condition-case err
+             (let ((read-eval nil))
+               (with-temp-buffer
+                 (insert-file-contents path)
+                 (goto-char (point-min))
+                 (read (current-buffer))))
+           (error
+            (error "Could not read ece-serve session file %s: %s"
+                   path (error-message-string err))))))
     (unless (and (consp session)
                  (equal (cdr (assoc "type" session)) "ece-serve-session"))
       (error "Not an ece-serve session file: %s" path))

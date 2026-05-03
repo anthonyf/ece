@@ -440,7 +440,7 @@ the path-join of *walker-tmp-dir* is a subdir."
         (old-token *ece-serve/dev-token*))
     (dynamic-wind
       (lambda ()
-        (set! *ece-serve/current-port* 8124)
+        (set! *ece-serve/current-port* 9000)
         (set! *ece-serve/dev-token* "session-token"))
       (lambda ()
         (let ((data (ece-serve/session-data "game/main.scm" 8124)))
