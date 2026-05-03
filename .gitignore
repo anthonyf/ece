@@ -4,7 +4,7 @@
 /.qlot/
 /.worktrees/
 # Legacy location for generated per-code-object zone files. Current builds
-# write them under ignored .tmp/bootstrap-zones/.
+# write an aggregate bundle under ignored .tmp/bootstrap-zones/.
 bootstrap/*-zone.lisp
 wasm/runtime.wasm
 sandbox/ece-runtime.js

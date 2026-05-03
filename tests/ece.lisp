@@ -3043,7 +3043,7 @@ provide an ece-NAME defun for each."
 ;; into-space, which were retired alongside the compilation-space struct
 ;; in Phase F of per-procedure-code-objects. Per-procedure zone coverage
 ;; now lives in tests/ece/cl-only/test-codegen-code-object.scm and
-;; tests/ece.lisp's test-shipped-zone-files-* suite. The helpers and
+;; tests/ece.lisp's test-shipped-zone-bundle-* suite. The helpers and
 ;; deftests are kept here (commented) per project convention so they can
 ;; be revived against a code-object-native toy fixture in the future.
 #+(or)
@@ -3751,59 +3751,45 @@ during a clean run, which is by design."
 (defun build-archive-zone-fn-inverse ()
   "Invert *archive-zone-fns* to a (make-hash-table :test 'eq) keyed on the
 function value, mapping back to the original (unit-id . co-key) cons.
-Used by test-shipped-zone-files-load-and-register to look up each zone
-defun's archive key in O(1) instead of O(N) per lookup (N ~= 1000)."
+Used by test-shipped-zone-bundle-loads-and-registers to look up a zone
+defun's archive key."
   (let ((inv (make-hash-table :test 'eq)))
     (maphash (lambda (key fn)
                (setf (gethash fn inv) key))
              ece::*archive-zone-fns*)
     inv))
 
-(deftest test-shipped-zone-files-load-and-register
-    (testing "every generated bootstrap zone file installs an fbound zone-NAME function registered in *archive-zone-fns*"
+(deftest test-shipped-zone-bundle-loads-and-registers
+    (testing "the generated bootstrap zone bundle installs fbound zone-NAME functions registered in *archive-zone-fns*"
              (let* ((zone-dir
                      (asdf:system-relative-pathname :ece ".tmp/bootstrap-zones/"))
-                    (pattern (merge-pathnames "*-zone.lisp" zone-dir))
-                    (files (directory pattern))
-                    ;; Build fn→key inverse once — with ~1000 zone files,
-                    ;; a per-file maphash scan would be O(N^2).
+                    (bundle (merge-pathnames "bootstrap-zones.lisp" zone-dir))
+                    (legacy-files (directory (merge-pathnames "*-zone.lisp" zone-dir)))
                     (fn-to-key (build-archive-zone-fn-inverse)))
-               (ok (>= (length files) 1)
-                   "at least one generated bootstrap zone file exists")
-               (dolist (file files)
-                 ;; Post-Phase-D naming: filenames look like
-                 ;; <file-stem>-<co-name?>-<index>-zone.lisp, and the emitted
-                 ;; defun is named `zone-<file-stem>-<co-name?>-<index>`.
-                 ;; The file registers under (unit-id . index) in
-                 ;; *archive-zone-fns* (NOT *compiled-zone-functions* — that
-                 ;; registry is reserved for the legacy space-keyed path).
-                 ;; Current file archives synthesize unit-id from file-stem,
-                 ;; which may itself contain hyphens (boot-env,
-                 ;; browser-lib, compilation-unit), we can't cleanly split
-                 ;; the filename into (unit-id . index) — instead we
-                 ;; derive the defun from the filename stem and confirm the
-                 ;; registered function is (eq) to it.
-                 (let* ((base (pathname-name file))
-                        (zone-stem (subseq base 0 (- (length base)
-                                                     (length "-zone")))))
-                   (let ((sym (find-symbol (concatenate 'string
-                                                        "ZONE-"
-                                                        (string-upcase zone-stem))
-                                           :ece)))
-                     (ok (and sym (fboundp sym))
-                         (format nil "~A defines fbound ~A" file sym))
-                     (when (and sym (fboundp sym))
-                       (let ((key (gethash (symbol-function sym) fn-to-key)))
-                         (ok key
-                             (format nil "~A registered in *archive-zone-fns*"
-                                     zone-stem))
-                         (when key
-                           (ok (and (consp key)
-                                    (symbolp (car key))
-                                    (integerp (cdr key)))
-                               (format nil
-                                       "~A key has current file archive (unit-id-symbol . index-integer) shape"
-                                       zone-stem)))))))))))
+               (ok (probe-file bundle)
+                   "generated bootstrap zone bundle exists")
+               (ok (= (length legacy-files) 0)
+                   "current bootstrap emits no legacy per-code-object zone files")
+               (ok (> (hash-table-count ece::*archive-zone-fns*) 0)
+                   "archive zone registry has generated entries")
+               (let ((bad-key nil))
+                 (maphash (lambda (key fn)
+                            (declare (ignore fn))
+                            (unless (and (consp key)
+                                         (symbolp (car key))
+                                         (integerp (cdr key)))
+                              (setf bad-key key)))
+                          ece::*archive-zone-fns*)
+                 (ok (null bad-key)
+                     "archive zone keys have (unit-id-symbol . index-integer) shape"))
+               ;; The first assembler code-object is stable and should be
+               ;; emitted as zone-assembler-0 inside the aggregate bundle.
+               (let ((sym (find-symbol "ZONE-ASSEMBLER-0" :ece)))
+                 (ok (and sym (fboundp sym))
+                     "bundle defines fbound ZONE-ASSEMBLER-0")
+                 (when (and sym (fboundp sym))
+                   (ok (gethash (symbol-function sym) fn-to-key)
+                       "ZONE-ASSEMBLER-0 is registered in *archive-zone-fns*"))))))
 
 (deftest test-shipped-zone-files-determinism
     (testing "regenerating a code-object zone file twice produces byte-identical output"

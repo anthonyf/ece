@@ -1,8 +1,8 @@
 ;;;; ECE Inline Codegen — Common Lisp backend (Stage 1).
 ;;;;
-;;;; Walks a compilation space's instruction vector and writes a CL source
-;;;; file containing one (defun zone-NAME ...) whose body is the inlined
-;;;; translation of those instructions. Primitive call sites whose identity
+;;;; Walks code objects and writes CL source containing (defun zone-NAME ...)
+;;;; forms whose bodies are the inlined translation of those instructions.
+;;;; Primitive call sites whose identity
 ;;;; is statically known are spliced in via the :cl template body from
 ;;;; src/primitives.scm (reusing host-primitive-cl-body from codegen-cl.scm);
 ;;;; call sites with unknown primitives fall back to
@@ -83,8 +83,27 @@
 (define *emit-unit-id* (make-parameter #f))
 (define *emit-co-index-map* (make-parameter #f))
 
+(define (emit-zone-cl-for-code-object out co zone-name unit-id co-key)
+  "Emit one (defun zone-NAME ...) for CO to already-open OUT.
+UNIT-ID and CO-KEY select the archive registry key emitted in the
+self-registration form."
+  (let ((count (cg/instruction-length co)))
+    (when (= count 0)
+      (%raw-error
+       (string-append "emit-zone-cl-for-code-object: empty code-object "
+                      zone-name)))
+    (let ((local-index-map (or (*emit-co-index-map*)
+                               (build-reachable-co-index-map co))))
+      (parameterize ((*emit-unit-id* unit-id)
+                     (*emit-co-index-map* local-index-map))
+        (let ((reg-mode (list 'co unit-id co-key)))
+          (if (needs-splitting? count)
+              (emit-zone-defun-split out zone-name co count reg-mode)
+              (emit-zone-defun out zone-name co count reg-mode)))))))
+
 ;;; Code-object-oriented entry point. Takes a code-object directly.
-;;; Used by Phase D's archive codegen driver.
+;;; Kept for tests and ad-hoc debugging; archive batch generation writes
+;;; many code-object zones into one aggregate file.
 (define (generate-zone-cl-for-code-object! co zone-name output-path
                                            unit-id co-key)
   "Emit one (defun zone-NAME ...) for CO. ZONE-NAME is the string used as
@@ -103,23 +122,11 @@ reachability walk from CO — keys then match a one-file archive where
 CO is entry 0.
 
 Returns OUTPUT-PATH."
-  (let ((count (cg/instruction-length co)))
-    (when (= count 0)
-      (%raw-error
-       (string-append "generate-zone-cl-for-code-object!: empty code-object "
-                      zone-name)))
-    (let ((local-index-map (or (*emit-co-index-map*)
-                               (build-reachable-co-index-map co))))
-      (parameterize ((*emit-unit-id* unit-id)
-                     (*emit-co-index-map* local-index-map))
-        (let ((out (open-output-file output-path))
-              (reg-mode (list 'co unit-id co-key)))
-          (emit-zone-header out zone-name 'code-object)
-          (if (needs-splitting? count)
-              (emit-zone-defun-split out zone-name co count reg-mode)
-              (emit-zone-defun out zone-name co count reg-mode))
-          (close-output-port out)
-          output-path)))))
+  (let ((out (open-output-file output-path)))
+    (emit-zone-header out zone-name 'code-object)
+    (emit-zone-cl-for-code-object out co zone-name unit-id co-key)
+    (close-output-port out)
+    output-path))
 
 (define (build-reachable-co-index-map top-co)
   "Depth-first walk over TOP-CO's instruction tree, returning a hash-table
@@ -1185,9 +1192,34 @@ loop exits cleanly regardless of the halt instruction's position."
 ;;;
 ;;; Phase F retired the space-based `generate-all-zones!` entry point.
 ;;; All batch zone generation goes through `generate-all-zones-from-archive!`
-;;; (defined below), which walks an .ecec archive and emits one zone file
-;;; per code-object.
+;;; (defined below), which walks an .ecec archive and emits one aggregate
+;;; Lisp file containing one zone defun per supported code-object.
 ;;; ─────────────────────────────────────────────────────────────────────────
+
+(define bootstrap-zone-bundle-filename "bootstrap-zones.lisp")
+
+(define (zone-bundle-output-path output-dir)
+  "Return the aggregate CL native-zone artifact path for OUTPUT-DIR."
+  (string-append output-dir "/" bootstrap-zone-bundle-filename))
+
+(define (emit-zone-bundle-header out archive-path output-path)
+  "Emit the file-level banner for an aggregate CL native-zone artifact."
+  (write-string ";;;; " out)
+  (write-string output-path out) (newline out)
+  (write-string ";;;;" out) (newline out)
+  (write-string ";;;; AUTOMATICALLY GENERATED — DO NOT EDIT BY HAND." out) (newline out)
+  (write-string ";;;;" out) (newline out)
+  (write-string ";;;; Source archive: " out)
+  (write-string archive-path out) (newline out)
+  (write-string ";;;; Generator: src/codegen-cl-inline.scm" out) (newline out)
+  (write-string ";;;; Regenerate: make bootstrap" out) (newline out)
+  (write-string ";;;;" out) (newline out)
+  (write-string ";;;; The CL runtime loads this native-zone bundle at boot. Each" out) (newline out)
+  (write-string ";;;; defun below registers itself under (unit-id . co-key) in" out) (newline out)
+  (write-string ";;;; *archive-zone-fns* so archive loaders can attach native-fn." out) (newline out)
+  (newline out)
+  (write-string "(in-package :ece)" out) (newline out)
+  (newline out))
 
 (define (sanitize-char-for-filename c)
   "Map one filesystem-unsafe character to an ASCII substitute. Scheme
@@ -1286,9 +1318,9 @@ String unit ids are treated as legacy file stems and normalized to symbols."
      (unit-id unit-id)
      (else (archive-file-stem archive)))))
 
-(define (generate-zones-for-archive-section! archive output-dir)
-  "Emit one zone file per code-object in ARCHIVE (a single parsed
-(ecec-archive ...) section) under OUTPUT-DIR. Used internally by
+(define (generate-zones-for-archive-section! archive out)
+  "Emit one zone defun per code-object in ARCHIVE to aggregate OUT.
+ARCHIVE is a single parsed (ecec-archive ...) section. Used internally by
 generate-all-zones-from-archive! which loops over concatenated archive
 sections in a bundle.
 
@@ -1312,42 +1344,46 @@ Threads *emit-co-index-map* so emit-inner-co-lookup can resolve (const
         (when (< i n)
           (let* ((co (vector-ref cos i))
                  (zone-name (zone-name-for-code-object file-stem i co))
-                 (co-key (co-key-for-archive-entry i))
-                 (output-path (string-append output-dir "/" zone-name "-zone.lisp")))
-            (display (string-append "Generating " output-path
+                 (co-key (co-key-for-archive-entry i)))
+            (display (string-append "Generating zone " zone-name
                                     " (" (number->string (code-object-length co))
                                     " PCs)..."))
             (newline)
-            (generate-zone-cl-for-code-object! co zone-name output-path
-                                               unit-id co-key)
-            (display (string-append "  Done: " output-path))
+            (emit-zone-cl-for-code-object out co zone-name unit-id co-key)
+            (display (string-append "  Done: " zone-name))
             (newline))
           (loop (+ i 1)))))))
 
 (define (generate-all-zones-from-archive! archive-path output-dir)
   "Read a bundle at ARCHIVE-PATH (a concatenation of (ecec-archive ...)
 sections, one per compiled source file), iterate each section's
-code-objects, and emit one zone file per code-object under OUTPUT-DIR.
-Output filenames: `<file-stem>-<co-name-or-index>-zone.lisp`, where
-FILE-STEM comes from each section's |file| field.
+code-objects, and emit one aggregate native-zone Lisp file under OUTPUT-DIR.
+The output file is `bootstrap-zones.lisp` and contains one defun per code
+object, with readable names derived from each section's |file| field.
 
 Signals an error if a section has zero entries. Deterministic: sections
 are processed in bundle order; within each section entries are processed
 in archive order (init first, then nested lambdas BFS)."
-  (let ((port (open-input-file archive-path)))
+  (let ((output-path (zone-bundle-output-path output-dir))
+        (port (open-input-file archive-path))
+        (out (open-output-file (zone-bundle-output-path output-dir))))
+    (emit-zone-bundle-header out archive-path output-path)
     (let loop ()
       (let ((archive (ece-scheme-read port)))
         (cond
          ((eof? archive)
-          (close-input-port port))
+          (close-input-port port)
+          (close-output-port out)
+          output-path)
          ;; Accept both new (:ecec-archive) and legacy (ecec-archive)
          ;; during the transition.
          ((and (pair? archive)
                (or (eq? (car archive) ':ecec-archive)
                    (eq? (car archive) 'ecec-archive)))
-          (generate-zones-for-archive-section! archive output-dir)
+          (generate-zones-for-archive-section! archive out)
           (loop))
          (else
           (close-input-port port)
+          (close-output-port out)
           (%raw-error
            "generate-all-zones-from-archive!: expected (:ecec-archive ...) section")))))))
