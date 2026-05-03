@@ -107,6 +107,65 @@ the path-join of *walker-tmp-dir* is a subdir."
   (assert-false (ece-serve/resolve-path ""))
   (assert-false (ece-serve/resolve-path "relative"))))
 
+(test "ece-serve/resolve-dev-artifact-path: maps artifact URL into artifact root" (lambda ()
+  (let ((old *ece-serve/artifact-root*))
+    (dynamic-wind
+      (lambda () (set! *ece-serve/artifact-root* ".tmp/ece-serve-test-artifacts"))
+      (lambda ()
+        (assert-equal
+         (ece-serve/resolve-dev-artifact-path "/__ece_dev/artifacts/app.ecec")
+         ".tmp/ece-serve-test-artifacts/app.ecec")
+        (assert-equal
+         (ece-serve/resolve-dev-artifact-path "/__ece_dev/artifacts/app.ecec?v=1")
+         ".tmp/ece-serve-test-artifacts/app.ecec"))
+      (lambda () (set! *ece-serve/artifact-root* old))))))
+
+(test "ece-serve/resolve-dev-artifact-path: rejects traversal and nested paths" (lambda ()
+  (assert-false
+   (ece-serve/resolve-dev-artifact-path "/__ece_dev/artifacts/../secret.ecec"))
+  (assert-false
+   (ece-serve/resolve-dev-artifact-path "/__ece_dev/artifacts/nested/app.ecec"))
+  (assert-false
+   (ece-serve/resolve-dev-artifact-path "/index.html"))))
+
+(test "ece-serve/build-program-artifact!: compiles entry to served artifact URL" (lambda ()
+  (let ((old *ece-serve/artifact-root*)
+        (entry (path-join *walker-tmp-dir* "artifact-entry.scm"))
+        (artifact-root (path-join *walker-tmp-dir* "artifacts")))
+    (walker-test/write entry "(define artifact-live-marker 41)")
+    (dynamic-wind
+      (lambda () (set! *ece-serve/artifact-root* artifact-root))
+      (lambda ()
+        (let ((url (ece-serve/build-program-artifact! entry))
+              (artifact-path (path-join artifact-root "app.ecec")))
+          (assert-equal url "/__ece_dev/artifacts/app.ecec")
+          (assert-true (%file-exists? artifact-path))
+          (assert-true
+           (string-contains? (ece-serve/read-file-as-string artifact-path)
+                             ":ecec-archive"))))
+      (lambda () (set! *ece-serve/artifact-root* old))))))
+
+(test "ece-serve/build-program-artifact!: includes literal load closure" (lambda ()
+  (let ((old *ece-serve/artifact-root*)
+        (entry (path-join *walker-tmp-dir* "artifact-entry-with-load.scm"))
+        (lib (path-join *walker-tmp-dir* "artifact-lib.scm"))
+        (artifact-root (path-join *walker-tmp-dir* "artifacts-with-load")))
+    (walker-test/write lib "(define artifact-lib-marker 1)")
+    (walker-test/write entry
+      "(load \"artifact-lib.scm\") (define artifact-entry-marker 2)")
+    (dynamic-wind
+      (lambda () (set! *ece-serve/artifact-root* artifact-root))
+      (lambda ()
+        (ece-serve/build-program-artifact! entry)
+        (let ((archive-text
+               (ece-serve/read-file-as-string
+                (path-join artifact-root "app.ecec"))))
+          (assert-true
+           (string-contains? archive-text "artifact-entry-with-load.scm"))
+          (assert-true
+           (string-contains? archive-text "artifact-lib.scm"))))
+      (lambda () (set! *ece-serve/artifact-root* old))))))
+
 ;; ── ece-serve/is-websocket-upgrade? detector ──────────────────────────
 
 (test "ece-serve/is-websocket-upgrade?: accepts a RFC 6455 upgrade request" (lambda ()
@@ -328,6 +387,29 @@ the path-join of *walker-tmp-dir* is a subdir."
          (req (http-parse-request raw))
          (resp (ece-serve/dispatch req)))
     (assert-true (starts-with? resp (string-append "HTTP/1.1 404 Not Found" crlf))))))
+
+(test "ece-serve/dispatch: GET dev artifact serves generated bundle" (lambda ()
+  (let ((old *ece-serve/artifact-root*)
+        (artifact-root (path-join *walker-tmp-dir* "serve-artifacts")))
+    (dynamic-wind
+      (lambda () (set! *ece-serve/artifact-root* artifact-root))
+      (lambda ()
+        (ece-serve/ensure-artifact-root!)
+        (let ((out (open-output-file (path-join artifact-root "app.ecec"))))
+          (display "artifact-body" out)
+          (close-output-port out))
+        (let* ((crlf (string-append (string (integer->char 13)) (string #\newline)))
+               (crlf-crlf (string-append crlf crlf))
+               (raw (string-append
+                     "GET /__ece_dev/artifacts/app.ecec HTTP/1.1"
+                     crlf-crlf))
+               (req (http-parse-request raw))
+               (resp (ece-serve/dispatch req)))
+          (assert-true
+           (starts-with? resp (string-append "HTTP/1.1 200 OK" crlf)))
+          (assert-true (string-contains? resp "Cache-Control: no-store"))
+          (assert-true (string-contains? resp "artifact-body"))))
+      (lambda () (set! *ece-serve/artifact-root* old))))))
 
 (test "ece-serve/dispatch: POST returns 405" (lambda ()
   (let* ((crlf (string-append (string (integer->char 13)) (string #\newline)))

@@ -3,10 +3,10 @@
 ;;; `ece serve path/to/game.scm` brings up an HTTP + WebSocket server
 ;;; that (a) serves the sandbox static assets so the browser can load
 ;;; them, and (b) watches the program's `(load ...)` closure for
-;;; modifications and pushes source-update messages to connected
-;;; WebSocket clients. The browser-side JavaScript remains a thin
-;;; capability bridge; source-update evaluation policy lives in
-;;; browser-lib.scm's browser dev-client helpers.
+;;; modifications, rebuilds a dev `.ecec` artifact, and pushes
+;;; program-reload messages to connected WebSocket clients. The
+;;; browser-side JavaScript remains a thin capability bridge; archive
+;;; reload policy lives in wasm-host.scm.
 ;;;
 ;;; Architecture — four fiber roles cooperating through a single
 ;;; `src/scheduler.scm` instance:
@@ -26,8 +26,9 @@
 ;;;                              list so the file-watch fiber can
 ;;;                              broadcast to it.
 ;;;   * File-watch fiber:        fs-watch-start on the program's (load)
-;;;                              closure, poll periodically, broadcast
-;;;                              a source-update JSON message over every
+;;;                              closure, poll periodically, rebuild a
+;;;                              dev archive artifact, and broadcast a
+;;;                              program-reload JSON message over every
 ;;;                              connected WebSocket client on each
 ;;;                              modification.
 ;;;
@@ -132,6 +133,9 @@ between http-build-response (string body) and build-binary-response
 (define *ece-serve/current-port* 8080)
 (define *ece-serve/dev-ws-placeholder* "window.ECE_DEV_WS_URL = null;")
 (define *ece-serve/dev-token* "test-token")
+(define *ece-serve/artifact-url-prefix* "/__ece_dev/artifacts/")
+(define *ece-serve/artifact-root* ".tmp/ece-serve-artifacts")
+(define *ece-serve/artifact-bundle-name* "app.ecec")
 
 (define (ece-serve/resolve-path request-path)
   "Map an HTTP request path to a filesystem path under the sandbox
@@ -155,6 +159,35 @@ root. Returns a string path, or #f if the path is unsafe (contains
       (cond
        ((string-contains? rel "..") #f)
        (else (path-join *ece-serve/sandbox-root* rel)))))))
+
+(define (ece-serve/request-path-without-query request-path)
+  "Return REQUEST-PATH without its query string."
+  (let ((qmark (ece-serve/%find-char request-path #\?)))
+    (if (< qmark 0)
+        request-path
+        (substring request-path 0 qmark))))
+
+(define (ece-serve/dev-artifact-request-path? request-path)
+  "Return #t when REQUEST-PATH targets the dev artifact namespace."
+  (starts-with? (ece-serve/request-path-without-query request-path)
+                *ece-serve/artifact-url-prefix*))
+
+(define (ece-serve/resolve-dev-artifact-path request-path)
+  "Map a /__ece_dev/artifacts/<file> request to the artifact directory.
+Only single-segment artifact filenames are accepted."
+  (let ((clean (ece-serve/request-path-without-query request-path)))
+    (cond
+     ((not (starts-with? clean *ece-serve/artifact-url-prefix*)) #f)
+     (else
+      (let ((rel (substring clean
+                            (string-length *ece-serve/artifact-url-prefix*)
+                            (string-length clean))))
+        (cond
+         ((= (string-length rel) 0) #f)
+         ((string-contains? rel "..") #f)
+         ((string-contains? rel "/") #f)
+         ((string-contains? rel "\\") #f)
+         (else (path-join *ece-serve/artifact-root* rel))))))))
 
 (define (ece-serve/%find-char s ch)
   "Return the index of the first CH in S, or -1 if absent."
@@ -183,6 +216,8 @@ string responses."
       (ece-serve/handle-editor-command req clients-box))
      ((not (string=? (http-request-method req) "GET"))
       (http-build-response 405 "Method Not Allowed" '() "Method Not Allowed"))
+     ((ece-serve/dev-artifact-request-path? (http-request-path req))
+      (ece-serve/serve-dev-artifact req))
      ((ece-serve/is-websocket-upgrade? req) 'upgrade)
      (else
       (ece-serve/serve-static req)))))
@@ -382,6 +417,34 @@ Returns a 400/404 response STRING on miss (both are text)."
                                                           "index.html"))
                                      (ece-serve/inject-dev-ws-url body)
                                      body))))))))))
+
+(define (ece-serve/serve-dev-artifact req)
+  "Serve a generated dev artifact from *ece-serve/artifact-root*."
+  (let ((fs-path (ece-serve/resolve-dev-artifact-path
+                  (http-request-path req))))
+    (cond
+     ((not fs-path)
+      (http-build-response 400 "Bad Request" '() "Bad Request"))
+     ((not (%file-exists? fs-path))
+      (http-build-response 404 "Not Found" '()
+                           (string-append "Not Found: "
+                                          (http-request-path req))))
+     ((not (ece-serve/%has-any-extension? fs-path))
+      (http-build-response 404 "Not Found" '()
+                           (string-append "Not Found: "
+                                          (http-request-path req))))
+     (else
+      (let ((content-type (ece-serve/content-type-for fs-path)))
+        (cond
+         ((ece-serve/is-binary-content-type? content-type)
+          (ece-serve/build-binary-response
+           content-type
+           (ece-serve/read-file-as-bytes fs-path)))
+         (else
+          (http-build-response 200 "OK"
+                               (list (cons "Content-Type" content-type)
+                                     (cons "Cache-Control" "no-store"))
+                               (ece-serve/read-file-as-string fs-path)))))))))
 
 (define (ece-serve/dev-ws-url)
   "Return the WebSocket URL injected into sandbox/index.html."
@@ -860,10 +923,49 @@ peer disconnect."
 
 ;; ---- File-watch fiber ----
 
-(define (ece-serve/watch-loop sched watch-set clients-box poll-interval-ms)
+(define (ece-serve/ensure-artifact-root!)
+  "Ensure the dev artifact directory exists."
+  (when (not (%file-exists? ".tmp"))
+    (%make-directory ".tmp"))
+  (when (not (%file-exists? ".tmp/ece-serve-artifacts"))
+    (%make-directory ".tmp/ece-serve-artifacts"))
+  (when (not (%file-exists? *ece-serve/artifact-root*))
+    (%make-directory *ece-serve/artifact-root*)))
+
+(define (ece-serve/artifact-url filename)
+  (string-append *ece-serve/artifact-url-prefix* filename))
+
+(define (ece-serve/artifact-path filename)
+  (path-join *ece-serve/artifact-root* filename))
+
+(define (ece-serve/artifact-source-list entry-file)
+  "Return the source list used for a dev artifact build."
+  (ece-serve/walk-loads entry-file))
+
+(define (ece-serve/build-program-artifact! entry-file)
+  "Compile ENTRY-FILE's literal load closure into the dev artifact bundle.
+This first artifact-builder pass is archive-only; native-zone side artifacts
+will be generated by a later build step."
+  (ece-serve/ensure-artifact-root!)
+  (let ((bundle-path
+         (ece-serve/artifact-path *ece-serve/artifact-bundle-name*)))
+    (compile-system (ece-serve/artifact-source-list entry-file) bundle-path)
+    (ece-serve/artifact-url *ece-serve/artifact-bundle-name*)))
+
+(define (ece-serve/broadcast-program-artifact-reload clients-box entry-file)
+  "Rebuild ENTRY-FILE's archive artifact and broadcast a program reload."
+  (guard
+   (e (#t
+       (display "ece-serve: program reload build failed")
+       (newline)
+       'program-reload-build-error))
+   (let ((archive-url (ece-serve/build-program-artifact! entry-file)))
+     (ece-serve/broadcast-program-reload clients-box archive-url #f #f))))
+
+(define (ece-serve/watch-loop sched watch-set clients-box poll-interval-ms entry-file)
   "Start an fs-watch on WATCH-SET and loop forever: every
-poll-interval-ms, fs-watch-poll and broadcast a source-update message
-over every connected WebSocket client for each changed path.
+poll-interval-ms, fs-watch-poll and rebuild/broadcast a program-reload message
+over every connected WebSocket client when one or more watched paths changed.
 
 Errors inside a single poll+broadcast iteration are caught and logged
 without killing the fiber — transient filesystem errors (e.g., a file
@@ -886,10 +988,8 @@ which point the OS reclaims all file descriptors."
           (guard
            (e (#t 'poll-iteration-error))
            (let ((changed (fs-watch-poll watcher)))
-             (for-each
-              (lambda (path)
-                (ece-serve/broadcast-source-update clients-box path))
-              changed)))
+             (when (pair? changed)
+               (ece-serve/broadcast-program-artifact-reload clients-box entry-file))))
           (loop now)))))))
 
 (define (ece-serve/broadcast-source-update clients-box path)
@@ -1054,6 +1154,9 @@ and :dev-token (generated by default)."
       (set! *ece-serve/current-port* port)
       (set! *ece-serve/dev-token*
             (if dev-token dev-token (ece-serve/generate-dev-token)))
+      (set! *ece-serve/artifact-root*
+            (path-join ".tmp/ece-serve-artifacts" (number->string port)))
+      (ece-serve/ensure-artifact-root!)
       (display "Dev server: http://127.0.0.1:")
       (display port)
       (display "/")
@@ -1074,7 +1177,9 @@ and :dev-token (generated by default)."
       (scheduler-spawn! sched
                         (lambda () (ece-serve/accept-loop sched server clients-box)))
       (scheduler-spawn! sched
-                        (lambda () (ece-serve/watch-loop sched watch-set clients-box poll-interval)))
+                        (lambda ()
+                          (ece-serve/watch-loop sched watch-set clients-box
+                                                poll-interval entry-file)))
       ;; Run forever (until interrupted)
       (scheduler-run! sched)
       (tcp-close server)))))
@@ -1144,7 +1249,7 @@ then calls (ece-serve). Unknown flags print an error and exit."
           (newline)
           (display "  Dev server for ECE programs. Serves sandbox static assets")
           (newline)
-          (display "  and broadcasts source-update messages over WebSocket when")
+          (display "  and broadcasts program-reload messages over WebSocket when")
           (newline)
           (display "  watched files change.")
           (newline)
