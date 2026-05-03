@@ -52,7 +52,9 @@ async function run() {
     failed++;
   }
   if (sandboxJs.includes("connectDevServer") &&
-      sandboxJs.includes("browser-dev-client-handle-source-update")) {
+      sandboxJs.includes("browser-dev-client-handle-source-update") &&
+      sandboxJs.includes("applyDevServerProgramReload") &&
+      sandboxJs.includes("reloadProgramFromUrls")) {
     console.log("PASS: sandbox.js has thin dev-server WebSocket bridge");
   } else {
     console.log("FAIL: sandbox.js missing dev-server WebSocket bridge");

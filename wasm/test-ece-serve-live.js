@@ -264,6 +264,40 @@ async function runAttempt() {
       throw new Error("eval-source did not include posted source");
     }
 
+    const programReloadMessage = withTimeout(
+      wsClient.nextTextFrame(),
+      7000,
+      "program-reload");
+
+    const programReloadResponse = await fetch(`http://127.0.0.1:${port}/__ece_dev/program-reload`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+        "X-ECE-Dev-Token": devToken,
+        "X-ECE-Zone-Module-Url": "/app-zones.wasm",
+        "X-ECE-Manifest-Url": "/app-zones.manifest"
+      },
+      body: "/app.ecec"
+    });
+    if (!programReloadResponse.ok) {
+      throw new Error(`editor program-reload POST failed: HTTP ${programReloadResponse.status}`);
+    }
+
+    const programReloadRaw = await programReloadMessage;
+    const programReload = JSON.parse(programReloadRaw);
+    if (programReload.type !== "program-reload") {
+      throw new Error(`expected program-reload, got ${programReload.type}`);
+    }
+    if (programReload.archiveUrl !== "/app.ecec") {
+      throw new Error(`program-reload archiveUrl mismatch: ${programReload.archiveUrl}`);
+    }
+    if (programReload.zoneModuleUrl !== "/app-zones.wasm") {
+      throw new Error(`program-reload zoneModuleUrl mismatch: ${programReload.zoneModuleUrl}`);
+    }
+    if (programReload.manifestUrl !== "/app-zones.manifest") {
+      throw new Error(`program-reload manifestUrl mismatch: ${programReload.manifestUrl}`);
+    }
+
     const updateMessage = withTimeout(
       wsClient.nextTextFrame(),
       7000,
@@ -288,8 +322,9 @@ async function runAttempt() {
 
     console.log("PASS: ece-serve injected the dev WebSocket URL");
     console.log("PASS: ece-serve relayed an editor eval-source command");
+    console.log("PASS: ece-serve relayed an editor program-reload command");
     console.log("PASS: ece-serve broadcast a source-update for a watched edit");
-    console.log("ece-serve live reload smoke test: 3 passed, 0 failed");
+    console.log("ece-serve live reload smoke test: 4 passed, 0 failed");
   } catch (err) {
     err.serverOutput = serverOutput;
     err.retryable = !ready;

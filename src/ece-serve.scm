@@ -189,12 +189,18 @@ string responses."
 
 (define (ece-serve/editor-command-path? path)
   "Return #t if PATH is one of the localhost editor command endpoints."
-  (string=? path "/__ece_dev/eval-source"))
+  (or (string=? path "/__ece_dev/eval-source")
+      (string=? path "/__ece_dev/program-reload")))
 
 (define (ece-serve/editor-path-header req)
   "Return the editor-supplied source path header, or a stable fallback."
   (let ((path (http-header-ref req "x-ece-path")))
     (if (and path (> (string-length path) 0)) path "<editor>")))
+
+(define (ece-serve/optional-header req name)
+  "Return non-empty header NAME from REQ, or #f."
+  (let ((value (http-header-ref req name)))
+    (if (and value (> (string-length value) 0)) value #f)))
 
 (define (ece-serve/valid-dev-token? token)
   "Return #t when TOKEN matches the per-server dev token."
@@ -207,9 +213,9 @@ string responses."
   (http-header-ref req "x-ece-dev-token"))
 
 (define (ece-serve/handle-editor-command req clients-box)
-  "Handle a POST from an editor integration. The request body is source
-text for /__ece_dev/eval-source. The command is relayed to connected
-browser WebSocket clients and acknowledged with a tiny JSON response."
+  "Handle a POST from an editor integration.
+/__ece_dev/eval-source relays request body source text.
+/__ece_dev/program-reload relays artifact URLs for browser-side archive reload."
   (cond
    ((not (ece-serve/valid-dev-token? (ece-serve/request-dev-token req)))
     (ece-serve/json-response 403 "Forbidden"
@@ -227,6 +233,33 @@ browser WebSocket clients and acknowledged with a tiny JSON response."
     (ece-serve/json-response 200 "OK"
                              (list (cons "ok" #t)
                                    (cons "type" "eval-source"))))
+   ((string=? (http-request-path req) "/__ece_dev/program-reload")
+    (let ((archive-url (http-request-body req))
+          (zone-module-url
+           (ece-serve/optional-header req "x-ece-zone-module-url"))
+          (manifest-url
+           (ece-serve/optional-header req "x-ece-manifest-url")))
+      (cond
+       ((or (not (string? archive-url))
+            (= (string-length archive-url) 0))
+        (ece-serve/json-response 400 "Bad Request"
+                                 (list (cons "ok" #f)
+                                       (cons "error" "missing archive URL"))))
+       ((or (and zone-module-url (not manifest-url))
+            (and manifest-url (not zone-module-url)))
+        (ece-serve/json-response 400 "Bad Request"
+                                 (list (cons "ok" #f)
+                                       (cons "error"
+                                             "native-zone module and manifest URLs must be supplied together"))))
+       (else
+        (ece-serve/broadcast-program-reload
+         clients-box
+         archive-url
+         zone-module-url
+         manifest-url)
+        (ece-serve/json-response 200 "OK"
+                                 (list (cons "ok" #t)
+                                       (cons "type" "program-reload")))))))
    (else
     (ece-serve/json-response 404 "Not Found"
                              (list (cons "ok" #f)
@@ -879,6 +912,15 @@ to be saved on disk first."
   (ece-serve/broadcast-json-envelope
    clients-box
    (json-eval-source path source)))
+
+(define (ece-serve/broadcast-program-reload clients-box archive-url
+                                            zone-module-url manifest-url)
+  "Send a program-reload message to every connected browser client.
+The browser fetches ARCHIVE-URL and optional native-zone artifacts, then calls
+ECE's reload-program policy in wasm-host.scm."
+  (ece-serve/broadcast-json-envelope
+   clients-box
+   (json-program-reload archive-url zone-module-url manifest-url)))
 
 (define (ece-serve/broadcast-json-envelope clients-box envelope)
   "Send JSON ENVELOPE as a WebSocket text frame to every connected

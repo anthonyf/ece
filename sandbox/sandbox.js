@@ -324,7 +324,10 @@ const Sandbox = {
       Sandbox.appendReplSystem(";; dev server connected");
     });
     socket.addEventListener("message", (event) => {
-      Sandbox.handleDevServerMessage(String(event.data || ""));
+      Promise.resolve(Sandbox.handleDevServerMessage(String(event.data || "")))
+        .catch(e => {
+          Sandbox.appendReplSystem("Error: " + Sandbox.errorMessage(e));
+        });
     });
     socket.addEventListener("error", () => {
       Sandbox.appendReplSystem(";; dev server WebSocket error");
@@ -335,7 +338,11 @@ const Sandbox = {
     });
   },
 
-  handleDevServerMessage(raw) {
+  errorMessage(error) {
+    return String(error && error.message ? error.message : error);
+  },
+
+  async handleDevServerMessage(raw) {
     let msg;
     try {
       msg = JSON.parse(raw);
@@ -343,8 +350,45 @@ const Sandbox = {
       Sandbox.appendReplSystem(";; dev server sent malformed JSON");
       return;
     }
-    if (!msg || (msg.type !== "source-update" && msg.type !== "eval-source")) return;
-    Sandbox.applyDevServerSourceUpdate(String(msg.path || ""), String(msg.source || ""));
+    if (!msg) return;
+    if (msg.type === "source-update" || msg.type === "eval-source") {
+      Sandbox.applyDevServerSourceUpdate(String(msg.path || ""), String(msg.source || ""));
+      return;
+    }
+    if (msg.type === "program-reload") {
+      await Sandbox.applyDevServerProgramReload(
+        String(msg.archiveUrl || ""),
+        msg.zoneModuleUrl ? String(msg.zoneModuleUrl) : null,
+        msg.manifestUrl ? String(msg.manifestUrl) : null);
+    }
+  },
+
+  async applyDevServerProgramReload(archiveUrl, zoneModuleUrl, manifestUrl) {
+    if (!Sandbox.ready || !ECE.wasm) {
+      Sandbox.appendReplSystem("Error: ECE runtime is still loading");
+      return;
+    }
+    if (!archiveUrl) {
+      Sandbox.appendReplSystem("Error: program reload missing archive URL");
+      return;
+    }
+    if (typeof ECE.reloadProgramFromUrls !== "function") {
+      Sandbox.appendReplSystem(";; dev server unavailable: reloadProgramFromUrls is missing; rebuild sandbox assets");
+      return;
+    }
+    const wasRunning = Sandbox.running;
+    try {
+      await ECE.reloadProgramFromUrls(archiveUrl, zoneModuleUrl, manifestUrl);
+      Sandbox.appendReplSystem(";; program reloaded: " + archiveUrl);
+      if (!wasRunning && (ECE.wasm.get_yield_flag() || Sandbox.hasYieldCont())) {
+        Sandbox.running = true;
+        document.getElementById("run-btn").textContent = "\u25A0 Stop";
+        document.getElementById("run-btn").classList.add("stop");
+        Sandbox.animationLoop();
+      }
+    } catch(e) {
+      Sandbox.appendReplSystem("Error: " + Sandbox.errorMessage(e));
+    }
   },
 
   applyDevServerSourceUpdate(path, source) {
@@ -380,7 +424,7 @@ const Sandbox = {
         Sandbox.animationLoop();
       }
     } catch(e) {
-      Sandbox.appendReplSystem("Error: " + e.message);
+      Sandbox.appendReplSystem("Error: " + Sandbox.errorMessage(e));
     }
   },
 
