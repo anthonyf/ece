@@ -3759,15 +3759,56 @@ defun's archive key."
              ece::*archive-zone-fns*)
     inv))
 
-(deftest test-shipped-zone-bundle-loads-and-registers
-    (testing "the generated bootstrap zone bundle installs fbound zone-NAME functions registered in *archive-zone-fns*"
+(defvar *compiled-zone-manifest-read-eval-fired* nil)
+
+(defun write-compiled-zone-manifest-test-file (path contents)
+  (with-open-file (out path :direction :output :if-exists :supersede)
+    (write-string contents out)))
+
+(deftest test-compiled-zone-manifest-is-data
+    (testing "compiled-zone manifest loading disables read eval and rejects escaped paths"
+             (let ((manifest (uiop:with-temporary-file (:pathname p :type "sexp" :keep t)
+                               p)))
+               (unwind-protect
+                    (let ((zone-dir (uiop:pathname-directory-pathname manifest)))
+                      (setf *compiled-zone-manifest-read-eval-fired* nil)
+                      (write-compiled-zone-manifest-test-file
+                       manifest
+                       "(:ece-cl-native-zones :version 1 :files #.(progn (setf ece/tests/main::*compiled-zone-manifest-read-eval-fired* t) nil))")
+                      (signals (ece::read-compiled-zone-manifest manifest))
+                      (ok (not *compiled-zone-manifest-read-eval-fired*)
+                          "manifest reader does not execute read-time forms")
+                      (write-compiled-zone-manifest-test-file
+                       manifest
+                       "(:ece-cl-native-zones :version 1 :files ((:file \"../escape-zones.lisp\")))")
+                      (signals
+                       (ece::compiled-zone-manifest-source-files manifest zone-dir))
+                      (write-compiled-zone-manifest-test-file
+                       manifest
+                       "(:ece-cl-native-zones :version 1 :files ((:file \"0-boot-env-zones.lisp\")))")
+                      (ok (equal (mapcar #'file-namestring
+                                         (ece::compiled-zone-manifest-source-files
+                                          manifest zone-dir))
+                                 '("0-boot-env-zones.lisp"))
+                          "manifest accepts simple generated shard filenames"))
+                 (when (probe-file manifest)
+                   (delete-file manifest))))))
+
+(deftest test-shipped-zone-shards-load-and-register
+    (testing "the generated bootstrap zone shards install fbound zone-NAME functions registered in *archive-zone-fns*"
              (let* ((zone-dir
                      (asdf:system-relative-pathname :ece ".tmp/bootstrap-zones/"))
-                    (bundle (merge-pathnames "bootstrap-zones.lisp" zone-dir))
+                    (manifest (merge-pathnames "manifest.sexp" zone-dir))
+                    (shards (directory (merge-pathnames "*-zones.lisp" zone-dir)))
+                    (aggregate (merge-pathnames "bootstrap-zones.lisp" zone-dir))
                     (legacy-files (directory (merge-pathnames "*-zone.lisp" zone-dir)))
                     (fn-to-key (build-archive-zone-fn-inverse)))
-               (ok (probe-file bundle)
-                   "generated bootstrap zone bundle exists")
+               (ok (probe-file manifest)
+                   "generated bootstrap zone shard manifest exists")
+               (ok (> (length shards) 0)
+                   "generated bootstrap zone shards exist")
+               (ok (not (probe-file aggregate))
+                   "current bootstrap emits no aggregate zone bundle")
                (ok (= (length legacy-files) 0)
                    "current bootstrap emits no legacy per-code-object zone files")
                (ok (> (hash-table-count ece::*archive-zone-fns*) 0)
@@ -3783,10 +3824,10 @@ defun's archive key."
                  (ok (null bad-key)
                      "archive zone keys have (unit-id-symbol . index-integer) shape"))
                ;; The first assembler code-object is stable and should be
-               ;; emitted as zone-assembler-0 inside the aggregate bundle.
+               ;; emitted as zone-assembler-0 inside the assembler shard.
                (let ((sym (find-symbol "ZONE-ASSEMBLER-0" :ece)))
                  (ok (and sym (fboundp sym))
-                     "bundle defines fbound ZONE-ASSEMBLER-0")
+                     "shards define fbound ZONE-ASSEMBLER-0")
                  (when (and sym (fboundp sym))
                    (ok (gethash (symbol-function sym) fn-to-key)
                        "ZONE-ASSEMBLER-0 is registered in *archive-zone-fns*"))))))

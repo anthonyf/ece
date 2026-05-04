@@ -110,7 +110,7 @@ TEST_OUTPUT_DIR := .tmp/test-output
 
 BOOTSTRAP_DIR := bootstrap
 BOOTSTRAP_ZONE_DIR := .tmp/bootstrap-zones
-BOOTSTRAP_ZONE_BUNDLE := $(BOOTSTRAP_ZONE_DIR)/bootstrap-zones.lisp
+BOOTSTRAP_ZONE_MANIFEST := $(BOOTSTRAP_ZONE_DIR)/manifest.sexp
 BOOTSTRAP_SRCS := src/boot-env.scm src/prelude.scm src/compiler.scm src/reader.scm src/assembler.scm src/compilation-unit.scm src/syntax-rules.scm src/browser-lib.scm src/wasm-host.scm src/disassemble.scm
 
 GOLDEN_SRCS := $(wildcard tests/golden/*.scm)
@@ -321,10 +321,10 @@ repl: share/ece/ece-main.ecec | .qlot/qlot.conf
 run-lisp: | .qlot/qlot.conf
 	qlot exec sbcl --dynamic-space-size 4096 --disable-debugger --eval '(asdf:load-system :ece)' $(ARGS)
 
-# Code-object native CL generation emits one disposable aggregate zone bundle
-# under $(BOOTSTRAP_ZONE_DIR), not bootstrap/, so stable bootstrap artifacts
-# stay visible and the generated CL cache remains clearly disposable.
-ZONE_SENTINEL := $(BOOTSTRAP_ZONE_BUNDLE)
+# Code-object native CL generation emits disposable source/module-aligned zone
+# shards under $(BOOTSTRAP_ZONE_DIR), not bootstrap/, so stable bootstrap
+# artifacts stay visible and the generated CL cache remains clearly disposable.
+ZONE_SENTINEL := $(BOOTSTRAP_ZONE_MANIFEST)
 
 bootstrap: $(BOOTSTRAP_DIR)/primitives-auto.lisp $(BOOTSTRAP_DIR)/bootstrap.ecec $(ZONE_SENTINEL)
 
@@ -360,13 +360,14 @@ $(BOOTSTRAP_DIR)/primitives-auto.lisp: primitives.def src/primitives.scm src/cod
 	@echo "Generated $(BOOTSTRAP_DIR)/primitives-auto.lisp"
 
 # Archive-driven compiled-zone generation. Reads the archive at
-# $(BOOTSTRAP_DIR)/bootstrap.ecec and emits one aggregate CL native-zone bundle
-# containing one defun and registration per code-object.
+# $(BOOTSTRAP_DIR)/bootstrap.ecec and emits one CL native-zone shard per archive
+# section, plus a manifest that preserves archive order.
 $(ZONE_SENTINEL): primitives.def src/primitives.scm src/codegen-cl.scm src/codegen-cl-inline.scm $(BOOTSTRAP_SRCS) $(BOOTSTRAP_DIR)/bootstrap.ecec | .qlot/qlot.conf
 	@rm -rf $(BOOTSTRAP_ZONE_DIR)
+	@rm -rf .fasl-cache/.tmp/bootstrap-zones
 	@mkdir -p $(BOOTSTRAP_ZONE_DIR)
 	@rm -f $(BOOTSTRAP_DIR)/*-zone.lisp 2>/dev/null || true
-	@echo "Regenerating compiled zone bundle $(BOOTSTRAP_ZONE_BUNDLE)..."
+	@echo "Regenerating compiled zone shards $(BOOTSTRAP_ZONE_MANIFEST)..."
 	qlot exec sbcl --dynamic-space-size 4096 --non-interactive --disable-debugger \
 	  --eval '(asdf:load-system :ece)' \
 	  --eval '(ece:evaluate (list (quote load) "src/codegen-cl.scm"))' \
@@ -374,7 +375,7 @@ $(ZONE_SENTINEL): primitives.def src/primitives.scm src/codegen-cl.scm src/codeg
 	  --eval '(ece:evaluate (list (quote load) "src/codegen-cl-inline.scm"))' \
 	  --eval '(ece:evaluate (list (intern "generate-all-zones-from-archive!" :ece) "$(BOOTSTRAP_DIR)/bootstrap.ecec" "$(BOOTSTRAP_ZONE_DIR)"))' \
 	  --quit
-	@echo "Generated $(BOOTSTRAP_ZONE_BUNDLE)"
+	@echo "Generated $(BOOTSTRAP_ZONE_MANIFEST)"
 
 sandbox: ece
 	@mkdir -p .tmp/sandbox-build sandbox

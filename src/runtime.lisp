@@ -1547,15 +1547,15 @@ variables inline."
 Each entry is a function of (initial-pc initial-val initial-env initial-proc
 initial-argl initial-continue initial-stack) returning
 (values pc val env proc argl continue stack) on zone exit. Populated by
-.tmp/bootstrap-zones/bootstrap-zones.lisp at load time. Spaces without a registered
-entry fall through to the interpreted dispatch loop unchanged.")
+.tmp/bootstrap-zones/ generated shard files at load time. Spaces without a
+registered entry fall through to the interpreted dispatch loop unchanged.")
 
 (defvar *archive-zone-fns* (make-hash-table :test #'equal)
   "Registry mapping (unit-id . co-key) keys to compiled-zone CL
 functions for per-code-object zones. Current file archives synthesize
 UNIT-ID from the archive's |file| field minus its extension; future module
 archives can provide explicit unit identity. CO-KEY is the zero-based index
-within the archive. Populated by the generated CL native-zone bundle at load
+within the archive. Populated by the generated CL native-zone shards at load
 time; archive loaders consult this to attach code-object-native-fn.
 
 Distinct from *compiled-zone-functions* (symbol-keyed on space-id, still
@@ -2603,8 +2603,8 @@ Uses the CL reader (not the ECE reader) so this works at boot before the ECE rea
 ;;; Compiled-zone loader (Stage 1)
 ;;; ─────────────────────────────────────────────────────────────────────────
 ;;;
-;;; Load the generated .tmp/bootstrap-zones/bootstrap-zones.lisp bundle, when
-;;; present. Its load-time effects register zone-NAME functions in one of two
+;;; Load the generated .tmp/bootstrap-zones/ native-zone shards, when present.
+;;; Their load-time effects register zone-NAME functions in one of two
 ;;; registries:
 ;;;   - *compiled-zone-functions* (legacy space path) — keyed on space-id
 ;;;     symbol. Consulted by execute-instructions on space entry.
@@ -2621,15 +2621,59 @@ Uses the CL reader (not the ECE reader) so this works at boot before the ECE rea
 ;;;
 ;;; Missing bootstrap/ directory is not an error — Stage 1 ships zero or more
 ;;; compiled zones depending on the build state. A fallback scan for legacy
-;;; *-zone.lisp files remains so stale local worktrees fail softly during
-;;; transitions; current builds emit only the aggregate bundle.
+;;; aggregate and *-zone.lisp files remains so stale local worktrees fail
+;;; softly during transitions; current builds emit manifest-listed shards.
+
+(defun read-compiled-zone-manifest (manifest-path)
+  "Read and validate the generated CL native-zone shard manifest."
+  (with-open-file (in manifest-path :direction :input)
+    (let* ((*read-eval* nil)
+           (*readtable* (copy-readtable nil))
+           (form (read in nil nil)))
+      (unless (and (consp form)
+                   (eq (car form) :ece-cl-native-zones)
+                   (eql (getf (cdr form) :version) 1)
+                   (listp (getf (cdr form) :files)))
+        (error "Malformed compiled-zone manifest ~A" manifest-path))
+      form)))
+
+(defun compiled-zone-string-suffix-p (suffix string)
+  "Return true when STRING ends with SUFFIX."
+  (let ((suffix-length (length suffix))
+        (string-length (length string)))
+    (and (>= string-length suffix-length)
+         (string= suffix string :start2 (- string-length suffix-length)))))
+
+(defun compiled-zone-shard-filename-p (file)
+  "Return true when FILE is a simple generated shard filename."
+  (and (stringp file)
+       (> (length file) 0)
+       (string= file (file-namestring file))
+       (compiled-zone-string-suffix-p "-zones.lisp" file)
+       (not (find #\: file))
+       (not (find #\/ file))
+       (not (find #\\ file))))
+
+(defun compiled-zone-manifest-source-files (manifest-path zone-dir)
+  "Return shard source files listed by MANIFEST-PATH in manifest order."
+  (mapcar
+   (lambda (entry)
+     (let ((file (getf entry :file)))
+       (unless (compiled-zone-shard-filename-p file)
+         (error "Malformed compiled-zone manifest entry in ~A: ~S"
+                manifest-path entry))
+       (merge-pathnames file zone-dir)))
+   (getf (cdr (read-compiled-zone-manifest manifest-path)) :files)))
 
 (defun compiled-zone-source-files (zone-dir)
   "Return generated CL zone source files to load from ZONE-DIR.
-Current builds emit bootstrap-zones.lisp. Legacy per-code-object files are
-used only when the aggregate bundle is absent."
-  (let ((bundle (merge-pathnames "bootstrap-zones.lisp" zone-dir)))
+Current builds emit manifest-listed source/module shards. The aggregate bundle
+and legacy per-code-object files are used only when the manifest is absent."
+  (let ((manifest (merge-pathnames "manifest.sexp" zone-dir))
+        (bundle (merge-pathnames "bootstrap-zones.lisp" zone-dir)))
     (cond
+      ((probe-file manifest)
+       (compiled-zone-manifest-source-files manifest zone-dir))
       ((probe-file bundle) (list bundle))
       ((probe-file zone-dir)
        (sort (directory (merge-pathnames "*-zone.lisp" zone-dir))
@@ -2663,15 +2707,21 @@ stale or partial, fall back to source-loading PATH."
 
 (defun load-compiled-zones ()
   "Find and load generated bootstrap zone Lisp files.
-Current builds use one aggregate bootstrap-zones.lisp bundle that defines
-zone-NAME functions and registers them in *compiled-zone-functions* (legacy
-space path) or *archive-zone-fns* (archive path). Legacy per-code-object files
-use compile-file cached FASLs; the aggregate bundle uses an up-to-date FASL
-when one already exists, otherwise it is source-loaded directly because
-compiling it as one file exceeds SBCL's dynamic-space budget. Errors during
-load are propagated with a hint about regeneration."
+Current builds use manifest-listed source/module shards that define zone-NAME
+functions and register them in *compiled-zone-functions* (legacy space path) or
+*archive-zone-fns* (archive path). Shards use compile-file cached FASLs. A
+legacy aggregate bundle still uses an up-to-date FASL when one already exists,
+otherwise it is source-loaded directly because compiling it as one file can
+exceed SBCL's dynamic-space budget. Errors during load are propagated with a
+hint about regeneration."
   (let* ((zone-dir (asdf:system-relative-pathname :ece ".tmp/bootstrap-zones/"))
-         (files (compiled-zone-source-files zone-dir))
+         (files (handler-case
+                    (compiled-zone-source-files zone-dir)
+                  (error (e)
+                    (error "Failed to discover compiled-zone files in ~A: ~A~%~
+                            The files may be stale — try `make bootstrap` to regenerate, ~
+                            or `make clean` to remove generated zone artifacts."
+                           zone-dir e))))
          (fasl-dir (asdf:apply-output-translations zone-dir)))
     (ensure-directories-exist (merge-pathnames "x" fasl-dir))
     (dolist (path files)

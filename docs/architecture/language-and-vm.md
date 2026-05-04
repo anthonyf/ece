@@ -18,7 +18,7 @@ The normal source path is:
 The major boot path is:
 
 1. CL loads generated host primitive functions from [`bootstrap/primitives-auto.lisp`](../../bootstrap/primitives-auto.lisp), produced from [`primitives.def`](../../primitives.def) and [`src/primitives.scm`](../../src/primitives.scm).
-2. CL loads the generated `.tmp/bootstrap-zones/bootstrap-zones.lisp` bundle, when present, so native-zone functions register themselves.
+2. CL loads the generated `.tmp/bootstrap-zones/manifest.sexp` shard manifest, when present, then loads the listed native-zone shard files so native-zone functions register themselves.
 3. CL loads [`bootstrap/bootstrap.ecec`](../../bootstrap/bootstrap.ecec), a concatenated bundle of `.ecec` archive sections for the self-hosted modules listed in `BOOTSTRAP_SRCS` in [`Makefile`](../../Makefile).
 4. The WASM browser path builds an initial environment in [`wasm/glue.js`](../../wasm/glue.js), fetches `bootstrap.ecec`, and iterates the archive sections with `load_archive`, `load_archive_continue`, and `run_code_object`.
 
@@ -218,7 +218,7 @@ The executor has a compiled-zone hook. When entering a code object, it checks `c
 
 Native zones are generated CL functions for individual archive code objects. [`src/codegen-cl-inline.scm`](../../src/codegen-cl-inline.scm) reads archive code objects, emits one `zone-...` CL function per code object, and writes a self-registration form that stores the function in `*archive-zone-fns*` under `(file-stem . index)`.
 
-Boot loads the CL native-zone bundle before `bootstrap.ecec`. Then the archive loader materializes code objects and calls `attach-archive-native-fns`, attaching matching zone functions to the `native-fn` slot. This makes native dispatch an optional acceleration layer over the same code-object identity, environment, stack, primitive dispatch, continuation, and `dynamic-wind` state.
+Boot loads the CL native-zone shard manifest before `bootstrap.ecec`. The manifest lists one source/module-aligned shard per archive section, in archive order. Then the archive loader materializes code objects and calls `attach-archive-native-fns`, attaching matching zone functions to the `native-fn` slot. This makes native dispatch an optional acceleration layer over the same code-object identity, environment, stack, primitive dispatch, continuation, and `dynamic-wind` state.
 
 Zones can fall back to the interpreter by returning updated registers. This preserves a single semantic model while allowing CL-only native execution for code objects that have generated zones.
 
