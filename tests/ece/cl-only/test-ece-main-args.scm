@@ -76,3 +76,18 @@
     (assert-equal (list-ref parsed 4) '((load "app.ecec")))
     (assert-equal (list-ref parsed 6) '(phase-b app))
     (assert-equal (list-ref parsed 7) 'main))))
+
+(test "parse-init-web-args: target only" (lambda ()
+  (let ((parsed (parse-init-web-args '("game"))))
+    (assert-equal (car parsed) "game")
+    (assert-equal (cadr parsed) #f))))
+
+(test "parse-init-web-args: force before target" (lambda ()
+  (let ((parsed (parse-init-web-args '("--force" "game"))))
+    (assert-equal (car parsed) "game")
+    (assert-equal (cadr parsed) #t))))
+
+(test "parse-init-web-args: force after target" (lambda ()
+  (let ((parsed (parse-init-web-args '("game" "--force"))))
+    (assert-equal (car parsed) "game")
+    (assert-equal (cadr parsed) #t))))

@@ -149,6 +149,7 @@ between http-build-response (string body) and build-binary-response
 
 (define *ece-serve/sandbox-root* "sandbox")
 (define *ece-serve/current-port* 8080)
+(define *ece-serve/current-entry-file* #f)
 (define *ece-serve/dev-ws-placeholder* "window.ECE_DEV_WS_URL = null;")
 (define *ece-serve/dev-token* "test-token")
 (define *ece-serve/artifact-url-prefix* "/__ece_dev/artifacts/")
@@ -237,6 +238,9 @@ string responses."
      ((and (string=? (http-request-method req) "POST")
            (ece-serve/editor-command-path? (http-request-path req)))
       (ece-serve/handle-editor-command req clients-box sched))
+     ((and (string=? (http-request-method req) "GET")
+           (string=? (http-request-path req) "/__ece_dev/session"))
+      (ece-serve/handle-session-discovery))
      ((not (string=? (http-request-method req) "GET"))
       (http-build-response 405 "Method Not Allowed" '() "Method Not Allowed"))
      ((ece-serve/dev-artifact-request-path? (http-request-path req))
@@ -269,6 +273,14 @@ string responses."
 (define (ece-serve/request-dev-token req)
   "Return the dev token supplied by REQ, if any."
   (http-header-ref req "x-ece-dev-token"))
+
+(define (ece-serve/handle-session-discovery)
+  "Return local editor attach metadata for this ece-serve process."
+  (ece-serve/json-response
+   200 "OK"
+   (ece-serve/session-discovery-data
+    (if *ece-serve/current-entry-file* *ece-serve/current-entry-file* "")
+    *ece-serve/current-port*)))
 
 (define (ece-serve/handle-editor-command req clients-box sched)
   "Handle a POST from an editor integration.
@@ -452,9 +464,9 @@ ece-serve generates for its own dev WebSocket URL."
 
 (define (ece-serve/serve-static req)
   "Serve a static file from the sandbox root. Returns either a response
-string (text content types, consumed via %send-string) OR a byte list
-(binary content types like wasm/png/ico, consumed via %send-bytes).
-The caller distinguishes via (string? result) at dispatch time.
+string (injected index.html, consumed via %send-string) OR a byte list
+(ordinary static assets, consumed via %send-bytes). The caller
+distinguishes via (string? result) at dispatch time.
 
 Returns a 400/404 response STRING on miss (both are text)."
   (let ((fs-path (ece-serve/resolve-path (http-request-path req))))
@@ -484,26 +496,23 @@ Returns a 400/404 response STRING on miss (both are text)."
      (else
       (let ((content-type (ece-serve/content-type-for fs-path)))
         (cond
-         ((ece-serve/is-binary-content-type? content-type)
+         ((string=? fs-path
+                    (path-join *ece-serve/sandbox-root*
+                               "index.html"))
+          ;; Inject the dev WebSocket URL without decoding the HTML as
+          ;; text. index.html may contain UTF-8 bytes, while the string
+          ;; response path only handles ASCII safely.
           (ece-serve/build-binary-response
            content-type
-           (ece-serve/read-file-as-bytes fs-path)))
+           (ece-serve/inject-dev-ws-url-bytes
+            (ece-serve/read-file-as-bytes fs-path))))
          (else
-          (let ((body (ece-serve/read-file-as-string fs-path)))
-            (http-build-response 200 "OK"
-                                 (list (cons "Content-Type" content-type)
-                                       ;; Dev server — never cache. Hot
-                                       ;; reload delivers source over
-                                       ;; WebSocket; HTTP assets like
-                                       ;; index.html should always be
-                                       ;; fetched fresh so browser-reload
-                                       ;; picks up manual edits.
-                                       (cons "Cache-Control" "no-store"))
-                                 (if (string=? fs-path
-                                               (path-join *ece-serve/sandbox-root*
-                                                          "index.html"))
-                                     (ece-serve/inject-dev-ws-url body)
-                                     body))))))))))
+          ;; Serve non-injected assets as bytes, even for text/*.
+          ;; ece-runtime.js contains UTF-8 comments, and the server's
+          ;; string response path encodes only ASCII.
+          (ece-serve/build-binary-response
+           content-type
+           (ece-serve/read-file-as-bytes fs-path)))))))))
 
 (define (ece-serve/serve-dev-artifact req)
   "Serve a generated dev artifact from *ece-serve/artifact-root*."
@@ -522,16 +531,9 @@ Returns a 400/404 response STRING on miss (both are text)."
                                           (http-request-path req))))
      (else
       (let ((content-type (ece-serve/content-type-for fs-path)))
-        (cond
-         ((ece-serve/is-binary-content-type? content-type)
-          (ece-serve/build-binary-response
-           content-type
-           (ece-serve/read-file-as-bytes fs-path)))
-         (else
-          (http-build-response 200 "OK"
-                               (list (cons "Content-Type" content-type)
-                                     (cons "Cache-Control" "no-store"))
-                               (ece-serve/read-file-as-string fs-path)))))))))
+        (ece-serve/build-binary-response
+         content-type
+         (ece-serve/read-file-as-bytes fs-path)))))))
 
 (define (ece-serve/dev-ws-url)
   "Return the WebSocket URL injected into sandbox/index.html."
@@ -576,6 +578,37 @@ or hand-edited sandbox files still serve."
        (substring html
                   (+ idx (string-length *ece-serve/dev-ws-placeholder*))
                   (string-length html)))))))
+
+(define (ece-serve/%bytes-prefix? bytes prefix)
+  "Return #t when BYTES starts with byte list PREFIX."
+  (cond
+   ((null? prefix) #t)
+   ((null? bytes) #f)
+   ((= (car bytes) (car prefix))
+    (ece-serve/%bytes-prefix? (cdr bytes) (cdr prefix)))
+   (else #f)))
+
+(define (ece-serve/%replace-first-bytes bytes needle replacement)
+  "Replace the first occurrence of NEEDLE in BYTES with REPLACEMENT."
+  (let loop ((rest bytes) (prefix '()))
+    (cond
+     ((null? rest) bytes)
+     ((ece-serve/%bytes-prefix? rest needle)
+      (append (reverse prefix)
+              replacement
+              (list-tail rest (length needle))))
+     (else
+      (loop (cdr rest) (cons (car rest) prefix))))))
+
+(define (ece-serve/inject-dev-ws-url-bytes html-bytes)
+  "Byte-oriented form of ece-serve/inject-dev-ws-url."
+  (ece-serve/%replace-first-bytes
+   html-bytes
+   (string->ascii-bytes *ece-serve/dev-ws-placeholder*)
+   (string->ascii-bytes
+    (string-append "window.ECE_DEV_WS_URL = \""
+                   (ece-serve/dev-ws-url)
+                   "\";"))))
 
 (define (ece-serve/%string-index-of haystack needle)
   "Return the first index of NEEDLE in HAYSTACK, or -1 if absent."
@@ -1239,6 +1272,10 @@ Returns #f on timeout or when called without a scheduler."
   (path-join *ece-serve/session-root*
              (string-append (number->string port) ".sexp")))
 
+(define (ece-serve/static-root-for-entry entry-file)
+  "Return the app-local static root for ENTRY-FILE."
+  (dirname entry-file))
+
 (define (ece-serve/session-data entry-file port)
   "Return the local editor attach session S-expression for ENTRY-FILE and PORT."
   (list (cons "type" "ece-serve-session")
@@ -1248,6 +1285,17 @@ Returns #f on timeout or when called without a scheduler."
         (cons "token" *ece-serve/dev-token*)
         (cons "entry" entry-file)
         (cons "port" port)
+        (cons "started-at" (current-milliseconds))))
+
+(define (ece-serve/session-discovery-data entry-file port)
+  "Return token-free HTTP session discovery metadata.
+The dev token stays only in the chmod 0600 session file."
+  (list (cons "type" "ece-serve-session")
+        (cons "version" 1)
+        (cons "url" (string-append "http://127.0.0.1:" (number->string port)))
+        (cons "entry" entry-file)
+        (cons "port" port)
+        (cons "session-file" (ece-serve/session-path port))
         (cons "started-at" (current-milliseconds))))
 
 (define (ece-serve/write-session-file! entry-file port)
@@ -1300,6 +1348,15 @@ Returns (ARCHIVE-URL ZONE-MODULE-URL MANIFEST-URL)."
 (define (ece-serve/build-program-artifact! entry-file)
   "Compile ENTRY-FILE's literal load closure and return its archive URL."
   (car (ece-serve/build-program-artifacts! entry-file)))
+
+(define (ece-serve/build-initial-program-artifacts! entry-file)
+  "Best-effort initial build for ENTRY-FILE before clients connect."
+  (guard
+   (e (#t
+       (display "ece-serve: initial program build failed")
+       (newline)
+       'initial-program-build-error))
+   (ece-serve/build-program-artifacts! entry-file)))
 
 (define (ece-serve/broadcast-program-artifact-reload clients-box entry-file)
   "Rebuild ENTRY-FILE's dev artifacts and broadcast a program reload."
@@ -1509,11 +1566,15 @@ and :dev-token (generated by default)."
            (clients-box (ece-serve/make-clients-box))
            (server (tcp-listen port "127.0.0.1")))
       (set! *ece-serve/current-port* port)
+      (set! *ece-serve/current-entry-file* entry-file)
+      (set! *ece-serve/sandbox-root*
+            (ece-serve/static-root-for-entry entry-file))
       (set! *ece-serve/dev-token*
             (if dev-token dev-token (ece-serve/generate-dev-token)))
       (set! *ece-serve/artifact-root*
             (path-join ".tmp/ece-serve-artifacts" (number->string port)))
       (ece-serve/ensure-artifact-root!)
+      (ece-serve/build-initial-program-artifacts! entry-file)
       (ece-serve/write-session-file! entry-file port)
       (display "Dev server: http://127.0.0.1:")
       (display port)

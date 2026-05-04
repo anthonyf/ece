@@ -281,6 +281,14 @@ function serverExitBeforeReady(server) {
 
 async function runAttempt() {
   await fs.writeFile(ENTRY, "(define live-marker 1)\n", "utf8");
+  await fs.writeFile(
+    path.join(WORK_DIR, "index.html"),
+    "<!doctype html><script>window.ECE_DEV_WS_URL = null;</script>",
+    "utf8");
+  await fs.writeFile(
+    path.join(WORK_DIR, "ece-runtime.js"),
+    "// UTF-8 static asset probe: Runtime \u2014 JS \u2500 glue\nwindow.__ECE_RUNTIME_PROBE__ = true;\n",
+    "utf8");
   const browserOutput = [];
 
   const port = await freePort();
@@ -306,6 +314,18 @@ async function runAttempt() {
     }
     if (!String(response.headers.get("cache-control") || "").includes("no-store")) {
       throw new Error("sandbox index response did not disable caching");
+    }
+
+    const runtimeResp = await fetch(`http://127.0.0.1:${port}/ece-runtime.js`);
+    if (!runtimeResp.ok) {
+      throw new Error(`runtime static asset fetch failed: HTTP ${runtimeResp.status}`);
+    }
+    if (!String(runtimeResp.headers.get("cache-control") || "").includes("no-store")) {
+      throw new Error("runtime static asset response did not disable caching");
+    }
+    const runtimeText = await runtimeResp.text();
+    if (!runtimeText.includes("Runtime \u2014 JS \u2500 glue")) {
+      throw new Error("runtime static asset did not preserve UTF-8 text");
     }
 
     wsClient = await connectDevWebSocket(port, devToken);
@@ -479,11 +499,12 @@ async function runAttempt() {
     }
 
     console.log("PASS: ece-serve injected the dev WebSocket URL");
+    console.log("PASS: ece-serve served UTF-8 static runtime assets");
     console.log("PASS: ece-serve relayed an editor eval-source command and returned browser result");
     console.log("PASS: ece-serve relayed an editor program-reload command");
     console.log("PASS: ece-serve built and broadcast program-reload artifacts for a watched edit");
     console.log("PASS: browser runtime applied watched program-reload artifacts");
-    console.log("ece-serve live reload smoke test: 5 passed, 0 failed");
+    console.log("ece-serve live reload smoke test: 6 passed, 0 failed");
   } catch (err) {
     err.serverOutput = serverOutput;
     err.retryable = !ready;

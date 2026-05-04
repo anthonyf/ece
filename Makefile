@@ -26,7 +26,7 @@ bin/ece: scripts/build-ece-binary.lisp bootstrap/bootstrap.ecec share/ece/ece-ma
 	@ln -sf ece bin/ece-serve
 	@echo "Built bin/ece + symlinks (ece-repl, ece-build, ece-test, ece-serve)"
 
-share/ece/ece-main.ecec: src/sdk-lib.scm src/ece-main.scm src/ece-unit.scm src/base64.scm src/sha1.scm src/scheduler.scm src/http-codec.scm src/websocket-codec.scm src/json.scm src/wasm-host.scm src/codegen-wasm-zone.scm src/ece-build.scm src/ece-test.scm src/ece-serve.scm src/geiser-ece.scm bootstrap/bootstrap.ecec | .qlot/qlot.conf
+share/ece/ece-main.ecec: src/sdk-lib.scm src/ece-main.scm src/ece-unit.scm src/base64.scm src/sha1.scm src/scheduler.scm src/http-codec.scm src/websocket-codec.scm src/json.scm src/wasm-host.scm src/codegen-wasm-zone.scm src/ece-build.scm src/ece-test.scm src/ece-serve.scm src/geiser-ece.scm bootstrap/bootstrap.ecec wasm/runtime.wasm wasm/glue.js | .qlot/qlot.conf
 	@mkdir -p share/ece/templates
 	qlot exec sbcl --dynamic-space-size 4096 --non-interactive --disable-debugger \
 	  --eval '(asdf:load-system :ece)' \
@@ -38,6 +38,7 @@ share/ece/ece-main.ecec: src/sdk-lib.scm src/ece-main.scm src/ece-unit.scm src/b
 	@cp wasm/glue.js share/ece/glue.js
 	@cp -R templates/web share/ece/templates/web
 	@cp -R templates/cl share/ece/templates/cl
+	@cp -R templates/web-app share/ece/templates/web-app
 	@echo "Staged share/ece/ tree"
 
 install: ece
@@ -70,6 +71,7 @@ install: ece
 	install -m 644 src/codegen-wasm-zone.scm $(DESTDIR)$(PREFIX)/share/ece/codegen-wasm-zone.scm
 	cp -R share/ece/templates/web $(DESTDIR)$(PREFIX)/share/ece/templates/web
 	cp -R share/ece/templates/cl $(DESTDIR)$(PREFIX)/share/ece/templates/cl
+	cp -R share/ece/templates/web-app $(DESTDIR)$(PREFIX)/share/ece/templates/web-app
 	@echo "Installed to $(DESTDIR)$(PREFIX)"
 
 uninstall:

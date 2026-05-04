@@ -426,7 +426,41 @@ and the legacy `eldoc-documentation-function' API."
 
 (defun geiser-ece--dev-server-base-url ()
   "Return `geiser-ece-dev-server-url' without a trailing slash."
-  (string-remove-suffix "/" geiser-ece-dev-server-url))
+  (string-remove-suffix "/" (geiser-ece--dev-server-url)))
+
+(defun geiser-ece--dev-nonempty-string (value)
+  "Return VALUE when it is a non-empty string."
+  (and (stringp value)
+       (not (string-empty-p value))
+       value))
+
+(defun geiser-ece--dev-setting (symbol)
+  "Return SYMBOL's buffer-local value, or its non-empty default value."
+  (or (geiser-ece--dev-nonempty-string (symbol-value symbol))
+      (geiser-ece--dev-nonempty-string (default-value symbol))))
+
+(defun geiser-ece--dev-server-url ()
+  "Return the active ece-serve URL."
+  (geiser-ece--dev-setting 'geiser-ece-dev-server-url))
+
+(defun geiser-ece--dev-server-token ()
+  "Return the active ece-serve dev token."
+  (geiser-ece--dev-setting 'geiser-ece-dev-server-token))
+
+(defun geiser-ece--dev-set-server-url (url)
+  "Set the active ece-serve URL globally and in the current buffer."
+  (setq-default geiser-ece-dev-server-url url)
+  (setq geiser-ece-dev-server-url url))
+
+(defun geiser-ece--dev-set-server-token (token)
+  "Set the active ece-serve TOKEN globally and in the current buffer."
+  (setq-default geiser-ece-dev-server-token token)
+  (setq geiser-ece-dev-server-token token))
+
+(defun geiser-ece--dev-set-server-port (port)
+  "Set the active ece-serve PORT globally and in the current buffer."
+  (setq-default geiser-ece-dev-server-port port)
+  (setq geiser-ece-dev-server-port port))
 
 (defun geiser-ece--dev-server-binary ()
   "Return the ece-serve binary path."
@@ -475,9 +509,9 @@ and the legacy `eldoc-documentation-function' API."
   (when (and geiser-ece-dev--pending-url
              geiser-ece-dev--pending-token
              (not geiser-ece-dev--server-ready))
-    (setq geiser-ece-dev-server-url
-          (string-remove-suffix "/" geiser-ece-dev--pending-url))
-    (setq geiser-ece-dev-server-token geiser-ece-dev--pending-token)
+    (geiser-ece--dev-set-server-url
+     (string-remove-suffix "/" geiser-ece-dev--pending-url))
+    (geiser-ece--dev-set-server-token geiser-ece-dev--pending-token)
     (setq geiser-ece-dev--server-ready t)
     (setq geiser-ece-dev--startup-output nil)
     (when (buffer-live-p geiser-ece-dev--source-buffer)
@@ -495,12 +529,10 @@ and the legacy `eldoc-documentation-function' API."
 
 (defun geiser-ece--dev-require-connected ()
   "Signal unless ece-serve connection settings are usable."
-  (unless (and geiser-ece-dev-server-url
-               (not (string-empty-p geiser-ece-dev-server-url)))
+  (unless (geiser-ece--dev-server-url)
     (error "Set geiser-ece-dev-server-url to the ece-serve URL"))
-  (unless (and geiser-ece-dev-server-token
-               (not (string-empty-p geiser-ece-dev-server-token)))
-    (error "Run geiser-ece-dev-connect with the token printed by ece-serve")))
+  (unless (geiser-ece--dev-server-token)
+    (error "Run geiser-ece-dev-connect to discover the ece-serve token")))
 
 (defun geiser-ece--dev-post (endpoint body &optional source-path wait-result)
   "POST BODY to ece-serve ENDPOINT.
@@ -512,8 +544,8 @@ ask ece-serve to return the browser eval result/error JSON."
   (geiser-ece--dev-require-connected)
   (let* ((url-request-method "POST")
          (url-request-extra-headers
-          (append '(("Content-Type" . "text/plain; charset=utf-8"))
-                  `(("X-ECE-Dev-Token" . ,geiser-ece-dev-server-token))
+         (append '(("Content-Type" . "text/plain; charset=utf-8"))
+                  `(("X-ECE-Dev-Token" . ,(geiser-ece--dev-server-token)))
                   (when source-path
                     `(("X-ECE-Path" . ,source-path)))
                   (when wait-result
@@ -638,7 +670,58 @@ ask ece-serve to return the browser eval result/error JSON."
 
 (defun geiser-ece--dev-session-get (session key)
   "Return string KEY from ece-serve attach SESSION."
-  (cdr (assoc key session)))
+  (or (cdr (assoc key session))
+      (cdr (assq (intern key) session))))
+
+(defun geiser-ece--dev-session-file-candidates (session)
+  "Return local session file candidates advertised by discovery SESSION."
+  (let* ((session-file (geiser-ece--dev-session-get session "session-file"))
+         (entry (geiser-ece--dev-session-get session "entry"))
+         (port (geiser-ece--dev-session-get session "port"))
+         (candidates '()))
+    (when (and (stringp session-file)
+               (not (string-empty-p session-file)))
+      (push session-file candidates)
+      (when (and (not (file-name-absolute-p session-file))
+                 (stringp entry)
+                 (not (string-empty-p entry)))
+        (push (expand-file-name session-file
+                                (file-name-directory
+                                 (expand-file-name entry)))
+              candidates)))
+    (when (integerp port)
+      (push (expand-file-name
+             (format "%s.sexp" port)
+             geiser-ece-dev-session-directory)
+            candidates))
+    (delete-dups (delq nil (nreverse candidates)))))
+
+(defun geiser-ece--dev-normalize-session (session source)
+  "Validate and return ece-serve attach SESSION from SOURCE."
+  (unless (and (consp session)
+               (equal (geiser-ece--dev-session-get session "type")
+                      "ece-serve-session"))
+    (error "Not an ece-serve session response: %s" source))
+  (let ((url (geiser-ece--dev-session-get session "url"))
+        (token (geiser-ece--dev-session-get session "token")))
+    (cond
+     ((and (stringp url)
+           (not (string-empty-p url))
+           (stringp token)
+           (not (string-empty-p token)))
+      session)
+     ((and (stringp url)
+           (not (string-empty-p url)))
+      (let ((path (cl-find-if #'file-readable-p
+                              (geiser-ece--dev-session-file-candidates session))))
+        (unless path
+          (error "ece-serve session discovery did not include a readable token file: %s"
+                 (mapconcat #'identity
+                            (geiser-ece--dev-session-file-candidates session)
+                            ", ")))
+        (geiser-ece--dev-read-session path)))
+     (t
+      (error "Invalid ece-serve session response: %s" source)))))
 
 (defun geiser-ece--dev-session-label (path)
   "Return a completion label for ece-serve session file PATH."
@@ -674,27 +757,123 @@ ask ece-serve to return the browser eval result/error JSON."
 
 (defun geiser-ece--dev-apply-session (session)
   "Apply ece-serve attach SESSION settings to the current Emacs session."
-  (setq geiser-ece-dev-server-url
-        (string-remove-suffix "/" (geiser-ece--dev-session-get session "url")))
-  (setq geiser-ece-dev-server-token (geiser-ece--dev-session-get session "token"))
+  (geiser-ece--dev-set-server-url
+   (string-remove-suffix "/" (geiser-ece--dev-session-get session "url")))
+  (geiser-ece--dev-set-server-token
+   (geiser-ece--dev-session-get session "token"))
   (when (integerp (geiser-ece--dev-session-get session "port"))
-    (setq geiser-ece-dev-server-port (geiser-ece--dev-session-get session "port")))
+    (geiser-ece--dev-set-server-port
+     (geiser-ece--dev-session-get session "port")))
   (setq geiser-ece-dev--server-ready t)
   (setq geiser-ece-dev--source-buffer (current-buffer))
   (geiser-ece-dev-mode 1))
 
+(defun geiser-ece--dev-json-get (url)
+  "GET URL and return its JSON response as an alist."
+  (require 'url)
+  (require 'json)
+  (let ((buffer
+         (condition-case err
+             (url-retrieve-synchronously url t t 5)
+           (error
+            (error "ece-serve session discovery failed at %s: %s"
+                   url (error-message-string err))))))
+    (unless buffer
+      (error "ece-serve did not respond at %s" url))
+    (unwind-protect
+        (with-current-buffer buffer
+          (goto-char (point-min))
+          (let ((ok (looking-at "HTTP/[0-9.]+ 2[0-9][0-9]"))
+                (status (buffer-substring-no-properties
+                         (line-beginning-position)
+                         (line-end-position))))
+            (unless (re-search-forward "\r?\n\r?\n" nil t)
+              (error "ece-serve session discovery failed at %s: malformed HTTP response: %s"
+                     url
+                     (string-trim
+                      (buffer-substring-no-properties
+                       (point-min) (min (point-max) (+ (point-min) 200))))))
+            (let ((json-object-type 'alist)
+                  (json-array-type 'list)
+                  (json-false :false))
+              (let* ((body-start (point))
+                     (payload
+                      (condition-case nil
+                          (json-read)
+                        (error nil)))
+                     (body
+                      (string-trim
+                       (buffer-substring-no-properties
+                        body-start (min (point-max) (+ body-start 300))))))
+                (unless ok
+                  (let ((err (or (cdr (assq 'error payload))
+                                 (and (> (length body) 0) body)
+                                 status)))
+                    (error "ece-serve session discovery failed: %s" err)))
+                (unless payload
+                  (error "ece-serve session discovery failed at %s: non-JSON response: %s"
+                         url body))
+                payload))))
+      (kill-buffer buffer))))
+
+(defun geiser-ece--dev-discovery-url (host port)
+  "Return the session discovery URL for HOST and PORT.
+HOST may be a bare host, a host:port pair, or a full http(s) URL."
+  (let ((target (string-trim host))
+        (port (or port geiser-ece-dev-server-port)))
+    (cond
+     ((string-match "\\`\\(https?://[^/:]+\\)/?\\'" target)
+      (format "%s:%s/__ece_dev/session" (match-string 1 target) port))
+     ((string-match-p "\\`https?://" target)
+      (concat (string-remove-suffix "/" target) "/__ece_dev/session"))
+     ((string-match "\\`\\([^/:]+\\):\\([0-9]+\\)\\'" target)
+      (format "http://%s:%s/__ece_dev/session"
+              (match-string 1 target)
+              (match-string 2 target)))
+     (t
+      (format "http://%s:%s/__ece_dev/session" target port)))))
+
+(defun geiser-ece--dev-target-includes-port-p (target)
+  "Return non-nil when TARGET already includes an ece-serve port."
+  (let ((target (string-trim target)))
+    (or (string-match-p "\\`https?://.+:[0-9]+\\(?:/.*\\)?\\'" target)
+        (string-match-p "\\`[^/:]+:[0-9]+\\'" target))))
+
+(defun geiser-ece--dev-discover-session (host port)
+  "Fetch ece-serve session metadata from HOST and PORT."
+  (let ((url (geiser-ece--dev-discovery-url host port)))
+    (geiser-ece--dev-normalize-session
+     (geiser-ece--dev-json-get url)
+     url)))
+
 ;;;###autoload
-(defun geiser-ece-dev-connect (url token)
-  "Set the ece-serve URL and dev TOKEN for live browser development."
+(defun geiser-ece-dev-connect (host port &optional token)
+  "Connect to ece-serve on HOST and PORT for live browser development.
+When TOKEN is non-nil, treat HOST as a full URL and configure manually."
+  (interactive
+   (let* ((target (read-string "ece-serve host or URL: " "127.0.0.1:8080"))
+          (port (unless (geiser-ece--dev-target-includes-port-p target)
+                  (read-number "ece-serve port: " 8080))))
+     (list target port)))
+  (if token
+      (progn
+        (geiser-ece--dev-set-server-url (string-remove-suffix "/" host))
+        (geiser-ece--dev-set-server-token token)
+        (message "ECE dev connected to %s" geiser-ece-dev-server-url))
+    (let ((session (geiser-ece--dev-discover-session host port)))
+      (geiser-ece--dev-apply-session session)
+      (message "ECE dev connected to %s" geiser-ece-dev-server-url))))
+
+;;;###autoload
+(defun geiser-ece-dev-connect-manual (url token)
+  "Set the ece-serve URL and dev TOKEN manually."
   (interactive
    (let ((url (read-string "ece-serve URL: " geiser-ece-dev-server-url)))
      (list url
            (read-passwd "ece-serve dev token: "
                         nil
                         geiser-ece-dev-server-token))))
-  (setq geiser-ece-dev-server-url (string-remove-suffix "/" url))
-  (setq geiser-ece-dev-server-token token)
-  (message "ECE dev connected to %s" geiser-ece-dev-server-url))
+  (geiser-ece-dev-connect url nil token))
 
 ;;;###autoload
 (defun geiser-ece-dev-attach (&optional session-file)
@@ -713,9 +892,8 @@ displaying or prompting for the token."
   "Show current ece-serve live browser development settings."
   (interactive)
   (message "ECE dev URL: %s; token: %s"
-           (or geiser-ece-dev-server-url "unset")
-           (if (and geiser-ece-dev-server-token
-                    (not (string-empty-p geiser-ece-dev-server-token)))
+           (or (geiser-ece--dev-server-url) "unset")
+           (if (geiser-ece--dev-server-token)
                "set"
              "unset")))
 
