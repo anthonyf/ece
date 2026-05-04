@@ -2627,7 +2627,9 @@ Uses the CL reader (not the ECE reader) so this works at boot before the ECE rea
 (defun read-compiled-zone-manifest (manifest-path)
   "Read and validate the generated CL native-zone shard manifest."
   (with-open-file (in manifest-path :direction :input)
-    (let ((form (read in nil nil)))
+    (let* ((*read-eval* nil)
+           (*readtable* (copy-readtable nil))
+           (form (read in nil nil)))
       (unless (and (consp form)
                    (eq (car form) :ece-cl-native-zones)
                    (eql (getf (cdr form) :version) 1)
@@ -2635,13 +2637,29 @@ Uses the CL reader (not the ECE reader) so this works at boot before the ECE rea
         (error "Malformed compiled-zone manifest ~A" manifest-path))
       form)))
 
+(defun compiled-zone-string-suffix-p (suffix string)
+  "Return true when STRING ends with SUFFIX."
+  (let ((suffix-length (length suffix))
+        (string-length (length string)))
+    (and (>= string-length suffix-length)
+         (string= suffix string :start2 (- string-length suffix-length)))))
+
+(defun compiled-zone-shard-filename-p (file)
+  "Return true when FILE is a simple generated shard filename."
+  (and (stringp file)
+       (> (length file) 0)
+       (string= file (file-namestring file))
+       (compiled-zone-string-suffix-p "-zones.lisp" file)
+       (not (find #\: file))
+       (not (find #\/ file))
+       (not (find #\\ file))))
+
 (defun compiled-zone-manifest-source-files (manifest-path zone-dir)
   "Return shard source files listed by MANIFEST-PATH in manifest order."
   (mapcar
    (lambda (entry)
      (let ((file (getf entry :file)))
-       (unless (and (stringp file)
-                    (> (length file) 0))
+       (unless (compiled-zone-shard-filename-p file)
          (error "Malformed compiled-zone manifest entry in ~A: ~S"
                 manifest-path entry))
        (merge-pathnames file zone-dir)))
@@ -2697,7 +2715,13 @@ otherwise it is source-loaded directly because compiling it as one file can
 exceed SBCL's dynamic-space budget. Errors during load are propagated with a
 hint about regeneration."
   (let* ((zone-dir (asdf:system-relative-pathname :ece ".tmp/bootstrap-zones/"))
-         (files (compiled-zone-source-files zone-dir))
+         (files (handler-case
+                    (compiled-zone-source-files zone-dir)
+                  (error (e)
+                    (error "Failed to discover compiled-zone files in ~A: ~A~%~
+                            The files may be stale — try `make bootstrap` to regenerate, ~
+                            or `make clean` to remove generated zone artifacts."
+                           zone-dir e))))
          (fasl-dir (asdf:apply-output-translations zone-dir)))
     (ensure-directories-exist (merge-pathnames "x" fasl-dir))
     (dolist (path files)
