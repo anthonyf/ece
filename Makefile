@@ -242,7 +242,7 @@ update-golden: | .qlot/qlot.conf
 	  echo "  Updated: $$base.expected ($$(wc -c < "$$expected") bytes)"; \
 	done
 
-test-web-server: ece
+test-web-server: bin/ece
 	@echo "Building hello-world in server mode..."
 	@mkdir -p .tmp/server-mode-test
 	@printf '(display "Hello, World!")\n(newline)\n' > .tmp/server-mode-hello.scm
@@ -307,7 +307,7 @@ test-web-apps: sandbox
 	@echo "Running web apps smoke test..."
 	@node wasm/test-web-apps.js
 
-test-ece-serve-live: ece
+test-ece-serve-live: bin/ece
 	@echo "Running ece-serve live reload smoke test..."
 	@node wasm/test-ece-serve-live.js
 
@@ -377,7 +377,7 @@ $(ZONE_SENTINEL): primitives.def src/primitives.scm src/codegen-cl.scm src/codeg
 	  --quit
 	@echo "Generated $(BOOTSTRAP_ZONE_MANIFEST)"
 
-sandbox: ece
+sandbox: bin/ece
 	@mkdir -p .tmp/sandbox-build sandbox
 	@echo '(void)' > .tmp/sandbox-stub.scm
 	@bin/ece-build --target web --standalone -o .tmp/sandbox-build .tmp/sandbox-stub.scm
