@@ -337,24 +337,25 @@ and configures the Emacs dev commands. Open the browser with:
 M-x geiser-ece-dev-open-browser
 ```
 
-You can also start `ece-serve` yourself:
+Create a minimal app-local web skeleton:
 
 ```sh
+ece init web test-game
+cd test-game
 ece-serve main.scm --port 8080
 ```
 
-Then use `M-x geiser-ece-dev-attach`. `ece-serve` writes a local session file
-under `.tmp/ece-serve-sessions/`, so Emacs can pick up the URL and token without
-prompting for the token. `M-x geiser-ece-dev-connect` remains available for
-manual URL/token entry. In `geiser-ece-dev-mode`, the `C-c C-z` prefix sends
-code to the running browser:
+Then use `M-x geiser-ece-dev-connect`. Press RET for the default host
+`127.0.0.1`, and RET for the default port `8080`. Emacs asks `ece-serve` for
+the local session metadata, so you do not need to paste the token. In
+`geiser-ece-dev-mode`, the `C-c C-z` prefix sends code to the running browser:
 
 | Key | Command |
 | --- | --- |
 | `C-c C-z S` | Start `ece-serve` for an entry file and capture URL/token |
 | `C-c C-z K` | Stop the managed `ece-serve` process |
 | `C-c C-z a` | Attach to an existing `ece-serve` session file |
-| `C-c C-z c` | Connect or update the URL/token |
+| `C-c C-z c` | Connect to `ece-serve` by host and port |
 | `C-c C-z o` | Open the configured browser URL |
 | `C-c C-z ?` | Show the configured URL and token status |
 | `C-c C-z e` | Evaluate the expression before point in the browser |

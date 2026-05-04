@@ -33,6 +33,8 @@
 (define (print-usage)
   (display "Usage: ece [OPTIONS] [FILE...]")
   (newline)
+  (display "       ece init web DIR [--force]")
+  (newline)
   (newline)
   (display "Options:")
   (newline)
@@ -57,6 +59,154 @@
   (newline)
   (display "Positional FILE arguments are loaded (.scm or .ecec) in the order given.")
   (newline))
+
+;; ---- App skeleton init ----
+
+(define (copy-file-binary/simple src dst)
+  "Copy SRC to DST byte-for-byte."
+  (let ((in (open-binary-input-file src))
+        (out (open-binary-output-file dst)))
+    (let loop ()
+      (let ((b (read-byte in)))
+        (cond
+         ((eof? b)
+          (close-input-port in)
+          (close-output-port out))
+         (else
+          (write-byte b out)
+          (loop)))))))
+
+(define (copy-file-text/simple src dst)
+  "Copy text SRC to DST."
+  (let ((in (open-input-file src))
+        (out (open-output-file dst)))
+    (let loop ()
+      (let ((ch (read-char in)))
+        (cond
+         ((eof? ch)
+          (close-input-port in)
+          (close-output-port out))
+         (else
+          (%write-char-to-port ch out)
+          (loop)))))))
+
+(define (parse-init-web-args argv)
+  "Parse `ece init web' ARGV after the web subcommand.
+Returns (list target-dir force?)."
+  (let loop ((rest argv) (target #f) (force? #f))
+    (cond
+     ((null? rest)
+      (cond
+       (target (list target force?))
+       (else
+        (display "Error: ece init web requires DIR")
+        (newline)
+        (exit 2))))
+     ((string=? (car rest) "--force")
+      (loop (cdr rest) target #t))
+     ((or (string=? (car rest) "--help")
+          (string=? (car rest) "-h"))
+      (print-init-usage)
+      (exit 0))
+     ((long-opt? (car rest))
+      (display "Error: unknown ece init web option: ")
+      (display (car rest))
+      (newline)
+      (exit 2))
+     (target
+      (display "Error: ece init web accepts exactly one DIR")
+      (newline)
+      (exit 2))
+     (else
+      (loop (cdr rest) (car rest) force?)))))
+
+(define (print-init-usage)
+  (display "Usage: ece init web DIR [--force]")
+  (newline)
+  (display "Create a minimal app-local web skeleton for ece-serve.")
+  (newline))
+
+(define (ensure-init-target-safe! path force?)
+  "Refuse to overwrite PATH unless FORCE? is true."
+  (when (and (not force?) (%file-exists? path))
+    (display "Error: refusing to overwrite existing file: ")
+    (display path)
+    (newline)
+    (display "Use --force to overwrite skeleton files.")
+    (newline)
+    (exit 2)))
+
+(define (ece-init-web target-dir force?)
+  "Create a minimal app-local web skeleton under TARGET-DIR."
+  (let* ((home (ece-home))
+         (template-dir (path-join home "templates" "web-app"))
+         (files (list (list (path-join template-dir "main.scm")
+                            (path-join target-dir "main.scm")
+                            'text)
+                      (list (path-join template-dir "index.html")
+                            (path-join target-dir "index.html")
+                            'text)
+                      (list (path-join home "glue.js")
+                            (path-join target-dir "ece-runtime.js")
+                            'binary)
+                      (list (path-join home "runtime.wasm")
+                            (path-join target-dir "runtime.wasm")
+                            'binary)
+                      (list (path-join home "bootstrap.ecec")
+                            (path-join target-dir "bootstrap.ecec")
+                            'binary))))
+    (for-each
+     (lambda (spec)
+       (let ((src (car spec)))
+         (when (not (%file-exists? src))
+           (display "Error: skeleton source file missing: ")
+           (display src)
+           (newline)
+           (exit 2))))
+     files)
+    (%make-directory target-dir)
+    (for-each
+     (lambda (spec)
+       (ensure-init-target-safe! (cadr spec) force?))
+     files)
+    (for-each
+     (lambda (spec)
+       (let ((src (car spec))
+             (dst (cadr spec))
+             (kind (caddr spec)))
+         (cond
+          ((eq? kind 'text) (copy-file-text/simple src dst))
+          (else (copy-file-binary/simple src dst)))))
+     files)
+    (display "Created ECE web app skeleton in ")
+    (display target-dir)
+    (newline)
+    (display "Next:")
+    (newline)
+    (display "  cd ")
+    (display target-dir)
+    (newline)
+    (display "  ece-serve main.scm --port 8080")
+    (newline)))
+
+(define (ece-init-main argv)
+  "Dispatch `ece init' subcommands."
+  (cond
+   ((or (null? argv)
+        (string=? (car argv) "--help")
+        (string=? (car argv) "-h"))
+    (print-init-usage)
+    (exit 0))
+   ((string=? (car argv) "web")
+    (let ((parsed (parse-init-web-args (cdr argv))))
+      (ece-init-web (car parsed) (cadr parsed))
+      (exit 0)))
+   (else
+    (display "Error: unknown ece init target: ")
+    (display (car argv))
+    (newline)
+    (print-init-usage)
+    (exit 2))))
 
 ;; ---- Argv parsing ----
 ;;
@@ -360,6 +510,10 @@ Returns the value of the last expression."
      ((string=? tool "ece-build") (ece-build-main rest))
      ((string=? tool "ece-test") (ece-test-main rest))
      ((string=? tool "ece-serve") (ece-serve-main rest))
+     ((and (string=? tool "ece")
+           (not (null? rest))
+           (string=? (car rest) "init"))
+      (ece-init-main (cdr rest)))
      (else (ece-default-main rest)))))
 
 ;; Tool entry points are stubs unless their .scm files are loaded.

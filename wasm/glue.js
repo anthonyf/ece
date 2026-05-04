@@ -608,5 +608,9 @@ const ECE = {
   }
 };
 
+// Browser classic scripts do not expose top-level const bindings as window
+// properties. App skeletons and hand-written pages use window/globalThis.ECE.
+if (typeof globalThis !== "undefined") globalThis.ECE = ECE;
+
 // Export for Node.js testing
 if (typeof module !== "undefined") module.exports = ECE;

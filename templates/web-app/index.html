@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>ECE App</title>
+  <script>window.ECE_DEV_WS_URL = null;</script>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: #101014; color: #f4f4f5; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    main { display: grid; grid-template-rows: 1fr 160px; min-height: 100vh; }
+    canvas { display: block; width: 100%; height: 100%; background: #050507; }
+    pre { margin: 0; padding: 12px; overflow: auto; border-top: 1px solid #33333d; background: #18181d; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <main>
+    <canvas id="app-canvas"></canvas>
+    <pre id="output"></pre>
+  </main>
+
+  <script src="ece-runtime.js"></script>
+  <script>
+    (async function () {
+      const outputEl = document.getElementById("output");
+
+      function log(text) {
+        outputEl.textContent += text;
+      }
+
+      ECE.io.display_string = function (len) {
+        const mem = new Uint16Array(ECE.wasm.memory.buffer, 0, len);
+        log(String.fromCharCode(...mem));
+      };
+      ECE.io.display_number = function (n) {
+        log(String(n));
+      };
+      ECE.io.newline = function () {
+        log("\n");
+      };
+
+      const imports = {
+        io: ECE.io,
+        loader: ECE.loader,
+        storage: ECE.storage,
+        canvas: ECE.canvas,
+        timing: ECE.timing,
+        math: ECE.math,
+        ffi: ECE.ffi,
+        wasm_host: ECE.wasmHost
+      };
+
+      const runtime = await WebAssembly.instantiateStreaming(fetch("runtime.wasm"), imports);
+      ECE.wasm = runtime.instance.exports;
+      ECE.globalEnvHandle = ECE.buildGlobalEnv();
+
+      const bootstrap = await fetch("bootstrap.ecec", { cache: "no-store" });
+      ECE.loadArchiveBundle(await bootstrap.text());
+      ECE.wasm.mark_handles();
+
+      async function reloadProgram(archiveUrl, zoneModuleUrl, manifestUrl) {
+        await ECE.reloadProgramFromUrls(archiveUrl, zoneModuleUrl || null, manifestUrl || null);
+      }
+
+      async function tryInitialLoad() {
+        const response = await fetch("/__ece_dev/artifacts/app.ecec", { cache: "no-store" });
+        if (response.ok) {
+          await reloadProgram("/__ece_dev/artifacts/app.ecec");
+        }
+      }
+
+      async function handleDevMessage(raw, socket) {
+        const msg = JSON.parse(String(raw || "{}"));
+        if (msg.type === "program-reload") {
+          await reloadProgram(msg.archiveUrl, msg.zoneModuleUrl, msg.manifestUrl);
+          log(";; program reloaded\n");
+          return;
+        }
+        if (msg.type === "eval-source") {
+          try {
+            const result = ECE.evalStringLast(String(msg.source || ""));
+            socket.send(JSON.stringify({
+              type: "eval-result",
+              id: String(msg.id || ""),
+              ok: true,
+              result: String(ECE._eceToJs(result))
+            }));
+          } catch (err) {
+            socket.send(JSON.stringify({
+              type: "eval-error",
+              id: String(msg.id || ""),
+              ok: false,
+              error: String(err && err.message || err)
+            }));
+          }
+        }
+      }
+
+      if (window.ECE_DEV_WS_URL) {
+        const socket = new WebSocket(window.ECE_DEV_WS_URL);
+        socket.addEventListener("open", function () {
+          log(";; dev server connected\n");
+        });
+        socket.addEventListener("message", function (event) {
+          Promise.resolve(handleDevMessage(event.data, socket))
+            .catch(function (err) {
+              log("Error: " + String(err && err.message || err) + "\n");
+            });
+        });
+        socket.addEventListener("close", function () {
+          log(";; dev server disconnected\n");
+        });
+        socket.addEventListener("error", function () {
+          log(";; dev server WebSocket error\n");
+        });
+      }
+
+      await tryInitialLoad();
+    })().catch(function (err) {
+      document.getElementById("output").textContent += "Error: " + String(err && err.message || err) + "\n";
+    });
+  </script>
+</body>
+</html>
