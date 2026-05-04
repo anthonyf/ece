@@ -115,7 +115,39 @@ BOOTSTRAP_SRCS := src/boot-env.scm src/prelude.scm src/compiler.scm src/reader.s
 
 GOLDEN_SRCS := $(wildcard tests/golden/*.scm)
 
-test: test-rove test-ece test-wasm test-conformance test-golden test-web-server test-web-apps test-ece-serve-live
+TEST_TARGETS := test-rove test-ece test-wasm test-conformance test-golden test-web-server test-web-apps test-ece-serve-live
+
+test:
+	@mkdir -p $(TEST_OUTPUT_DIR)
+	@timings="$(TEST_OUTPUT_DIR)/test-timings.txt"; \
+	: > "$$timings"; \
+	run_target() { \
+	  name="$$1"; \
+	  start=$$(date +%s); \
+	  printf '\n==> %s\n' "$$name"; \
+	  if $(MAKE) "$$name"; then status=0; else status=$$?; fi; \
+	  end=$$(date +%s); \
+	  duration=$$((end - start)); \
+	  printf '%s %s\n' "$$name" "$$duration" >> "$$timings"; \
+	  if [ "$$status" -eq 0 ]; then \
+	    printf '==> %s passed in %dm%02ds\n' "$$name" $$((duration / 60)) $$((duration % 60)); \
+	  else \
+	    printf '==> %s failed in %dm%02ds\n' "$$name" $$((duration / 60)) $$((duration % 60)); \
+	  fi; \
+	  return "$$status"; \
+	}; \
+	overall=0; \
+	for target in $(TEST_TARGETS); do \
+	  run_target "$$target"; \
+	  status=$$?; \
+	  if [ "$$status" -ne 0 ]; then \
+	    overall="$$status"; \
+	    break; \
+	  fi; \
+	done; \
+	printf '\nTest target timings:\n'; \
+	awk '{ printf "  %-24s %dm%02ds\n", $$1, int($$2 / 60), $$2 % 60 }' "$$timings"; \
+	exit "$$overall"
 
 # Note: rove:run doesn't discover suites from FASL-cached files, so we use
 # call-with-suite/all-suites/run-suite which work after asdf:load-system.
