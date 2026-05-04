@@ -673,6 +673,29 @@ ask ece-serve to return the browser eval result/error JSON."
   (or (cdr (assoc key session))
       (cdr (assq (intern key) session))))
 
+(defun geiser-ece--dev-session-file-candidates (session)
+  "Return local session file candidates advertised by discovery SESSION."
+  (let* ((session-file (geiser-ece--dev-session-get session "session-file"))
+         (entry (geiser-ece--dev-session-get session "entry"))
+         (port (geiser-ece--dev-session-get session "port"))
+         (candidates '()))
+    (when (and (stringp session-file)
+               (not (string-empty-p session-file)))
+      (push session-file candidates)
+      (when (and (not (file-name-absolute-p session-file))
+                 (stringp entry)
+                 (not (string-empty-p entry)))
+        (push (expand-file-name session-file
+                                (file-name-directory
+                                 (expand-file-name entry)))
+              candidates)))
+    (when (integerp port)
+      (push (expand-file-name
+             (format "%s.sexp" port)
+             geiser-ece-dev-session-directory)
+            candidates))
+    (delete-dups (delq nil (nreverse candidates)))))
+
 (defun geiser-ece--dev-normalize-session (session source)
   "Validate and return ece-serve attach SESSION from SOURCE."
   (unless (and (consp session)
@@ -681,12 +704,24 @@ ask ece-serve to return the browser eval result/error JSON."
     (error "Not an ece-serve session response: %s" source))
   (let ((url (geiser-ece--dev-session-get session "url"))
         (token (geiser-ece--dev-session-get session "token")))
-    (unless (and (stringp url)
-                 (not (string-empty-p url))
-                 (stringp token)
-                 (not (string-empty-p token)))
-      (error "Invalid ece-serve session response: %s" source))
-    session))
+    (cond
+     ((and (stringp url)
+           (not (string-empty-p url))
+           (stringp token)
+           (not (string-empty-p token)))
+      session)
+     ((and (stringp url)
+           (not (string-empty-p url)))
+      (let ((path (cl-find-if #'file-readable-p
+                              (geiser-ece--dev-session-file-candidates session))))
+        (unless path
+          (error "ece-serve session discovery did not include a readable token file: %s"
+                 (mapconcat #'identity
+                            (geiser-ece--dev-session-file-candidates session)
+                            ", ")))
+        (geiser-ece--dev-read-session path)))
+     (t
+      (error "Invalid ece-serve session response: %s" source)))))
 
 (defun geiser-ece--dev-session-label (path)
   "Return a completion label for ece-serve session file PATH."

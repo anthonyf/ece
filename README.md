@@ -345,9 +345,10 @@ cd test-game
 ece-serve main.scm --port 8080
 ```
 
-Then use `M-x geiser-ece-dev-connect`. Press RET for the default host
-`127.0.0.1`, and RET for the default port `8080`. Emacs asks `ece-serve` for
-the local session metadata, so you do not need to paste the token. In
+Then use `M-x geiser-ece-dev-connect`. Press RET for the default
+`127.0.0.1:8080`, or enter another `host:port` / URL. Emacs asks `ece-serve`
+for local session metadata, then reads the protected session file for the token
+so you do not need to paste it. In
 `geiser-ece-dev-mode`, the `C-c C-z` prefix sends code to the running browser:
 
 | Key | Command |

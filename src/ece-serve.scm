@@ -278,7 +278,7 @@ string responses."
   "Return local editor attach metadata for this ece-serve process."
   (ece-serve/json-response
    200 "OK"
-   (ece-serve/session-data
+   (ece-serve/session-discovery-data
     (if *ece-serve/current-entry-file* *ece-serve/current-entry-file* "")
     *ece-serve/current-port*)))
 
@@ -499,17 +499,13 @@ Returns a 400/404 response STRING on miss (both are text)."
          ((string=? fs-path
                     (path-join *ece-serve/sandbox-root*
                                "index.html"))
-          (let ((body (ece-serve/read-file-as-string fs-path)))
-            (http-build-response 200 "OK"
-                                 (list (cons "Content-Type" content-type)
-                                       ;; Dev server — never cache. Hot
-                                       ;; reload delivers source over
-                                       ;; WebSocket; HTTP assets like
-                                       ;; index.html should always be
-                                       ;; fetched fresh so browser-reload
-                                       ;; picks up manual edits.
-                                       (cons "Cache-Control" "no-store"))
-                                 (ece-serve/inject-dev-ws-url body))))
+          ;; Inject the dev WebSocket URL without decoding the HTML as
+          ;; text. index.html may contain UTF-8 bytes, while the string
+          ;; response path only handles ASCII safely.
+          (ece-serve/build-binary-response
+           content-type
+           (ece-serve/inject-dev-ws-url-bytes
+            (ece-serve/read-file-as-bytes fs-path))))
          (else
           ;; Serve non-injected assets as bytes, even for text/*.
           ;; ece-runtime.js contains UTF-8 comments, and the server's
@@ -582,6 +578,37 @@ or hand-edited sandbox files still serve."
        (substring html
                   (+ idx (string-length *ece-serve/dev-ws-placeholder*))
                   (string-length html)))))))
+
+(define (ece-serve/%bytes-prefix? bytes prefix)
+  "Return #t when BYTES starts with byte list PREFIX."
+  (cond
+   ((null? prefix) #t)
+   ((null? bytes) #f)
+   ((= (car bytes) (car prefix))
+    (ece-serve/%bytes-prefix? (cdr bytes) (cdr prefix)))
+   (else #f)))
+
+(define (ece-serve/%replace-first-bytes bytes needle replacement)
+  "Replace the first occurrence of NEEDLE in BYTES with REPLACEMENT."
+  (let loop ((rest bytes) (prefix '()))
+    (cond
+     ((null? rest) bytes)
+     ((ece-serve/%bytes-prefix? rest needle)
+      (append (reverse prefix)
+              replacement
+              (list-tail rest (length needle))))
+     (else
+      (loop (cdr rest) (cons (car rest) prefix))))))
+
+(define (ece-serve/inject-dev-ws-url-bytes html-bytes)
+  "Byte-oriented form of ece-serve/inject-dev-ws-url."
+  (ece-serve/%replace-first-bytes
+   html-bytes
+   (string->ascii-bytes *ece-serve/dev-ws-placeholder*)
+   (string->ascii-bytes
+    (string-append "window.ECE_DEV_WS_URL = \""
+                   (ece-serve/dev-ws-url)
+                   "\";"))))
 
 (define (ece-serve/%string-index-of haystack needle)
   "Return the first index of NEEDLE in HAYSTACK, or -1 if absent."
@@ -1258,6 +1285,17 @@ Returns #f on timeout or when called without a scheduler."
         (cons "token" *ece-serve/dev-token*)
         (cons "entry" entry-file)
         (cons "port" port)
+        (cons "started-at" (current-milliseconds))))
+
+(define (ece-serve/session-discovery-data entry-file port)
+  "Return token-free HTTP session discovery metadata.
+The dev token stays only in the chmod 0600 session file."
+  (list (cons "type" "ece-serve-session")
+        (cons "version" 1)
+        (cons "url" (string-append "http://127.0.0.1:" (number->string port)))
+        (cons "entry" entry-file)
+        (cons "port" port)
+        (cons "session-file" (ece-serve/session-path port))
         (cons "started-at" (current-milliseconds))))
 
 (define (ece-serve/write-session-file! entry-file port)

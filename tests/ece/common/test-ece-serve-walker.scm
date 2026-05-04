@@ -411,8 +411,9 @@ the path-join of *walker-tmp-dir* is a subdir."
          (crlf-crlf (string-append crlf crlf))
          (raw (string-append "GET / HTTP/1.1" crlf "Host: localhost" crlf-crlf))
          (req (http-parse-request raw))
-         (resp (ece-serve/dispatch req)))
-    (assert-true (string? resp))
+         (resp-bytes (ece-serve/dispatch req))
+         (resp (ascii-bytes->string resp-bytes)))
+    (assert-false (string? resp-bytes))
     (assert-true (starts-with? resp (string-append "HTTP/1.1 200 OK" crlf)))
     (assert-true (string-contains? resp "Content-Type: text/html"))
     ;; Post-audit: dev server must set no-store so manual reloads pick
@@ -433,6 +434,26 @@ the path-join of *walker-tmp-dir* is a subdir."
           (assert-equal
            (ece-serve/inject-dev-ws-url html)
            "<script>window.ECE_DEV_WS_URL = \"ws://127.0.0.1:8123/ws?token=test-token\";</script>")))
+      (lambda () (set! *ece-serve/current-port* old))))))
+
+(test "ece-serve/inject-dev-ws-url-bytes: preserves UTF-8 bytes" (lambda ()
+  (let ((old *ece-serve/current-port*))
+    (dynamic-wind
+      (lambda () (set! *ece-serve/current-port* 8123))
+      (lambda ()
+        (let* ((prefix '(60 33 45 45 226 128 148 45 45 62))
+               (suffix '(60 47 115 99 114 105 112 116 62))
+               (html (append prefix
+                             (string->ascii-bytes "<script>")
+                             (string->ascii-bytes *ece-serve/dev-ws-placeholder*)
+                             suffix))
+               (expected (append prefix
+                                 (string->ascii-bytes "<script>")
+                                 (string->ascii-bytes
+                                  "window.ECE_DEV_WS_URL = \"ws://127.0.0.1:8123/ws?token=test-token\";")
+                                 suffix)))
+          (assert-equal (ece-serve/inject-dev-ws-url-bytes html)
+                        expected)))
       (lambda () (set! *ece-serve/current-port* old))))))
 
 (test "ece-serve/session-data: includes local attach URL and token" (lambda ()
@@ -485,7 +506,7 @@ the path-join of *walker-tmp-dir* is a subdir."
         (set! *ece-serve/current-port* old-port)
         (set! *ece-serve/dev-token* old-token))))))
 
-(test "ece-serve/dispatch: GET session discovery returns token metadata" (lambda ()
+(test "ece-serve/dispatch: GET session discovery returns token-free metadata" (lambda ()
   (let ((old-port *ece-serve/current-port*)
         (old-entry *ece-serve/current-entry-file*)
         (old-token *ece-serve/dev-token*))
@@ -505,7 +526,8 @@ the path-join of *walker-tmp-dir* is a subdir."
           (assert-true (string-contains? resp "\"type\":\"ece-serve-session\""))
           (assert-true (string-contains? resp "\"port\":8127"))
           (assert-true (string-contains? resp "\"entry\":\"game/session-main.scm\""))
-          (assert-true (string-contains? resp "\"token\":\"discovery-token\""))))
+          (assert-true (string-contains? resp "\"session-file\":\".tmp/ece-serve-sessions/8127.sexp\""))
+          (assert-false (string-contains? resp "\"token\""))))
       (lambda ()
         (set! *ece-serve/current-port* old-port)
         (set! *ece-serve/current-entry-file* old-entry)
