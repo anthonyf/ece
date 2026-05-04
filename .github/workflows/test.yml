@@ -8,13 +8,14 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      SBCL_VERSION: 2.6.3
 
     steps:
       - uses: actions/checkout@v4
 
       - name: Install SBCL
         run: |
-          SBCL_VERSION=2.6.3
           curl -L -o sbcl.tar.bz2 "https://downloads.sourceforge.net/project/sbcl/sbcl/${SBCL_VERSION}/sbcl-${SBCL_VERSION}-x86-64-linux-binary.tar.bz2"
           tar xjf sbcl.tar.bz2
           cd sbcl-${SBCL_VERSION}-x86-64-linux
@@ -33,8 +34,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .fasl-cache
-          key: fasl-${{ hashFiles('src/*.lisp', 'ece.asd', 'primitives.def', 'src/*.scm', 'bootstrap/bootstrap.ecec') }}
-          restore-keys: fasl-
+          key: fasl-v3-${{ runner.os }}-${{ runner.arch }}-sbcl-${{ env.SBCL_VERSION }}-${{ hashFiles('qlfile', 'qlfile.lock', 'src/*.lisp', 'ece.asd', 'primitives.def', 'src/*.scm', 'bootstrap/bootstrap.ecec') }}
+          restore-keys: fasl-v3-${{ runner.os }}-${{ runner.arch }}-sbcl-${{ env.SBCL_VERSION }}-
 
       - name: Mark bootstrap outputs as up-to-date
         # Must run before `make bootstrap` so checkout mtimes do not force
@@ -50,12 +51,14 @@ jobs:
 
       - name: Warm FASL cache
         run: |
-          # Pre-compile ordinary project FASLs in a dedicated session. The
-          # aggregate generated zone bundle is source-loaded because compiling
-          # it as one file exhausts SBCL's 4GB test-process heap.
+          # Pre-compile project FASLs in a dedicated large-heap session. The
+          # generated native-zone bundle is expensive to source-load in every
+          # later SBCL process, but it compiles successfully in this 8GB warmup.
           ASDF_OUTPUT_TRANSLATIONS='(:output-translations ("'$PWD'/" "'$PWD'/.fasl-cache/") :inherit-configuration)' \
           qlot exec sbcl --dynamic-space-size 8192 --non-interactive --disable-debugger \
-            --eval '(asdf:load-system :ece)' --quit
+            --eval '(asdf:load-system :ece)' \
+            --eval '(let* ((src (asdf:system-relative-pathname :ece ".tmp/bootstrap-zones/bootstrap-zones.lisp")) (zone-dir (asdf:system-relative-pathname :ece ".tmp/bootstrap-zones/")) (fasl-dir (asdf:apply-output-translations zone-dir)) (out (merge-pathnames (make-pathname :type "fasl" :defaults (file-namestring src)) fasl-dir))) (unless (probe-file src) (error "Missing generated native-zone bundle: ~A" src)) (ensure-directories-exist out) (when (or (not (probe-file out)) (> (file-write-date src) (file-write-date out))) (compile-file src :output-file out :print nil)))' \
+            --quit
 
       - name: Install binaryen
         run: |
