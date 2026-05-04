@@ -103,7 +103,7 @@ self-registration form."
 
 ;;; Code-object-oriented entry point. Takes a code-object directly.
 ;;; Kept for tests and ad-hoc debugging; archive batch generation writes
-;;; many code-object zones into one aggregate file.
+;;; many code-object zones into source/module-aligned shard files.
 (define (generate-zone-cl-for-code-object! co zone-name output-path
                                            unit-id co-key)
   "Emit one (defun zone-NAME ...) for CO. ZONE-NAME is the string used as
@@ -1192,18 +1192,31 @@ loop exits cleanly regardless of the halt instruction's position."
 ;;;
 ;;; Phase F retired the space-based `generate-all-zones!` entry point.
 ;;; All batch zone generation goes through `generate-all-zones-from-archive!`
-;;; (defined below), which walks an .ecec archive and emits one aggregate
-;;; Lisp file containing one zone defun per supported code-object.
+;;; (defined below), which walks an .ecec archive bundle and emits one shard
+;;; file per archive section. A small manifest records the shards in archive
+;;; order, so CL can compile/cache each source/module unit independently.
 ;;; ─────────────────────────────────────────────────────────────────────────
 
-(define bootstrap-zone-bundle-filename "bootstrap-zones.lisp")
+(define bootstrap-zone-manifest-filename "manifest.sexp")
 
-(define (zone-bundle-output-path output-dir)
-  "Return the aggregate CL native-zone artifact path for OUTPUT-DIR."
-  (string-append output-dir "/" bootstrap-zone-bundle-filename))
+(define (zone-manifest-output-path output-dir)
+  "Return the CL native-zone shard manifest path for OUTPUT-DIR."
+  (string-append output-dir "/" bootstrap-zone-manifest-filename))
 
-(define (emit-zone-bundle-header out archive-path output-path)
-  "Emit the file-level banner for an aggregate CL native-zone artifact."
+(define (zone-shard-filename archive-index file-stem)
+  "Return the CL native-zone shard filename for one archive section."
+  (string-append (number->string archive-index)
+                 "-"
+                 (sanitize-name-for-filename file-stem)
+                 "-zones.lisp"))
+
+(define (zone-shard-output-path output-dir archive-index file-stem)
+  "Return the CL native-zone shard path for one archive section."
+  (string-append output-dir "/"
+                 (zone-shard-filename archive-index file-stem)))
+
+(define (emit-zone-shard-header out archive-path output-path unit-id)
+  "Emit the file-level banner for one CL native-zone shard."
   (write-string ";;;; " out)
   (write-string output-path out) (newline out)
   (write-string ";;;;" out) (newline out)
@@ -1211,15 +1224,48 @@ loop exits cleanly regardless of the halt instruction's position."
   (write-string ";;;;" out) (newline out)
   (write-string ";;;; Source archive: " out)
   (write-string archive-path out) (newline out)
+  (write-string ";;;; Source unit: " out)
+  (write-string (write-to-string-flat unit-id) out) (newline out)
   (write-string ";;;; Generator: src/codegen-cl-inline.scm" out) (newline out)
   (write-string ";;;; Regenerate: make bootstrap" out) (newline out)
   (write-string ";;;;" out) (newline out)
-  (write-string ";;;; The CL runtime loads this native-zone bundle at boot. Each" out) (newline out)
+  (write-string ";;;; The CL runtime loads this native-zone shard at boot. Each" out) (newline out)
   (write-string ";;;; defun below registers itself under (unit-id . co-key) in" out) (newline out)
   (write-string ";;;; *archive-zone-fns* so archive loaders can attach native-fn." out) (newline out)
   (newline out)
   (write-string "(in-package :ece)" out) (newline out)
   (newline out))
+
+(define (emit-zone-shard-manifest out archive-path entries)
+  "Emit the CL native-zone shard manifest. ENTRIES is a list of
+(filename unit-id source-file) triples in archive order."
+  (write-string ";;;; " out)
+  (write-string bootstrap-zone-manifest-filename out) (newline out)
+  (write-string ";;;;" out) (newline out)
+  (write-string ";;;; AUTOMATICALLY GENERATED — DO NOT EDIT BY HAND." out) (newline out)
+  (write-string ";;;;" out) (newline out)
+  (write-string ";;;; Source archive: " out)
+  (write-string archive-path out) (newline out)
+  (write-string ";;;; Generator: src/codegen-cl-inline.scm" out) (newline out)
+  (write-string ";;;; Regenerate: make bootstrap" out) (newline out)
+  (newline out)
+  (write-string "(:ece-cl-native-zones :version 1 :files" out) (newline out)
+  (write-string " (" out)
+  (let loop ((rest entries) (first? #t))
+    (when (not (null? rest))
+      (let ((entry (car rest)))
+        (when (not first?)
+          (newline out)
+          (write-string "  " out))
+        (write-string "(:file " out)
+        (write-string (write-to-string-flat (car entry)) out)
+        (write-string " :unit-id " out)
+        (write-string (write-to-string-flat (cadr entry)) out)
+        (write-string " :source " out)
+        (write-string (write-to-string-flat (caddr entry)) out)
+        (write-string ")" out)
+        (loop (cdr rest) #f))))
+  (write-string "))" out) (newline out))
 
 (define (sanitize-char-for-filename c)
   "Map one filesystem-unsafe character to an ASCII substitute. Scheme
@@ -1319,7 +1365,7 @@ String unit ids are treated as legacy file stems and normalized to symbols."
      (else (archive-file-stem archive)))))
 
 (define (generate-zones-for-archive-section! archive out)
-  "Emit one zone defun per code-object in ARCHIVE to aggregate OUT.
+  "Emit one zone defun per code-object in ARCHIVE to shard OUT.
 ARCHIVE is a single parsed (ecec-archive ...) section. Used internally by
 generate-all-zones-from-archive! which loops over concatenated archive
 sections in a bundle.
@@ -1357,33 +1403,45 @@ Threads *emit-co-index-map* so emit-inner-co-lookup can resolve (const
 (define (generate-all-zones-from-archive! archive-path output-dir)
   "Read a bundle at ARCHIVE-PATH (a concatenation of (ecec-archive ...)
 sections, one per compiled source file), iterate each section's
-code-objects, and emit one aggregate native-zone Lisp file under OUTPUT-DIR.
-The output file is `bootstrap-zones.lisp` and contains one defun per code
-object, with readable names derived from each section's |file| field.
+code-objects, and emit source-aligned native-zone Lisp shards under
+OUTPUT-DIR. The output manifest is `manifest.sexp`; each shard contains one
+defun per code object for one archive section, with readable names derived
+from the section's |file| field.
 
 Signals an error if a section has zero entries. Deterministic: sections
 are processed in bundle order; within each section entries are processed
 in archive order (init first, then nested lambdas BFS)."
-  (let ((output-path (zone-bundle-output-path output-dir))
-        (port (open-input-file archive-path))
-        (out (open-output-file (zone-bundle-output-path output-dir))))
-    (emit-zone-bundle-header out archive-path output-path)
-    (let loop ()
+  (let ((manifest-path (zone-manifest-output-path output-dir))
+        (port (open-input-file archive-path)))
+    (let loop ((archive-index 0) (entries '()))
       (let ((archive (ece-scheme-read port)))
         (cond
          ((eof? archive)
           (close-input-port port)
-          (close-output-port out)
-          output-path)
+          (let ((manifest-out (open-output-file manifest-path)))
+            (emit-zone-shard-manifest manifest-out archive-path (reverse entries))
+            (close-output-port manifest-out))
+          manifest-path)
          ;; Accept both new (:ecec-archive) and legacy (ecec-archive)
          ;; during the transition.
          ((and (pair? archive)
                (or (eq? (car archive) ':ecec-archive)
                    (eq? (car archive) 'ecec-archive)))
-          (generate-zones-for-archive-section! archive out)
-          (loop))
+          (let* ((file-stem-sym (archive-file-stem archive))
+                 (file-stem (symbol->string file-stem-sym))
+                 (unit-id (archive-unit-id archive))
+                 (source-file (archive/plist-get (cdr archive) ':file))
+                 (shard-filename (zone-shard-filename archive-index file-stem))
+                 (shard-path (zone-shard-output-path output-dir
+                                                     archive-index
+                                                     file-stem))
+                 (out (open-output-file shard-path)))
+            (emit-zone-shard-header out archive-path shard-path unit-id)
+            (generate-zones-for-archive-section! archive out)
+            (close-output-port out)
+            (loop (+ archive-index 1)
+                  (cons (list shard-filename unit-id source-file) entries))))
          (else
           (close-input-port port)
-          (close-output-port out)
           (%raw-error
            "generate-all-zones-from-archive!: expected (:ecec-archive ...) section")))))))

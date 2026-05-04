@@ -52,12 +52,12 @@ jobs:
       - name: Warm FASL cache
         run: |
           # Pre-compile project FASLs in a dedicated large-heap session. The
-          # generated native-zone bundle is expensive to source-load in every
-          # later SBCL process, but it compiles successfully in this 8GB warmup.
+          # generated native-zone shards are expensive to compile in every
+          # later SBCL process, so the runtime compiles/caches them here.
           ASDF_OUTPUT_TRANSLATIONS='(:output-translations ("'$PWD'/" "'$PWD'/.fasl-cache/") :inherit-configuration)' \
           qlot exec sbcl --dynamic-space-size 8192 --non-interactive --disable-debugger \
             --eval '(asdf:load-system :ece)' \
-            --eval '(let* ((src (asdf:system-relative-pathname :ece ".tmp/bootstrap-zones/bootstrap-zones.lisp")) (zone-dir (asdf:system-relative-pathname :ece ".tmp/bootstrap-zones/")) (fasl-dir (asdf:apply-output-translations zone-dir)) (out (merge-pathnames (make-pathname :type "fasl" :defaults (file-namestring src)) fasl-dir))) (unless (probe-file src) (error "Missing generated native-zone bundle: ~A" src)) (ensure-directories-exist out) (when (or (not (probe-file out)) (> (file-write-date src) (file-write-date out))) (compile-file src :output-file out :print nil)))' \
+            --eval '(let ((manifest (asdf:system-relative-pathname :ece ".tmp/bootstrap-zones/manifest.sexp"))) (unless (probe-file manifest) (error "Missing generated native-zone manifest: ~A" manifest)))' \
             --quit
 
       - name: Install binaryen
