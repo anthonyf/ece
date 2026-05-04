@@ -26,6 +26,9 @@ bin/ece: scripts/build-ece-binary.lisp bootstrap/bootstrap.ecec share/ece/ece-ma
 	@ln -sf ece bin/ece-serve
 	@echo "Built bin/ece + symlinks (ece-repl, ece-build, ece-test, ece-serve)"
 
+bin/ece-repl bin/ece-build bin/ece-test bin/ece-serve: bin/ece
+	@ln -sf ece $@
+
 share/ece/ece-main.ecec: src/sdk-lib.scm src/ece-main.scm src/ece-unit.scm src/base64.scm src/sha1.scm src/scheduler.scm src/http-codec.scm src/websocket-codec.scm src/json.scm src/wasm-host.scm src/codegen-wasm-zone.scm src/ece-build.scm src/ece-test.scm src/ece-serve.scm src/geiser-ece.scm bootstrap/bootstrap.ecec wasm/runtime.wasm wasm/glue.js | .qlot/qlot.conf
 	@mkdir -p share/ece/templates
 	qlot exec sbcl --dynamic-space-size 4096 --non-interactive --disable-debugger \
@@ -242,7 +245,7 @@ update-golden: | .qlot/qlot.conf
 	  echo "  Updated: $$base.expected ($$(wc -c < "$$expected") bytes)"; \
 	done
 
-test-web-server: bin/ece
+test-web-server: bin/ece-build
 	@echo "Building hello-world in server mode..."
 	@mkdir -p .tmp/server-mode-test
 	@printf '(display "Hello, World!")\n(newline)\n' > .tmp/server-mode-hello.scm
@@ -307,7 +310,7 @@ test-web-apps: sandbox
 	@echo "Running web apps smoke test..."
 	@node wasm/test-web-apps.js
 
-test-ece-serve-live: bin/ece
+test-ece-serve-live: bin/ece-serve
 	@echo "Running ece-serve live reload smoke test..."
 	@node wasm/test-ece-serve-live.js
 
@@ -377,7 +380,7 @@ $(ZONE_SENTINEL): primitives.def src/primitives.scm src/codegen-cl.scm src/codeg
 	  --quit
 	@echo "Generated $(BOOTSTRAP_ZONE_MANIFEST)"
 
-sandbox: bin/ece
+sandbox: bin/ece-build
 	@mkdir -p .tmp/sandbox-build sandbox
 	@echo '(void)' > .tmp/sandbox-stub.scm
 	@bin/ece-build --target web --standalone -o .tmp/sandbox-build .tmp/sandbox-stub.scm

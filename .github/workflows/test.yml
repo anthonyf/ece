@@ -124,6 +124,14 @@ jobs:
           name: prepared-ece
           path: .
 
+      - name: Restore binary entry points
+        run: |
+          chmod +x bin/ece
+          ln -sf ece bin/ece-repl
+          ln -sf ece bin/ece-build
+          ln -sf ece bin/ece-test
+          ln -sf ece bin/ece-serve
+
       - name: Run Lisp tests
         run: |
           make test-rove
@@ -168,6 +176,14 @@ jobs:
         with:
           name: prepared-ece
           path: .
+
+      - name: Restore binary entry points
+        run: |
+          chmod +x bin/ece
+          ln -sf ece bin/ece-repl
+          ln -sf ece bin/ece-build
+          ln -sf ece bin/ece-test
+          ln -sf ece bin/ece-serve
 
       - name: Install binaryen
         run: |
@@ -250,7 +266,14 @@ jobs:
       - lisp-tests
       - wasm-tests
       - web-tests
+    if: ${{ always() }}
 
     steps:
       - name: Confirm split test jobs passed
-        run: echo "All split test jobs passed."
+        run: |
+          echo "lisp-tests: ${{ needs.lisp-tests.result }}"
+          echo "wasm-tests: ${{ needs.wasm-tests.result }}"
+          echo "web-tests: ${{ needs.web-tests.result }}"
+          test "${{ needs.lisp-tests.result }}" = "success"
+          test "${{ needs.wasm-tests.result }}" = "success"
+          test "${{ needs.web-tests.result }}" = "success"
