@@ -39,6 +39,7 @@
 (require 'geiser-syntax)
 (require 'geiser-log)
 (require 'compile)
+(require 'comint)
 
 ;;; Customization
 
@@ -93,6 +94,11 @@ When not on PATH, derived from this file's location (emacs/../bin/ece-repl)."
 
 (geiser-custom--defcustom geiser-ece-dev-server-buffer "*ECE Serve*"
   "Process buffer used by `geiser-ece-dev-start'."
+  :type 'string
+  :group 'geiser-ece)
+
+(geiser-custom--defcustom geiser-ece-dev-repl-buffer "*ECE Browser REPL*"
+  "REPL buffer used for ece-serve browser development."
   :type 'string
   :group 'geiser-ece)
 
@@ -424,6 +430,31 @@ and the legacy `eldoc-documentation-function' API."
 (defvar geiser-ece-dev--source-buffer nil
   "Buffer that started the current managed ece-serve process.")
 
+(defvar geiser-ece-dev--ready-callbacks nil
+  "Functions to call once the current ece-serve settings are ready.")
+
+(defvar geiser-ece-dev-repl-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "C-c C-z c") #'geiser-ece-dev-connect-repl)
+    (define-key map (kbd "C-c C-z S") #'geiser-ece-dev-start-repl)
+    (define-key map (kbd "C-c C-z o") #'geiser-ece-dev-open-browser)
+    (define-key map (kbd "C-c C-z ?") #'geiser-ece-dev-status)
+    map)
+  "Keymap for `geiser-ece-dev-repl-mode'.")
+
+(defun geiser-ece--dev-run-ready-callbacks ()
+  "Run and clear callbacks waiting for ece-serve startup."
+  (let ((callbacks (nreverse geiser-ece-dev--ready-callbacks)))
+    (setq geiser-ece-dev--ready-callbacks nil)
+    (dolist (callback callbacks)
+      (funcall callback))))
+
+(defun geiser-ece--dev-after-ready (callback)
+  "Run CALLBACK when ece-serve connection settings are ready."
+  (if geiser-ece-dev--server-ready
+      (funcall callback)
+    (push callback geiser-ece-dev--ready-callbacks)))
+
 (defun geiser-ece--dev-server-base-url ()
   "Return `geiser-ece-dev-server-url' without a trailing slash."
   (string-remove-suffix "/" (geiser-ece--dev-server-url)))
@@ -517,6 +548,7 @@ and the legacy `eldoc-documentation-function' API."
     (when (buffer-live-p geiser-ece-dev--source-buffer)
       (with-current-buffer geiser-ece-dev--source-buffer
         (geiser-ece-dev-mode 1)))
+    (geiser-ece--dev-run-ready-callbacks)
     (message "ECE dev server ready at %s" geiser-ece-dev-server-url)))
 
 (defun geiser-ece--dev-server-sentinel (proc event)
@@ -618,6 +650,91 @@ ask ece-serve to return the browser eval result/error JSON."
                          t)
    fallback))
 
+(defun geiser-ece--dev-repl-result-text (payload fallback)
+  "Return browser eval text for REPL PAYLOAD."
+  (let ((text (geiser-ece--dev-result-message payload fallback)))
+    (if (string-empty-p text) fallback text)))
+
+(defun geiser-ece--dev-repl-insert (process text)
+  "Insert TEXT at PROCESS mark in the browser dev REPL."
+  (let ((buffer (process-buffer process)))
+    (when (buffer-live-p buffer)
+      (with-current-buffer buffer
+        (let ((inhibit-read-only t)
+              (moving (= (point) (process-mark process))))
+          (save-excursion
+            (goto-char (process-mark process))
+            (insert text)
+            (set-marker (process-mark process) (point)))
+          (when moving
+            (goto-char (process-mark process))))))))
+
+(defun geiser-ece--dev-repl-input-sender (process input)
+  "Send browser dev REPL INPUT through ece-serve."
+  (let ((source (string-trim input)))
+    (cond
+     ((string-empty-p source)
+      (geiser-ece--dev-repl-insert process "ece-dev> "))
+     ((member source '(",q" ",quit" "(exit)" "(quit)"))
+      (geiser-ece--dev-repl-insert process ";; closing ECE browser REPL\n")
+      (delete-process process))
+     (t
+      (let ((text
+             (condition-case err
+                 (geiser-ece--dev-repl-result-text
+                  (geiser-ece--dev-post "/__ece_dev/eval-source"
+                                        source
+                                        "repl.scm"
+                                        t)
+                  "")
+               (error (format "Error: %s" (error-message-string err))))))
+        (geiser-ece--dev-repl-insert
+         process
+         (concat (unless (string-empty-p text)
+                   (concat text "\n"))
+                 "ece-dev> ")))))))
+
+(define-derived-mode geiser-ece-dev-repl-mode comint-mode "ECE-Browser-REPL"
+  "REPL mode for evaluating ECE forms in the browser through ece-serve."
+  (setq-local comint-prompt-regexp "^ece-dev> ")
+  (setq-local comint-input-sender #'geiser-ece--dev-repl-input-sender)
+  (setq-local comint-process-echoes nil)
+  (geiser-ece-dev-mode 1))
+
+(defun geiser-ece--dev-repl-process (buffer)
+  "Create the backing process for browser dev REPL BUFFER."
+  (if (fboundp 'make-pipe-process)
+      (make-pipe-process :name "ece-browser-repl"
+                         :buffer buffer
+                         :noquery t)
+    (start-process "ece-browser-repl" buffer "cat")))
+
+(defun geiser-ece--dev-repl-buffer ()
+  "Return the ECE browser dev REPL buffer, creating it if needed."
+  (require 'comint)
+  (let* ((buffer (get-buffer-create geiser-ece-dev-repl-buffer))
+         (process (get-buffer-process buffer)))
+    (unless (and process (process-live-p process))
+      (with-current-buffer buffer
+        (let ((inhibit-read-only t))
+          (erase-buffer))
+        (let ((proc (geiser-ece--dev-repl-process buffer)))
+          (set-marker (process-mark proc) (point-min))
+          (geiser-ece-dev-repl-mode)
+          (let ((inhibit-read-only t))
+            (insert (format ";; connected to %s\n" (geiser-ece--dev-server-url)))
+            (insert ";; evals run in the connected browser runtime\n")
+            (insert "ece-dev> ")
+            (set-marker (process-mark proc) (point))))))
+    buffer))
+
+;;;###autoload
+(defun geiser-ece-dev-repl ()
+  "Open an ece-serve browser REPL using the current dev connection."
+  (interactive)
+  (geiser-ece--dev-require-connected)
+  (pop-to-buffer (geiser-ece--dev-repl-buffer)))
+
 (defun geiser-ece--dev-entry-file-p (path)
   "Return non-nil when PATH is a usable ece-serve entry source file."
   (and path
@@ -696,6 +813,31 @@ ask ece-serve to return the browser eval result/error JSON."
             candidates))
     (delete-dups (delq nil (nreverse candidates)))))
 
+(defun geiser-ece--dev-search-session-file (port)
+  "Search nearby project roots for ece-serve session file PORT."
+  (when (integerp port)
+    (let* ((file-name (format "%s.sexp" port))
+           (git-root (locate-dominating-file default-directory ".git"))
+           (roots (delete-dups
+                   (delq nil (list default-directory git-root)))))
+      (catch 'found
+        (dolist (root roots)
+          (let ((direct (expand-file-name
+                         (concat ".tmp/ece-serve-sessions/" file-name)
+                         root)))
+            (when (file-readable-p direct)
+              (throw 'found direct)))
+          (when (file-directory-p root)
+            (dolist (path (directory-files-recursively
+                           root
+                           (concat "\\`" (regexp-quote file-name) "\\'")))
+              (when (and (file-readable-p path)
+                         (string-match-p
+                          (regexp-quote ".tmp/ece-serve-sessions")
+                          path))
+                (throw 'found path)))))
+        nil))))
+
 (defun geiser-ece--dev-normalize-session (session source)
   "Validate and return ece-serve attach SESSION from SOURCE."
   (unless (and (consp session)
@@ -712,8 +854,10 @@ ask ece-serve to return the browser eval result/error JSON."
       session)
      ((and (stringp url)
            (not (string-empty-p url)))
-      (let ((path (cl-find-if #'file-readable-p
-                              (geiser-ece--dev-session-file-candidates session))))
+      (let ((path (or (cl-find-if #'file-readable-p
+                                  (geiser-ece--dev-session-file-candidates session))
+                      (geiser-ece--dev-search-session-file
+                       (geiser-ece--dev-session-get session "port")))))
         (unless path
           (error "ece-serve session discovery did not include a readable token file: %s"
                  (mapconcat #'identity
@@ -865,6 +1009,19 @@ When TOKEN is non-nil, treat HOST as a full URL and configure manually."
       (message "ECE dev connected to %s" geiser-ece-dev-server-url))))
 
 ;;;###autoload
+(defun geiser-ece-dev-connect-repl (host port)
+  "Connect to ece-serve on HOST and PORT, then open a browser REPL.
+This is the Figwheel-style attach path: start ece-serve separately, open the
+site in a browser, then run this command from Emacs."
+  (interactive
+   (let* ((target (read-string "ece-serve host or URL: " "127.0.0.1:8080"))
+          (port (unless (geiser-ece--dev-target-includes-port-p target)
+                  (read-number "ece-serve port: " 8080))))
+     (list target port)))
+  (geiser-ece-dev-connect host port)
+  (geiser-ece-dev-repl))
+
+;;;###autoload
 (defun geiser-ece-dev-connect-manual (url token)
   "Set the ece-serve URL and dev TOKEN manually."
   (interactive
@@ -951,6 +1108,24 @@ parsed from its startup output."
       (message "Starting ece-serve on port %s..." listen-port))))
 
 ;;;###autoload
+(defun geiser-ece-dev-start-repl (entry-file &optional port)
+  "Start ece-serve for ENTRY-FILE, open the site, and open a browser REPL.
+The REPL evals forms in the browser runtime through ece-serve. The browser must
+connect before evals can return results; this command opens the configured URL
+after ece-serve reports its dev URL and token."
+  (interactive
+   (let ((entry-file (geiser-ece--dev-read-entry-file)))
+     (list entry-file
+           (when current-prefix-arg
+             (read-number "ECE dev server port: "
+                          geiser-ece-dev-server-port)))))
+  (geiser-ece-dev-start entry-file port)
+  (geiser-ece--dev-after-ready
+   (lambda ()
+     (geiser-ece-dev-open-browser)
+     (geiser-ece-dev-repl))))
+
+;;;###autoload
 (defun geiser-ece-dev-stop ()
   "Stop the ece-serve process started by `geiser-ece-dev-start'."
   (interactive)
@@ -1030,11 +1205,14 @@ parsed from its startup output."
 (defvar geiser-ece-dev-mode-map
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "C-c C-z S") #'geiser-ece-dev-start)
+    (define-key map (kbd "C-c C-z R") #'geiser-ece-dev-start-repl)
     (define-key map (kbd "C-c C-z K") #'geiser-ece-dev-stop)
     (define-key map (kbd "C-c C-z c") #'geiser-ece-dev-connect)
+    (define-key map (kbd "C-c C-z C") #'geiser-ece-dev-connect-repl)
     (define-key map (kbd "C-c C-z a") #'geiser-ece-dev-attach)
     (define-key map (kbd "C-c C-z o") #'geiser-ece-dev-open-browser)
     (define-key map (kbd "C-c C-z ?") #'geiser-ece-dev-status)
+    (define-key map (kbd "C-c C-z z") #'geiser-ece-dev-repl)
     (define-key map (kbd "C-c C-z e") #'geiser-ece-dev-eval-last-sexp)
     (define-key map (kbd "C-c C-z r") #'geiser-ece-dev-eval-region)
     (define-key map (kbd "C-c C-z d") #'geiser-ece-dev-eval-definition)
