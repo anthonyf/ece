@@ -30,6 +30,15 @@ function withTimeout(promise, ms, label) {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
+async function waitForOutputContains(readOutput, needle, label) {
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline) {
+    if (readOutput().includes(needle)) return;
+    await delay(50);
+  }
+  throw new Error(`Timed out waiting for ${label}`);
+}
+
 async function freePort() {
   const server = net.createServer();
   await new Promise((resolve, reject) => {
@@ -279,6 +288,24 @@ function serverExitBeforeReady(server) {
   });
 }
 
+function parseDevArtifactReloadUrls(message) {
+  const archive = String(message.archiveUrl || "");
+  const zone = String(message.zoneModuleUrl || "");
+  const manifest = String(message.manifestUrl || "");
+  const match = archive.match(/^\/__ece_dev\/artifacts\/(app-\d+)\.ecec$/);
+  if (!match) {
+    throw new Error(`watched program-reload archiveUrl mismatch: ${archive}`);
+  }
+  const stem = match[1];
+  if (zone !== `/__ece_dev/artifacts/${stem}-zones.wasm`) {
+    throw new Error(`watched program-reload zoneModuleUrl mismatch: ${zone}`);
+  }
+  if (manifest !== `/__ece_dev/artifacts/${stem}-zones.manifest`) {
+    throw new Error(`watched program-reload manifestUrl mismatch: ${manifest}`);
+  }
+  return stem;
+}
+
 async function runAttempt() {
   await fs.writeFile(ENTRY, "(define live-marker 1)\n", "utf8");
   await fs.writeFile(
@@ -435,14 +462,13 @@ async function runAttempt() {
     if (message.type !== "program-reload") {
       throw new Error(`expected watched program-reload, got ${message.type}`);
     }
-    if (message.archiveUrl !== "/__ece_dev/artifacts/app.ecec") {
-      throw new Error(`watched program-reload archiveUrl mismatch: ${message.archiveUrl}`);
-    }
-    if (message.zoneModuleUrl !== "/__ece_dev/artifacts/app-zones.wasm") {
-      throw new Error(`watched program-reload zoneModuleUrl mismatch: ${message.zoneModuleUrl}`);
-    }
-    if (message.manifestUrl !== "/__ece_dev/artifacts/app-zones.manifest") {
-      throw new Error(`watched program-reload manifestUrl mismatch: ${message.manifestUrl}`);
+    const reloadStem = parseDevArtifactReloadUrls(message);
+    await waitForOutputContains(
+      () => serverOutput,
+      `ece-serve: broadcasting reload ${reloadStem}`,
+      "ece-serve reload log");
+    if (!serverOutput.includes("ece-serve: changed ")) {
+      throw new Error("ece-serve did not log the changed file path");
     }
 
     const artifactResp = await fetch(`http://127.0.0.1:${port}${message.archiveUrl}`);

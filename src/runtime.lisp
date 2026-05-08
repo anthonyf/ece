@@ -1045,9 +1045,22 @@ A (code-obj . pc) pair returns the pc."
   "Create a (code-obj . pc) qualified address."
   (cons space-id local-pc))
 
-;;; Error sentinel — returned by apply-primitive-procedure when CL signals
-;;; a type-error or division-by-zero, so the executor can bridge to ECE's raise.
+;;; Error sentinel — returned by apply-primitive-procedure when an ordinary CL
+;;; error escapes a host primitive, so the executor can bridge to ECE's raise.
 (defstruct ece-error-sentinel message irritants)
+
+(defun primitive-error-sentinel (prim-name condition)
+  "Convert an ordinary host primitive CONDITION into an ECE-level error value."
+  (make-ece-error-sentinel
+   :message (format nil "~(~A~): ~A" prim-name condition)
+   :irritants
+   (if (typep condition 'type-error)
+       (list (type-error-datum condition))
+       nil)))
+
+(defun primitive-raw-error-p (prim-name)
+  "True when PRIM-NAME is the primitive that intentionally raises to CL."
+  (eq prim-name (intern "%raw-error" :ece)))
 
 (defun apply-primitive-procedure (proc argl)
   ;; Safety check: if a parameter object reaches here (compiled code without
@@ -1055,53 +1068,58 @@ A (code-obj . pc) pair returns the pc."
   (when (parameter-p proc)
     (return-from apply-primitive-procedure (apply-parameter proc argl)))
   (let ((id-or-name (primitive-procedure-id proc)))
-    (if (symbolp id-or-name)
-        ;; Symbol-based dispatch: legacy parameters via *parameter-table*,
-        ;; or trace wrappers via symbol-function.
-        (let ((param-cell (gethash id-or-name *parameter-table*)))
-          (if param-cell
-              (cond
-                ((null argl) (car param-cell))
-                ((null (cdr argl))
-                 (let* ((old (car param-cell))
-                        (converter (cdr param-cell)))
-                   (setf (car param-cell)
-                         (if (and converter (not (null converter))
-                                  (not (scheme-false-p converter)))
-                             (apply-ece-procedure converter argl)
-                             (car argl)))
-                   old))
-                (t (let ((old (car param-cell)))
-                     (setf (car param-cell) (car argl))
-                     old)))
-              (handler-case
-                  (apply (symbol-function id-or-name) argl)
-                (division-by-zero ()
-                  (make-ece-error-sentinel
-                   :message (format nil "~(~A~): division by zero" id-or-name)
-                   :irritants nil))
-                (type-error (e)
-                  (make-ece-error-sentinel
-                   :message (format nil "~(~A~): ~A" id-or-name e)
-                   :irritants (list (type-error-datum e)))))))
-        ;; Numeric ID — dispatch via table
-        (progn
-          (unless (and (integerp id-or-name)
-                       (<= 0 id-or-name)
-                       (< id-or-name (length *primitive-dispatch-table*)))
-            (error "Invalid primitive ID: ~A" id-or-name))
-          (let ((fn (aref *primitive-dispatch-table* id-or-name))
-                (prim-name (aref *primitive-name-table* id-or-name)))
-            (handler-case
-                (apply fn argl)
-              (division-by-zero ()
-                (make-ece-error-sentinel
-                 :message (format nil "~(~A~): division by zero" prim-name)
-                 :irritants nil))
-              (type-error (e)
-                (make-ece-error-sentinel
-                 :message (format nil "~(~A~): ~A" prim-name e)
-                 :irritants (list (type-error-datum e))))))))))
+    (cond
+      ((symbolp id-or-name)
+       ;; Symbol-based dispatch: legacy parameters via *parameter-table*,
+       ;; or trace wrappers via symbol-function.
+       (let ((param-cell (gethash id-or-name *parameter-table*)))
+         (if param-cell
+             (cond
+               ((null argl) (car param-cell))
+               ((null (cdr argl))
+                (let* ((old (car param-cell))
+                       (converter (cdr param-cell)))
+                  (setf (car param-cell)
+                        (if (and converter (not (null converter))
+                                 (not (scheme-false-p converter)))
+                            (apply-ece-procedure converter argl)
+                            (car argl)))
+                  old))
+               (t (let ((old (car param-cell)))
+                    (setf (car param-cell) (car argl))
+                    old)))
+             (handler-case
+                 (apply (symbol-function id-or-name) argl)
+               (division-by-zero ()
+                 (make-ece-error-sentinel
+                  :message (format nil "~(~A~): division by zero" id-or-name)
+                  :irritants nil))
+               (ece-runtime-error (e)
+                 (error e))
+               (error (e)
+                 (if (primitive-raw-error-p id-or-name)
+                     (error e)
+                     (primitive-error-sentinel id-or-name e)))))))
+      (t
+       ;; Numeric ID — dispatch via table
+       (unless (and (integerp id-or-name)
+                    (<= 0 id-or-name)
+                    (< id-or-name (length *primitive-dispatch-table*)))
+         (error "Invalid primitive ID: ~A" id-or-name))
+       (let ((fn (aref *primitive-dispatch-table* id-or-name))
+             (prim-name (aref *primitive-name-table* id-or-name)))
+         (handler-case
+             (apply fn argl)
+           (division-by-zero ()
+             (make-ece-error-sentinel
+              :message (format nil "~(~A~): division by zero" prim-name)
+              :irritants nil))
+           (ece-runtime-error (e)
+             (error e))
+           (error (e)
+             (if (primitive-raw-error-p prim-name)
+                 (error e)
+                 (primitive-error-sentinel prim-name e)))))))))
 
 ;;; Continuation helpers for compiled code
 
