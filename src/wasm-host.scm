@@ -413,10 +413,8 @@ This policy is ECE-owned, but it depends on future browser host primitives."
                unit-key
                record)))
 
-(define (reload-archive-bundle-text text)
-  "Load and execute all .ecec archive sections from TEXT for reload.
-Unlike load-bundle, this replaces existing unit records so future lookups and
-fresh module imports observe the newly loaded archive."
+(define (wasm-host/read-reload-sections text)
+  "Read all reload archive sections from TEXT."
   (let ((port (open-input-string text)))
     (define (read-sections sections)
       (let ((archive (read-archive-section-form port)))
@@ -426,12 +424,27 @@ fresh module imports observe the newly loaded archive."
              (cons (archive/materialize-section archive) sections)))))
     (let ((sections (read-sections '())))
       (close-input-port port)
-      (for-each wasm-host/register-reload-section! sections)
-      (let loop ((rest sections) (last-result #f))
-        (if (null? rest)
-            last-result
-            (loop (cdr rest)
-                  (archive/load-materialized-section (car rest) #t)))))))
+      sections)))
+
+(define (wasm-host/register-reload-sections! sections)
+  "Replace archive records for all reload SECTIONS."
+  (for-each wasm-host/register-reload-section! sections))
+
+(define (wasm-host/execute-reload-sections sections)
+  "Execute reload SECTIONS in order and return the final init result."
+  (let loop ((rest sections) (last-result #f))
+    (if (null? rest)
+        last-result
+        (loop (cdr rest)
+              (archive/load-materialized-section (car rest) #t)))))
+
+(define (reload-archive-bundle-text text)
+  "Load and execute all .ecec archive sections from TEXT for reload.
+Unlike load-bundle, this replaces existing unit records so future lookups and
+fresh module imports observe the newly loaded archive."
+  (let ((sections (wasm-host/read-reload-sections text)))
+    (wasm-host/register-reload-sections! sections)
+    (wasm-host/execute-reload-sections sections)))
 
 (define (reload-program archive-url zone-module-url manifest-url)
   "Fetch and load ARCHIVE-URL, then optionally load native-zone artifacts.
@@ -443,9 +456,10 @@ bundle's last init result."
              (or zone-module-url manifest-url))
     (wasm-host/error
      "reload-program requires both native-zone module and manifest URLs"))
-  (let ((archive-result (reload-archive-bundle-text (fetch-text archive-url))))
+  (let ((sections (wasm-host/read-reload-sections (fetch-text archive-url))))
+    (wasm-host/register-reload-sections! sections)
     (cond
      ((and zone-module-url manifest-url)
       (load-native-zone-module zone-module-url manifest-url))
      (else #f))
-    archive-result))
+    (wasm-host/execute-reload-sections sections)))

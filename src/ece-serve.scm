@@ -159,6 +159,20 @@ between http-build-response (string body) and build-binary-response
 (define *ece-serve/artifact-zone-module-name* "app-zones.wasm")
 (define *ece-serve/artifact-zone-manifest-name* "app-zones.manifest")
 (define *ece-serve/session-root* ".tmp/ece-serve-sessions")
+(define *ece-serve/artifact-build-seq* 0)
+
+(define (ece-serve/log . parts)
+  "Write one ece-serve log line."
+  (display "ece-serve: ")
+  (for-each display parts)
+  (newline))
+
+(define (ece-serve/log-path-list paths)
+  "Log one path per line for a change set."
+  (for-each
+   (lambda (path)
+     (ece-serve/log "changed " path))
+   paths))
 
 (define (ece-serve/resolve-path request-path)
   "Map an HTTP request path to a filesystem path under the sandbox
@@ -478,17 +492,9 @@ Returns a 400/404 response STRING on miss (both are text)."
                            (string-append "Not Found: "
                                           (http-request-path req))))
      ;; %file-exists? returns true for directories on CL as well as for
-     ;; regular files, and open-*-input-file on a directory raises a
-     ;; host-level stream error that ECE's `guard` macro currently can
-     ;; NOT catch — apply-primitive-procedure only converts CL
-     ;; `division-by-zero` and `type-error` to sentinels, so stream /
-     ;; file errors propagate at the CL level past ECE's exception
-     ;; machinery and reach the CL top-level handler. Until that kernel
-     ;; limitation is fixed, we avoid the problem here by rejecting any
-     ;; path without a file extension as 404: every legitimate static
-     ;; asset under `sandbox/` has an extension (html / js / wasm / ico
-     ;; / png / css / scm / ecec), so "no extension" is a safe proxy
-     ;; for "probably a directory or something we can't safely read."
+     ;; regular files. Reject extensionless paths before opening them so
+     ;; directory requests stay ordinary HTTP 404s instead of becoming
+     ;; file-open errors in the server loop.
      ((not (ece-serve/%has-any-extension? fs-path))
       (http-build-response 404 "Not Found" '()
                            (string-append "Not Found: "
@@ -1262,6 +1268,19 @@ Returns #f on timeout or when called without a scheduler."
 (define (ece-serve/artifact-path filename)
   (path-join *ece-serve/artifact-root* filename))
 
+(define (ece-serve/artifact-filenames stem)
+  "Return (ARCHIVE WAT WASM MANIFEST) filenames for one artifact build STEM."
+  (list (string-append stem ".ecec")
+        (string-append stem "-zones.wat")
+        (string-append stem "-zones.wasm")
+        (string-append stem "-zones.manifest")))
+
+(define (ece-serve/next-artifact-stem)
+  "Return a fresh immutable artifact stem for one reload build."
+  (set! *ece-serve/artifact-build-seq*
+        (+ *ece-serve/artifact-build-seq* 1))
+  (string-append "app-" (number->string *ece-serve/artifact-build-seq*)))
+
 (define (ece-serve/ensure-session-root!)
   "Ensure the local ece-serve session directory exists."
   (when (not (%file-exists? *ece-serve/session-root*))
@@ -1311,39 +1330,47 @@ The dev token stays only in the chmod 0600 session file."
   "Return the source list used for a dev artifact build."
   (ece-serve/walk-loads entry-file))
 
-(define (ece-serve/write-native-zone-artifacts! bundle-path)
+(define (ece-serve/write-native-zone-artifacts! bundle-path wat-name wasm-name
+                                                manifest-name)
   "Write native-zone WAT and manifest artifacts for BUNDLE-PATH."
   (let* ((bundle (generate-register-machine-wasm-zone-archive-file
                   bundle-path
-                  *ece-serve/artifact-zone-module-name*))
-         (wat-path (ece-serve/artifact-path
-                    *ece-serve/artifact-zone-wat-name*))
-         (manifest-path (ece-serve/artifact-path
-                         *ece-serve/artifact-zone-manifest-name*)))
+                  wasm-name))
+         (wat-path (ece-serve/artifact-path wat-name))
+         (manifest-path (ece-serve/artifact-path manifest-name)))
     (ece-serve/write-string-to-file (wasm-zone-bundle-wat bundle) wat-path)
     (ece-serve/write-string-to-file (wasm-zone-bundle-manifest-text bundle)
                                     manifest-path)
     bundle))
 
-(define (ece-serve/build-program-artifacts! entry-file)
+(define (ece-serve/build-program-artifacts! entry-file . maybe-stem)
   "Compile ENTRY-FILE's literal load closure into dev reload artifacts.
 Returns (ARCHIVE-URL ZONE-MODULE-URL MANIFEST-URL)."
   (ece-serve/ensure-artifact-root!)
-  (let ((bundle-path (ece-serve/artifact-path
-                      *ece-serve/artifact-bundle-name*))
-        (wat-path (ece-serve/artifact-path
-                   *ece-serve/artifact-zone-wat-name*))
-        (wasm-path (ece-serve/artifact-path
-                    *ece-serve/artifact-zone-module-name*)))
-    (compile-system (ece-serve/artifact-source-list entry-file) bundle-path)
-    (ece-serve/write-native-zone-artifacts! bundle-path)
+  (let* ((stem (if (null? maybe-stem) "app" (car maybe-stem)))
+         (filenames (ece-serve/artifact-filenames stem))
+         (bundle-name (car filenames))
+         (wat-name (cadr filenames))
+         (wasm-name (caddr filenames))
+         (manifest-name (cadddr filenames))
+         (bundle-path (ece-serve/artifact-path bundle-name))
+         (wat-path (ece-serve/artifact-path wat-name))
+         (wasm-path (ece-serve/artifact-path wasm-name))
+         (sources (ece-serve/artifact-source-list entry-file)))
+    (ece-serve/log "building " bundle-name " from " (number->string (length sources))
+                   " source file(s)")
+    (compile-system sources bundle-path)
+    (ece-serve/write-native-zone-artifacts! bundle-path wat-name wasm-name
+                                            manifest-name)
     (when (not (wasm-as wat-path wasm-path))
       (error "wasm-as failed while building native-zone reload artifact"
              wat-path
              wasm-path))
-    (list (ece-serve/artifact-url *ece-serve/artifact-bundle-name*)
-          (ece-serve/artifact-url *ece-serve/artifact-zone-module-name*)
-          (ece-serve/artifact-url *ece-serve/artifact-zone-manifest-name*))))
+    (ece-serve/log "built " bundle-name " with native zones " wasm-name
+                   " and " manifest-name)
+    (list (ece-serve/artifact-url bundle-name)
+          (ece-serve/artifact-url wasm-name)
+          (ece-serve/artifact-url manifest-name))))
 
 (define (ece-serve/build-program-artifact! entry-file)
   "Compile ENTRY-FILE's literal load closure and return its archive URL."
@@ -1353,8 +1380,10 @@ Returns (ARCHIVE-URL ZONE-MODULE-URL MANIFEST-URL)."
   "Best-effort initial build for ENTRY-FILE before clients connect."
   (guard
    (e (#t
-       (display "ece-serve: initial program build failed")
-       (newline)
+       (ece-serve/log "initial program build failed: "
+                      (if (error-object? e)
+                          (error-object-message e)
+                          (ece-serve/%show e)))
        'initial-program-build-error))
    (ece-serve/build-program-artifacts! entry-file)))
 
@@ -1362,10 +1391,16 @@ Returns (ARCHIVE-URL ZONE-MODULE-URL MANIFEST-URL)."
   "Rebuild ENTRY-FILE's dev artifacts and broadcast a program reload."
   (guard
    (e (#t
-       (display "ece-serve: program reload build failed")
-       (newline)
+       (ece-serve/log "program reload build failed: "
+                      (if (error-object? e)
+                          (error-object-message e)
+                          (ece-serve/%show e)))
        'program-reload-build-error))
-   (let ((urls (ece-serve/build-program-artifacts! entry-file)))
+   (let* ((stem (ece-serve/next-artifact-stem))
+          (urls (ece-serve/build-program-artifacts! entry-file stem)))
+     (ece-serve/log "broadcasting reload " stem " to "
+                    (number->string (length (ece-serve/clients-list clients-box)))
+                    " client(s)")
      (ece-serve/broadcast-program-reload clients-box
                                          (car urls)
                                          (cadr urls)
@@ -1398,6 +1433,9 @@ which point the OS reclaims all file descriptors."
            (e (#t 'poll-iteration-error))
            (let ((changed (fs-watch-poll watcher)))
              (when (pair? changed)
+               (ece-serve/log "detected " (number->string (length changed))
+                              " changed file(s)")
+               (ece-serve/log-path-list changed)
                (ece-serve/broadcast-program-artifact-reload clients-box entry-file))))
           (loop now)))))))
 
@@ -1427,6 +1465,9 @@ to be saved on disk first."
   "Send a program-reload message to every connected browser client.
 The browser fetches ARCHIVE-URL and optional native-zone artifacts, then calls
 ECE's reload-program policy in wasm-host.scm."
+  (ece-serve/log "program-reload archive=" archive-url
+                 " zone=" (if zone-module-url zone-module-url "#f")
+                 " manifest=" (if manifest-url manifest-url "#f"))
   (ece-serve/broadcast-json-envelope
    clients-box
    (json-program-reload archive-url zone-module-url manifest-url)))
@@ -1609,6 +1650,18 @@ and :dev-token (generated by default)."
   "CLI entry dispatched from src/ece-main.scm when argv[0] is ece-serve.
 Parses --port / --poll-interval flags and a positional entry file,
 then calls (ece-serve). Unknown flags print an error and exit."
+  (guard
+   (e (#t
+       (display "Error: ")
+       (display (if (error-object? e)
+                    (error-object-message e)
+                    (ece-serve/%show e)))
+       (newline)
+       (exit 1)))
+   (ece-serve-main/unsafe argv)))
+
+(define (ece-serve-main/unsafe argv)
+  "Unwrapped implementation for ece-serve-main."
   (let loop ((rest argv) (port *ece-serve/default-port*)
              (interval *ece-serve/default-poll-interval-ms*)
              (dev-token #f)

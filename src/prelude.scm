@@ -1054,6 +1054,15 @@ two-element lists so CL and WASM hash the same archive text."
       (let ((pc (code-object-label-ref co target)))
         (if (number? pc) pc target))))
 
+(define (ser/fingerprint-arity arity)
+  "Return ARITY in a printer-stable shape.
+Procedure arity is stored as a dotted pair, and host printers may render the
+dot separator with different whitespace. Fingerprints use a proper
+two-element list so CL and WASM hash the same code object."
+  (if (pair? arity)
+      (list (car arity) (cdr arity))
+      arity))
+
 (define (ser/fingerprint-walk-instruction co instr)
   "Return INSTR in a fingerprint-stable shape.
 Different runtimes may expose label operands either as their symbolic archive
@@ -1094,7 +1103,7 @@ expose enough code-object structure to verify it."
          (write-to-string-flat
           (list ':ece-code-object-fingerprint-v1
                 ':name (code-object-name co)
-                ':arity (code-object-arity co)
+                ':arity (ser/fingerprint-arity (code-object-arity co))
                 ':source-loc (code-object-source-loc co)
                 ':labels (ser/fingerprint-label-entries
                           (code-object-label-entries co))

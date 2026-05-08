@@ -62,9 +62,21 @@
       }
 
       async function tryInitialLoad() {
-        const response = await fetch("/__ece_dev/artifacts/app.ecec", { cache: "no-store" });
-        if (response.ok) {
-          await reloadProgram("/__ece_dev/artifacts/app.ecec");
+        const archiveUrl = "/__ece_dev/artifacts/app.ecec";
+        const zoneModuleUrl = "/__ece_dev/artifacts/app-zones.wasm";
+        const manifestUrl = "/__ece_dev/artifacts/app-zones.manifest";
+        const response = await fetch(archiveUrl, { cache: "no-store" });
+        if (!response.ok) {
+          return;
+        }
+        const nativeResponses = await Promise.all([
+          fetch(zoneModuleUrl, { cache: "no-store" }),
+          fetch(manifestUrl, { cache: "no-store" })
+        ]);
+        if (nativeResponses[0].ok && nativeResponses[1].ok) {
+          await reloadProgram(archiveUrl, zoneModuleUrl, manifestUrl);
+        } else {
+          await reloadProgram(archiveUrl);
         }
       }
 
@@ -95,16 +107,29 @@
         }
       }
 
+      let devMessageQueue = Promise.resolve();
+
+      function enqueueDevWork(work) {
+        devMessageQueue = devMessageQueue
+          .then(work)
+          .catch(function (err) {
+            log("Error: " + String(err && err.message || err) + "\n");
+          });
+        return devMessageQueue;
+      }
+
+      const initialLoadDone = enqueueDevWork(tryInitialLoad);
+
       if (window.ECE_DEV_WS_URL) {
         const socket = new WebSocket(window.ECE_DEV_WS_URL);
         socket.addEventListener("open", function () {
           log(";; dev server connected\n");
         });
         socket.addEventListener("message", function (event) {
-          Promise.resolve(handleDevMessage(event.data, socket))
-            .catch(function (err) {
-              log("Error: " + String(err && err.message || err) + "\n");
-            });
+          const raw = event.data;
+          enqueueDevWork(function () {
+            return handleDevMessage(raw, socket);
+          });
         });
         socket.addEventListener("close", function () {
           log(";; dev server disconnected\n");
@@ -114,7 +139,7 @@
         });
       }
 
-      await tryInitialLoad();
+      await initialLoadDone;
     })().catch(function (err) {
       document.getElementById("output").textContent += "Error: " + String(err && err.message || err) + "\n";
     });

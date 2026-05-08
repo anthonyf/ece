@@ -25,6 +25,12 @@
     (ser/fingerprint-label-entries '((L16 . 23) (L17 . 20))))
    "((L16 23) (L17 20))")))
 
+(test "wasm-host: fingerprint arity avoids dotted-pair printer differences" (lambda ()
+  (assert-equal
+   (write-to-string-flat
+    (ser/fingerprint-arity '(() . 0)))
+   "(() 0)")))
+
 (test "wasm-host: fingerprint instructions normalize label operands" (lambda ()
   (let* ((co (mc-compile-to-code-object
               '(begin
