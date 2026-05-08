@@ -69,11 +69,14 @@
         if (!response.ok) {
           return;
         }
-        const nativeResponses = await Promise.all([
+        const nativeResponses = await Promise.allSettled([
           fetch(zoneModuleUrl, { cache: "no-store" }),
           fetch(manifestUrl, { cache: "no-store" })
         ]);
-        if (nativeResponses[0].ok && nativeResponses[1].ok) {
+        if (nativeResponses[0].status === "fulfilled" &&
+            nativeResponses[0].value.ok &&
+            nativeResponses[1].status === "fulfilled" &&
+            nativeResponses[1].value.ok) {
           await reloadProgram(archiveUrl, zoneModuleUrl, manifestUrl);
         } else {
           await reloadProgram(archiveUrl);

@@ -449,9 +449,9 @@ fresh module imports observe the newly loaded archive."
 (define (reload-program archive-url zone-module-url manifest-url)
   "Fetch and load ARCHIVE-URL, then optionally load native-zone artifacts.
 When both ZONE-MODULE-URL and MANIFEST-URL are provided, the native-zone module
-is loaded after the archive. When both are #f, this performs an archive-only
-reload. Supplying only one native-zone URL is an error. Returns the archive
-bundle's last init result."
+is loaded after archive metadata is registered and before archive init sections
+execute. When both are #f, this performs an archive-only reload. Supplying only
+one native-zone URL is an error. Returns the archive bundle's last init result."
   (when (and (not (and zone-module-url manifest-url))
              (or zone-module-url manifest-url))
     (wasm-host/error
