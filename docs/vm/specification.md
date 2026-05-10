@@ -82,12 +82,12 @@ them to the numeric opcodes below.
 | Opcode | Instruction | Primary effect | Normal PC behavior |
 | ---: | --- | --- | --- |
 | 0 | `assign` | Stores a value in a register. | Increment by 1, unless an operation bridges to ECE `error`. |
-| 1 | `test` | Calls an operation and stores truthiness in `flag`. | Increment by 1, unless an operation bridges to ECE `error`. |
+| 1 | `test` | Calls an operation and stores truthiness in `flag`. | Increment by 1. |
 | 2 | `branch` | If `flag` is true, jumps to a label PC. | Jump when true, otherwise increment by 1. |
 | 3 | `goto` | Unconditional jump to a label or address stored in a register. | Jump; no automatic increment. |
 | 4 | `save` | Pushes a register value onto `stack`. | Increment by 1. |
 | 5 | `restore` | Pops `stack` into a register. | Increment by 1. |
-| 6 | `perform` | Calls an operation for side effects and discards its result. | Increment by 1, unless an operation bridges to ECE `error`. |
+| 6 | `perform` | Calls an operation for side effects and discards its result. | Increment by 1. |
 | 7 | `halt` | Ends execution of the current code object. | Exit executor and return `val`. |
 
 ### `assign`
@@ -116,7 +116,9 @@ source instruction form.
 If an operation returns an error sentinel, both runtimes try to look up the ECE
 `error` procedure, put the sentinel message and irritants into `argl`, put the
 procedure into `proc`, switch to the error procedure's code object, and continue
-there.
+there. In the current CL executor, this sentinel bridge exists on the `assign`
+operation path. In the WASM executor, the bridge also exists for `test` and
+`perform`.
 
 ### `test`
 
@@ -129,6 +131,10 @@ operation result. Generated code uses predicate-style machine operations here,
 such as `false?`, `primitive-procedure?`, `continuation?`, and `parameter?`.
 In CL these predicates return host booleans. In WASM, the flag is true unless
 the operation result is Scheme `#f`.
+
+The current CL executor does not bridge error sentinels from `test`; generated
+code uses predicate operations that should not produce sentinels. The WASM
+executor does bridge a sentinel result from `test` to ECE `error`.
 
 ### `branch`
 
@@ -195,7 +201,9 @@ malformed instruction stream can underflow the stack.
 ordinary result. It is used for effects such as mutation, definition, and
 continuation winding.
 
-Error sentinels are bridged to ECE `error` the same way as `assign` and `test`.
+The current CL executor discards the operation result without checking for an
+error sentinel. The WASM executor bridges a sentinel result from `perform` to
+ECE `error`.
 
 ### `halt`
 
