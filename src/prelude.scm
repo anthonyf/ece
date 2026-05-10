@@ -449,8 +449,8 @@
                                      (documentation/doc-field doc :see-also '())))))
 
 (define (set-documentation! name kind doc . options)
-  (let* ((module (documentation/option options :module #f))
-         (entry (documentation/make-entry name kind doc options))
+  (let* ((entry (documentation/make-entry name kind doc options))
+         (module (hash-ref entry :module #f))
          (table (documentation/kind-table kind)))
     (hash-set! table (documentation/key name module) entry)
     entry))

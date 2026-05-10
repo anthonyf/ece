@@ -41,6 +41,31 @@
   (assert-equal (hash-ref entry :generated?) #t)
   (assert-equal (hash-ref entry :examples) '((doc-structured-sample)))))
 
+(test "documentation lookup honors module keys" (lambda ()
+  (set-documentation! 'doc-module-option-sample
+                      'procedure
+                      "Option module summary."
+                      :module 'doc-module-a)
+  (set-documentation! 'doc-module-structured-sample
+                      'value
+                      (hash-table :summary "Structured module summary."
+                                  :module 'doc-module-b))
+  (assert-equal (documentation 'doc-module-option-sample :kind 'procedure) #f)
+  (assert-equal (documentation 'doc-module-option-sample
+                               :kind 'procedure
+                               :module 'doc-module-a)
+                "Option module summary.")
+  (assert-equal (documentation 'doc-module-structured-sample :kind 'value) #f)
+  (assert-equal (documentation 'doc-module-structured-sample
+                               :kind 'value
+                               :module 'doc-module-b)
+                "Structured module summary.")
+  (assert-equal (hash-ref (documentation-entry 'doc-module-structured-sample
+                                               :kind 'value
+                                               :module 'doc-module-b)
+                          :module)
+                'doc-module-b)))
+
 (test "documentation lookup returns #f for missing entries" (lambda ()
   (assert-equal (documentation 'doc-missing-sample :kind 'procedure) #f)
   (assert-equal (documentation-signature 'doc-missing-sample :kind 'procedure) #f)
