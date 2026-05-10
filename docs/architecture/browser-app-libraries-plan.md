@@ -144,7 +144,7 @@ Example:
 
 ## Phase 4 - Template and Sandbox Reduction
 
-Status: in progress.
+Status: shipped in PRs #237 and #239.
 
 - Reduce `templates/web-app/index.html` to runtime boot, one app root, and one
   output/log root.
@@ -186,6 +186,9 @@ Example:
 ```
 
 ## Open Questions
+
+The browser app library/template/sandbox reduction plan is complete. These
+questions are follow-up design items rather than blockers for that plan.
 
 - Macro exports are not a full module-system feature yet. Phase 1 installs the
   `html` macro during bootstrap, while the module exports testable renderer
