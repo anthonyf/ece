@@ -556,7 +556,8 @@ the path-join of *walker-tmp-dir* is a subdir."
                (crlf-crlf (string-append crlf crlf))
                (raw (string-append "GET / HTTP/1.1" crlf-crlf))
                (req (http-parse-request raw))
-               (resp (ece-serve/dispatch req)))
+               (resp-bytes (ece-serve/dispatch req))
+               (resp (ascii-bytes->string resp-bytes)))
           (assert-true (starts-with? resp (string-append "HTTP/1.1 200 OK" crlf)))
           (assert-true
            (string-contains?
@@ -591,7 +592,8 @@ the path-join of *walker-tmp-dir* is a subdir."
                      "GET /__ece_dev/artifacts/app.ecec HTTP/1.1"
                      crlf-crlf))
                (req (http-parse-request raw))
-               (resp (ece-serve/dispatch req)))
+               (resp-bytes (ece-serve/dispatch req))
+               (resp (ascii-bytes->string resp-bytes)))
           (assert-true
            (starts-with? resp (string-append "HTTP/1.1 200 OK" crlf)))
           (assert-true (string-contains? resp "Cache-Control: no-store"))
@@ -727,7 +729,8 @@ the path-join of *walker-tmp-dir* is a subdir."
          (crlf-crlf (string-append crlf crlf))
          (raw (string-append "GET /index.html?v=42 HTTP/1.1" crlf-crlf))
          (req (http-parse-request raw))
-         (resp (ece-serve/dispatch req)))
+         (resp-bytes (ece-serve/dispatch req))
+         (resp (ascii-bytes->string resp-bytes)))
     (assert-true (starts-with? resp (string-append "HTTP/1.1 200 OK" crlf))))))
 
 (test "ece-serve/dispatch: path traversal attempt returns 400" (lambda ()

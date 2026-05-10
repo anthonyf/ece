@@ -3759,6 +3759,11 @@ defun's archive key."
              ece::*archive-zone-fns*)
     inv))
 
+(defun archive-zone-unit-id-p (value)
+  "Return true for unit ids used in archive native-zone registry keys."
+  (or (symbolp value)
+      (ece::module-unit-id-p value)))
+
 (defvar *compiled-zone-manifest-read-eval-fired* nil)
 
 (defun write-compiled-zone-manifest-test-file (path contents)
@@ -3817,12 +3822,12 @@ defun's archive key."
                  (maphash (lambda (key fn)
                             (declare (ignore fn))
                             (unless (and (consp key)
-                                         (symbolp (car key))
+                                         (archive-zone-unit-id-p (car key))
                                          (integerp (cdr key)))
                               (setf bad-key key)))
                           ece::*archive-zone-fns*)
                  (ok (null bad-key)
-                     "archive zone keys have (unit-id-symbol . index-integer) shape"))
+                     "archive zone keys have (unit-id . index-integer) shape"))
                ;; The first assembler code-object is stable and should be
                ;; emitted as zone-assembler-0 inside the assembler shard.
                (let ((sym (find-symbol "ZONE-ASSEMBLER-0" :ece)))
