@@ -7,16 +7,18 @@
   <style>
     * { box-sizing: border-box; }
     html, body { margin: 0; min-height: 100%; background: #101014; color: #f4f4f5; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-    main { display: grid; grid-template-rows: 1fr 160px; min-height: 100vh; }
+    body { display: grid; grid-template-rows: 1fr 160px; min-height: 100vh; }
+    #app-root { min-height: 0; }
+    main { display: grid; grid-template-rows: 1fr auto; min-height: 100%; }
     canvas { display: block; width: 100%; height: 100%; background: #050507; }
+    .hud { padding: 12px; border-top: 1px solid #33333d; background: #15151a; }
+    .hud p { margin: 0; }
     pre { margin: 0; padding: 12px; overflow: auto; border-top: 1px solid #33333d; background: #18181d; white-space: pre-wrap; }
   </style>
 </head>
 <body>
-  <main>
-    <canvas id="app-canvas"></canvas>
-    <pre id="output"></pre>
-  </main>
+  <div id="app-root"></div>
+  <pre id="output"></pre>
 
   <script src="ece-runtime.js"></script>
   <script>
