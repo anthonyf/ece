@@ -42,7 +42,7 @@ Example:
 
 ## Phase 2 - Canvas Module
 
-Status: in progress.
+Status: shipped in PR #232.
 
 - Add `(ece browser canvas)` as the public home for canvas functions.
 - Keep compatibility aliases for current global `canvas-*` helpers while
@@ -69,6 +69,8 @@ module exports the existing `canvas-*` names plus shorter aliases for new code:
 
 ## Phase 3 - Runtime Service Modules
 
+Status: in progress.
+
 - Identify reusable browser services already implemented in ECE:
   scheduler, dev reload policy, JSON/websocket codec helpers, and wasm host
   resource helpers.
@@ -76,6 +78,25 @@ module exports the existing `canvas-*` names plus shorter aliases for new code:
   boundaries.
 - Keep transport ownership clear: JavaScript owns the socket capability; ECE
   owns message policy and app behavior.
+
+First slice:
+
+- Add `(ece browser dev)` as the public home for live update policy.
+- Keep WebSocket ownership in JavaScript and expose the ECE source-update
+  handler through `handle-source-update`.
+- Keep compatibility exports for the current global
+  `browser-dev-client-*` helper names while app and template code migrates.
+
+Example:
+
+```scheme
+(define-module (game dev-hooks)
+  (import (ece browser dev))
+  (export apply-source-update)
+
+  (define (apply-source-update path source)
+    (handle-source-update path source)))
+```
 
 ## Phase 4 - Template and Sandbox Reduction
 
