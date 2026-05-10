@@ -352,6 +352,12 @@ cd test-game
 ece-serve main.scm --port 8080
 ```
 
+The generated `index.html` is intentionally small: it contains the runtime boot
+script, an `#app-root` node, and an `#output` log node. The generated
+`main.scm` is an `(app main)` module that imports the browser DOM/HTML modules,
+renders the app shell from ECE code, exports `start` and `tick`, and calls
+`start` when the bundle loads.
+
 Open the served page in a browser, then use `M-x geiser-ece-dev-connect-repl`.
 Press RET for the default `127.0.0.1:8080`, or enter another `host:port` / URL.
 Emacs asks `ece-serve` for local session metadata, then reads the protected
