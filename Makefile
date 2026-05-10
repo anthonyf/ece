@@ -8,7 +8,7 @@ SHARE_FILES := \
 	bootstrap/bootstrap.ecec \
 	wasm/runtime.wasm \
 	wasm/glue.js \
-	src/sdk-lib.scm src/ece-main.scm src/ece-unit.scm src/ece-build.scm src/ece-test.scm src/ece-serve.scm src/geiser-ece.scm src/http-codec.scm src/websocket-codec.scm src/json.scm src/scheduler.scm src/sha1.scm src/base64.scm src/wasm-host.scm src/codegen-wasm-zone.scm src/browser-lib.scm src/browser-dom.scm src/browser-html.scm
+	src/sdk-lib.scm src/ece-main.scm src/ece-unit.scm src/ece-build.scm src/ece-test.scm src/ece-serve.scm src/geiser-ece.scm src/http-codec.scm src/websocket-codec.scm src/json.scm src/scheduler.scm src/sha1.scm src/base64.scm src/wasm-host.scm src/codegen-wasm-zone.scm src/browser-lib.scm src/browser-dom.scm src/browser-html.scm src/browser-canvas.scm
 
 # Default target: build the ece binary and ECE bundles so in-tree dev works.
 all: ece
@@ -29,11 +29,11 @@ bin/ece: scripts/build-ece-binary.lisp bootstrap/bootstrap.ecec share/ece/ece-ma
 bin/ece-repl bin/ece-build bin/ece-test bin/ece-serve: bin/ece
 	@ln -sf ece $@
 
-share/ece/ece-main.ecec: src/sdk-lib.scm src/ece-main.scm src/ece-unit.scm src/base64.scm src/sha1.scm src/scheduler.scm src/http-codec.scm src/websocket-codec.scm src/json.scm src/wasm-host.scm src/codegen-wasm-zone.scm src/browser-lib.scm src/browser-dom.scm src/browser-html.scm src/ece-build.scm src/ece-test.scm src/ece-serve.scm src/geiser-ece.scm bootstrap/bootstrap.ecec wasm/runtime.wasm wasm/glue.js | .qlot/qlot.conf
+share/ece/ece-main.ecec: src/sdk-lib.scm src/ece-main.scm src/ece-unit.scm src/base64.scm src/sha1.scm src/scheduler.scm src/http-codec.scm src/websocket-codec.scm src/json.scm src/wasm-host.scm src/codegen-wasm-zone.scm src/browser-lib.scm src/browser-dom.scm src/browser-html.scm src/browser-canvas.scm src/ece-build.scm src/ece-test.scm src/ece-serve.scm src/geiser-ece.scm bootstrap/bootstrap.ecec wasm/runtime.wasm wasm/glue.js | .qlot/qlot.conf
 	@mkdir -p share/ece/templates
 	qlot exec sbcl --dynamic-space-size 4096 --non-interactive --disable-debugger \
 	  --eval '(asdf:load-system :ece)' \
-	  --eval '(ece:evaluate (list (intern "compile-system" :ece) (quote (quote ("src/sdk-lib.scm" "src/ece-unit.scm" "src/base64.scm" "src/sha1.scm" "src/scheduler.scm" "src/http-codec.scm" "src/websocket-codec.scm" "src/json.scm" "src/wasm-host.scm" "src/codegen-wasm-zone.scm" "src/browser-lib.scm" "src/browser-dom.scm" "src/browser-html.scm" "src/ece-main.scm" "src/ece-build.scm" "src/ece-test.scm" "src/ece-serve.scm" "src/geiser-ece.scm"))) "share/ece/ece-main.ecec"))' \
+	  --eval '(ece:evaluate (list (intern "compile-system" :ece) (quote (quote ("src/sdk-lib.scm" "src/ece-unit.scm" "src/base64.scm" "src/sha1.scm" "src/scheduler.scm" "src/http-codec.scm" "src/websocket-codec.scm" "src/json.scm" "src/wasm-host.scm" "src/codegen-wasm-zone.scm" "src/browser-lib.scm" "src/browser-dom.scm" "src/browser-html.scm" "src/browser-canvas.scm" "src/ece-main.scm" "src/ece-build.scm" "src/ece-test.scm" "src/ece-serve.scm" "src/geiser-ece.scm"))) "share/ece/ece-main.ecec"))' \
 	  --quit
 	@# Stage the other share/ece/ files so in-tree `bin/ece` works
 	@cp bootstrap/bootstrap.ecec share/ece/bootstrap.ecec
@@ -75,6 +75,7 @@ install: ece
 	install -m 644 src/browser-lib.scm $(DESTDIR)$(PREFIX)/share/ece/browser-lib.scm
 	install -m 644 src/browser-dom.scm $(DESTDIR)$(PREFIX)/share/ece/browser-dom.scm
 	install -m 644 src/browser-html.scm $(DESTDIR)$(PREFIX)/share/ece/browser-html.scm
+	install -m 644 src/browser-canvas.scm $(DESTDIR)$(PREFIX)/share/ece/browser-canvas.scm
 	cp -R share/ece/templates/web $(DESTDIR)$(PREFIX)/share/ece/templates/web
 	cp -R share/ece/templates/cl $(DESTDIR)$(PREFIX)/share/ece/templates/cl
 	cp -R share/ece/templates/web-app $(DESTDIR)$(PREFIX)/share/ece/templates/web-app
@@ -117,7 +118,7 @@ TEST_OUTPUT_DIR := .tmp/test-output
 BOOTSTRAP_DIR := bootstrap
 BOOTSTRAP_ZONE_DIR := .tmp/bootstrap-zones
 BOOTSTRAP_ZONE_MANIFEST := $(BOOTSTRAP_ZONE_DIR)/manifest.sexp
-BOOTSTRAP_SRCS := src/boot-env.scm src/prelude.scm src/compiler.scm src/reader.scm src/assembler.scm src/compilation-unit.scm src/syntax-rules.scm src/browser-lib.scm src/browser-dom.scm src/browser-html.scm src/wasm-host.scm src/disassemble.scm
+BOOTSTRAP_SRCS := src/boot-env.scm src/prelude.scm src/compiler.scm src/reader.scm src/assembler.scm src/compilation-unit.scm src/syntax-rules.scm src/browser-lib.scm src/browser-dom.scm src/browser-html.scm src/browser-canvas.scm src/wasm-host.scm src/disassemble.scm
 
 GOLDEN_SRCS := $(wildcard tests/golden/*.scm)
 
@@ -342,7 +343,7 @@ $(BOOTSTRAP_DIR)/bootstrap.ecec: $(BOOTSTRAP_SRCS) $(BOOTSTRAP_DIR)/primitives-a
 	qlot exec sbcl --dynamic-space-size 4096 --eval '(asdf:load-system :ece)' \
 	  --eval '(in-package :ece)' \
 	  --eval '(evaluate (list (quote eval) (list (quote read) (list (quote open-input-string) "(load \"src/compilation-unit.scm\")"))))' \
-	  --eval '(evaluate (list (quote eval) (list (quote read) (list (quote open-input-string) "(compile-system (quote (\"src/boot-env.scm\" \"src/prelude.scm\" \"src/compiler.scm\" \"src/reader.scm\" \"src/assembler.scm\" \"src/compilation-unit.scm\" \"src/syntax-rules.scm\" \"src/browser-lib.scm\" \"src/browser-dom.scm\" \"src/browser-html.scm\" \"src/wasm-host.scm\" \"src/disassemble.scm\")) \"bootstrap/bootstrap.ecec\")"))))' \
+	  --eval '(evaluate (list (quote eval) (list (quote read) (list (quote open-input-string) "(compile-system (quote (\"src/boot-env.scm\" \"src/prelude.scm\" \"src/compiler.scm\" \"src/reader.scm\" \"src/assembler.scm\" \"src/compilation-unit.scm\" \"src/syntax-rules.scm\" \"src/browser-lib.scm\" \"src/browser-dom.scm\" \"src/browser-html.scm\" \"src/browser-canvas.scm\" \"src/wasm-host.scm\" \"src/disassemble.scm\")) \"bootstrap/bootstrap.ecec\")"))))' \
 	  --quit
 	@echo "Bootstrap bundle regenerated: $(BOOTSTRAP_DIR)/bootstrap.ecec"
 	@# Zones compiled against the old bootstrap.ecec have PC layouts that
