@@ -337,6 +337,13 @@ and configures the Emacs dev commands. Open the browser with:
 M-x geiser-ece-dev-open-browser
 ```
 
+For a Figwheel-style workflow that starts the server, opens the browser, and
+opens a REPL buffer that evaluates in the browser runtime, use:
+
+```elisp
+M-x geiser-ece-dev-start-repl
+```
+
 Create a minimal app-local web skeleton:
 
 ```sh
@@ -345,20 +352,27 @@ cd test-game
 ece-serve main.scm --port 8080
 ```
 
-Then use `M-x geiser-ece-dev-connect`. Press RET for the default
-`127.0.0.1:8080`, or enter another `host:port` / URL. Emacs asks `ece-serve`
-for local session metadata, then reads the protected session file for the token
-so you do not need to paste it. In
+Open the served page in a browser, then use `M-x geiser-ece-dev-connect-repl`.
+Press RET for the default `127.0.0.1:8080`, or enter another `host:port` / URL.
+Emacs asks `ece-serve` for local session metadata, then reads the protected
+session file for the token so you do not need to paste it. The REPL prompt is
+`ece-dev>` and each form is evaluated in the connected browser runtime.
+
+You can also run `M-x geiser-ece-dev-connect` when you only want the editor
+commands without opening the REPL. In
 `geiser-ece-dev-mode`, the `C-c C-z` prefix sends code to the running browser:
 
 | Key | Command |
 | --- | --- |
 | `C-c C-z S` | Start `ece-serve` for an entry file and capture URL/token |
+| `C-c C-z R` | Start `ece-serve`, open the browser, and open the browser REPL |
 | `C-c C-z K` | Stop the managed `ece-serve` process |
 | `C-c C-z a` | Attach to an existing `ece-serve` session file |
 | `C-c C-z c` | Connect to `ece-serve` by host and port |
+| `C-c C-z C` | Connect to `ece-serve` by host and port, then open the browser REPL |
 | `C-c C-z o` | Open the configured browser URL |
 | `C-c C-z ?` | Show the configured URL and token status |
+| `C-c C-z z` | Open the browser REPL for the current dev connection |
 | `C-c C-z e` | Evaluate the expression before point in the browser |
 | `C-c C-z d` | Evaluate the current definition in the browser |
 | `C-c C-z r` | Evaluate the active region in the browser |
