@@ -149,7 +149,7 @@ Nested code-object constants are rewritten to `(co-ref N)` on disk. Loading is t
 1. Allocate all code objects and populate metadata and labels.
 2. Patch `(const (co-ref N))` operands back to live code-object references, push instructions, and rebuild resolved instructions.
 
-`compile-system` writes one archive section per input source file and concatenates them into a bundle. The bootstrap bundle is built from `src/boot-env.scm`, `src/prelude.scm`, `src/compiler.scm`, `src/reader.scm`, `src/assembler.scm`, `src/compilation-unit.scm`, `src/syntax-rules.scm`, `src/scheduler.scm`, `src/scheduler-module.scm`, `src/browser-lib.scm`, `src/browser-dom.scm`, `src/browser-html.scm`, `src/browser-canvas.scm`, `src/browser-dev.scm`, `src/wasm-host.scm`, and `src/disassemble.scm`.
+`compile-system` writes one archive section per input source file and concatenates them into a bundle. The bootstrap bundle is built from `src/boot-env.scm`, `src/prelude.scm`, `src/compiler.scm`, `src/reader.scm`, `src/assembler.scm`, `src/compilation-unit.scm`, `src/syntax-rules.scm`, `src/scheduler.scm`, `src/scheduler-module.scm`, `src/json.scm`, `src/json-module.scm`, `src/browser-lib.scm`, `src/browser-dom.scm`, `src/browser-html.scm`, `src/browser-canvas.scm`, `src/browser-dev.scm`, `src/wasm-host.scm`, and `src/disassemble.scm`.
 
 ## Environments and Globals
 

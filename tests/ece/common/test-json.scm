@@ -80,6 +80,14 @@
   (assert-equal (json-encode '("hello" 42 #t))
                 "[\"hello\",42,true]")))
 
+(test "json: unsupported values raise a JSON encoder error" (lambda ()
+  (let ((message
+         (guard (e ((error-object? e) (error-object-message e)))
+           (json-encode (vector 1 2 3))
+           #f)))
+    (assert-true (string? message))
+    (assert-true (string-contains? message "json-encode: unsupported value type")))))
+
 ;; ── Objects ────────────────────────────────────────────────────────────
 
 (test "json: single-key object" (lambda ()
