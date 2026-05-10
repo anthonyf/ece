@@ -95,6 +95,17 @@ Second slice:
 - Include the scheduler module in bootstrap so browser apps can import it
   without adding JavaScript glue.
 
+Third slice:
+
+- Add `(ece json)` as the public home for JSON encoder helpers and dev-server
+  envelope builders.
+- Include the JSON module in bootstrap so browser apps can encode small data
+  payloads without JavaScript helpers.
+- Add `(ece websocket codec)` as the public home for the server-side RFC 6455
+  frame codec used by `ece-serve`.
+- Keep existing global codec names for compatibility while server code
+  migrates toward imports.
+
 Example:
 
 ```scheme
@@ -118,6 +129,17 @@ Example:
           ;; Game fibers can coordinate through wait-for/notify events.
           (wait-for sched 'frame)))
       sched)))
+```
+
+```scheme
+(define-module (game state)
+  (import (ece json))
+  (export encode-state)
+
+  (define (encode-state score lives)
+    (json-encode-object
+     (list (cons "score" score)
+           (cons "lives" lives)))))
 ```
 
 ## Phase 4 - Template and Sandbox Reduction

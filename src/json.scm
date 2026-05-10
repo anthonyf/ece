@@ -108,7 +108,7 @@ that isn't worth resolving in a dev-server JSON encoder."
         (json-encode-array v)))
    (else
     (error (string-append "json-encode: unsupported value type — "
-                          (write-to-string-safe v))))))
+                          (write-to-string-flat v))))))
 
 (define (%json-looks-like-alist? v)
   "Test whether V's first element is a pair (dotted or proper) whose
