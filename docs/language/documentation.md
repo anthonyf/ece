@@ -91,7 +91,7 @@ Lookup options should eventually support explicit `:kind` and `:module`. When a
 kind is omitted, lookup should search in this order:
 
 ```scheme
-(procedure syntax macro value record module)
+'(procedure syntax macro value record module)
 ```
 
 The first implementation can support only the options needed by its tests, but
