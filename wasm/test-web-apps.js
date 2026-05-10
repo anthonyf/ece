@@ -93,6 +93,32 @@ async function run() {
     "web-app main renders from an ECE app module",
     "web-app main is not module-shaped ECE rendering code");
 
+  const canvasDemos = [
+    "game-loop.scm",
+    "sierpinski-triangle.scm",
+    "starfield.scm",
+    "analog-clock.scm",
+    "mandelbrot.scm",
+    "plasma.scm"
+  ];
+  function hasFormContaining(source, head, bodyPattern) {
+    const compact = source.replace(/\s+/g, " ");
+    const index = compact.indexOf(head);
+    if (index < 0) return false;
+    const end = compact.indexOf(")", index);
+    return end >= 0 && bodyPattern.test(compact.slice(index, end + 1));
+  }
+  check(
+    canvasDemos.every((file) => {
+      const source = fs.readFileSync(path.join(SANDBOX_DIR, "programs", file), "utf8");
+      return /\(define-module\s+\(sandbox\s+/.test(source) &&
+        hasFormContaining(source, "(import", /\(ece browser canvas\)/) &&
+        hasFormContaining(source, "(export", /\bstart\b/) &&
+        source.includes("(start)");
+    }),
+    "canvas sandbox demos import the browser canvas module",
+    "one or more canvas sandbox demos still use unscoped global canvas code");
+
   // --- Test 3: WASM instantiation with full imports ---
   const wasmBytes = fs.readFileSync(path.join(ROOT, "wasm", "runtime.wasm"));
   const imports = {

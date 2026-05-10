@@ -358,6 +358,10 @@ script, an `#app-root` node, and an `#output` log node. The generated
 renders the app shell from ECE code, exports `start` and `tick`, and calls
 `start` when the bundle loads.
 
+The browser sandbox demos follow the same direction: canvas demos are ordinary
+ECE modules that import `(ece browser canvas)`, export `start`, and auto-start
+when loaded.
+
 Open the served page in a browser, then use `M-x geiser-ece-dev-connect-repl`.
 Press RET for the default `127.0.0.1:8080`, or enter another `host:port` / URL.
 Emacs asks `ece-serve` for local session metadata, then reads the protected

@@ -160,6 +160,13 @@ First slice:
   `(ece browser html)`, exports `start` and `tick`, and calls `start` when the
   bundle loads.
 
+Second slice:
+
+- Convert the canvas-oriented sandbox demos into `(sandbox ...)` modules.
+- Import `(ece browser canvas)` explicitly from each migrated demo.
+- Preserve the current sandbox Run behavior by exporting `start` and invoking it
+  when the demo source loads.
+
 Example:
 
 ```scheme
