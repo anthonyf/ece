@@ -87,6 +87,14 @@ First slice:
 - Keep compatibility exports for the current global
   `browser-dev-client-*` helper names while app and template code migrates.
 
+Second slice:
+
+- Add `(ece scheduler)` as the public home for cooperative scheduler APIs.
+- Keep the existing global scheduler names for compatibility with `ece-serve`
+  and tests.
+- Include the scheduler module in bootstrap so browser apps can import it
+  without adding JavaScript glue.
+
 Example:
 
 ```scheme
@@ -96,6 +104,20 @@ Example:
 
   (define (apply-source-update path source)
     (handle-source-update path source)))
+```
+
+```scheme
+(define-module (game loop)
+  (import (ece scheduler))
+  (export start)
+
+  (define (start)
+    (let ((sched (make-scheduler)))
+      (scheduler-spawn! sched
+        (lambda ()
+          ;; Game fibers can coordinate through wait-for/notify events.
+          (wait-for sched 'frame)))
+      sched)))
 ```
 
 ## Phase 4 - Template and Sandbox Reduction
