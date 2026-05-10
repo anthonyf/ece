@@ -10,6 +10,8 @@ here are the longer-lived references, design notes, and contributor guides.
   broad tour of the current language, compiler, archive, and runtime design.
 - [`vm/specification.md`](vm/specification.md) is the VM reference: registers,
   instruction encoding, opcode behavior, operands, and machine operations.
+- [`language/documentation.md`](language/documentation.md) describes the
+  planned runtime documentation metadata system and phased rollout.
 - [`architecture/save-restore-compatibility.md`](architecture/save-restore-compatibility.md)
   documents the save/restore compatibility boundary for serialized values and
   continuations.
