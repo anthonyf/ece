@@ -449,6 +449,10 @@ and the legacy `eldoc-documentation-function' API."
     (dolist (callback callbacks)
       (funcall callback))))
 
+(defun geiser-ece--dev-clear-ready-callbacks ()
+  "Clear callbacks waiting for ece-serve startup."
+  (setq geiser-ece-dev--ready-callbacks nil))
+
 (defun geiser-ece--dev-after-ready (callback)
   "Run CALLBACK when ece-serve connection settings are ready."
   (if geiser-ece-dev--server-ready
@@ -555,7 +559,9 @@ and the legacy `eldoc-documentation-function' API."
   "Report ece-serve PROC lifecycle EVENT."
   (unless (process-live-p proc)
     (when (eq proc geiser-ece-dev--server-process)
-      (setq geiser-ece-dev--server-process nil))
+      (setq geiser-ece-dev--server-process nil)
+      (unless geiser-ece-dev--server-ready
+        (geiser-ece--dev-clear-ready-callbacks)))
     (unless (string= event "finished\n")
       (message "ECE dev server exited: %s" (string-trim event)))))
 
@@ -698,8 +704,7 @@ ask ece-serve to return the browser eval result/error JSON."
   "REPL mode for evaluating ECE forms in the browser through ece-serve."
   (setq-local comint-prompt-regexp "^ece-dev> ")
   (setq-local comint-input-sender #'geiser-ece--dev-repl-input-sender)
-  (setq-local comint-process-echoes nil)
-  (geiser-ece-dev-mode 1))
+  (setq-local comint-process-echoes nil))
 
 (defun geiser-ece--dev-repl-process (buffer)
   "Create the backing process for browser dev REPL BUFFER."
@@ -822,21 +827,25 @@ ask ece-serve to return the browser eval result/error JSON."
                    (delq nil (list default-directory git-root)))))
       (catch 'found
         (dolist (root roots)
-          (let ((direct (expand-file-name
-                         (concat ".tmp/ece-serve-sessions/" file-name)
-                         root)))
-            (when (file-readable-p direct)
-              (throw 'found direct)))
-          (when (file-directory-p root)
-            (dolist (path (directory-files-recursively
-                           root
-                           (concat "\\`" (regexp-quote file-name) "\\'")))
-              (when (and (file-readable-p path)
-                         (string-match-p
-                          (regexp-quote ".tmp/ece-serve-sessions")
-                          path))
+          (dolist (dir (geiser-ece--dev-session-search-dirs root))
+            (let ((path (expand-file-name file-name dir)))
+              (when (file-readable-p path)
                 (throw 'found path)))))
         nil))))
+
+(defun geiser-ece--dev-session-search-dirs (root)
+  "Return bounded app-local session directories under ROOT."
+  (let ((direct (expand-file-name ".tmp/ece-serve-sessions" root))
+        (dirs '()))
+    (when (file-directory-p direct)
+      (push direct dirs))
+    (when (file-directory-p root)
+      (dolist (entry (ignore-errors (directory-files root t "\\`[^.]")))
+        (let ((candidate
+               (expand-file-name ".tmp/ece-serve-sessions" entry)))
+          (when (file-directory-p candidate)
+            (push candidate dirs)))))
+    (delete-dups (nreverse dirs))))
 
 (defun geiser-ece--dev-normalize-session (session source)
   "Validate and return ece-serve attach SESSION from SOURCE."
@@ -1090,6 +1099,7 @@ parsed from its startup output."
       (setq geiser-ece-dev--pending-token nil)
       (setq geiser-ece-dev--startup-output nil)
       (setq geiser-ece-dev--server-ready nil)
+      (geiser-ece--dev-clear-ready-callbacks)
       (setq geiser-ece-dev--source-buffer (current-buffer))
       (with-current-buffer buffer
         (let ((inhibit-read-only t))
@@ -1133,6 +1143,8 @@ after ece-serve reports its dev URL and token."
       (progn
         (delete-process geiser-ece-dev--server-process)
         (setq geiser-ece-dev--server-process nil)
+        (unless geiser-ece-dev--server-ready
+          (geiser-ece--dev-clear-ready-callbacks))
         (message "Stopped ece-serve"))
     (message "No managed ece-serve process is running")))
 
