@@ -390,6 +390,120 @@
     (hash-set! new key val)
     new))
 
+;; ---- Documentation metadata ----
+;; Runtime documentation is stored as structured ECE data. Authoring forms may
+;; accept plain strings, but registry entries are always hash tables.
+
+(define *documentation-registry* (%make-hash-table))
+(define *documentation-kind-order* '(procedure value macro syntax record module))
+
+(define (documentation/option options key default)
+  (cond
+    ((null? options) default)
+    ((eq? (car options) key)
+     (if (null? (cdr options)) default (car (cdr options))))
+    ((null? (cdr options)) default)
+    (else (documentation/option (cdr (cdr options)) key default))))
+
+(define (documentation/key name module)
+  (string->symbol (write-to-string-flat (list module name))))
+
+(define (documentation/kind-table kind)
+  (let ((table (hash-ref *documentation-registry* kind #f)))
+    (if table
+        table
+        (let ((new-table (%make-hash-table)))
+          (hash-set! *documentation-registry* kind new-table)
+          new-table))))
+
+(define (documentation/doc-field doc key default)
+  (if (and (hash-table? doc) (hash-has-key? doc key))
+      (hash-ref doc key)
+      default))
+
+(define (documentation/make-entry name kind doc options)
+  (let ((summary (cond
+                   ((string? doc) doc)
+                   ((hash-table? doc) (documentation/doc-field doc :summary #f))
+                   (else (error "documentation must be a string or hash table")))))
+    (hash-table
+     :name name
+     :kind kind
+     :summary (documentation/option options
+                                    :summary
+                                    summary)
+     :signature (documentation/option options
+                                      :signature
+                                      (documentation/doc-field doc :signature #f))
+     :module (documentation/option options
+                                   :module
+                                   (documentation/doc-field doc :module #f))
+     :generated? (documentation/option options
+                                       :generated?
+                                       (documentation/doc-field doc :generated? #f))
+     :examples (documentation/option options
+                                     :examples
+                                     (documentation/doc-field doc :examples '()))
+     :see-also (documentation/option options
+                                     :see-also
+                                     (documentation/doc-field doc :see-also '())))))
+
+(define (set-documentation! name kind doc . options)
+  (let* ((module (documentation/option options :module #f))
+         (entry (documentation/make-entry name kind doc options))
+         (table (documentation/kind-table kind)))
+    (hash-set! table (documentation/key name module) entry)
+    entry))
+
+(define (documentation/lookup name kind module)
+  (let ((table (hash-ref *documentation-registry* kind #f)))
+    (if table
+        (hash-ref table (documentation/key name module) #f)
+        #f)))
+
+(define (documentation/search-kinds name kinds module)
+  (if (null? kinds)
+      #f
+      (let ((entry (documentation/lookup name (car kinds) module)))
+        (if entry
+            entry
+            (documentation/search-kinds name (cdr kinds) module)))))
+
+(define (documentation-entry name . options)
+  (let ((kind (documentation/option options :kind #f))
+        (module (documentation/option options :module #f)))
+    (if kind
+        (documentation/lookup name kind module)
+        (documentation/search-kinds name *documentation-kind-order* module))))
+
+(define (documentation name . options)
+  (let ((entry (apply documentation-entry (cons name options))))
+    (if entry
+        (hash-ref entry :summary #f)
+        #f)))
+
+(define (documentation-signature name . options)
+  (let ((entry (apply documentation-entry (cons name options))))
+    (if entry
+        (hash-ref entry :signature #f)
+        #f)))
+
+(define-macro (define/doc spec doc . body)
+  (define (definition-value exprs)
+    (if (null? (cdr exprs))
+        (car exprs)
+        `(begin ,@exprs)))
+  (if (pair? spec)
+      (let ((name (car spec)))
+        `(begin
+           (define ,spec ,@body)
+           (set-documentation! ',name 'procedure ,doc :signature ',spec)
+           ',name))
+      `(begin
+         (define ,spec ,(definition-value body))
+         (set-documentation! ',spec 'value ,doc :signature ',spec)
+         ',spec)))
+
 ;; make-parameter wrapper: apply optional converter to initial value.
 ;; The raw primitive (ID 88) just stores the value. This wrapper calls
 ;; the converter before passing the result to the primitive.
