@@ -179,15 +179,31 @@
 
 ;; ── Canvas (via FFI) ──
 
+(define *canvas-element-id* "sandbox-canvas")
 (define *canvas-ctx* #f)
 (define *js-math* #f)
+
+(define (canvas-element-id)
+  *canvas-element-id*)
+
+(define (canvas-set-element-id! id)
+  (set! *canvas-element-id* id)
+  (set! *canvas-ctx* #f)
+  id)
+
+(define (canvas-reset-context!)
+  (set! *canvas-ctx* #f)
+  #t)
 
 (define (canvas-ctx)
   (when (not *canvas-ctx*)
     (set! *canvas-ctx*
-          (js-call (get-element-by-id "sandbox-canvas")
+          (js-call (get-element-by-id *canvas-element-id*)
                    "getContext" (js-string "2d"))))
   *canvas-ctx*)
+
+(define (canvas-context)
+  (canvas-ctx))
 
 (define (canvas-clear)
   (let ((ctx (canvas-ctx)))

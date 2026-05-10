@@ -20,7 +20,7 @@ each merge.
 
 ## Phase 1 - HTML and DOM Foundation
 
-Status: in progress.
+Status: shipped in PR #231.
 
 - Add `(ece browser dom)` as a module boundary over the existing DOM FFI helpers.
 - Add `(ece browser html)` with an `(html ...)` convenience macro and pure
@@ -42,11 +42,30 @@ Example:
 
 ## Phase 2 - Canvas Module
 
+Status: in progress.
+
 - Add `(ece browser canvas)` as the public home for canvas functions.
 - Keep compatibility aliases for current global `canvas-*` helpers while
   sandbox apps migrate.
 - Document the expected canvas element id and initialization path.
 - Convert one sandbox program to import/use the module shape.
+
+The default canvas element id remains `sandbox-canvas` for compatibility with
+existing sandbox apps and the web-app template. Apps that use a different id
+should call `(canvas-set-element-id! "my-canvas-id")` before the first drawing
+operation, or `(canvas-reset-context!)` after replacing the canvas node. The
+module exports the existing `canvas-*` names plus shorter aliases for new code:
+
+```scheme
+(define-module (game main)
+  (import (ece browser canvas))
+  (export draw)
+
+  (define (draw)
+    (clear!)
+    (set-fill-color! 50 200 100)
+    (fill-circle! (/ (width) 2) (/ (height) 2) 20)))
+```
 
 ## Phase 3 - Runtime Service Modules
 
