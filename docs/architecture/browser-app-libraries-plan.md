@@ -69,7 +69,7 @@ module exports the existing `canvas-*` names plus shorter aliases for new code:
 
 ## Phase 3 - Runtime Service Modules
 
-Status: in progress.
+Status: shipped in PRs #233, #235, and #236.
 
 - Identify reusable browser services already implemented in ECE:
   scheduler, dev reload policy, JSON/websocket codec helpers, and wasm host
@@ -144,10 +144,39 @@ Example:
 
 ## Phase 4 - Template and Sandbox Reduction
 
+Status: in progress.
+
 - Reduce `templates/web-app/index.html` to runtime boot, one app root, and one
   output/log root.
 - Convert sandbox demos incrementally so app DOM structure is built from ECE.
 - Document browser app structure with small module examples.
+
+First slice:
+
+- Keep `templates/web-app/index.html` as a minimal host page with
+  `#app-root`, `#output`, runtime boot, and dev-server transport.
+- Move the generated app shell and app styling into `templates/web-app/main.scm`.
+- Make the generated app source a module that imports `(ece browser dom)` and
+  `(ece browser html)`, exports `start` and `tick`, and calls `start` when the
+  bundle loads.
+
+Example:
+
+```scheme
+(define-module (app main)
+  (import (ece browser dom)
+          (ece browser html))
+  (export start)
+
+  (define (start)
+    (set-html!
+     (element-by-id "app-root")
+     (html-render-fragment
+      '((:main :class "app-shell"
+         (:canvas :id "sandbox-canvas")
+         (:section :class "hud"
+           (:p "Hello from ECE"))))))))
+```
 
 ## Open Questions
 

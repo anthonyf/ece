@@ -15,6 +15,17 @@ const SANDBOX_DIR = path.join(ROOT, "sandbox");
 async function run() {
   const output = [];
   let failed = 0;
+  let total = 0;
+
+  function check(condition, passMessage, failMessage) {
+    total++;
+    if (condition) {
+      console.log(`PASS: ${passMessage}`);
+    } else {
+      console.log(`FAIL: ${failMessage}`);
+      failed++;
+    }
+  }
 
   // Override I/O to capture output
   ECE.io.display_string = function(len) {
@@ -30,44 +41,57 @@ async function run() {
 
   // --- Test 1: Verify sandbox ece-bootstrap.js uses bundle format ---
   const bootstrapJs = fs.readFileSync(path.join(SANDBOX_DIR, "ece-bootstrap.js"), "utf8");
-  if (bootstrapJs.includes("ECE_BOOTSTRAP_BUNDLE")) {
-    console.log("PASS: ece-bootstrap.js uses ECE_BOOTSTRAP_BUNDLE format");
-  } else {
-    console.log("FAIL: ece-bootstrap.js missing ECE_BOOTSTRAP_BUNDLE (stale per-space format?)");
-    failed++;
-  }
+  check(
+    bootstrapJs.includes("ECE_BOOTSTRAP_BUNDLE"),
+    "ece-bootstrap.js uses ECE_BOOTSTRAP_BUNDLE format",
+    "ece-bootstrap.js missing ECE_BOOTSTRAP_BUNDLE (stale per-space format?)");
 
   // --- Test 2: Verify sandbox.js uses bundle format ---
   const sandboxJs = fs.readFileSync(path.join(SANDBOX_DIR, "sandbox.js"), "utf8");
-  if (sandboxJs.includes("ECE_BOOTSTRAP_BUNDLE") && !sandboxJs.includes("ECE_BOOTSTRAP[")) {
-    console.log("PASS: sandbox.js uses ECE_BOOTSTRAP_BUNDLE (not per-space)");
-  } else {
-    console.log("FAIL: sandbox.js still uses old ECE_BOOTSTRAP[name] format");
-    failed++;
-  }
-  if (sandboxJs.includes("wasm_host: ECE.wasmHost")) {
-    console.log("PASS: sandbox.js provides wasm_host imports");
-  } else {
-    console.log("FAIL: sandbox.js missing wasm_host imports");
-    failed++;
-  }
-  if (sandboxJs.includes("connectDevServer") &&
+  check(
+    sandboxJs.includes("ECE_BOOTSTRAP_BUNDLE") && !sandboxJs.includes("ECE_BOOTSTRAP["),
+    "sandbox.js uses ECE_BOOTSTRAP_BUNDLE (not per-space)",
+    "sandbox.js still uses old ECE_BOOTSTRAP[name] format");
+  check(
+    sandboxJs.includes("wasm_host: ECE.wasmHost"),
+    "sandbox.js provides wasm_host imports",
+    "sandbox.js missing wasm_host imports");
+  check(
+    sandboxJs.includes("connectDevServer") &&
       sandboxJs.includes("browser-dev-client-handle-source-update") &&
       sandboxJs.includes("applyDevServerProgramReload") &&
-      sandboxJs.includes("reloadProgramFromUrls")) {
-    console.log("PASS: sandbox.js has thin dev-server WebSocket bridge");
-  } else {
-    console.log("FAIL: sandbox.js missing dev-server WebSocket bridge");
-    failed++;
-  }
+      sandboxJs.includes("reloadProgramFromUrls"),
+    "sandbox.js has thin dev-server WebSocket bridge",
+    "sandbox.js missing dev-server WebSocket bridge");
 
   const sandboxHtml = fs.readFileSync(path.join(SANDBOX_DIR, "index.html"), "utf8");
-  if (sandboxHtml.includes("window.ECE_DEV_WS_URL = null;")) {
-    console.log("PASS: sandbox index has dev-server URL injection point");
-  } else {
-    console.log("FAIL: sandbox index missing dev-server URL injection point");
-    failed++;
-  }
+  check(
+    sandboxHtml.includes("window.ECE_DEV_WS_URL = null;"),
+    "sandbox index has dev-server URL injection point",
+    "sandbox index missing dev-server URL injection point");
+
+  const webAppIndex = fs.readFileSync(path.join(ROOT, "templates", "web-app", "index.html"), "utf8");
+  check(
+    /<div\b[^>]*\bid=["']app-root["'][^>]*>/i.test(webAppIndex) &&
+      /<pre\b[^>]*\bid=["']output["'][^>]*>/i.test(webAppIndex),
+    "web-app template keeps host roots in index.html",
+    "web-app template missing app/output roots");
+  check(
+    !webAppIndex.includes("app-shell") &&
+      !webAppIndex.includes("sandbox-canvas") &&
+      !/<style\b/i.test(webAppIndex),
+    "web-app index leaves app shell rendering to ECE",
+    "web-app index still contains app shell HTML/CSS");
+
+  const webAppMain = fs.readFileSync(path.join(ROOT, "templates", "web-app", "main.scm"), "utf8");
+  check(
+    webAppMain.includes("(define-module (app main)") &&
+      webAppMain.includes("(import (ece browser dom)") &&
+      webAppMain.includes("(ece browser html)") &&
+      webAppMain.includes("(export start tick)") &&
+      webAppMain.includes("(start)"),
+    "web-app main renders from an ECE app module",
+    "web-app main is not module-shaped ECE rendering code");
 
   // --- Test 3: WASM instantiation with full imports ---
   const wasmBytes = fs.readFileSync(path.join(ROOT, "wasm", "runtime.wasm"));
@@ -85,10 +109,9 @@ async function run() {
   try {
     const { instance } = await WebAssembly.instantiate(wasmBytes, imports);
     ECE.wasm = instance.exports;
-    console.log("PASS: WASM instantiated with full imports");
+    check(true, "WASM instantiated with full imports", "WASM instantiation failed");
   } catch(e) {
-    console.log("FAIL: WASM instantiation failed:", e.message);
-    failed++;
+    check(false, "WASM instantiated with full imports", `WASM instantiation failed: ${e.message}`);
     process.exit(1);  // can't continue without WASM
   }
 
@@ -100,10 +123,9 @@ async function run() {
   try {
     ECE.loadArchiveBundle(bootstrapText);
     ECE.wasm.mark_handles();
-    console.log("PASS: Bootstrap loaded via loadArchiveBundle");
+    check(true, "Bootstrap loaded via loadArchiveBundle", "Bootstrap loading failed");
   } catch(e) {
-    console.log("FAIL: Bootstrap loading failed:", e.message);
-    failed++;
+    check(false, "Bootstrap loaded via loadArchiveBundle", `Bootstrap loading failed: ${e.message}`);
     process.exit(1);  // can't continue without bootstrap
   }
 
@@ -115,15 +137,12 @@ async function run() {
     if (!evalStrProc) throw new Error("eval-string not found in environment");
     w.call_ece_proc(evalStrProc, w.h_cons(ECE.makeString('(display "Hello, World!")(newline)'), ECE._hNil));
     const text = output.join("");
-    if (text.includes("Hello, World!")) {
-      console.log("PASS: eval-string produced correct output");
-    } else {
-      console.log("FAIL: eval-string output:", JSON.stringify(text));
-      failed++;
-    }
+    check(
+      text.includes("Hello, World!"),
+      "eval-string produced correct output",
+      `eval-string output: ${JSON.stringify(text)}`);
   } catch(e) {
-    console.log("FAIL: eval-string failed:", e.message);
-    failed++;
+    check(false, "eval-string produced correct output", `eval-string failed: ${e.message}`);
   }
 
   // --- Test 6: browser dev-client source update policy lives in ECE ---
@@ -131,15 +150,12 @@ async function run() {
     const result = ECE.evalStringLast(
       '(browser-dev-client-handle-source-update "probe.scm" "(define *dev-client-probe* 41) (+ *dev-client-probe* 1)")');
     const text = ECE._eceToJs(result);
-    if (text.includes(";; source updated: probe.scm") && text.includes("42")) {
-      console.log("PASS: browser dev-client handles source updates in ECE");
-    } else {
-      console.log("FAIL: browser dev-client result:", JSON.stringify(text));
-      failed++;
-    }
+    check(
+      text.includes(";; source updated: probe.scm") && text.includes("42"),
+      "browser dev-client handles source updates in ECE",
+      `browser dev-client result: ${JSON.stringify(text)}`);
   } catch(e) {
-    console.log("FAIL: browser dev-client source update failed:", e.message);
-    failed++;
+    check(false, "browser dev-client handles source updates in ECE", `browser dev-client source update failed: ${e.message}`);
   }
 
   // --- Test 7: Pre-compiled program loading (same path as sandbox Run with compiled) ---
@@ -152,27 +168,23 @@ async function run() {
       const co = ECE.loadArchiveText(ececText);
       ECE.runCodeObject(co);
       const text = output.join("");
-      if (text.includes("Hello, World!")) {
-        console.log("PASS: Pre-compiled Hello World loaded and ran");
-      } else {
-        console.log("FAIL: Pre-compiled output:", JSON.stringify(text));
-        failed++;
-      }
+      check(
+        text.includes("Hello, World!"),
+        "Pre-compiled Hello World loaded and ran",
+        `Pre-compiled output: ${JSON.stringify(text)}`);
     } catch(e) {
-      console.log("FAIL: Pre-compiled loading failed:", e.message);
-      failed++;
+      check(false, "Pre-compiled Hello World loaded and ran", `Pre-compiled loading failed: ${e.message}`);
     }
   } else {
-    console.log("FAIL: Could not find ECE_COMPILED[\"Hello World\"] in ece-compiled.js");
-    failed++;
+    check(false, "Pre-compiled Hello World loaded and ran", "Could not find ECE_COMPILED[\"Hello World\"] in ece-compiled.js");
   }
 
   // --- Summary ---
   console.log("");
   if (failed === 0) {
-    console.log("Web apps smoke test: 10 passed, 0 failed");
+    console.log(`Web apps smoke test: ${total} passed, 0 failed`);
   } else {
-    console.log(`Web apps smoke test: ${10 - failed} passed, ${failed} failed`);
+    console.log(`Web apps smoke test: ${total - failed} passed, ${failed} failed`);
     process.exit(1);
   }
 }
