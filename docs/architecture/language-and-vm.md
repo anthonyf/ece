@@ -69,6 +69,9 @@ The compiler in [`src/compiler.scm`](../../src/compiler.scm) follows the SICP 5.
 - Main registers are `env`, `proc`, `val`, `argl`, and `continue`; the executor also has `stack` and `flag`.
 - The instruction language uses `assign`, `test`, `branch`, `goto`, `save`, `restore`, `perform`, and `halt`.
 
+For the canonical register, opcode, operand, and machine-operation reference,
+see [`../vm/specification.md`](../vm/specification.md).
+
 Core forms include `quote`, `if`, `lambda`, `begin`, `define`, `set!`/`set`, `apply`, `%raw-call/cc`, `define-macro`, `let-syntax`, `letrec-syntax`, `quasiquote`, and `%global-ref`. Most familiar Scheme forms such as `let`, `let*`, `letrec`, `cond`, `case`, `when`, `unless`, `and`, `or`, `do`, `loop`, `collect`, `parameterize`, `guard`, and `assert` are prelude macros.
 
 Lexical variable access is compiled to `(op lexical-ref)` and `(op lexical-set!)` with `(depth . offset)` coordinates when the variable is found in the compile-time lexical environment. Otherwise variables compile to named lookup or mutation in the environment. Top-level definitions use `define-variable!`, which mutates the first hash-table-backed global frame.
