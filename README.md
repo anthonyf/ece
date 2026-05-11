@@ -153,24 +153,41 @@ ECE's first-class continuations make it well-suited for applications that need c
 
 ## Getting Started
 
-### Install ECE
+### Build and run ECE
 
 **Prerequisites (build-time only):**
 - [SBCL](http://www.sbcl.org/)
 - [qlot](https://github.com/fukamachi/qlot)
 - [binaryen](https://github.com/WebAssembly/binaryen) (`wasm-as`) — for WASM builds
 
-Once installed, `ece` runs without SBCL, qlot, or any other runtime dependency.
+Once built, `ece` runs without SBCL, qlot, or any other runtime dependency.
 
 ```sh
 git clone https://github.com/anthonyf/ece.git
 cd ece
-qlot install     # fetches CL dependencies
-make             # builds bin/ece + staged share/ece/ tree
-make install     # installs to /usr/local
+make             # builds bin/ece + dispatcher symlinks + staged share/ece/ tree
+./bin/ece        # start the REPL from the checkout
 ```
 
-Install to a user-local prefix:
+The default `make` target is build-only: it does not run tests. These commands
+are equivalent for building the in-tree binary:
+
+```sh
+make
+make build
+make ece
+```
+
+On a fresh checkout, the Makefile runs `qlot install` automatically before the
+first target that needs the Common Lisp dependency environment.
+
+Install to `/usr/local`:
+
+```sh
+make install
+```
+
+Or install to a user-local prefix:
 
 ```sh
 make install PREFIX=$HOME/.local
@@ -512,10 +529,14 @@ make site       # builds full site with sandbox + test runner
 
 ### Rebuilding Bootstrap
 
-If you modify the ECE source files (`src/*.scm`), rebuild the bootstrap bundle:
+Normal `make` rebuilds the bootstrap bundle when the binary needs it. Use the
+explicit bootstrap target when you also want to regenerate the native bootstrap
+zones:
 
 ```sh
 make bootstrap
 ```
 
-This boots from the existing `bootstrap/bootstrap.ecec`, recompiles all sources via `compile-system`, and regenerates the single bootstrap bundle.
+This boots from the existing `bootstrap/bootstrap.ecec`, recompiles all sources
+via `compile-system`, regenerates the bootstrap bundle, and refreshes
+`.tmp/bootstrap-zones/`.
