@@ -17,6 +17,9 @@ here are the longer-lived references, design notes, and contributor guides.
   continuations.
 - [`architecture/module-and-archive-plan.md`](architecture/module-and-archive-plan.md)
   describes the module/archive direction.
+- [`architecture/binary-compiled-archive-plan.md`](architecture/binary-compiled-archive-plan.md)
+  describes the plan for binary compiled archives while keeping readable
+  disassembly output.
 - [`architecture/browser-app-libraries-plan.md`](architecture/browser-app-libraries-plan.md)
   describes the browser library direction.
 - [`architecture/wasm-native-zone-plan.md`](architecture/wasm-native-zone-plan.md)
