@@ -17,9 +17,9 @@
 # When to delete this script:
 #   Once `gh` either (a) respects skip_tls_verification through all code
 #   paths, or (b) ships a TLS fallback that works in sandbox, delete this
-#   file and revert callers to native `gh`. Removal-test commands and full
-#   rationale:
-#     docs/superpowers/specs/2026-04-23-ece-gh-wrapper-design.md
+#   file and revert callers to native `gh` after confirming `gh api`,
+#   `gh pr view`, `gh pr create`, `gh pr merge`, and `gh run view` all work
+#   inside the sandbox.
 
 set -euo pipefail
 
