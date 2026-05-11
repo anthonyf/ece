@@ -432,3 +432,9 @@
                                 ',clauses
                                 (cons ',name %syntax-args))))
       (error "define-syntax: only syntax-rules transformers are supported")))
+
+(define-macro (define-syntax/doc name doc transformer-expr)
+  `(begin
+     (define-syntax ,name ,transformer-expr)
+     (set-documentation! ',name 'syntax ,doc :signature ',name)
+     ',name))

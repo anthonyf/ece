@@ -96,3 +96,31 @@
   (assert-equal (documentation 'doc-answer :kind 'value) "A documented value.")
   (assert-equal (documentation-signature 'doc-answer :kind 'value)
                 'doc-answer)))
+
+(test "define-macro/doc documents macros" (lambda ()
+  (define-macro/doc (doc-unless test expr)
+    "Evaluate EXPR when TEST is false."
+    `(if (not ,test) ,expr))
+  (define doc-unless-result 0)
+  (doc-unless #f
+    (set! doc-unless-result 17))
+  (assert-equal doc-unless-result 17)
+  (assert-equal (documentation 'doc-unless :kind 'macro)
+                "Evaluate EXPR when TEST is false.")
+  (assert-equal (documentation-signature 'doc-unless :kind 'macro)
+                '(doc-unless test expr))))
+
+(test "define-syntax/doc documents syntax forms" (lambda ()
+  (define-syntax/doc doc-when
+    "Evaluate BODY when TEST is true."
+    (syntax-rules ()
+      ((_ test body ...)
+       (if test (begin body ...)))))
+  (define doc-when-result 0)
+  (doc-when #t
+    (set! doc-when-result 23))
+  (assert-equal doc-when-result 23)
+  (assert-equal (documentation 'doc-when :kind 'syntax)
+                "Evaluate BODY when TEST is true.")
+  (assert-equal (documentation-signature 'doc-when :kind 'syntax)
+                'doc-when)))
