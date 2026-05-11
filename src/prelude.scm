@@ -595,12 +595,30 @@
 
 ;; define-record macro: generate record type definitions backed by hash tables
 (define-macro (define-record name . fields)
-  (let ((make-name (string->symbol
-                    (string-append "make-" (symbol->string name))))
-        (pred-name (string->symbol
-                    (string-append (symbol->string name) "?")))
-        (copy-name (string->symbol
-                    (string-append "copy-" (symbol->string name)))))
+  (let* ((name-str (symbol->string name))
+         (make-name (string->symbol
+                     (string-append "make-" name-str)))
+         (pred-name (string->symbol
+                     (string-append name-str "?")))
+         (copy-name (string->symbol
+                     (string-append "copy-" name-str)))
+         (accessor-name (lambda (field)
+                          (string->symbol
+                           (string-append name-str
+                                          "-"
+                                          (symbol->string field)))))
+         (mutator-name (lambda (field)
+                         (string->symbol
+                          (string-append "set-"
+                                         name-str
+                                         "-"
+                                         (symbol->string field)
+                                         "!"))))
+         (wither-name (lambda (field)
+                        (string->symbol
+                         (string-append name-str
+                                        "-with-"
+                                        (symbol->string field))))))
     `(begin
        ;; Constructor
        (define (,make-name ,@fields)
@@ -615,30 +633,19 @@
               (eq? (hash-ref obj 'type) ',name)))
        ;; Accessors
        ,@(map (lambda (f)
-                (let ((acc-name (string->symbol
-                                 (string-append (symbol->string name)
-                                                "-"
-                                                (symbol->string f)))))
+                (let ((acc-name (accessor-name f)))
                   `(define (,acc-name obj)
                      (hash-ref obj ',f))))
               fields)
        ;; Mutators
        ,@(map (lambda (f)
-                (let ((mut-name (string->symbol
-                                 (string-append "set-"
-                                                (symbol->string name)
-                                                "-"
-                                                (symbol->string f)
-                                                "!"))))
+                (let ((mut-name (mutator-name f)))
                   `(define (,mut-name obj val)
                      (hash-set! obj ',f val))))
               fields)
        ;; Functional update accessors
        ,@(map (lambda (f)
-                (let ((with-name (string->symbol
-                                  (string-append (symbol->string name)
-                                                 "-with-"
-                                                 (symbol->string f)))))
+                (let ((with-name (wither-name f)))
                   `(define (,with-name obj val)
                      (hash-set obj ',f val))))
               fields)
@@ -648,12 +655,105 @@
                               (cons (list (quote 'type) (list 'quote name))
                                     (map (lambda (f)
                                            (list (list 'quote f)
-                                                 (list (string->symbol
-                                                        (string-append (symbol->string name)
-                                                                       "-"
-                                                                       (symbol->string f)))
+                                                 (list (accessor-name f)
                                                        'obj)))
                                          fields))))))))
+
+(define-macro (define-record/doc name doc . fields)
+  (let* ((record-name-str (symbol->string name))
+         (make-name (string->symbol
+                     (string-append "make-" record-name-str)))
+         (pred-name (string->symbol
+                     (string-append record-name-str "?")))
+         (copy-name (string->symbol
+                     (string-append "copy-" record-name-str)))
+         (accessor-name (lambda (field)
+                          (string->symbol
+                           (string-append record-name-str
+                                          "-"
+                                          (symbol->string field)))))
+         (mutator-name (lambda (field)
+                         (string->symbol
+                          (string-append "set-"
+                                         record-name-str
+                                         "-"
+                                         (symbol->string field)
+                                         "!"))))
+         (wither-name (lambda (field)
+                        (string->symbol
+                         (string-append record-name-str
+                                        "-with-"
+                                        (symbol->string field)))))
+         (generated-names (append (list make-name pred-name)
+                                  (map accessor-name fields)
+                                  (map mutator-name fields)
+                                  (map wither-name fields)
+                                  (list copy-name))))
+    `(begin
+       (define-record ,name ,@fields)
+       (set-documentation! ',name
+                           'record
+                           ,doc
+                           :signature ',(cons name fields)
+                           :see-also ',generated-names)
+       (set-documentation! ',make-name
+                           'procedure
+                           ,(string-append "Construct a "
+                                           record-name-str
+                                           " record.")
+                           :signature ',(cons make-name fields)
+                           :generated? #t)
+       (set-documentation! ',pred-name
+                           'procedure
+                           ,(string-append "Return true when OBJ is a "
+                                           record-name-str
+                                           " record.")
+                           :signature ',(list pred-name 'obj)
+                           :generated? #t)
+       ,@(map (lambda (f)
+                (let ((acc-name (accessor-name f)))
+                  `(set-documentation! ',acc-name
+                                       'procedure
+                                       ,(string-append "Return the "
+                                                       record-name-str
+                                                       " "
+                                                       (symbol->string f)
+                                                       " field.")
+                                       :signature ',(list acc-name 'obj)
+                                       :generated? #t)))
+              fields)
+       ,@(map (lambda (f)
+                (let ((mut-name (mutator-name f)))
+                  `(set-documentation! ',mut-name
+                                       'procedure
+                                       ,(string-append "Set the "
+                                                       record-name-str
+                                                       " "
+                                                       (symbol->string f)
+                                                       " field.")
+                                       :signature ',(list mut-name 'obj 'val)
+                                       :generated? #t)))
+              fields)
+       ,@(map (lambda (f)
+                (let ((with-name (wither-name f)))
+                  `(set-documentation! ',with-name
+                                       'procedure
+                                       ,(string-append "Return a "
+                                                       record-name-str
+                                                       " record with "
+                                                       (symbol->string f)
+                                                       " set to VAL.")
+                                       :signature ',(list with-name 'obj 'val)
+                                       :generated? #t)))
+              fields)
+       (set-documentation! ',copy-name
+                           'procedure
+                           ,(string-append "Return a copy of a "
+                                           record-name-str
+                                           " record.")
+                           :signature ',(list copy-name 'obj)
+                           :generated? #t)
+       ',name)))
 
 ;; clamp: constrain a number to a range
 (define (clamp x low high)
