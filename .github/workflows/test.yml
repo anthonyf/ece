@@ -132,6 +132,18 @@ jobs:
           ln -sf ece bin/ece-test
           ln -sf ece bin/ece-serve
 
+      - name: Mark prepared artifacts as up-to-date
+        # The install-layout Lisp test invokes `make install`. The downloaded
+        # artifacts are authoritative for this job, but checkout/source mtimes
+        # can make Make think bootstrap outputs are stale. Avoid an accidental
+        # bootstrap rebuild, which deletes the prepared native-zone shards.
+        run: |
+          sleep 1
+          touch bootstrap/primitives-auto.lisp
+          touch bootstrap/bootstrap.ecec
+          touch share/ece/ece-main.ecec
+          touch bin/ece
+
       - name: Run Lisp tests
         run: |
           make test-rove
