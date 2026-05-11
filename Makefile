@@ -1,4 +1,4 @@
-.PHONY: all ece install uninstall test test-rove test-ece test-wasm test-conformance test-golden test-web-server test-ece-serve-live repl run run-lisp bootstrap wasm sandbox site slides fmt check-fmt setup clean clean-fasl update-golden
+.PHONY: all build ece install uninstall test test-rove test-ece test-wasm test-conformance test-golden test-web-server test-ece-serve-live repl run run-lisp bootstrap wasm sandbox site slides fmt check-fmt setup clean clean-fasl update-golden
 
 PREFIX ?= /usr/local
 DESTDIR ?=
@@ -10,13 +10,19 @@ SHARE_FILES := \
 	wasm/glue.js \
 	src/sdk-lib.scm src/ece-main.scm src/ece-unit.scm src/ece-build.scm src/ece-test.scm src/ece-serve.scm src/geiser-ece.scm src/http-codec.scm src/websocket-codec.scm src/websocket-codec-module.scm src/json.scm src/json-module.scm src/scheduler.scm src/scheduler-module.scm src/sha1.scm src/base64.scm src/wasm-host.scm src/codegen-wasm-zone.scm src/browser-lib.scm src/browser-dom.scm src/browser-html.scm src/browser-canvas.scm src/browser-dev.scm
 
-# Default target: build the ece binary and ECE bundles so in-tree dev works.
-all: ece
+# Default target: build the in-tree ECE binaries and bundles. Like most
+# Makefiles, plain `make` is a build-only path; tests stay under `make test`.
+all: build
+
+# Fast build path: only build the ECE binary, dispatcher symlinks, and the
+# artifacts they directly need. This intentionally skips test targets and
+# native bootstrap zones.
+build: bin/ece bin/ece-repl bin/ece-build bin/ece-test bin/ece-serve
+
+ece: build
 
 # Build bin/ece via save-lisp-and-die, compile ece-main.ecec, create in-tree
 # symlinks, and stage share/ece/ so ece-home resolution works in-tree.
-ece: bootstrap wasm bin/ece
-
 bin/ece: scripts/build-ece-binary.lisp bootstrap/bootstrap.ecec share/ece/ece-main.ecec | .qlot/qlot.conf
 	@mkdir -p bin
 	qlot exec sbcl --dynamic-space-size 4096 --non-interactive --load scripts/build-ece-binary.lisp
