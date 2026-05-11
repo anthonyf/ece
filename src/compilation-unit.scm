@@ -816,6 +816,10 @@ stays unambiguous."
   "Return INSTANCE's export table."
   (hash-ref instance ':exports #f))
 
+(define (archive/module-instance-documentation instance)
+  "Return INSTANCE's export documentation table."
+  (hash-ref instance ':documentation #f))
+
 (define (archive/module-instance module . maybe-phase)
   "Return MODULE's instance, instantiating its registered unit if needed.
 MODULE may be a short module name such as (game app) or a normalized
@@ -857,6 +861,34 @@ MODULE may be a short module name such as (game app) or a normalized
                             (write-to-string export-name)
                             ".")))
     (apply value args)))
+
+(define (module-documentation-entry module export-name . options)
+  "Return MODULE's documentation entry for exported EXPORT-NAME, or #f."
+  (when (not (symbol? export-name))
+    (error "module documentation export name must be a symbol" export-name))
+  (let* ((phase (documentation/option options :phase 0))
+         (kind (documentation/option options :kind #f))
+         (unit-id (archive/normalize-module-import-id module phase))
+         (instance (archive/module-instance unit-id))
+         (exports (archive/module-instance-exports instance))
+         (export-docs (archive/module-instance-documentation instance)))
+    (when (not (hash-has-key? exports export-name))
+      (error (string-append "Module documentation export not found: "
+                            (write-to-string export-name)
+                            " in "
+                            (write-to-string unit-id)
+                            ".")))
+    (if kind
+        (documentation-entry export-name :kind kind :module unit-id)
+        (hash-ref export-docs export-name #f))))
+
+(define (module-documentation module export-name . options)
+  "Return MODULE's documentation summary for exported EXPORT-NAME, or #f."
+  (let ((entry (apply module-documentation-entry
+                      (cons module (cons export-name options)))))
+    (if entry
+        (hash-ref entry :summary #f)
+        #f)))
 
 (define (archive/module-env-table env)
   "Return the private hash table from a module environment."
@@ -983,6 +1015,27 @@ MODULE may be a short module name such as (game app) or a normalized
          declared))
     exports))
 
+(define (archive/capture-module-export-documentation unit exports)
+  "Capture documentation entries for UNIT's declared EXPORTS."
+  (let ((unit-id (hash-ref unit ':unit-id))
+        (export-docs (%make-hash-table)))
+    (for-each
+     (lambda (name)
+       (let ((entry (documentation-entry name :module unit-id)))
+         (when entry
+           (hash-set! export-docs name entry))))
+     (hash-keys exports))
+    export-docs))
+
+(define (archive/execute-module-init unit init env)
+  "Execute UNIT's INIT code with documentation scoped to UNIT."
+  (let ((previous (current-documentation-module))
+        (unit-id (hash-ref unit ':unit-id)))
+    (dynamic-wind
+     (lambda () (set-current-documentation-module! unit-id))
+     (lambda () (execute-code-object init env))
+     (lambda () (set-current-documentation-module! previous)))))
+
 (define (archive/instantiate-module! unit)
   "Instantiate UNIT once, recursively initializing imports first."
   (let ((state (hash-ref unit ':state)))
@@ -1003,14 +1056,18 @@ MODULE may be a short module name such as (game app) or a normalized
              (env (archive/make-module-env imports))
              (cos (hash-ref unit ':cos))
              (init (vector-ref cos (hash-ref unit ':init)))
-             (result (execute-code-object init env))
+             (result (archive/execute-module-init unit init env))
              (exports (archive/capture-module-exports unit env))
+             (export-docs
+              (archive/capture-module-export-documentation unit exports))
              (instance (%make-hash-table)))
         (hash-set! instance ':unit-id (hash-ref unit ':unit-id))
         (hash-set! instance ':env env)
         (hash-set! instance ':exports exports)
+        (hash-set! instance ':documentation export-docs)
         (hash-set! instance ':result result)
         (hash-set! unit ':env env)
+        (hash-set! unit ':documentation export-docs)
         (hash-set! unit ':result result)
         (hash-set! unit ':instance instance)
         (hash-set! unit ':state ':initialized)
