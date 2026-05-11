@@ -275,7 +275,8 @@ two-pass archive materialization model and handles nested lambdas cleanly.
 ### Phase 4: WASM Runtime Loading
 
 - Add a byte-oriented archive loader in `wasm/runtime.wat`.
-- Change browser glue to fetch compiled archives as `arrayBuffer`.
+- Change browser glue to fetch compiled archives with `Response.arrayBuffer()`
+  and pass the resulting `ArrayBuffer` to the loader.
 - Load binary archives into code objects without JavaScript parsing archive
   sexps.
 - Keep or add a debug path that can request printed archive output.
