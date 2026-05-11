@@ -534,6 +534,17 @@
   (assert-equal (documentation-signature 'doc-archive-twice :kind 'syntax)
                 'doc-archive-twice)))
 
+(test "archive: rejects malformed define-syntax/doc arity" (lambda ()
+  (define scm-path ".tmp/rt-doc-syntax-bad.scm")
+  (define out (open-output-file scm-path))
+  (display "(define-syntax/doc doc-archive-bad \"Bad.\" " out)
+  (display "(syntax-rules () ((_ x) x)) extra)" out)
+  (newline out)
+  (close-output-port out)
+  (assert-error-message
+   (compile-file-archive scm-path)
+   "define-syntax/doc: expected (define-syntax/doc name doc transformer)")))
+
 (test "archive: source origin recorded at archive level" (lambda ()
   ;; Source origin for a compiled file is recorded once at the archive
   ;; level (the `file` field on the archive wrapper). Per-code-object
