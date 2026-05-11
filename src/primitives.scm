@@ -967,10 +967,10 @@
 ;;; Dev-tooling (ids 229-236) — TCP sockets and file watching for `ece serve`
 ;;;
 ;;; CL-only. These are not portable to WASM and exist solely to support the
-;;; `ece serve` dev server (see openspec/changes/ece-serve/). The non-blocking
-;;; socket helpers wrap usocket; the polling file watcher uses file-write-date
-;;; mtimes, which is portable across SBCL targets and good enough for an
-;;; interactive dev loop. Helper defuns live in src/runtime.lisp.
+;;; `ece serve` dev server. The non-blocking socket helpers wrap usocket; the
+;;; polling file watcher uses file-write-date mtimes, which is portable across
+;;; SBCL targets and good enough for an interactive dev loop. Helper defuns live
+;;; in src/runtime.lisp.
 ;;; ─────────────────────────────────────────────────────────────────────────
 
 (define-host-primitive (tcp-listen port host)

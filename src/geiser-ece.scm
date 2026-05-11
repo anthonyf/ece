@@ -16,8 +16,6 @@
 ;;; `(load "/abs/path.scm")` directly. Using hyphen names (not colons)
 ;;; because ECE's reader doesn't handle CL pipe-escape syntax, which
 ;;; compile-file-to-port emits for colon-containing symbols.
-;;;
-;;; See openspec/changes/geiser-ece-day-1/design.md for full rationale.
 
 (define (geiser-no-values) #f)
 

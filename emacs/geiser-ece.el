@@ -25,8 +25,6 @@
 ;;    The --geiser REPL mode captures stdout during eval and emits a
 ;;    chibi-style alist response: ((result "...") (output . "..."))
 ;;  - Version detection uses `bin/ece-repl -V' (the version-command slot).
-;;
-;; See openspec/changes/geiser-ece-day-1/ for full design rationale.
 
 ;;; Code:
 

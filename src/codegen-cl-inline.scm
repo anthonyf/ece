@@ -8,8 +8,8 @@
 ;;;; call sites with unknown primitives fall back to
 ;;;; (apply-primitive-procedure proc argl) against the runtime table.
 ;;;;
-;;;; Stage 1 of the self-hosting roadmap — the compiled zone. See
-;;;; openspec/changes/stage-1-inline-primitive-codegen/ for the design.
+;;;; Stage 1 of the self-hosting roadmap — the compiled zone. The durable
+;;;; architecture is documented in docs/architecture/language-and-vm.md.
 ;;;;
 ;;;; Regenerate via the Makefile:
 ;;;;   make bootstrap
