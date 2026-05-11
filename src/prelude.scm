@@ -504,6 +504,15 @@
          (set-documentation! ',spec 'value ,doc :signature ',spec)
          ',spec)))
 
+(define-macro (define-macro/doc spec doc . body)
+  (if (pair? spec)
+      (let ((name (car spec)))
+        `(begin
+           (define-macro ,spec ,@body)
+           (set-documentation! ',name 'macro ,doc :signature ',spec)
+           ',name))
+      (error "define-macro/doc: expected (name args...)")))
+
 ;; make-parameter wrapper: apply optional converter to initial value.
 ;; The raw primitive (ID 88) just stores the value. This wrapper calls
 ;; the converter before passing the result to the primitive.

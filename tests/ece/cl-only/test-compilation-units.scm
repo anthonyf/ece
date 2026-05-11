@@ -109,6 +109,13 @@
   (load-compiled ".tmp/ece-cu-macro.ecec")
   (assert-equal cu-swap-result -10)))
 
+(test "compile-file rejects malformed define-syntax/doc arity" (lambda ()
+  (write-string-to-file ".tmp/ece-cu-doc-syntax-bad.scm"
+    "(define-syntax/doc bad-syntax \"Bad.\" (syntax-rules () ((_ x) x)) extra)\n")
+  (assert-error-message
+   (compile-file ".tmp/ece-cu-doc-syntax-bad.scm")
+   "define-syntax/doc: expected (define-syntax/doc name doc transformer)")))
+
 ;; --- 5.5 equivalence with load ---
 
 (test "load-compiled matches load behavior" (lambda ()
