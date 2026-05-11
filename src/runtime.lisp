@@ -2143,6 +2143,284 @@ so load-ecec-file can read both old and new serialization formats.")
                              :format-arguments (list (if (consp raw-head) (car raw-head) raw-head)))))
     raw-head))
 
+(defparameter +binary-ecec-magic+
+  #(69 67 69 67 0 66 73 78)
+  "Magic bytes for the binary compiled archive container: ECEC\\0BIN.")
+
+(defstruct (binary-ecec-reader
+            (:constructor make-binary-ecec-reader (bytes)))
+  (bytes #() :type vector)
+  (pos 0 :type fixnum))
+
+(defparameter +binary-ecec-registers+
+  #("val" "env" "proc" "argl" "continue" "stack"))
+
+(defparameter +binary-ecec-operations+
+  #("lookup-variable-value"
+    "lookup-global-variable"
+    "set-variable-value!"
+    "define-variable!"
+    "extend-environment"
+    "lexical-ref"
+    "lexical-set!"
+    "make-compiled-procedure"
+    "compiled-procedure-entry"
+    "compiled-procedure-env"
+    "primitive-procedure?"
+    "continuation?"
+    "parameter?"
+    "apply-primitive-procedure"
+    "apply-parameter"
+    "parameter-ref"
+    "parameter-set!"
+    "parameter-raw-set!"
+    "capture-continuation"
+    "do-continuation-winds"
+    "continuation-stack"
+    "continuation-conts"
+    "false?"
+    "list"
+    "cons"
+    "car"
+    "cdr"))
+
+(defun binary-ecec-read-file-bytes (pathname)
+  "Read PATHNAME as unsigned bytes into a simple vector."
+  (with-open-file (stream pathname :direction :input
+                          :element-type '(unsigned-byte 8))
+    (let* ((len (file-length stream))
+           (bytes (make-array len :element-type '(unsigned-byte 8))))
+      (read-sequence bytes stream)
+      bytes)))
+
+(defun binary-ecec-file-p (pathname)
+  "Return true when PATHNAME starts with the binary archive magic."
+  (with-open-file (stream pathname :direction :input
+                          :element-type '(unsigned-byte 8))
+    (loop for expected across +binary-ecec-magic+
+          for byte = (read-byte stream nil nil)
+          always (and byte (= byte expected)))))
+
+(defun binary-ecec-eof-p (reader)
+  (>= (binary-ecec-reader-pos reader)
+      (length (binary-ecec-reader-bytes reader))))
+
+(defun binary-ecec-read-u8 (reader context)
+  (let ((pos (binary-ecec-reader-pos reader))
+        (bytes (binary-ecec-reader-bytes reader)))
+    (when (>= pos (length bytes))
+      (archive-runtime-error "~A: truncated binary archive." context))
+    (prog1 (aref bytes pos)
+      (incf (binary-ecec-reader-pos reader)))))
+
+(defun binary-ecec-read-u16 (reader context)
+  (+ (ash (binary-ecec-read-u8 reader context) 8)
+     (binary-ecec-read-u8 reader context)))
+
+(defun binary-ecec-read-u32 (reader context)
+  (+ (ash (binary-ecec-read-u8 reader context) 24)
+     (ash (binary-ecec-read-u8 reader context) 16)
+     (ash (binary-ecec-read-u8 reader context) 8)
+     (binary-ecec-read-u8 reader context)))
+
+(defun binary-ecec-read-string (reader)
+  (let* ((len (binary-ecec-read-u32 reader "binary string"))
+         (chars (make-string len)))
+    (dotimes (i len chars)
+      (setf (char chars i)
+            (code-char (binary-ecec-read-u8 reader "binary string"))))))
+
+(defun binary-ecec-read-indexed-symbol (table id context)
+  (if (and (integerp id) (<= 0 id) (< id (length table)))
+      (intern (aref table id) :ece)
+      (archive-runtime-error "~A: unknown id ~S." context id)))
+
+(defun binary-ecec-read-datum (reader)
+  (let ((tag (binary-ecec-read-u8 reader "binary datum")))
+    (case tag
+      (1 nil)
+      (2 t)
+      (3 *scheme-false*)
+      (4 (let ((sign (binary-ecec-read-u8 reader "binary integer"))
+               (mag (binary-ecec-read-u32 reader "binary integer")))
+           (if (= sign 1) (- mag) mag)))
+      (5 (intern (binary-ecec-read-string reader) :ece))
+      (6 (binary-ecec-read-string reader))
+      (7 (cons (binary-ecec-read-datum reader)
+               (binary-ecec-read-datum reader)))
+      (8 (let* ((len (binary-ecec-read-u32 reader "binary vector"))
+                (vec (make-array len)))
+           (dotimes (i len vec)
+             (setf (aref vec i) (binary-ecec-read-datum reader)))))
+      (9 (list (intern "co-ref" :ece)
+               (binary-ecec-read-u32 reader "binary co-ref")))
+      (otherwise
+       (archive-runtime-error "binary datum: unknown tag ~S." tag)))))
+
+(defun binary-ecec-read-optional-datum (reader)
+  (let ((present (binary-ecec-read-u8 reader "binary optional datum")))
+    (case present
+      (0 (values nil nil))
+      (1 (values t (binary-ecec-read-datum reader)))
+      (otherwise
+       (archive-runtime-error "binary optional datum: invalid presence byte ~S."
+                              present)))))
+
+(defun binary-ecec-append-optional-field (fields key present value)
+  (if present
+      (append fields (list (intern key :ece) value))
+      fields))
+
+(defun binary-ecec-read-operand (reader)
+  (let ((tag (binary-ecec-read-u8 reader "binary operand")))
+    (case tag
+      (1 (list (intern "reg" :ece)
+               (binary-ecec-read-indexed-symbol
+                +binary-ecec-registers+
+                (binary-ecec-read-u8 reader "binary register")
+                "binary register")))
+      (2 (list (intern "const" :ece)
+               (binary-ecec-read-datum reader)))
+      (3 (list (intern "op" :ece)
+               (binary-ecec-read-indexed-symbol
+                +binary-ecec-operations+
+                (binary-ecec-read-u16 reader "binary operation")
+                "binary operation")))
+      (4 (list (intern "label" :ece)
+               (binary-ecec-read-datum reader)))
+      (otherwise
+       (archive-runtime-error "binary operand: unknown tag ~S." tag)))))
+
+(defun binary-ecec-read-operand-list (reader)
+  (let ((len (binary-ecec-read-u16 reader "binary operand list")))
+    (loop repeat len collect (binary-ecec-read-operand reader))))
+
+(defun binary-ecec-read-instruction (reader)
+  (let ((tag (binary-ecec-read-u8 reader "binary instruction")))
+    (case tag
+      (1 (append (list (intern "assign" :ece)
+                       (binary-ecec-read-indexed-symbol
+                        +binary-ecec-registers+
+                        (binary-ecec-read-u8 reader "binary assign target")
+                        "binary assign target")
+                       (binary-ecec-read-operand reader))
+                 (binary-ecec-read-operand-list reader)))
+      (2 (append (list (intern "test" :ece)
+                       (binary-ecec-read-operand reader))
+                 (binary-ecec-read-operand-list reader)))
+      (3 (append (list (intern "perform" :ece)
+                       (binary-ecec-read-operand reader))
+                 (binary-ecec-read-operand-list reader)))
+      (4 (list (intern "save" :ece)
+               (binary-ecec-read-indexed-symbol
+                +binary-ecec-registers+
+                (binary-ecec-read-u8 reader "binary save target")
+                "binary save target")))
+      (5 (list (intern "restore" :ece)
+               (binary-ecec-read-indexed-symbol
+                +binary-ecec-registers+
+                (binary-ecec-read-u8 reader "binary restore target")
+                "binary restore target")))
+      (6 (list (intern "goto" :ece)
+               (binary-ecec-read-operand reader)))
+      (7 (list (intern "branch" :ece)
+               (binary-ecec-read-operand reader)))
+      (8 (list (intern "halt" :ece)))
+      (otherwise
+       (archive-runtime-error "binary instruction: unknown tag ~S." tag)))))
+
+(defun binary-ecec-read-instruction-list (reader)
+  (let ((len (binary-ecec-read-u32 reader "binary instruction list")))
+    (loop repeat len collect (binary-ecec-read-instruction reader))))
+
+(defun binary-ecec-read-code-object-entry (reader)
+  (multiple-value-bind (name-present name)
+      (binary-ecec-read-optional-datum reader)
+    (multiple-value-bind (arity-present arity)
+        (binary-ecec-read-optional-datum reader)
+      (multiple-value-bind (source-loc-present source-loc)
+          (binary-ecec-read-optional-datum reader)
+        (let ((labels (binary-ecec-read-datum reader))
+              (instructions (binary-ecec-read-instruction-list reader)))
+          (append
+           (binary-ecec-append-optional-field
+            (binary-ecec-append-optional-field
+             (binary-ecec-append-optional-field
+              (list (intern ":code-object" :ece))
+              ":name" name-present name)
+             ":arity" arity-present arity)
+            ":source-loc" source-loc-present source-loc)
+           (list (intern ":labels" :ece) labels
+                 (intern ":instructions" :ece) instructions)))))))
+
+(defun binary-ecec-read-code-object-entries (reader)
+  (let ((len (binary-ecec-read-u32 reader "binary code-object entries")))
+    (loop repeat len collect (binary-ecec-read-code-object-entry reader))))
+
+(defun binary-ecec-read-archive-section (reader)
+  (let ((section-tag (binary-ecec-read-u8 reader "binary archive section")))
+    (unless (= section-tag 1)
+      (archive-runtime-error "binary archive section: unknown tag ~S."
+                             section-tag)))
+  (let ((version (binary-ecec-read-u16 reader "binary archive section")))
+    (multiple-value-bind (kind-present kind)
+        (binary-ecec-read-optional-datum reader)
+      (multiple-value-bind (file-present file)
+          (binary-ecec-read-optional-datum reader)
+        (multiple-value-bind (unit-present unit-id)
+            (binary-ecec-read-optional-datum reader)
+          (multiple-value-bind (phase-present phase)
+              (binary-ecec-read-optional-datum reader)
+            (multiple-value-bind (imports-present imports)
+                (binary-ecec-read-optional-datum reader)
+              (multiple-value-bind (exports-present exports)
+                  (binary-ecec-read-optional-datum reader)
+                (multiple-value-bind (init-present init)
+                    (binary-ecec-read-optional-datum reader)
+                  (let ((entries (binary-ecec-read-code-object-entries reader)))
+                    (append
+                     (list (intern ":ecec-archive" :ece)
+                           (intern ":version" :ece)
+                           version)
+                     (binary-ecec-append-optional-field
+                      nil ":kind" kind-present kind)
+                     (binary-ecec-append-optional-field
+                      nil ":file" file-present file)
+                     (binary-ecec-append-optional-field
+                      nil ":unit-id" unit-present unit-id)
+                     (binary-ecec-append-optional-field
+                      nil ":phase" phase-present phase)
+                     (binary-ecec-append-optional-field
+                      nil ":imports" imports-present imports)
+                     (binary-ecec-append-optional-field
+                      nil ":exports" exports-present exports)
+                     (binary-ecec-append-optional-field
+                      nil ":init" init-present init)
+                     (list (intern ":entries" :ece) entries))))))))))))
+
+(defun binary-ecec-read-archives (bytes)
+  "Decode BYTES as a binary .ecec bundle and return archive section forms."
+  (let ((reader (make-binary-ecec-reader bytes)))
+    (loop for expected across +binary-ecec-magic+
+          for byte = (binary-ecec-read-u8 reader "binary archive magic")
+          unless (= byte expected)
+            do (archive-runtime-error "binary archive: bad magic."))
+    (let ((codec-version (binary-ecec-read-u16 reader "binary archive header"))
+          (archive-version (binary-ecec-read-u16 reader "binary archive header"))
+          (flags (binary-ecec-read-u32 reader "binary archive header"))
+          (section-count (binary-ecec-read-u32 reader "binary archive header")))
+      (declare (ignore archive-version))
+      (unless (= codec-version 1)
+        (archive-runtime-error "Unsupported binary .ecec codec version: ~S."
+                               codec-version))
+      (unless (= flags 0)
+        (archive-runtime-error "Unsupported binary .ecec flags: ~S." flags))
+      (prog1
+          (loop repeat section-count
+                collect (binary-ecec-read-archive-section reader))
+        (unless (binary-ecec-eof-p reader)
+          (archive-runtime-error "binary archive: trailing bytes after sections."))))))
+
 (defun ecec-archive-skipped-p (raw-archive skip)
   (when skip
     (let* ((archive (downcase-ece-symbols raw-archive))
@@ -2584,21 +2862,28 @@ functions fall through to the interpreter."
   "Load a .ecec file: read sections, create named spaces, assemble and execute.
 Supports multi-space bundles (loops until EOF).
 If SKIP is a list of strings, skip sections whose archive |file| field matches.
-Uses the CL reader (not the ECE reader) so this works at boot before the ECE reader exists."
-  (with-open-file (stream pathname)
-    (let ((sections nil))
-      (loop
-        for raw = (read-ecec-archive-form stream)
-        until (eq raw :eof)
-        unless (ecec-archive-skipped-p raw skip)
-          do (push (materialize-ecec-archive-section raw) sections))
-      (setf sections (nreverse sections))
-      (dolist (section sections)
-        (register-bundle-archive-section section))
-      (dolist (section sections)
-        (load-materialized-ecec-archive-section
-         section
-         :bundle-registered t)))))
+Text archives use the CL reader, not the ECE reader, so boot works before the
+ECE reader exists. Binary archives are detected by magic bytes and decoded
+without any s-expression reader dependency."
+  (let ((sections nil))
+    (if (binary-ecec-file-p pathname)
+        (dolist (raw (binary-ecec-read-archives
+                      (binary-ecec-read-file-bytes pathname)))
+          (unless (ecec-archive-skipped-p raw skip)
+            (push (materialize-ecec-archive-section raw) sections)))
+        (with-open-file (stream pathname)
+          (loop
+            for raw = (read-ecec-archive-form stream)
+            until (eq raw :eof)
+            unless (ecec-archive-skipped-p raw skip)
+              do (push (materialize-ecec-archive-section raw) sections))))
+    (setf sections (nreverse sections))
+    (dolist (section sections)
+      (register-bundle-archive-section section))
+    (dolist (section sections)
+      (load-materialized-ecec-archive-section
+       section
+       :bundle-registered t))))
 
 (defun boot-from-compiled ()
   "Boot ECE by loading the bootstrap bundle, skipping browser-lib."

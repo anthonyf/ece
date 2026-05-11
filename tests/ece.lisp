@@ -3552,6 +3552,84 @@ during a clean run, which is by design."
                    (remhash base-id ece::*module-instances*)
                    (remhash user-id ece::*module-instances*))))))
 
+(deftest test-cl-binary-archive-loader-file
+    (testing "CL load-ecec-file detects binary archives and executes them"
+             (labels ((compile-archive (source file)
+                        (ece::evaluate
+                         (list (ece-sym 'code-object->archive-sexp)
+                               (list (ece-sym 'mc-compile-to-code-object)
+                                     (list 'quote (ece-read-string source)))
+                               file)))
+                      (write-byte-file (path bytes)
+                        (with-open-file (out path
+                                             :direction :output
+                                             :element-type '(unsigned-byte 8)
+                                             :if-exists :supersede
+                                             :if-does-not-exist :create)
+                          (dolist (byte bytes)
+                            (write-byte byte out)))))
+               (let ((path ".tmp/cl-binary-loader.ecec"))
+                 (unwind-protect
+                      (let* ((archive
+                              (compile-archive
+                               "(begin
+                                  (define cl-binary-loader-answer 73)
+                                  cl-binary-loader-answer)"
+                               "cl-binary-loader.scm"))
+                             (bytes
+                              (ece::evaluate
+                               (list (ece-sym "bca/encode-archive")
+                                     (list 'quote archive)))))
+                        (write-byte-file path bytes)
+                        (ece::load-ecec-file path)
+                        (ok (= (ece-eval-string "cl-binary-loader-answer") 73)
+                            "binary archive load executes the init section"))
+                   (ignore-errors (delete-file path)))))))
+
+(deftest test-cl-binary-archive-loader-bundle
+    (testing "CL load-ecec-file decodes multi-section binary bundles"
+             (labels ((compile-archive (source file)
+                        (ece::evaluate
+                         (list (ece-sym 'code-object->archive-sexp)
+                               (list (ece-sym 'mc-compile-to-code-object)
+                                     (list 'quote (ece-read-string source)))
+                               file)))
+                      (write-byte-file (path bytes)
+                        (with-open-file (out path
+                                             :direction :output
+                                             :element-type '(unsigned-byte 8)
+                                             :if-exists :supersede
+                                             :if-does-not-exist :create)
+                          (dolist (byte bytes)
+                            (write-byte byte out)))))
+               (let ((path ".tmp/cl-binary-bundle.ecec"))
+                 (unwind-protect
+                      (let* ((archive-a
+                              (compile-archive
+                               "(begin
+                                  (define cl-binary-bundle-a 10)
+                                  cl-binary-bundle-a)"
+                               "cl-binary-bundle-a.scm"))
+                             (archive-b
+                              (compile-archive
+                               "(begin
+                                  (define cl-binary-bundle-result
+                                    (+ cl-binary-bundle-a 5))
+                                  cl-binary-bundle-result)"
+                               "cl-binary-bundle-b.scm"))
+                             (bytes
+                              (ece::evaluate
+                               (list (ece-sym "bca/encode-archive-bundle")
+                                     (list 'quote
+                                           (list archive-a archive-b))))))
+                        (write-byte-file path bytes)
+                        (ece::load-ecec-file path)
+                        (ok (= (ece-eval-string
+                                "cl-binary-bundle-result")
+                               15)
+                            "binary bundle load executes sections in order"))
+                   (ignore-errors (delete-file path)))))))
+
 (deftest test-cl-archive-loader-module-import-specs
     (labels ((kw (name)
                (intern (format nil ":~(~A~)" name) :ece))
