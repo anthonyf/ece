@@ -3552,6 +3552,126 @@ during a clean run, which is by design."
                    (remhash base-id ece::*module-instances*)
                    (remhash user-id ece::*module-instances*))))))
 
+(deftest test-cl-binary-archive-loader-file
+    (testing "CL load-ecec-file detects binary archives and executes them"
+             (labels ((compile-archive (source file)
+                        (ece::evaluate
+                         (list (ece-sym 'code-object->archive-sexp)
+                               (list (ece-sym 'mc-compile-to-code-object)
+                                     (list 'quote (ece-read-string source)))
+                               file)))
+                      (write-byte-file (path bytes)
+                        (with-open-file (out path
+                                             :direction :output
+                                             :element-type '(unsigned-byte 8)
+                                             :if-exists :supersede
+                                             :if-does-not-exist :create)
+                          (dolist (byte bytes)
+                            (write-byte byte out)))))
+               (let ((path ".tmp/cl-binary-loader.ecec"))
+                 (unwind-protect
+                      (let* ((archive
+                              (compile-archive
+                               "(begin
+                                  (define cl-binary-loader-answer 73)
+                                  cl-binary-loader-answer)"
+                               "cl-binary-loader.scm"))
+                             (bytes
+                              (ece::evaluate
+                               (list (ece-sym "bca/encode-archive")
+                                     (list 'quote archive)))))
+                        (write-byte-file path bytes)
+                        (ece::load-ecec-file path)
+                        (ok (= (ece-eval-string "cl-binary-loader-answer") 73)
+                            "binary archive load executes the init section"))
+                   (ignore-errors (delete-file path)))))))
+
+(deftest test-cl-binary-archive-loader-bundle
+    (testing "CL load-ecec-file decodes multi-section binary bundles"
+             (labels ((compile-archive (source file)
+                        (ece::evaluate
+                         (list (ece-sym 'code-object->archive-sexp)
+                               (list (ece-sym 'mc-compile-to-code-object)
+                                     (list 'quote (ece-read-string source)))
+                               file)))
+                      (write-byte-file (path bytes)
+                        (with-open-file (out path
+                                             :direction :output
+                                             :element-type '(unsigned-byte 8)
+                                             :if-exists :supersede
+                                             :if-does-not-exist :create)
+                          (dolist (byte bytes)
+                            (write-byte byte out)))))
+               (let ((path ".tmp/cl-binary-bundle.ecec"))
+                 (unwind-protect
+                      (let* ((archive-a
+                              (compile-archive
+                               "(begin
+                                  (define cl-binary-bundle-a 10)
+                                  cl-binary-bundle-a)"
+                               "cl-binary-bundle-a.scm"))
+                             (archive-b
+                              (compile-archive
+                               "(begin
+                                  (define cl-binary-bundle-result
+                                    (+ cl-binary-bundle-a 5))
+                                  cl-binary-bundle-result)"
+                               "cl-binary-bundle-b.scm"))
+                             (bytes
+                              (ece::evaluate
+                               (list (ece-sym "bca/encode-archive-bundle")
+                                     (list 'quote
+                                           (list archive-a archive-b))))))
+                        (write-byte-file path bytes)
+                        (ece::load-ecec-file path)
+                        (ok (= (ece-eval-string
+                                "cl-binary-bundle-result")
+                               15)
+                            "binary bundle load executes sections in order"))
+                   (ignore-errors (delete-file path)))))))
+
+(deftest test-cl-binary-archive-byte-file-helpers
+    (testing "ECE binary byte file helpers round-trip with cleanup"
+             (let ((path ".tmp/binary-archive-codec.bin"))
+               (unwind-protect
+                    (let ((bytes
+                            (ece::evaluate
+                             (list (ece-sym 'append)
+                                   (list (ece-sym "bca/encode-header") 1)
+                                   (list (ece-sym "bca/encode-instruction")
+                                         (list 'quote
+                                               (ece-read-string
+                                                "(assign val (const 42))")))
+                                   (list (ece-sym "bca/encode-instruction")
+                                         (list 'quote
+                                               (ece-read-string
+                                                "(halt)")))))))
+                      (ece::evaluate
+                       (list (ece-sym "bca/write-bytes-to-file")
+                             (list 'quote bytes)
+                             path))
+                      (ok (equal (ece::evaluate
+                                  (list (ece-sym "bca/read-bytes-from-file")
+                                        path))
+                                 bytes)
+                          "byte file helpers preserve binary archive bytes"))
+                 (ignore-errors (delete-file path))))))
+
+(deftest test-cl-binary-archive-decoder-rejects-malformed-lengths
+    (testing "CL binary archive decoder rejects malformed lengths before allocation"
+             (signals
+              (ece::binary-ecec-read-string
+               (ece::make-binary-ecec-reader #(0 0 0 5 65))))
+             (signals
+              (ece::binary-ecec-read-datum
+               (ece::make-binary-ecec-reader #(8 0 0 0 5 1))))))
+
+(deftest test-cl-binary-archive-decoder-rejects-invalid-sign
+    (testing "CL binary archive decoder rejects invalid integer sign bytes"
+             (signals
+              (ece::binary-ecec-read-datum
+               (ece::make-binary-ecec-reader #(4 2 0 0 0 1))))))
+
 (deftest test-cl-archive-loader-module-import-specs
     (labels ((kw (name)
                (intern (format nil ":~(~A~)" name) :ece))
