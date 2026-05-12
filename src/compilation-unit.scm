@@ -863,7 +863,8 @@ MODULE may be a short module name such as (game app) or a normalized
     (apply value args)))
 
 (define (module-documentation-entry module export-name . options)
-  "Return MODULE's documentation entry for exported EXPORT-NAME, or #f."
+  "Return MODULE's documentation entry for exported EXPORT-NAME, or #f.
+Signals an error when EXPORT-NAME is not exported by MODULE."
   (when (not (symbol? export-name))
     (error "module documentation export name must be a symbol" export-name))
   (let* ((phase (documentation/option options :phase 0))
@@ -883,7 +884,8 @@ MODULE may be a short module name such as (game app) or a normalized
         (hash-ref export-docs export-name #f))))
 
 (define (module-documentation module export-name . options)
-  "Return MODULE's documentation summary for exported EXPORT-NAME, or #f."
+  "Return MODULE's documentation summary for exported EXPORT-NAME, or #f.
+Signals an error when EXPORT-NAME is not exported by MODULE."
   (let ((entry (apply module-documentation-entry
                       (cons module (cons export-name options)))))
     (if entry

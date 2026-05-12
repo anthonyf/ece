@@ -55,13 +55,15 @@
               (right-entry (module-documentation-entry
                             '(phase-d docs-right)
                             'shared-doc-value)))
-         (assert-equal 11 (archive/module-export
-                           '(phase-d docs-left)
-                           'shared-doc-value))
-         (assert-equal 42 ((archive/module-export
-                            '(phase-d docs-right)
-                            'shared-doc-value)
-                           41))
+         (assert-equal (archive/module-export
+                        '(phase-d docs-left)
+                        'shared-doc-value)
+                       11)
+         (assert-equal ((archive/module-export
+                         '(phase-d docs-right)
+                         'shared-doc-value)
+                        41)
+                       42)
          (assert-equal (documentation 'shared-doc-value :kind 'value) #f)
          (assert-equal (documentation 'shared-doc-value
                                       :kind 'value
