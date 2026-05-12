@@ -24,6 +24,20 @@
     (assert-equal (car decoded) datum)
     (assert-equal (cdr decoded) '()))))
 
+(test "binary archive codec: rejects malformed datum headers" (lambda ()
+  (assert-error-message
+   (bca/read-datum (list bca/tag-integer 2 0 0 0 1))
+   "bca/read-datum: invalid integer sign byte")
+  (assert-error-message
+   (bca/read-byte-string (list 0 0 0 5 65))
+   "bca/read-byte-string: length exceeds remaining bytes")
+  (assert-error-message
+   (bca/read-datum (list bca/tag-vector 0 0 0 5 bca/tag-nil))
+   "bca/read-datum: vector length exceeds remaining bytes")
+  (assert-error-message
+   (bca/string->bytes (string (integer->char 256)))
+   "bca/string->bytes: binary archives currently support only byte-valued characters")))
+
 (test "binary archive codec: assign instruction round-trip" (lambda ()
   (let* ((instr '(assign val
                          (op lookup-variable-value)
@@ -50,14 +64,6 @@
          (assert-equal (car decoded) instr)
          (assert-equal (cdr decoded) '())))
      instrs))))
-
-(test "binary archive codec: byte file helpers round-trip" (lambda ()
-  (let* ((path ".tmp/binary-archive-codec.bin")
-         (bytes (append (bca/encode-header 1)
-                        (bca/encode-instruction '(assign val (const 42)))
-                        (bca/encode-instruction '(halt)))))
-    (bca/write-bytes-to-file bytes path)
-    (assert-equal (bca/read-bytes-from-file path) bytes))))
 
 (test "binary archive codec: code-object entry round-trip" (lambda ()
   (let* ((archive (code-object->archive-sexp

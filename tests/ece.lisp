@@ -3630,6 +3630,48 @@ during a clean run, which is by design."
                             "binary bundle load executes sections in order"))
                    (ignore-errors (delete-file path)))))))
 
+(deftest test-cl-binary-archive-byte-file-helpers
+    (testing "ECE binary byte file helpers round-trip with cleanup"
+             (let ((path ".tmp/binary-archive-codec.bin"))
+               (unwind-protect
+                    (let ((bytes
+                            (ece::evaluate
+                             (list (ece-sym 'append)
+                                   (list (ece-sym "bca/encode-header") 1)
+                                   (list (ece-sym "bca/encode-instruction")
+                                         (list 'quote
+                                               (ece-read-string
+                                                "(assign val (const 42))")))
+                                   (list (ece-sym "bca/encode-instruction")
+                                         (list 'quote
+                                               (ece-read-string
+                                                "(halt)")))))))
+                      (ece::evaluate
+                       (list (ece-sym "bca/write-bytes-to-file")
+                             (list 'quote bytes)
+                             path))
+                      (ok (equal (ece::evaluate
+                                  (list (ece-sym "bca/read-bytes-from-file")
+                                        path))
+                                 bytes)
+                          "byte file helpers preserve binary archive bytes"))
+                 (ignore-errors (delete-file path))))))
+
+(deftest test-cl-binary-archive-decoder-rejects-malformed-lengths
+    (testing "CL binary archive decoder rejects malformed lengths before allocation"
+             (signals
+              (ece::binary-ecec-read-string
+               (ece::make-binary-ecec-reader #(0 0 0 5 65))))
+             (signals
+              (ece::binary-ecec-read-datum
+               (ece::make-binary-ecec-reader #(8 0 0 0 5 1))))))
+
+(deftest test-cl-binary-archive-decoder-rejects-invalid-sign
+    (testing "CL binary archive decoder rejects invalid integer sign bytes"
+             (signals
+              (ece::binary-ecec-read-datum
+               (ece::make-binary-ecec-reader #(4 2 0 0 0 1))))))
+
 (deftest test-cl-archive-loader-module-import-specs
     (labels ((kw (name)
                (intern (format nil ":~(~A~)" name) :ece))
