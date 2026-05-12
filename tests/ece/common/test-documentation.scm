@@ -1,5 +1,8 @@
 ;;; Documentation metadata tests - registry APIs and define/doc.
 
+(define (doc-test-entry-names entries)
+  (map (lambda (entry) (hash-ref entry :name)) entries))
+
 (test "documentation registry stores structured entries" (lambda ()
   (set-documentation! 'doc-registry-sample
                       'procedure
@@ -78,6 +81,93 @@
   (assert-equal (documentation 'doc-kind-sample :kind 'value) "Value summary.")
   (assert-equal (documentation 'doc-kind-sample :kind 'procedure)
                 "Procedure summary.")))
+
+(test "apropos searches names and summaries in deterministic order" (lambda ()
+  (set-documentation! 'doc-tool-z
+                      'procedure
+                      "Special tooling helper."
+                      :module 'doc-tooling-module
+                      :signature '(doc-tool-z x))
+  (set-documentation! 'doc-tool-a
+                      'value
+                      "Special tooling value."
+                      :module 'doc-tooling-module
+                      :signature 'doc-tool-a)
+  (set-documentation! 'doc-tool-generated
+                      'procedure
+                      "Special generated helper."
+                      :module 'doc-tooling-module
+                      :generated? #t)
+  (define special-matches #f)
+  (define filtered-matches #f)
+  (with-output-to-string
+    (set! special-matches
+          (apropos "special" :module 'doc-tooling-module)))
+  (with-output-to-string
+    (set! filtered-matches
+          (apropos "generated"
+                   :module 'doc-tooling-module
+                   :include-generated? #f)))
+  (assert-equal (doc-test-entry-names special-matches)
+                '(doc-tool-a doc-tool-generated doc-tool-z))
+  (assert-equal (doc-test-entry-names filtered-matches)
+                '())))
+
+(test "help prints and returns one documentation entry" (lambda ()
+  (set-documentation! 'doc-help-sample
+                      'procedure
+                      "Help summary."
+                      :signature '(doc-help-sample x))
+  (define entry #f)
+  (define output
+    (with-output-to-string
+      (set! entry (help 'doc-help-sample :kind 'procedure))))
+  (assert-equal (hash-ref entry :name) 'doc-help-sample)
+  (assert-true (string-contains? output "doc-help-sample procedure"))
+  (assert-true (string-contains? output "Signature: (doc-help-sample x)"))
+  (assert-true (string-contains? output "Help summary."))))
+
+(test "help reports missing documentation" (lambda ()
+  (define result 'not-run)
+  (define output
+    (with-output-to-string
+      (set! result (help 'doc-help-missing :kind 'procedure))))
+  (assert-equal result #f)
+  (assert-true (string-contains?
+                output
+                "No documentation found for doc-help-missing."))))
+
+(test "documentation-reference-markdown is deterministic" (lambda ()
+  (set-documentation! 'doc-markdown-z
+                      'procedure
+                      "Zulu markdown."
+                      :module 'doc-markdown-module
+                      :signature '(doc-markdown-z x))
+  (set-documentation! 'doc-markdown-a
+                      'value
+                      "Alpha markdown."
+                      :module 'doc-markdown-module
+                      :signature 'doc-markdown-a)
+  (assert-equal
+   (documentation-reference-markdown
+    :module 'doc-markdown-module
+    :title "Doc Test")
+   "# Doc Test\n\n## doc-markdown-a\n\n- Kind: `value`\n- Module: `doc-markdown-module`\n- Signature: `doc-markdown-a`\n\nAlpha markdown.\n\n## doc-markdown-z\n\n- Kind: `procedure`\n- Module: `doc-markdown-module`\n- Signature: `(doc-markdown-z x)`\n\nZulu markdown.\n\n")))
+
+(test "write-documentation-reference writes markdown" (lambda ()
+  (set-documentation! 'doc-write-sample
+                      'value
+                      "Written markdown."
+                      :module 'doc-write-module)
+  (define path ".tmp/doc-reference-test.md")
+  (assert-equal (write-documentation-reference
+                 :filename path
+                 :module 'doc-write-module
+                 :title "Write Test")
+                path)
+  (assert-equal (call-with-input-file path
+                  (lambda (port) (read-line port)))
+                "# Write Test")))
 
 (test "define/doc documents procedure definitions" (lambda ()
   (define/doc (doc-square x)

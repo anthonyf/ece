@@ -12,6 +12,8 @@ here are the longer-lived references, design notes, and contributor guides.
   instruction encoding, opcode behavior, operands, and machine operations.
 - [`language/documentation.md`](language/documentation.md) describes the
   planned runtime documentation metadata system and phased rollout.
+- [`reference/`](reference/) is reserved for generated Markdown reference
+  output from runtime documentation metadata.
 - [`architecture/save-restore-compatibility.md`](architecture/save-restore-compatibility.md)
   documents the save/restore compatibility boundary for serialized values and
   continuations.
