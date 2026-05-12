@@ -396,6 +396,15 @@
 
 (define *documentation-registry* (%make-hash-table))
 (define *documentation-kind-order* '(procedure value macro syntax record module))
+(define *current-documentation-module* #f)
+
+(define (current-documentation-module)
+  *current-documentation-module*)
+
+(define (set-current-documentation-module! module)
+  (let ((previous *current-documentation-module*))
+    (set! *current-documentation-module* module)
+    previous))
 
 (define (documentation/option options key default)
   (cond
@@ -437,7 +446,10 @@
                                       (documentation/doc-field doc :signature #f))
      :module (documentation/option options
                                    :module
-                                   (documentation/doc-field doc :module #f))
+                                   (documentation/doc-field
+                                    doc
+                                    :module
+                                    *current-documentation-module*))
      :generated? (documentation/option options
                                        :generated?
                                        (documentation/doc-field doc :generated? #f))
