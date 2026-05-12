@@ -414,6 +414,13 @@
     ((null? (cdr options)) default)
     (else (documentation/option (cdr (cdr options)) key default))))
 
+(define (documentation/option-present? options key)
+  (cond
+    ((null? options) #f)
+    ((eq? (car options) key) #t)
+    ((null? (cdr options)) #f)
+    (else (documentation/option-present? (cdr (cdr options)) key))))
+
 (define (documentation/key name module)
   (string->symbol (write-to-string-flat (list module name))))
 
@@ -499,6 +506,199 @@
     (if entry
         (hash-ref entry :signature #f)
         #f)))
+
+(define (documentation/entry-module-matches? entry options)
+  (if (documentation/option-present? options :module)
+      (equal? (hash-ref entry :module #f)
+              (documentation/option options :module #f))
+      #t))
+
+(define (documentation/entry-generated-matches? entry options)
+  (let ((include-generated?
+         (documentation/option options :include-generated? #t)))
+    (or include-generated?
+        (not (hash-ref entry :generated? #f)))))
+
+(define (documentation/entry-kind-matches? entry kind)
+  (if kind
+      (eq? (hash-ref entry :kind #f) kind)
+      #t))
+
+(define (documentation/entry-sort-key entry)
+  (string-append
+   (write-to-string-flat (hash-ref entry :module #f))
+   "|"
+   (symbol->string (hash-ref entry :name))
+   "|"
+   (symbol->string (hash-ref entry :kind))))
+
+(define (documentation/entry<? a b)
+  (string<? (documentation/entry-sort-key a)
+            (documentation/entry-sort-key b)))
+
+(define (documentation/insert-entry entry sorted)
+  (cond
+   ((null? sorted) (list entry))
+   ((documentation/entry<? entry (car sorted)) (cons entry sorted))
+   (else (cons (car sorted)
+               (documentation/insert-entry entry (cdr sorted))))))
+
+(define (documentation/sort-entries entries)
+  (let loop ((remaining entries) (sorted '()))
+    (if (null? remaining)
+        sorted
+        (loop (cdr remaining)
+              (documentation/insert-entry (car remaining) sorted)))))
+
+(define (documentation/kind-entries kind)
+  (let ((table (hash-ref *documentation-registry* kind #f)))
+    (if table
+        (map (lambda (key) (hash-ref table key)) (hash-keys table))
+        '())))
+
+(define (documentation/collect-entries kinds)
+  (if (null? kinds)
+      '()
+      (append (documentation/kind-entries (car kinds))
+              (documentation/collect-entries (cdr kinds)))))
+
+(define (documentation-entries . options)
+  (let* ((kind (documentation/option options :kind #f))
+         (kinds (if kind (list kind) *documentation-kind-order*)))
+    (documentation/sort-entries
+     (filter
+      (lambda (entry)
+        (and (documentation/entry-kind-matches? entry kind)
+             (documentation/entry-module-matches? entry options)
+             (documentation/entry-generated-matches? entry options)))
+      (documentation/collect-entries kinds)))))
+
+(define (documentation/query-string query)
+  (cond
+   ((string? query) query)
+   ((symbol? query) (symbol->string query))
+   (else (write-to-string-flat query))))
+
+(define (documentation/entry-matches-query? entry query)
+  (let* ((needle (string-downcase (documentation/query-string query)))
+         (name (string-downcase (symbol->string (hash-ref entry :name))))
+         (summary (hash-ref entry :summary #f))
+         (summary-text (if summary (string-downcase summary) "")))
+    (or (string-contains? name needle)
+        (string-contains? summary-text needle))))
+
+(define (documentation/print-entry-line entry)
+  (display (hash-ref entry :name))
+  (display " (")
+  (display (hash-ref entry :kind))
+  (display ")")
+  (let ((module (hash-ref entry :module #f)))
+    (when module
+      (display " ")
+      (display (write-to-string-flat module))))
+  (let ((summary (hash-ref entry :summary #f)))
+    (when summary
+      (display " - ")
+      (display summary)))
+  (newline))
+
+(define (apropos query . options)
+  (let ((entries
+         (filter
+          (lambda (entry) (documentation/entry-matches-query? entry query))
+          (apply documentation-entries options))))
+    (for-each documentation/print-entry-line entries)
+    entries))
+
+(define (documentation/help-entry name options)
+  (apply documentation-entry (cons name options)))
+
+(define (help name . options)
+  (let ((entry (documentation/help-entry name options)))
+    (if entry
+        (begin
+          (display (hash-ref entry :name))
+          (display " ")
+          (display (hash-ref entry :kind))
+          (newline)
+          (let ((module (hash-ref entry :module #f)))
+            (when module
+              (display "Module: ")
+              (display (write-to-string-flat module))
+              (newline)))
+          (let ((signature (hash-ref entry :signature #f)))
+            (when signature
+              (display "Signature: ")
+              (display (write-to-string-flat signature))
+              (newline)))
+          (let ((summary (hash-ref entry :summary #f)))
+            (when summary
+              (display summary)
+              (newline)))
+          entry)
+        (begin
+          (display "No documentation found for ")
+          (display (write-to-string-flat name))
+          (display ".")
+          (newline)
+          #f))))
+
+(define (documentation/markdown-code value)
+  (string-append "`" (write-to-string-flat value) "`"))
+
+(define (documentation/markdown-entry entry)
+  (let ((summary (hash-ref entry :summary #f))
+        (signature (hash-ref entry :signature #f))
+        (module (hash-ref entry :module #f))
+        (examples (hash-ref entry :examples '()))
+        (see-also (hash-ref entry :see-also '())))
+    (string-append
+     "## " (symbol->string (hash-ref entry :name)) "\n\n"
+     "- Kind: " (documentation/markdown-code (hash-ref entry :kind)) "\n"
+     (if module
+         (string-append "- Module: " (documentation/markdown-code module) "\n")
+         "")
+     (if signature
+         (string-append "- Signature: "
+                        (documentation/markdown-code signature)
+                        "\n")
+         "")
+     (if (hash-ref entry :generated? #f)
+         "- Generated: `#t`\n"
+         "")
+     (if summary
+         (string-append "\n" summary "\n")
+         "")
+     (if (null? examples)
+         ""
+         (string-append "\nExamples: "
+                        (documentation/markdown-code examples)
+                        "\n"))
+     (if (null? see-also)
+         ""
+         (string-append "\nSee also: "
+                        (documentation/markdown-code see-also)
+                        "\n"))
+     "\n")))
+
+(define (documentation-reference-markdown . options)
+  (let ((title (documentation/option options :title "ECE Reference"))
+        (entries (apply documentation-entries options)))
+    (string-append
+     "# " title "\n\n"
+     (if (null? entries)
+         "No documentation entries found.\n"
+         (string-join (map documentation/markdown-entry entries) "")))))
+
+(define (write-documentation-reference . options)
+  (let ((filename (documentation/option
+                   options
+                   :filename
+                   "docs/reference/index.md"))
+        (markdown (apply documentation-reference-markdown options)))
+    (call-with-output-file filename
+      (lambda (port) (display markdown port)))
+    filename))
 
 (define-macro (define/doc spec doc . body)
   (define (definition-value exprs)

@@ -222,6 +222,22 @@ documentation tools:
 Generated documentation must be deterministic. Any traversal over hash-table
 keys should sort names before writing output.
 
+The first tooling implementation exposes these APIs:
+
+```scheme
+(documentation-entries . options)
+(help name . options)
+(apropos query . options)
+(documentation-reference-markdown . options)
+(write-documentation-reference . options)
+```
+
+`documentation-entries` returns sorted structured entries. `help` prints a
+single entry and returns it, or prints a miss and returns `#f`. `apropos` prints
+matching one-line summaries and returns the sorted entries. The Markdown helpers
+format or write the same sorted entry list; `write-documentation-reference`
+defaults to `docs/reference/index.md`.
+
 ## Implementation Phases
 
 ### Phase 0: Design Doc
