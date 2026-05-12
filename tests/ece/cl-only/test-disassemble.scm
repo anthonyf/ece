@@ -4,6 +4,25 @@
 (define (dis-capture thunk)
   (with-output-to-string (thunk)))
 
+(define (dis-write-text-file path text)
+  (let ((port (open-output-file path)))
+    (display text port)
+    (close-output-port port)))
+
+(define (dis-compile-archive source file)
+  (code-object->archive-sexp
+   (mc-compile-to-code-object (read (open-input-string source)))
+   file))
+
+(define (dis-with-temp-file path thunk)
+  (dynamic-wind
+    (lambda () #f)
+    thunk
+    (lambda ()
+      ;; Best effort cleanup: overwrite with a tiny text file so repeated
+      ;; local runs do not reuse stale binary contents if deletion is absent.
+      (dis-write-text-file path ""))))
+
 ;; Shared fixture procedure used across several tests.
 (define (dis-test-square x) (* x x))
 
@@ -68,3 +87,51 @@
     ;; Every disassembly should contain at least one instruction line
     ;; of the form "<pc>:  (...".
     (assert-true (string-contains? out ":  (assign")))))
+
+(test "disassemble-file prints text archive instructions" (lambda ()
+  (let ((path ".tmp/disassemble-text.ecec"))
+    (dis-with-temp-file
+     path
+     (lambda ()
+       (let ((archive (dis-compile-archive
+                       "(begin (define dis-file-text-answer 12) dis-file-text-answer)"
+                       "dis-file-text.scm")))
+         (dis-write-text-file path (write-to-string-flat archive))
+         (let ((out (dis-capture (lambda () (disassemble-file path)))))
+           (assert-true (string-contains? out "printed .ecec"))
+           (assert-true (string-contains? out "dis-file-text.scm"))
+           (assert-true (string-contains? out "; entry 0"))
+           (assert-true (string-contains? out ":  (assign")))))))))
+
+(test "disassemble-file prints binary archive instructions" (lambda ()
+  (let ((path ".tmp/disassemble-binary.ecec"))
+    (dis-with-temp-file
+     path
+     (lambda ()
+       (let* ((archive (dis-compile-archive
+                        "(begin (define dis-file-binary-answer 34) dis-file-binary-answer)"
+                        "dis-file-binary.scm"))
+              (bytes (bca/encode-archive archive)))
+         (bca/write-bytes-to-file bytes path)
+         (let ((out (dis-capture (lambda () (disassemble-file path)))))
+           (assert-true (string-contains? out "binary .ecec"))
+           (assert-true (string-contains? out "dis-file-binary.scm"))
+           (assert-true (string-contains? out "; entry 0"))
+           (assert-true (string-contains? out ":  (assign")))))))))
+
+(test "disassemble-file with hex shows binary instruction bytes" (lambda ()
+  (let ((path ".tmp/disassemble-binary-hex.ecec"))
+    (dis-with-temp-file
+     path
+     (lambda ()
+       (let* ((archive (dis-compile-archive
+                        "(begin (define dis-file-hex-answer 56) dis-file-hex-answer)"
+                        "dis-file-hex.scm"))
+              (bytes (bca/encode-archive archive)))
+         (bca/write-bytes-to-file bytes path)
+         (let ((out (dis-capture
+                     (lambda () (disassemble-file path ':with-hex #t)))))
+           (assert-true (string-contains? out "binary .ecec"))
+           (assert-true (string-contains? out " 01 "))
+           (assert-true (string-contains? out ":  "))
+           (assert-true (string-contains? out "(assign")))))))))

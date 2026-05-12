@@ -380,13 +380,13 @@ Likely order:
 
 ## Future Checklist
 
-- [ ] Finalize magic header, byte order, and version fields.
-- [ ] Define exact datum tags and instruction tags.
-- [ ] Add binary codec helpers.
-- [ ] Add binary archive writer.
-- [ ] Add binary archive reader for debug round-tripping.
-- [ ] Add CL direct materializer and loader detection.
-- [ ] Add disassemble-file support for binary archives.
+- [x] Finalize magic header, byte order, and version fields.
+- [x] Define exact datum tags and instruction tags.
+- [x] Add binary codec helpers.
+- [x] Add binary archive writer.
+- [x] Add binary archive reader for debug round-tripping.
+- [x] Add CL direct materializer and loader detection.
+- [x] Add disassemble-file support for binary archives.
 - [ ] Add compiler/build flags for binary vs printed output.
 - [ ] Switch bootstrap to binary after loader tests pass.
 - [ ] Update native-zone generation to avoid depending on archive text.

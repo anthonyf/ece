@@ -184,6 +184,7 @@
            #:code-object-native-fn
            #:code-object-archive-key
            #:disassemble
+           #:disassemble-file
            #:extend-environment
            #:ece-runtime-error
            #:ece-original-error
