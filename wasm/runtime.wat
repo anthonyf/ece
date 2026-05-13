@@ -6999,6 +6999,26 @@
         (i32.shl (call $bca-read-u8) (i32.const 8))
         (call $bca-read-u8))))
 
+  (func $bca-make-integer (param $sign i32) (param $mag i32)
+                          (result (ref null eq))
+    (if (i32.eq (local.get $sign) (i32.const 0))
+      (then
+        (if (i32.le_u (local.get $mag) (i32.const 1073741823))
+          (then (return (call $make-fixnum (local.get $mag)))))
+        (return (struct.new $float-box (f64.convert_i32_u (local.get $mag))))))
+    (if (i32.eq (local.get $sign) (i32.const 1))
+      (then
+        (if (i32.le_u (local.get $mag) (i32.const 1073741824))
+          (then
+            (return
+              (call $make-fixnum
+                (i32.sub (i32.const 0) (local.get $mag))))))
+        (return
+          (struct.new $float-box
+            (f64.neg (f64.convert_i32_u (local.get $mag)))))))
+    (call $signal-error-str (global.get $err-unknown-arch))
+    (unreachable))
+
   (func $bca-read-byte-string (result (ref $string))
     (local $len i32)
     (local $i i32)
@@ -7050,13 +7070,7 @@
       (then
         (local.set $sign (call $bca-read-u8))
         (local.set $mag (call $bca-read-u32))
-        (if (i32.eq (local.get $sign) (i32.const 1))
-          (then (return (call $make-fixnum (i32.sub (i32.const 0) (local.get $mag))))))
-        (if (i32.ne (local.get $sign) (i32.const 0))
-          (then
-            (call $signal-error-str (global.get $err-unknown-arch))
-            (unreachable)))
-        (return (call $make-fixnum (local.get $mag)))))
+        (return (call $bca-make-integer (local.get $sign) (local.get $mag)))))
     (if (i32.eq (local.get $tag) (i32.const 5))
       (then (return (call $intern (call $bca-read-byte-string)))))
     (if (i32.eq (local.get $tag) (i32.const 6))
@@ -7069,6 +7083,12 @@
     (if (i32.eq (local.get $tag) (i32.const 8))
       (then
         (local.set $len (call $bca-read-u32))
+        (if (i32.gt_u
+              (local.get $len)
+              (i32.sub (global.get $bca-end) (global.get $bca-pos)))
+          (then
+            (call $signal-error-str (global.get $err-unknown-arch))
+            (unreachable)))
         (local.set $vec (array.new_default $vector (local.get $len)))
         (local.set $i (i32.const 0))
         (block $vdone (loop $vloop
@@ -7089,7 +7109,13 @@
     (unreachable))
 
   (func $bca-read-register-symbol (result (ref $symbol))
-    (call $asm-sym-ref (i32.add (i32.const 7) (call $bca-read-u8))))
+    (local $id i32)
+    (local.set $id (call $bca-read-u8))
+    (if (i32.gt_u (local.get $id) (i32.const 5))
+      (then
+        (call $signal-error-str (global.get $err-unknown-arch))
+        (unreachable)))
+    (call $asm-sym-ref (i32.add (i32.const 7) (local.get $id))))
 
   (func $bca-read-operand (result (ref null eq))
     (local $tag i32)
@@ -7110,6 +7136,10 @@
     (if (i32.eq (local.get $tag) (i32.const 3))
       (then
         (local.set $op-id (call $bca-read-u16))
+        (if (i32.gt_u (local.get $op-id) (i32.const 26))
+          (then
+            (call $signal-error-str (global.get $err-unknown-arch))
+            (unreachable)))
         (return
           (call $cons
             (call $asm-sym-ref (i32.const 16))
@@ -7300,6 +7330,7 @@
                 (call $cons (local.get $entries) (global.get $nil)))))))))
 
   (func $bca-read-header
+    (local $flags i32)
     (if (i32.ne (call $bca-read-u8) (i32.const 69))
       (then (call $signal-error-str (global.get $err-unknown-arch)) (unreachable)))
     (if (i32.ne (call $bca-read-u8) (i32.const 67))
@@ -7320,7 +7351,9 @@
       (then (call $signal-error-str (global.get $err-bad-version)) (unreachable)))
     (if (i32.ne (call $bca-read-u16) (i32.const 2))
       (then (call $signal-error-str (global.get $err-bad-version)) (unreachable)))
-    (drop (call $bca-read-u32))
+    (local.set $flags (call $bca-read-u32))
+    (if (i32.ne (local.get $flags) (i32.const 0))
+      (then (call $signal-error-str (global.get $err-unknown-arch)) (unreachable)))
     (global.set $bca-section-count (call $bca-read-u32))
     (global.set $bca-section-index (i32.const 0)))
 
@@ -7563,7 +7596,13 @@
     (call $alloc-handle (call $bca-load-next-section)))
 
   (func (export "binary_archive_has_more") (result i32)
-    (i32.lt_u (global.get $bca-section-index) (global.get $bca-section-count)))
+    (if (i32.lt_u (global.get $bca-section-index) (global.get $bca-section-count))
+      (then (return (i32.const 1))))
+    (if (i32.ne (global.get $bca-pos) (global.get $bca-end))
+      (then
+        (call $signal-error-str (global.get $err-unknown-arch))
+        (unreachable)))
+    (i32.const 0))
 
   ;; Run an init code-object with the given environment handle.
   (func (export "run_code_object") (param $co-handle i32) (param $env-handle i32)

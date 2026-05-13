@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // ECE WASM Test Runner
 // Loads the WASM runtime, boots bootstrap, runs compiled tests, reports results.
-// Usage: node wasm/test.js [path-to-test.ecec]
+// Usage: node wasm/test.js [path-to-test.ecec] [path-to-binary-fixture.ecec]
 
 const ECE = require("./glue.js");
 const fs = require("fs");
@@ -198,12 +198,15 @@ function runIntegrationTests(w, envH) {
   });
 
   if (binaryTestFile) {
-    iTest("binary archive bundle loads from bytes", () => {
+    iTest("multi-section binary archive bundle loads from bytes", () => {
       const bytes = fs.readFileSync(binaryTestFile);
       ECE.loadArchiveBundleBytes(bytes);
       const result = eceEval("wasm-binary-loader-answer");
       assert(w.h_fixnum_val(result) === 42,
         `expected binary-loaded value 42, got ${w.h_fixnum_val(result)}`);
+      const order = ECE._eceListToJsArray(eceEval("wasm-binary-loader-order"));
+      assert(JSON.stringify(order) === JSON.stringify([1, 2]),
+        `expected multi-section order [1,2], got ${JSON.stringify(order)}`);
     });
   }
 

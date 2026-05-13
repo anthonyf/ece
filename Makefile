@@ -208,10 +208,11 @@ test-wasm: wasm | .qlot/qlot.conf
 	@mkdir -p .tmp $(TEST_OUTPUT_DIR)
 	@echo "Compiling WASM test suite..."
 	@cat $(WASM_TEST_SRCS) > .tmp/ece-wasm-tests.scm
-	@printf '(define wasm-binary-loader-answer 42)\n' > .tmp/ece-wasm-binary-loader.scm
+	@printf '(define wasm-binary-loader-order (list 1))\n' > .tmp/ece-wasm-binary-loader-a.scm
+	@printf '(define wasm-binary-loader-order (append wasm-binary-loader-order (list 2)))\n(define wasm-binary-loader-answer 42)\n' > .tmp/ece-wasm-binary-loader-b.scm
 	@qlot exec sbcl --dynamic-space-size 4096 --disable-debugger --eval '(asdf:load-system :ece)' \
 	  --eval '(ece:evaluate (list (intern "compile-file" :ece) ".tmp/ece-wasm-tests.scm"))' \
-	  --eval '(ece:evaluate (list (intern "compile-file/binary" :ece) ".tmp/ece-wasm-binary-loader.scm"))' \
+	  --eval '(ece:evaluate (list (intern "compile-system/binary" :ece) (list (intern "quote" :ece) (list ".tmp/ece-wasm-binary-loader-a.scm" ".tmp/ece-wasm-binary-loader-b.scm")) ".tmp/ece-wasm-binary-loader.ecec"))' \
 	  --quit
 	@echo "Running WASM tests..."
 	@node --max-old-space-size=4096 wasm/test.js .tmp/ece-wasm-tests.ecec .tmp/ece-wasm-binary-loader.ecec 2>&1 | tee $(TEST_OUTPUT_DIR)/test-wasm.txt
