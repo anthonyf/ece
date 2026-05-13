@@ -11,13 +11,15 @@
                    "--module" "(phase-b app)"
                    "--entry" "main"
                    "--native-zones"
+                   "--archive-format" "sexp"
                    "app.scm"))))
     (assert-equal (list-ref parsed 0) "cl")
     (assert-equal (list-ref parsed 1) ".tmp/phase-b-build")
     (assert-equal (list-ref parsed 3) "(phase-b app)")
     (assert-equal (list-ref parsed 4) "main")
     (assert-equal (list-ref parsed 5) '("app.scm"))
-    (assert-equal (list-ref parsed 7) #t))))
+    (assert-equal (list-ref parsed 7) #t)
+    (assert-equal (list-ref parsed 8) "sexp"))))
 
 (test "validate-build-args: module entry options are CL-only" (lambda ()
   (assert-equal
@@ -42,6 +44,20 @@
    (build-args-error/native-zones "web" ".tmp/phase-b-build" '("app.scm")
                                   #f #f #t)
    #f)))
+
+(test "validate-build-args: archive format options" (lambda ()
+  (assert-equal
+   (build-args-error/native-zones "cl" ".tmp/phase-b-build" '("app.scm")
+                                  #f #f #f "binary")
+   #f)
+  (assert-equal
+   (build-args-error/native-zones "web" ".tmp/phase-b-build" '("app.scm")
+                                  #f #f #f "binary")
+   "Error: --archive-format binary is only supported with --target cl until the WASM loader supports binary archives")
+  (assert-equal
+   (build-args-error/native-zones "cl" ".tmp/phase-b-build" '("app.scm")
+                                  #f #f #f "wat")
+   "Error: --archive-format must be 'sexp' or 'binary', got 'wat'")))
 
 (test "ece-build: CL wrapper invokes selected module entry" (lambda ()
   (let ((path ".tmp/phase-b-run-wrapper"))
