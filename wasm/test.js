@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // ECE WASM Test Runner
 // Loads the WASM runtime, boots bootstrap, runs compiled tests, reports results.
-// Usage: node wasm/test.js [path-to-test.ecec]
+// Usage: node wasm/test.js [path-to-test.ecec] [path-to-binary-fixture.ecec]
 
 const ECE = require("./glue.js");
 const fs = require("fs");
@@ -10,6 +10,7 @@ const os = require("os");
 const childProcess = require("child_process");
 
 const testFile = process.argv[2] || path.join(__dirname, "..", "wasm-tests.ecec");
+const binaryTestFile = process.argv[3] || null;
 const bootstrapDir = path.join(__dirname, "..", "bootstrap");
 const wasmFile = path.join(__dirname, "runtime.wasm");
 
@@ -195,6 +196,19 @@ function runIntegrationTests(w, envH) {
     const r = w.h_compiled_entry(w.h_fixnum(41));
     assert(w.h_error_sentinel_p(r) === 1, "expected compiled entry type error sentinel");
   });
+
+  if (binaryTestFile) {
+    iTest("multi-section binary archive bundle loads from bytes", () => {
+      const bytes = fs.readFileSync(binaryTestFile);
+      ECE.loadArchiveBundleBytes(bytes);
+      const result = eceEval("wasm-binary-loader-answer");
+      assert(w.h_fixnum_val(result) === 42,
+        `expected binary-loaded value 42, got ${w.h_fixnum_val(result)}`);
+      const order = ECE._eceListToJsArray(eceEval("wasm-binary-loader-order"));
+      assert(JSON.stringify(order) === JSON.stringify([1, 2]),
+        `expected multi-section order [1,2], got ${JSON.stringify(order)}`);
+    });
+  }
 
   // ── Native-zone entry dispatch smoke ──
   iTest("native zone dispatch returns value", () => {

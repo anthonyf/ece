@@ -53,7 +53,7 @@
   (assert-equal
    (build-args-error/native-zones "web" ".tmp/phase-b-build" '("app.scm")
                                   #f #f #f "binary")
-   "Error: --archive-format binary is only supported with --target cl until the WASM loader supports binary archives")
+   "Error: --archive-format binary is only supported with --target cl until web packaging fetches bytes")
   (assert-equal
    (build-args-error/native-zones "cl" ".tmp/phase-b-build" '("app.scm")
                                   #f #f #f "wat")
