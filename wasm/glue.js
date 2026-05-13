@@ -384,6 +384,13 @@ const ECE = {
     }
   },
 
+  _ensureByteWriteCapacity(byteLength) {
+    const currentBytes = ECE.wasm.memory.buffer.byteLength;
+    if (byteLength > currentBytes) {
+      ECE.wasm.memory.grow(Math.ceil((byteLength - currentBytes) / 65536));
+    }
+  },
+
   // Write a JS string to WASM linear memory as UTF-16, return {offset, len}
   writeString(jsStr) {
     ECE._ensureStringWriteCapacity(jsStr.length);
@@ -392,6 +399,16 @@ const ECE = {
       mem[i] = jsStr.charCodeAt(i);
     }
     return { offset: 0, len: jsStr.length };
+  },
+
+  // Write bytes to WASM linear memory, return {offset, len}
+  writeBytes(bytesLike) {
+    const bytes = bytesLike instanceof Uint8Array
+      ? bytesLike
+      : new Uint8Array(bytesLike);
+    ECE._ensureByteWriteCapacity(bytes.byteLength);
+    new Uint8Array(ECE.wasm.memory.buffer, 0, bytes.byteLength).set(bytes);
+    return { offset: 0, len: bytes.byteLength };
   },
 
   // Intern a symbol (returns handle i32)
@@ -449,6 +466,22 @@ const ECE = {
     w.run_code_object(co, ECE.globalEnvHandle);
     while (w.archive_has_more()) {
       co = w.load_archive_continue();
+      w.run_code_object(co, ECE.globalEnvHandle);
+    }
+    return co;
+  },
+
+  loadArchiveBytes(bytes) {
+    const { offset, len } = ECE.writeBytes(bytes);
+    return ECE.wasm.load_binary_archive(offset, len);
+  },
+
+  loadArchiveBundleBytes(bytes) {
+    const w = ECE.wasm;
+    let co = ECE.loadArchiveBytes(bytes);
+    w.run_code_object(co, ECE.globalEnvHandle);
+    while (w.binary_archive_has_more()) {
+      co = w.load_binary_archive_continue();
       w.run_code_object(co, ECE.globalEnvHandle);
     }
     return co;

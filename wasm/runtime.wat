@@ -5919,6 +5919,12 @@
   (global $ecec-pos (mut i32) (i32.const 0))
   (global $ecec-end (mut i32) (i32.const 0))
 
+  ;; Binary archive cursor: byte offsets into linear memory.
+  (global $bca-pos (mut i32) (i32.const 0))
+  (global $bca-end (mut i32) (i32.const 0))
+  (global $bca-section-count (mut i32) (i32.const 0))
+  (global $bca-section-index (mut i32) (i32.const 0))
+
   (func $ecec-peek (result i32)
     (if (result i32) (i32.ge_u (global.get $ecec-pos) (global.get $ecec-end))
       (then (i32.const -1))  ;; EOF
@@ -6398,6 +6404,12 @@
       (br $walk)))
     (ref.null eq))
 
+  (func $symbol-by-id (param $id i32) (result (ref $symbol))
+    (ref.as_non_null
+      (array.get $sym-ref-array
+        (ref.as_non_null (global.get $sym-refs))
+        (local.get $id))))
+
   ;; Recursive walk: return a new tree identical to TREE except that every
   ;; subtree shaped (const (co-ref N)) is replaced by (const <co-at-N>), where
   ;; N is a non-negative fixnum index into the archive entries. Mirrors the
@@ -6779,10 +6791,9 @@
         (br $loop)))
     (local.get $out))
 
-  ;; Parse a (ecec-archive version 2 file "..." entries (<entry>...)) sexp
-  ;; and return the init code-object (entry 0). Two passes: skeleton first,
-  ;; then instructions + co-ref patching. Cursor must be set up before calling
-  ;; (either via the load_archive export or a direct $ecec-pos/$ecec-end pair).
+  ;; Materialize a parsed (ecec-archive version 2 file "..." entries
+  ;; (<entry>...)) section and return the init code-object (entry 0).
+  ;; Two passes: skeleton first, then instructions + co-ref patching.
   ;;
   ;; Instruction parsing goes through $ece-instr-to-wasm-instr, matching
   ;; §6.6's code-object-based label store. $ece-instr-to-wasm-instr always
@@ -6962,8 +6973,370 @@
       (ref.cast (ref $hash-table) (local.get $inner))
       (local.get $index-fx)))
 
-  (func $load-archive-impl (result (ref $code-object))
+  ;; ─── Binary archive byte decoder (§8 compact archive format) ───
+
+  (func $bca-read-u8 (result i32)
+    (local $b i32)
+    (if (i32.ge_u (global.get $bca-pos) (global.get $bca-end))
+      (then
+        (call $signal-error-str (global.get $err-unknown-arch))
+        (unreachable)))
+    (local.set $b (i32.load8_u (global.get $bca-pos)))
+    (global.set $bca-pos (i32.add (global.get $bca-pos) (i32.const 1)))
+    (local.get $b))
+
+  (func $bca-read-u16 (result i32)
+    (i32.add
+      (i32.shl (call $bca-read-u8) (i32.const 8))
+      (call $bca-read-u8)))
+
+  (func $bca-read-u32 (result i32)
+    (i32.or
+      (i32.or
+        (i32.shl (call $bca-read-u8) (i32.const 24))
+        (i32.shl (call $bca-read-u8) (i32.const 16)))
+      (i32.or
+        (i32.shl (call $bca-read-u8) (i32.const 8))
+        (call $bca-read-u8))))
+
+  (func $bca-read-byte-string (result (ref $string))
+    (local $len i32)
+    (local $i i32)
+    (local $str (ref $string))
+    (local.set $len (call $bca-read-u32))
+    (if (i32.gt_u
+          (local.get $len)
+          (i32.sub (global.get $bca-end) (global.get $bca-pos)))
+      (then
+        (call $signal-error-str (global.get $err-unknown-arch))
+        (unreachable)))
+    (local.set $str (array.new_default $string (local.get $len)))
+    (local.set $i (i32.const 0))
+    (block $done (loop $copy
+      (br_if $done (i32.ge_u (local.get $i) (local.get $len)))
+      (array.set $string (local.get $str) (local.get $i) (call $bca-read-u8))
+      (local.set $i (i32.add (local.get $i) (i32.const 1)))
+      (br $copy)))
+    (local.get $str))
+
+  (func $bca-read-optional-datum (result (ref null eq))
+    (local $present i32)
+    (local.set $present (call $bca-read-u8))
+    (if (i32.eqz (local.get $present))
+      (then (return (global.get $false))))
+    (if (i32.ne (local.get $present) (i32.const 1))
+      (then
+        (call $signal-error-str (global.get $err-unknown-arch))
+        (unreachable)))
+    (call $bca-read-datum))
+
+  (func $bca-read-datum (result (ref null eq))
+    (local $tag i32)
+    (local $sign i32)
+    (local $mag i32)
+    (local $len i32)
+    (local $i i32)
+    (local $vec (ref $vector))
+    (local $head (ref null eq))
+    (local $tail (ref null eq))
+    (local.set $tag (call $bca-read-u8))
+    (if (i32.eq (local.get $tag) (i32.const 1))
+      (then (return (global.get $nil))))
+    (if (i32.eq (local.get $tag) (i32.const 2))
+      (then (return (global.get $true))))
+    (if (i32.eq (local.get $tag) (i32.const 3))
+      (then (return (global.get $false))))
+    (if (i32.eq (local.get $tag) (i32.const 4))
+      (then
+        (local.set $sign (call $bca-read-u8))
+        (local.set $mag (call $bca-read-u32))
+        (if (i32.eq (local.get $sign) (i32.const 1))
+          (then (return (call $make-fixnum (i32.sub (i32.const 0) (local.get $mag))))))
+        (if (i32.ne (local.get $sign) (i32.const 0))
+          (then
+            (call $signal-error-str (global.get $err-unknown-arch))
+            (unreachable)))
+        (return (call $make-fixnum (local.get $mag)))))
+    (if (i32.eq (local.get $tag) (i32.const 5))
+      (then (return (call $intern (call $bca-read-byte-string)))))
+    (if (i32.eq (local.get $tag) (i32.const 6))
+      (then (return (call $bca-read-byte-string))))
+    (if (i32.eq (local.get $tag) (i32.const 7))
+      (then
+        (local.set $head (call $bca-read-datum))
+        (local.set $tail (call $bca-read-datum))
+        (return (call $cons (local.get $head) (local.get $tail)))))
+    (if (i32.eq (local.get $tag) (i32.const 8))
+      (then
+        (local.set $len (call $bca-read-u32))
+        (local.set $vec (array.new_default $vector (local.get $len)))
+        (local.set $i (i32.const 0))
+        (block $vdone (loop $vloop
+          (br_if $vdone (i32.ge_u (local.get $i) (local.get $len)))
+          (array.set $vector (local.get $vec) (local.get $i) (call $bca-read-datum))
+          (local.set $i (i32.add (local.get $i) (i32.const 1)))
+          (br $vloop)))
+        (return (local.get $vec))))
+    (if (i32.eq (local.get $tag) (i32.const 9))
+      (then
+        (return
+          (call $cons
+            (call $symbol-by-id (global.get $sym-id-co-ref))
+            (call $cons
+              (call $make-fixnum (call $bca-read-u32))
+              (global.get $nil))))))
+    (call $signal-error-str (global.get $err-unknown-arch))
+    (unreachable))
+
+  (func $bca-read-register-symbol (result (ref $symbol))
+    (call $asm-sym-ref (i32.add (i32.const 7) (call $bca-read-u8))))
+
+  (func $bca-read-operand (result (ref null eq))
+    (local $tag i32)
+    (local $op-id i32)
+    (local.set $tag (call $bca-read-u8))
+    (if (i32.eq (local.get $tag) (i32.const 1))
+      (then
+        (return
+          (call $cons
+            (call $asm-sym-ref (i32.const 14))
+            (call $cons (call $bca-read-register-symbol) (global.get $nil))))))
+    (if (i32.eq (local.get $tag) (i32.const 2))
+      (then
+        (return
+          (call $cons
+            (call $asm-sym-ref (i32.const 13))
+            (call $cons (call $bca-read-datum) (global.get $nil))))))
+    (if (i32.eq (local.get $tag) (i32.const 3))
+      (then
+        (local.set $op-id (call $bca-read-u16))
+        (return
+          (call $cons
+            (call $asm-sym-ref (i32.const 16))
+            (call $cons
+              (call $asm-sym-ref (i32.add (i32.const 17) (local.get $op-id)))
+              (global.get $nil))))))
+    (if (i32.eq (local.get $tag) (i32.const 4))
+      (then
+        (return
+          (call $cons
+            (call $asm-sym-ref (i32.const 15))
+            (call $cons (call $bca-read-datum) (global.get $nil))))))
+    (call $signal-error-str (global.get $err-unknown-arch))
+    (unreachable))
+
+  (func $bca-read-operand-list (result (ref null eq))
+    (local $len i32)
+    (local $i i32)
+    (local $acc (ref null eq))
+    (local.set $len (call $bca-read-u16))
+    (local.set $acc (global.get $nil))
+    (block $done (loop $loop
+      (br_if $done (i32.ge_u (local.get $i) (local.get $len)))
+      (local.set $acc (call $cons (call $bca-read-operand) (local.get $acc)))
+      (local.set $i (i32.add (local.get $i) (i32.const 1)))
+      (br $loop)))
+    (call $reverse-list (local.get $acc)))
+
+  (func $bca-read-instruction (result (ref null eq))
+    (local $tag i32)
+    (local $target (ref null eq))
+    (local $source (ref null eq))
+    (local $operands (ref null eq))
+    (local $dest (ref null eq))
+    (local.set $tag (call $bca-read-u8))
+    (if (i32.eq (local.get $tag) (i32.const 1))
+      (then
+        (local.set $target (call $bca-read-register-symbol))
+        (local.set $source (call $bca-read-operand))
+        (local.set $operands (call $bca-read-operand-list))
+        (return
+          (call $cons
+            (call $asm-sym-ref (i32.const 0))
+            (call $cons
+              (local.get $target)
+              (call $cons (local.get $source) (local.get $operands)))))))
+    (if (i32.eq (local.get $tag) (i32.const 2))
+      (then
+        (local.set $source (call $bca-read-operand))
+        (local.set $operands (call $bca-read-operand-list))
+        (return
+          (call $cons
+            (call $asm-sym-ref (i32.const 1))
+            (call $cons (local.get $source) (local.get $operands))))))
+    (if (i32.eq (local.get $tag) (i32.const 3))
+      (then
+        (local.set $source (call $bca-read-operand))
+        (local.set $operands (call $bca-read-operand-list))
+        (return
+          (call $cons
+            (call $asm-sym-ref (i32.const 6))
+            (call $cons (local.get $source) (local.get $operands))))))
+    (if (i32.eq (local.get $tag) (i32.const 4))
+      (then
+        (return
+          (call $cons
+            (call $asm-sym-ref (i32.const 4))
+            (call $cons (call $bca-read-register-symbol) (global.get $nil))))))
+    (if (i32.eq (local.get $tag) (i32.const 5))
+      (then
+        (return
+          (call $cons
+            (call $asm-sym-ref (i32.const 5))
+            (call $cons (call $bca-read-register-symbol) (global.get $nil))))))
+    (if (i32.eq (local.get $tag) (i32.const 6))
+      (then
+        (local.set $dest (call $bca-read-operand))
+        (return
+          (call $cons
+            (call $asm-sym-ref (i32.const 3))
+            (call $cons (local.get $dest) (global.get $nil))))))
+    (if (i32.eq (local.get $tag) (i32.const 7))
+      (then
+        (local.set $dest (call $bca-read-operand))
+        (return
+          (call $cons
+            (call $asm-sym-ref (i32.const 2))
+            (call $cons (local.get $dest) (global.get $nil))))))
+    (if (i32.eq (local.get $tag) (i32.const 8))
+      (then
+        (return
+          (call $cons (call $asm-sym-ref (i32.const 44)) (global.get $nil)))))
+    (call $signal-error-str (global.get $err-unknown-arch))
+    (unreachable))
+
+  (func $bca-read-instruction-list (result (ref null eq))
+    (local $len i32)
+    (local $i i32)
+    (local $acc (ref null eq))
+    (local.set $len (call $bca-read-u32))
+    (local.set $acc (global.get $nil))
+    (block $done (loop $loop
+      (br_if $done (i32.ge_u (local.get $i) (local.get $len)))
+      (local.set $acc (call $cons (call $bca-read-instruction) (local.get $acc)))
+      (local.set $i (i32.add (local.get $i) (i32.const 1)))
+      (br $loop)))
+    (call $reverse-list (local.get $acc)))
+
+  (func $bca-read-code-object-entry (result (ref null eq))
+    (local $name (ref null eq))
+    (local $arity (ref null eq))
+    (local $source-loc (ref null eq))
+    (local $labels (ref null eq))
+    (local $instrs (ref null eq))
+    (local $entry (ref null eq))
+    (local.set $name (call $bca-read-optional-datum))
+    (local.set $arity (call $bca-read-optional-datum))
+    (local.set $source-loc (call $bca-read-optional-datum))
+    (local.set $labels (call $bca-read-datum))
+    (local.set $instrs (call $bca-read-instruction-list))
+    (local.set $entry (global.get $nil))
+    (local.set $entry (call $cons (local.get $instrs) (local.get $entry)))
+    (local.set $entry
+      (call $cons (call $symbol-by-id (global.get $sym-id-instructions))
+                  (local.get $entry)))
+    (local.set $entry (call $cons (local.get $labels) (local.get $entry)))
+    (local.set $entry
+      (call $cons (call $symbol-by-id (global.get $sym-id-labels))
+                  (local.get $entry)))
+    (local.set $entry (call $cons (local.get $source-loc) (local.get $entry)))
+    (local.set $entry
+      (call $cons (call $symbol-by-id (global.get $sym-id-source-loc))
+                  (local.get $entry)))
+    (local.set $entry (call $cons (local.get $arity) (local.get $entry)))
+    (local.set $entry
+      (call $cons (call $symbol-by-id (global.get $sym-id-arch-arity))
+                  (local.get $entry)))
+    (local.set $entry (call $cons (local.get $name) (local.get $entry)))
+    (local.set $entry
+      (call $cons (call $symbol-by-id (global.get $sym-id-arch-name))
+                  (local.get $entry)))
+    (call $cons (global.get $nil) (local.get $entry)))
+
+  (func $bca-read-code-object-entries (result (ref null eq))
+    (local $len i32)
+    (local $i i32)
+    (local $acc (ref null eq))
+    (local.set $len (call $bca-read-u32))
+    (local.set $acc (global.get $nil))
+    (block $done (loop $loop
+      (br_if $done (i32.ge_u (local.get $i) (local.get $len)))
+      (local.set $acc (call $cons (call $bca-read-code-object-entry) (local.get $acc)))
+      (local.set $i (i32.add (local.get $i) (i32.const 1)))
+      (br $loop)))
+    (call $reverse-list (local.get $acc)))
+
+  (func $bca-read-archive-section (result (ref null eq))
+    (local $section-tag i32)
+    (local $version i32)
+    (local $file (ref null eq))
+    (local $entries (ref null eq))
+    (local.set $section-tag (call $bca-read-u8))
+    (if (i32.ne (local.get $section-tag) (i32.const 1))
+      (then
+        (call $signal-error-str (global.get $err-unknown-arch))
+        (unreachable)))
+    (local.set $version (call $bca-read-u16))
+    (drop (call $bca-read-optional-datum)) ;; :kind
+    (local.set $file (call $bca-read-optional-datum))
+    (drop (call $bca-read-optional-datum)) ;; :unit-id
+    (drop (call $bca-read-optional-datum)) ;; :phase
+    (drop (call $bca-read-optional-datum)) ;; :imports
+    (drop (call $bca-read-optional-datum)) ;; :exports
+    (drop (call $bca-read-optional-datum)) ;; :init
+    (local.set $entries (call $bca-read-code-object-entries))
+    (call $cons
+      (call $symbol-by-id (global.get $sym-id-ecec-archive))
+      (call $cons
+        (call $symbol-by-id (global.get $sym-id-version))
+        (call $cons
+          (call $make-fixnum (local.get $version))
+          (call $cons
+            (call $symbol-by-id (global.get $sym-id-file))
+            (call $cons
+              (local.get $file)
+              (call $cons
+                (call $symbol-by-id (global.get $sym-id-entries))
+                (call $cons (local.get $entries) (global.get $nil)))))))))
+
+  (func $bca-read-header
+    (if (i32.ne (call $bca-read-u8) (i32.const 69))
+      (then (call $signal-error-str (global.get $err-unknown-arch)) (unreachable)))
+    (if (i32.ne (call $bca-read-u8) (i32.const 67))
+      (then (call $signal-error-str (global.get $err-unknown-arch)) (unreachable)))
+    (if (i32.ne (call $bca-read-u8) (i32.const 69))
+      (then (call $signal-error-str (global.get $err-unknown-arch)) (unreachable)))
+    (if (i32.ne (call $bca-read-u8) (i32.const 67))
+      (then (call $signal-error-str (global.get $err-unknown-arch)) (unreachable)))
+    (if (i32.ne (call $bca-read-u8) (i32.const 0))
+      (then (call $signal-error-str (global.get $err-unknown-arch)) (unreachable)))
+    (if (i32.ne (call $bca-read-u8) (i32.const 66))
+      (then (call $signal-error-str (global.get $err-unknown-arch)) (unreachable)))
+    (if (i32.ne (call $bca-read-u8) (i32.const 73))
+      (then (call $signal-error-str (global.get $err-unknown-arch)) (unreachable)))
+    (if (i32.ne (call $bca-read-u8) (i32.const 78))
+      (then (call $signal-error-str (global.get $err-unknown-arch)) (unreachable)))
+    (if (i32.ne (call $bca-read-u16) (i32.const 1))
+      (then (call $signal-error-str (global.get $err-bad-version)) (unreachable)))
+    (if (i32.ne (call $bca-read-u16) (i32.const 2))
+      (then (call $signal-error-str (global.get $err-bad-version)) (unreachable)))
+    (drop (call $bca-read-u32))
+    (global.set $bca-section-count (call $bca-read-u32))
+    (global.set $bca-section-index (i32.const 0)))
+
+  (func $bca-load-next-section (result (ref $code-object))
     (local $archive (ref null eq))
+    (if (i32.ge_u (global.get $bca-section-index) (global.get $bca-section-count))
+      (then
+        (call $signal-error-str (global.get $err-empty-entries))
+        (unreachable)))
+    (local.set $archive (call $bca-read-archive-section))
+    (global.set $bca-section-index
+      (i32.add (global.get $bca-section-index) (i32.const 1)))
+    (call $materialize-archive-section (local.get $archive)))
+
+  (func $materialize-archive-section (param $archive (ref null eq))
+                                     (result (ref $code-object))
     (local $head (ref null eq))
     (local $version (ref null eq))
     (local $entries (ref null eq))
@@ -6983,8 +7356,6 @@
     (local $entries-iter (ref null eq))
     (local $stem (ref null eq))
 
-    ;; Read archive sexp.
-    (local.set $archive (call $ecec-read-sexp))
     ;; Head symbol check: (ecec-archive ...)
     (local.set $head (call $xcar (local.get $archive)))
     (if (i32.eq
@@ -7158,6 +7529,10 @@
     (ref.cast (ref $code-object)
       (array.get $co-vec (local.get $cos) (i32.const 0))))
 
+  ;; Text archive entry point used by the compatibility .ecec sexp loader.
+  (func $load-archive-impl (result (ref $code-object))
+    (call $materialize-archive-section (call $ecec-read-sexp)))
+
   ;; Archive-format entry point. Returns a handle wrapping the init code-object.
   (func (export "load_archive") (param $offset i32) (param $len i32) (result i32)
     (global.set $ecec-pos (local.get $offset))
@@ -7175,6 +7550,20 @@
   ;; the JS glue to iterate over a multi-archive bundle.
   (func (export "archive_has_more") (result i32)
     (i32.lt_u (global.get $ecec-pos) (global.get $ecec-end)))
+
+  ;; Binary archive entry point. OFFSET/LEN are byte offsets into linear memory.
+  (func (export "load_binary_archive") (param $offset i32) (param $len i32)
+        (result i32)
+    (global.set $bca-pos (local.get $offset))
+    (global.set $bca-end (i32.add (local.get $offset) (local.get $len)))
+    (call $bca-read-header)
+    (call $alloc-handle (call $bca-load-next-section)))
+
+  (func (export "load_binary_archive_continue") (result i32)
+    (call $alloc-handle (call $bca-load-next-section)))
+
+  (func (export "binary_archive_has_more") (result i32)
+    (i32.lt_u (global.get $bca-section-index) (global.get $bca-section-count)))
 
   ;; Run an init code-object with the given environment handle.
   (func (export "run_code_object") (param $co-handle i32) (param $env-handle i32)

@@ -208,11 +208,13 @@ test-wasm: wasm | .qlot/qlot.conf
 	@mkdir -p .tmp $(TEST_OUTPUT_DIR)
 	@echo "Compiling WASM test suite..."
 	@cat $(WASM_TEST_SRCS) > .tmp/ece-wasm-tests.scm
+	@printf '(define wasm-binary-loader-answer 42)\n' > .tmp/ece-wasm-binary-loader.scm
 	@qlot exec sbcl --dynamic-space-size 4096 --disable-debugger --eval '(asdf:load-system :ece)' \
 	  --eval '(ece:evaluate (list (intern "compile-file" :ece) ".tmp/ece-wasm-tests.scm"))' \
+	  --eval '(ece:evaluate (list (intern "compile-file/binary" :ece) ".tmp/ece-wasm-binary-loader.scm"))' \
 	  --quit
 	@echo "Running WASM tests..."
-	@node --max-old-space-size=4096 wasm/test.js .tmp/ece-wasm-tests.ecec 2>&1 | tee $(TEST_OUTPUT_DIR)/test-wasm.txt
+	@node --max-old-space-size=4096 wasm/test.js .tmp/ece-wasm-tests.ecec .tmp/ece-wasm-binary-loader.ecec 2>&1 | tee $(TEST_OUTPUT_DIR)/test-wasm.txt
 	@grep -q "0 failed" $(TEST_OUTPUT_DIR)/test-wasm.txt
 
 test-golden: | .qlot/qlot.conf

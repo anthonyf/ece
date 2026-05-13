@@ -10,6 +10,7 @@ const os = require("os");
 const childProcess = require("child_process");
 
 const testFile = process.argv[2] || path.join(__dirname, "..", "wasm-tests.ecec");
+const binaryTestFile = process.argv[3] || null;
 const bootstrapDir = path.join(__dirname, "..", "bootstrap");
 const wasmFile = path.join(__dirname, "runtime.wasm");
 
@@ -195,6 +196,16 @@ function runIntegrationTests(w, envH) {
     const r = w.h_compiled_entry(w.h_fixnum(41));
     assert(w.h_error_sentinel_p(r) === 1, "expected compiled entry type error sentinel");
   });
+
+  if (binaryTestFile) {
+    iTest("binary archive bundle loads from bytes", () => {
+      const bytes = fs.readFileSync(binaryTestFile);
+      ECE.loadArchiveBundleBytes(bytes);
+      const result = eceEval("wasm-binary-loader-answer");
+      assert(w.h_fixnum_val(result) === 42,
+        `expected binary-loaded value 42, got ${w.h_fixnum_val(result)}`);
+    });
+  }
 
   // ── Native-zone entry dispatch smoke ──
   iTest("native zone dispatch returns value", () => {
