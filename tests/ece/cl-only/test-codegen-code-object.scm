@@ -52,3 +52,27 @@
        ((string-contains? line "*archive-zone-fns*")
         (loop #t))
        (else (loop saw-register)))))))
+
+(test "codegen: generates zone shards from binary archive bundle" (lambda ()
+  (let ((source ".tmp/test-zone-binary-src.scm")
+        (bundle ".tmp/test-zone-binary.ecec")
+        (out-dir ".tmp/test-zone-binary-zones"))
+    (let ((out (open-output-file source)))
+      (display "(define test-zone-binary-answer 44)" out)
+      (newline out)
+      (close-output-port out))
+    (compile-system/binary (list source) bundle)
+    (%make-directory out-dir)
+    (let ((manifest (generate-all-zones-from-archive! bundle out-dir)))
+      (assert-equal manifest ".tmp/test-zone-binary-zones/manifest.sexp")
+      (let ((in (open-input-file manifest)))
+        (let ((line1 (read-line in)))
+          (close-input-port in)
+          (assert-equal ";;;; manifest.sexp" line1)))
+      (let ((in (open-input-file
+                 ".tmp/test-zone-binary-zones/0-test-zone-binary-src-zones.lisp")))
+        (let ((line1 (read-line in)))
+          (close-input-port in)
+          (assert-equal
+           ";;;; .tmp/test-zone-binary-zones/0-test-zone-binary-src-zones.lisp"
+           line1)))))))
