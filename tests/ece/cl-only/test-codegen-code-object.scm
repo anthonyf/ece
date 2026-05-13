@@ -68,11 +68,23 @@
       (let ((in (open-input-file manifest)))
         (let ((line1 (read-line in)))
           (close-input-port in)
-          (assert-equal ";;;; manifest.sexp" line1)))
+          (assert-equal line1 ";;;; manifest.sexp")))
       (let ((in (open-input-file
                  ".tmp/test-zone-binary-zones/0-test-zone-binary-src-zones.lisp")))
         (let ((line1 (read-line in)))
-          (close-input-port in)
           (assert-equal
-           ";;;; .tmp/test-zone-binary-zones/0-test-zone-binary-src-zones.lisp"
-           line1)))))))
+           line1
+           ";;;; .tmp/test-zone-binary-zones/0-test-zone-binary-src-zones.lisp"))
+        (let loop ((saw-defun #f) (saw-register #f))
+          (let ((line (read-line in)))
+            (cond
+             ((eof? line)
+              (close-input-port in)
+              (assert-equal saw-defun #t)
+              (assert-equal saw-register #t))
+             ((string-contains? line "(defun zone-test-zone-binary-src-0 ")
+              (loop #t saw-register))
+             ((string-contains? line "*archive-zone-fns*")
+              (loop saw-defun #t))
+             (else
+              (loop saw-defun saw-register))))))))))
