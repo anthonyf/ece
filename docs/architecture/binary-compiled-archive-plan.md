@@ -389,7 +389,7 @@ Likely order:
 - [x] Add disassemble-file support for binary archives.
 - [x] Add compiler/build flags for binary vs printed output.
 - [ ] Switch bootstrap to binary after loader tests pass.
-- [ ] Update native-zone generation to avoid depending on archive text.
+- [x] Update native-zone generation to avoid depending on archive text.
 - [ ] Add WASM byte-oriented binary archive loader.
 - [ ] Switch browser packaging/reload to fetch bytes.
 - [ ] Remove obsolete `.ecec -> .ececb` conversion code.

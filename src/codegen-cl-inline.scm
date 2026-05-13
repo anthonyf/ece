@@ -1364,6 +1364,12 @@ String unit ids are treated as legacy file stems and normalized to symbols."
      (unit-id unit-id)
      (else (archive-file-stem archive)))))
 
+(define (archive-section-form? archive)
+  "Return true when ARCHIVE is a supported compiled archive section form."
+  (and (pair? archive)
+       (or (eq? (car archive) ':ecec-archive)
+           (eq? (car archive) 'ecec-archive))))
+
 (define (generate-zones-for-archive-section! archive out)
   "Emit one zone defun per code-object in ARCHIVE to shard OUT.
 ARCHIVE is a single parsed (ecec-archive ...) section. Used internally by
@@ -1400,48 +1406,77 @@ Threads *emit-co-index-map* so emit-inner-co-lookup can resolve (const
             (newline))
           (loop (+ i 1)))))))
 
+(define (generate-zone-shard-from-archive! archive-path output-dir archive-index archive)
+  "Emit one native-zone shard for ARCHIVE and return its manifest entry."
+  (if (archive-section-form? archive)
+      (let* ((file-stem-sym (archive-file-stem archive))
+             (file-stem (symbol->string file-stem-sym))
+             (unit-id (archive-unit-id archive))
+             (source-file (archive/plist-get (cdr archive) ':file))
+             (shard-filename (zone-shard-filename archive-index file-stem))
+             (shard-path (zone-shard-output-path output-dir
+                                                 archive-index
+                                                 file-stem))
+             (out (open-output-file shard-path)))
+        (emit-zone-shard-header out archive-path shard-path unit-id)
+        (generate-zones-for-archive-section! archive out)
+        (close-output-port out)
+        (list shard-filename unit-id source-file))
+      (%raw-error
+       "generate-all-zones-from-archive!: expected (:ecec-archive ...) section")))
+
+(define (emit-generated-zone-manifest! manifest-path archive-path entries)
+  "Write the native-zone manifest for ENTRIES and return MANIFEST-PATH."
+  (let ((manifest-out (open-output-file manifest-path)))
+    (emit-zone-shard-manifest manifest-out archive-path (reverse entries))
+    (close-output-port manifest-out)
+    manifest-path))
+
+(define (generate-zones-from-binary-archives! archive-path output-dir manifest-path archives)
+  "Generate native zones from decoded binary archive section forms."
+  (let loop ((archive-index 0) (rest archives) (entries '()))
+    (if (null? rest)
+        (emit-generated-zone-manifest! manifest-path archive-path entries)
+        (let ((entry (generate-zone-shard-from-archive!
+                      archive-path
+                      output-dir
+                      archive-index
+                      (car rest))))
+          (loop (+ archive-index 1)
+                (cdr rest)
+                (cons entry entries))))))
+
+(define (generate-zones-from-printed-archives! archive-path output-dir manifest-path)
+  "Stream printed archive sections from ARCHIVE-PATH into native-zone shards."
+  (let ((port (open-input-file archive-path)))
+    (let loop ((archive-index 0) (entries '()))
+      (let ((archive (ece-scheme-read port)))
+        (if (eof? archive)
+            (begin
+              (close-input-port port)
+              (emit-generated-zone-manifest! manifest-path archive-path entries))
+            (let ((entry (generate-zone-shard-from-archive!
+                          archive-path
+                          output-dir
+                          archive-index
+                          archive)))
+              (loop (+ archive-index 1)
+                    (cons entry entries))))))))
+
 (define (generate-all-zones-from-archive! archive-path output-dir)
-  "Read a bundle at ARCHIVE-PATH (a concatenation of (ecec-archive ...)
-sections, one per compiled source file), iterate each section's
-code-objects, and emit source-aligned native-zone Lisp shards under
-OUTPUT-DIR. The output manifest is `manifest.sexp`; each shard contains one
-defun per code object for one archive section, with readable names derived
-from the section's |file| field.
+  "Read a printed or binary bundle at ARCHIVE-PATH, iterate each section's
+code-objects, and emit source-aligned native-zone Lisp shards under OUTPUT-DIR.
+The output manifest is `manifest.sexp`; each shard contains one defun per code
+object for one archive section, with readable names derived from the section's
+|file| field.
 
 Signals an error if a section has zero entries. Deterministic: sections
 are processed in bundle order; within each section entries are processed
 in archive order (init first, then nested lambdas BFS)."
-  (let ((manifest-path (zone-manifest-output-path output-dir))
-        (port (open-input-file archive-path)))
-    (let loop ((archive-index 0) (entries '()))
-      (let ((archive (ece-scheme-read port)))
-        (cond
-         ((eof? archive)
-          (close-input-port port)
-          (let ((manifest-out (open-output-file manifest-path)))
-            (emit-zone-shard-manifest manifest-out archive-path (reverse entries))
-            (close-output-port manifest-out))
-          manifest-path)
-         ;; Accept both new (:ecec-archive) and legacy (ecec-archive)
-         ;; during the transition.
-         ((and (pair? archive)
-               (or (eq? (car archive) ':ecec-archive)
-                   (eq? (car archive) 'ecec-archive)))
-          (let* ((file-stem-sym (archive-file-stem archive))
-                 (file-stem (symbol->string file-stem-sym))
-                 (unit-id (archive-unit-id archive))
-                 (source-file (archive/plist-get (cdr archive) ':file))
-                 (shard-filename (zone-shard-filename archive-index file-stem))
-                 (shard-path (zone-shard-output-path output-dir
-                                                     archive-index
-                                                     file-stem))
-                 (out (open-output-file shard-path)))
-            (emit-zone-shard-header out archive-path shard-path unit-id)
-            (generate-zones-for-archive-section! archive out)
-            (close-output-port out)
-            (loop (+ archive-index 1)
-                  (cons (list shard-filename unit-id source-file) entries))))
-         (else
-          (close-input-port port)
-          (%raw-error
-           "generate-all-zones-from-archive!: expected (:ecec-archive ...) section")))))))
+  (let* ((manifest-path (zone-manifest-output-path output-dir))
+         (binary-archives (bca/read-file-archives-if-binary archive-path)))
+    (if binary-archives
+        (generate-zones-from-binary-archives!
+         archive-path output-dir manifest-path binary-archives)
+        (generate-zones-from-printed-archives!
+         archive-path output-dir manifest-path))))
