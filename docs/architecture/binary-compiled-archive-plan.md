@@ -387,7 +387,7 @@ Likely order:
 - [x] Add binary archive reader for debug round-tripping.
 - [x] Add CL direct materializer and loader detection.
 - [x] Add disassemble-file support for binary archives.
-- [ ] Add compiler/build flags for binary vs printed output.
+- [x] Add compiler/build flags for binary vs printed output.
 - [ ] Switch bootstrap to binary after loader tests pass.
 - [ ] Update native-zone generation to avoid depending on archive text.
 - [ ] Add WASM byte-oriented binary archive loader.

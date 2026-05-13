@@ -311,12 +311,9 @@ in the §8 archive format. Returns the output filename."
     (close-output-port out)
     output-name))
 
-(define (compile-system filenames output-path)
-  "Compile a list of .scm FILENAMES into a single .ecec archive bundle at
-OUTPUT-PATH. Each file is compiled to a code-object archive (§8 format);
-the bundle is the concatenation of those archives. Loaders iterate
-sections via load-section-from-port, dispatching on each section's head
-symbol (:ecec-archive). Returns OUTPUT-PATH."
+(define (compile-system/sexp filenames output-path)
+  "Compile FILENAMES into a printed .ecec archive bundle at OUTPUT-PATH.
+This is the current default developer-facing representation."
   (let ((out (open-output-file output-path)))
     (let loop ((files filenames))
       (when (pair? files)
@@ -324,6 +321,37 @@ symbol (:ecec-archive). Returns OUTPUT-PATH."
         (loop (cdr files))))
     (close-output-port out)
     output-path))
+
+(define (compile-system/binary filenames output-path)
+  "Compile FILENAMES into a binary .ecec archive bundle at OUTPUT-PATH."
+  (let ((out (open-binary-output-file output-path)))
+    (if (null? filenames)
+        (bca/write-bytes-to-port
+         (bca/encode-header 0 bca/default-archive-version)
+         out)
+        (let ((first-archive (compile-file->archive (car filenames))))
+          (bca/write-bytes-to-port
+           (bca/encode-header
+            (length filenames)
+            (archive/plist-get (cdr first-archive) ':version))
+           out)
+          (bca/write-bytes-to-port
+           (bca/encode-archive-section first-archive)
+           out)
+          (let loop ((files (cdr filenames)))
+            (when (pair? files)
+              (bca/write-bytes-to-port
+               (bca/encode-archive-section (compile-file->archive (car files)))
+               out)
+              (loop (cdr files))))))
+    (close-output-port out)
+    output-path))
+
+(define (compile-system filenames output-path)
+  "Compile a list of .scm FILENAMES into a single printed .ecec archive bundle
+at OUTPUT-PATH. Each file is compiled to a code-object archive (§8 format);
+the bundle is the concatenation of those archives. Returns OUTPUT-PATH."
+  (compile-system/sexp filenames output-path))
 
 ;;; --- Source-map registration ---
 
@@ -441,32 +469,45 @@ records have already been registered during the bundle discovery pass."
 
 (define (load-compiled filename)
   "Load and execute compiled code from a .ecec file (first section only).
-For multi-space bundles, only the first section is loaded."
-  (let ((port (open-input-file filename)))
-    (let ((result (load-section-from-port port)))
-      (close-input-port port)
-      result)))
+For multi-space bundles, only the first section is loaded. Accepts printed
+and binary archive files."
+  (let ((binary-archives (bca/read-file-archives-if-binary filename)))
+    (if binary-archives
+        (if (null? binary-archives)
+            #f
+            (load-archive-section-form (car binary-archives)))
+        (let ((port (open-input-file filename)))
+          (let ((result (load-section-from-port port)))
+            (close-input-port port)
+            result)))))
 
 (define (load-bundle filename)
   "Load and execute all sections from a .ecec bundle file.
 The bundle is discovered first so module units can be imported regardless of
 section order. File sections still execute sequentially in bundle order.
-Returns the result of the last section."
-  (let ((port (open-input-file filename)))
-    (define (read-sections sections)
-      (let ((archive (read-archive-section-form port)))
-        (if (eof? archive)
-            (reverse sections)
-            (read-sections
-             (cons (archive/materialize-section archive) sections)))))
-    (let ((sections (read-sections '())))
-      (close-input-port port)
-      (for-each archive/register-bundle-section! sections)
-      (let loop ((rest sections) (last-result #f))
-        (if (null? rest)
-            last-result
-            (loop (cdr rest)
-                  (archive/load-materialized-section (car rest) #t)))))))
+Accepts printed and binary archive files. Returns the result of the last
+section."
+  (define (load-materialized-sections sections)
+    (for-each archive/register-bundle-section! sections)
+    (let loop ((rest sections) (last-result #f))
+      (if (null? rest)
+          last-result
+          (loop (cdr rest)
+                (archive/load-materialized-section (car rest) #t)))))
+  (let ((binary-archives (bca/read-file-archives-if-binary filename)))
+    (if binary-archives
+        (load-materialized-sections
+         (map archive/materialize-section binary-archives))
+        (let ((port (open-input-file filename)))
+          (define (read-sections sections)
+            (let ((archive (read-archive-section-form port)))
+              (if (eof? archive)
+                  (reverse sections)
+                  (read-sections
+                   (cons (archive/materialize-section archive) sections)))))
+          (let ((sections (read-sections '())))
+            (close-input-port port)
+            (load-materialized-sections sections))))))
 
 ;;; ─────────────────────────────────────────────────────────────────────────
 ;;; §8: .ecec archive format (version 2)
@@ -1275,11 +1316,10 @@ static value imports/exports and one module per source file."
               (cons (car forms) body)
               #t))))))
 
-(define (compile-file-to-archive filename output-port)
-  "Compile all forms in FILENAME via mc-compile-to-code-object and
-write the resulting code-object archive to OUTPUT-PORT. Mirrors
-compile-file-to-port but produces the §8 archive format. A file containing
-one top-level define-module form emits a :module archive section."
+(define (compile-file->archive-result filename)
+  "Compile all forms in FILENAME via mc-compile-to-code-object.
+Returns (TOP-CO . ARCHIVE), where ARCHIVE is the §8 archive form. A file
+containing one top-level define-module form emits a :module archive section."
   (let ((basename (filename-basename filename)))
     (set! *source-locations* (%make-hash-table))
     (set! *source-file-name* basename)
@@ -1426,11 +1466,23 @@ one top-level define-module form emits a :module archive section."
         ;; cast in `$%code-object-set-source-loc!`. Per-PC source-map
         ;; tracking is diagnostics roadmap thread 5 — a separate proposal.
         (let ((archive (code-object->archive-sexp top-co basename metadata)))
-          (write-string-to-port (write-to-string-flat archive) output-port)
-          (write-char #\newline output-port))
-        (set! *source-locations* (%make-hash-table))
-        (set! *source-file-name* #f)
-        top-co))))
+          (set! *source-locations* (%make-hash-table))
+          (set! *source-file-name* #f)
+          (cons top-co archive))))))
+
+(define (compile-file->archive filename)
+  "Compile FILENAME and return its §8 archive form without writing a file."
+  (cdr (compile-file->archive-result filename)))
+
+(define (compile-file-to-archive filename output-port)
+  "Compile all forms in FILENAME and write the resulting printed archive to
+OUTPUT-PORT. Returns the top-level code object for compatibility with older
+tests and tooling."
+  (let* ((result (compile-file->archive-result filename))
+         (archive (cdr result)))
+    (write-string-to-port (write-to-string-flat archive) output-port)
+    (write-char #\newline output-port)
+    (car result)))
 
 (define (compile-file-archive filename)
   "Compile FILENAME to a .ecec archive file. Returns the output filename."
@@ -1440,6 +1492,18 @@ one top-level define-module form emits a :module archive section."
     (compile-file-to-archive filename out)
     (close-output-port out)
     output-name))
+
+(define (compile-file/sexp filename)
+  "Compile FILENAME to a printed .ecec archive file. Returns the output path."
+  (compile-file-archive filename))
+
+(define (compile-file/binary filename)
+  "Compile FILENAME to a binary .ecec archive file. Returns the output path."
+  (let ((output-name
+         (string-append (filename-strip-extension filename ".scm") ".ecec")))
+    (bca/write-bytes-to-file
+     (bca/encode-archive (compile-file->archive filename))
+     output-name)))
 
 ;;; -------------------------------------------------------------------------
 ;;; Binary compiled archive codec, phase 1
@@ -2055,9 +2119,12 @@ one top-level define-module form emits a :module archive section."
           (let ((section (bca/read-archive-section tail)))
             (loop (+ i 1) (cdr section) (cons (car section) acc)))))))
 
+(define (bca/write-bytes-to-port bytes port)
+  (for-each (lambda (b) (write-byte b port)) bytes))
+
 (define (bca/write-bytes-to-file bytes path)
   (let ((out (open-binary-output-file path)))
-    (for-each (lambda (b) (write-byte b out)) bytes)
+    (bca/write-bytes-to-port bytes out)
     (close-output-port out)
     path))
 
@@ -2070,3 +2137,43 @@ one top-level define-module form emits a :module archive section."
               (close-input-port in)
               (reverse acc))
             (loop (cons b acc)))))))
+
+(define (bca/byte-prefix? bytes prefix)
+  (cond
+   ((null? prefix) #t)
+   ((null? bytes) #f)
+   ((= (car bytes) (car prefix))
+    (bca/byte-prefix? (cdr bytes) (cdr prefix)))
+   (else #f)))
+
+(define (bca/binary-archive-bytes? bytes)
+  (bca/byte-prefix? bytes bca/magic-bytes))
+
+(define (bca/read-byte-prefix-from-file path count)
+  (let ((in (open-binary-input-file path)))
+    (let loop ((remaining count) (acc '()))
+      (if (= remaining 0)
+          (begin
+            (close-input-port in)
+            (reverse acc))
+          (let ((b (read-byte in)))
+            (if (eof? b)
+                (begin
+                  (close-input-port in)
+                  (reverse acc))
+                (loop (- remaining 1) (cons b acc))))))))
+
+(define (bca/read-file-archives-if-binary path)
+  "Return decoded archive sections when PATH is a binary .ecec file.
+Return #f when PATH does not start with the binary archive magic bytes."
+  (let ((prefix
+         (bca/read-byte-prefix-from-file path (length bca/magic-bytes))))
+    (if (bca/binary-archive-bytes? prefix)
+        (let* ((bytes (bca/read-bytes-from-file path))
+               (decoded (bca/read-archive bytes))
+               (payload (car decoded)))
+          (when (not (null? (cdr decoded)))
+            (error "bca/read-file-archives-if-binary: trailing bytes after archive"
+                   path))
+          (archive/plist-get (cdr payload) ':sections))
+        #f)))

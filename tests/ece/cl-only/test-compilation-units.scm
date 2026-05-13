@@ -94,6 +94,16 @@
   (let ((output (compile-file ".tmp/ece-cu-src.scm")))
     (assert-equal output ".tmp/ece-cu-src.ecec"))))
 
+(test "compile-file/binary creates loadable binary archive" (lambda ()
+  (write-string-to-file ".tmp/ece-cu-binary-src.scm"
+    "(define cu-binary-from-file 321)\n")
+  (let ((output (compile-file/binary ".tmp/ece-cu-binary-src.scm")))
+    (assert-equal output ".tmp/ece-cu-binary-src.ecec")
+    (assert-true
+     (bca/binary-archive-bytes? (bca/read-bytes-from-file output)))
+    (load-compiled output)
+    (assert-equal cu-binary-from-file 321))))
+
 (test "load-compiled executes compiled file" (lambda ()
   ;; Source file already compiled from previous test
   (load-compiled ".tmp/ece-cu-src.ecec")
@@ -128,3 +138,22 @@
   ;; Check same as what load would produce
   (assert-equal cu-equiv-a 100)
   (assert-equal cu-equiv-b 150)))
+
+(test "compile-system/binary creates loadable binary bundle" (lambda ()
+  (write-string-to-file ".tmp/ece-cu-bin-a.scm"
+    "(define (cu-bin-add1 x) (+ x 1))\n")
+  (write-string-to-file ".tmp/ece-cu-bin-b.scm"
+    "(define (cu-bin-use) (cu-bin-add1 8))\n")
+  (let ((output ".tmp/ece-cu-bin-bundle.ecec"))
+    (compile-system/binary
+     (list ".tmp/ece-cu-bin-a.scm" ".tmp/ece-cu-bin-b.scm")
+     output)
+    (assert-true
+     (bca/binary-archive-bytes? (bca/read-bytes-from-file output)))
+    (let* ((decoded (bca/read-archive (bca/read-bytes-from-file output)))
+           (payload (car decoded))
+           (sections (archive/plist-get (cdr payload) ':sections)))
+      (assert-equal 2 (length sections))
+      (assert-equal (cdr decoded) '()))
+    (load-bundle output)
+    (assert-equal 9 (cu-bin-use)))))

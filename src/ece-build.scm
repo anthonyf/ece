@@ -82,7 +82,7 @@ to accumulate without quadratic allocation."
 (define (parse-build-args argv)
   "Parse ece-build CLI args. Returns
  (list target output-dir standalone? module-name entry-name source-files help?
-       native-zones?)
+       native-zones? archive-format)
 or signals error."
   (let loop ((rest argv)
              (target #f)
@@ -92,17 +92,18 @@ or signals error."
              (entry-name #f)
              (sources '())
              (help? #f)
-             (native-zones? #f))
+             (native-zones? #f)
+             (archive-format "sexp"))
     (cond
      ((null? rest)
       (list target output-dir standalone? module-name entry-name
-            (reverse sources) help? native-zones?))
+            (reverse sources) help? native-zones? archive-format))
      (else
       (let ((arg (car rest)))
         (cond
          ((or (string=? arg "-h") (string=? arg "--help"))
           (loop (cdr rest) target output-dir standalone? module-name entry-name
-                sources #t native-zones?))
+                sources #t native-zones? archive-format))
          ((string=? arg "--target")
           (if (null? (cdr rest))
               (begin
@@ -110,7 +111,7 @@ or signals error."
                 (newline)
                 (exit 1))
               (loop (cddr rest) (cadr rest) output-dir standalone? module-name
-                    entry-name sources help? native-zones?)))
+                    entry-name sources help? native-zones? archive-format)))
          ((string=? arg "-o")
           (if (null? (cdr rest))
               (begin
@@ -118,13 +119,21 @@ or signals error."
                 (newline)
                 (exit 1))
               (loop (cddr rest) target (cadr rest) standalone? module-name
-                    entry-name sources help? native-zones?)))
+                    entry-name sources help? native-zones? archive-format)))
          ((string=? arg "--standalone")
           (loop (cdr rest) target output-dir #t module-name entry-name sources
-                help? native-zones?))
+                help? native-zones? archive-format))
          ((string=? arg "--native-zones")
           (loop (cdr rest) target output-dir standalone? module-name entry-name
-                sources help? #t))
+                sources help? #t archive-format))
+         ((string=? arg "--archive-format")
+          (if (null? (cdr rest))
+              (begin
+                (display "Error: --archive-format requires an argument")
+                (newline)
+                (exit 1))
+              (loop (cddr rest) target output-dir standalone? module-name
+                    entry-name sources help? native-zones? (cadr rest))))
          ((string=? arg "--module")
           (if (null? (cdr rest))
               (begin
@@ -132,7 +141,7 @@ or signals error."
                 (newline)
                 (exit 1))
               (loop (cddr rest) target output-dir standalone? (cadr rest)
-                    entry-name sources help? native-zones?)))
+                    entry-name sources help? native-zones? archive-format)))
          ((string=? arg "--entry")
           (if (null? (cdr rest))
               (begin
@@ -140,7 +149,7 @@ or signals error."
                 (newline)
                 (exit 1))
               (loop (cddr rest) target output-dir standalone? module-name
-                    (cadr rest) sources help? native-zones?)))
+                    (cadr rest) sources help? native-zones? archive-format)))
          ((starts-with? arg "-")
           (display "Error: Unknown option: ")
           (display arg)
@@ -148,7 +157,7 @@ or signals error."
           (exit 1))
          (else
           (loop (cdr rest) target output-dir standalone? module-name entry-name
-                (cons arg sources) help? native-zones?))))))))
+                (cons arg sources) help? native-zones? archive-format))))))))
 
 (define (ece-build-usage)
   (display "Usage: ece-build --target web|cl|test-page -o <dir> [--standalone] <source.scm> ...")
@@ -164,6 +173,12 @@ or signals error."
   (newline)
   (display "  --native-zones             Web: emit app-zones.wat + app-zones.manifest")
   (newline)
+  (display "  --archive-format sexp|binary")
+  (newline)
+  (display "                              Emit printed sexp archives or binary archives")
+  (newline)
+  (display "                              binary is CL-only until WASM loader support lands")
+  (newline)
   (display "  --module MODULE            CL: run MODULE's --entry export")
   (newline)
   (display "  --entry SYMBOL             CL: exported procedure to run")
@@ -176,20 +191,32 @@ or signals error."
   (display "  <source.scm> ...  One or more .scm source files in dependency order")
   (newline))
 
+(define (build-archive-format-valid? archive-format)
+  (or (string=? archive-format "sexp")
+      (string=? archive-format "binary")))
+
 (define (build-args-error/native-zones target output-dir sources module-name entry-name
-                                       native-zones?)
+                                       native-zones? . maybe-archive-format)
   "Return a CLI validation error string for build args, or #f when valid."
-  (cond
+  (let ((archive-format
+         (if (null? maybe-archive-format) "sexp" (car maybe-archive-format))))
+    (cond
    ((not target)
     "Error: --target is required")
    ((and (not (string=? target "web")) (not (string=? target "cl")) (not (string=? target "test-page")))
     (string-append "Error: --target must be 'web', 'cl', or 'test-page', got '"
                    target
                    "'"))
+   ((not (build-archive-format-valid? archive-format))
+    (string-append "Error: --archive-format must be 'sexp' or 'binary', got '"
+                   archive-format
+                   "'"))
    ((not output-dir)
     "Error: -o is required")
    ((null? sources)
     "Error: At least one source .scm file is required")
+   ((and (string=? archive-format "binary") (not (string=? target "cl")))
+    "Error: --archive-format binary is only supported with --target cl until the WASM loader supports binary archives")
    ((and native-zones? (not (string=? target "web")))
     "Error: --native-zones is only supported with --target web")
    ((and (or module-name entry-name) (not (string=? target "cl")))
@@ -198,7 +225,7 @@ or signals error."
     "Error: --module requires --entry")
    ((and entry-name (not module-name))
     "Error: --entry requires --module")
-   (else #f)))
+   (else #f))))
 
 (define (build-args-error target output-dir sources module-name entry-name)
   "Return a CLI validation error string for build args, or #f when valid."
@@ -206,10 +233,12 @@ or signals error."
                                  #f))
 
 (define (validate-build-args/native-zones target output-dir sources module-name entry-name
-                                          native-zones?)
+                                          native-zones? . maybe-archive-format)
+  (let ((archive-format
+         (if (null? maybe-archive-format) "sexp" (car maybe-archive-format))))
   (let ((message (build-args-error/native-zones
                   target output-dir sources module-name entry-name
-                  native-zones?)))
+                  native-zones? archive-format)))
     (when message
       (display message)
       (newline)
@@ -224,7 +253,7 @@ or signals error."
        (display f)
        (newline)
        (exit 1)))
-   sources))
+   sources)))
 
 (define (validate-build-args target output-dir sources module-name entry-name)
   (validate-build-args/native-zones target output-dir sources module-name entry-name
@@ -321,7 +350,7 @@ the WASM binary as a base64 constant (standalone mode)."
     (generate-runtime-js home output-dir #f)
     ;; Raw file copies
     (copy-file-binary wasm-file (path-join output-dir "runtime.wasm"))
-    (copy-file-text bootstrap-file (path-join output-dir "bootstrap.ecec"))
+    (copy-file-binary bootstrap-file (path-join output-dir "bootstrap.ecec"))
     (copy-file-text template (path-join output-dir "index.html"))
     (display "Server-mode web app built in ")
     (display output-dir)
@@ -462,12 +491,13 @@ assembled side-module filename."
          (entry-name (list-ref parsed 4))
          (sources (list-ref parsed 5))
          (help? (list-ref parsed 6))
-         (native-zones? (list-ref parsed 7)))
+         (native-zones? (list-ref parsed 7))
+         (archive-format (list-ref parsed 8)))
     (when help?
       (ece-build-usage)
       (exit 0))
     (validate-build-args/native-zones target output-dir sources module-name entry-name
-                                      native-zones?)
+                                      native-zones? archive-format)
     ;; Ensure output directory exists
     (%make-directory output-dir)
     ;; Compile sources into a bundle
@@ -476,7 +506,9 @@ assembled side-module filename."
       (display (length sources))
       (display " file(s)...")
       (newline)
-      (compile-system sources bundle-path)
+      (if (string=? archive-format "binary")
+          (compile-system/binary sources bundle-path)
+          (compile-system/sexp sources bundle-path))
       (display "Bundle: ")
       (display bundle-path)
       (newline)
