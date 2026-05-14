@@ -348,16 +348,19 @@ ZONE_SENTINEL := $(BOOTSTRAP_ZONE_MANIFEST)
 
 bootstrap: $(BOOTSTRAP_DIR)/primitives-auto.lisp $(BOOTSTRAP_DIR)/bootstrap.ecec $(ZONE_SENTINEL)
 
-# Bootstrap bundle: compiled-system output for all .scm modules. Must be
+# Bootstrap bundle: binary compiled-system output for all .scm modules. Must be
 # regenerated whenever any .scm source changes (so the assembler space's
 # instruction vector reflects current src/assembler.scm).
 $(BOOTSTRAP_DIR)/bootstrap.ecec: $(BOOTSTRAP_SRCS) $(BOOTSTRAP_DIR)/primitives-auto.lisp | .qlot/qlot.conf
 	@mkdir -p $(BOOTSTRAP_DIR)
-	qlot exec sbcl --dynamic-space-size 4096 --eval '(asdf:load-system :ece)' \
+	qlot exec sbcl --dynamic-space-size 4096 --non-interactive --disable-debugger \
+	  --eval '(asdf:load-system :ece)' \
 	  --eval '(in-package :ece)' \
 	  --eval '(evaluate (list (quote eval) (list (quote read) (list (quote open-input-string) "(load \"src/compilation-unit.scm\")"))))' \
-	  --eval '(evaluate (list (quote eval) (list (quote read) (list (quote open-input-string) "(compile-system (quote (\"src/boot-env.scm\" \"src/prelude.scm\" \"src/compiler.scm\" \"src/reader.scm\" \"src/assembler.scm\" \"src/compilation-unit.scm\" \"src/syntax-rules.scm\" \"src/scheduler.scm\" \"src/scheduler-module.scm\" \"src/json.scm\" \"src/json-module.scm\" \"src/browser-lib.scm\" \"src/browser-dom.scm\" \"src/browser-html.scm\" \"src/browser-canvas.scm\" \"src/browser-dev.scm\" \"src/wasm-host.scm\" \"src/disassemble.scm\")) \"bootstrap/bootstrap.ecec\")"))))' \
+	  --eval '(evaluate (list (quote eval) (list (quote read) (list (quote open-input-string) "(compile-system/binary (quote (\"src/boot-env.scm\" \"src/prelude.scm\" \"src/compiler.scm\" \"src/reader.scm\" \"src/assembler.scm\" \"src/compilation-unit.scm\" \"src/syntax-rules.scm\" \"src/scheduler.scm\" \"src/scheduler-module.scm\" \"src/json.scm\" \"src/json-module.scm\" \"src/browser-lib.scm\" \"src/browser-dom.scm\" \"src/browser-html.scm\" \"src/browser-canvas.scm\" \"src/browser-dev.scm\" \"src/wasm-host.scm\" \"src/disassemble.scm\")) \"bootstrap/bootstrap.ecec.tmp\")"))))' \
+	  --eval '(binary-ecec-read-archives (binary-ecec-read-file-bytes "bootstrap/bootstrap.ecec.tmp"))' \
 	  --quit
+	mv $(BOOTSTRAP_DIR)/bootstrap.ecec.tmp $(BOOTSTRAP_DIR)/bootstrap.ecec
 	@echo "Bootstrap bundle regenerated: $(BOOTSTRAP_DIR)/bootstrap.ecec"
 	@# Zones compiled against the old bootstrap.ecec have PC layouts that
 	@# don't match the new one. Delete them so the zone target starts clean

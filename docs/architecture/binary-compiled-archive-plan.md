@@ -169,10 +169,11 @@ Datum tags should cover only what compiled archives need:
 - `#t`
 - `#f`
 - integer
-- float
-- character, if needed by compiled constants
+- character
+- IEEE-754 binary64 float
 - symbol table reference
-- string
+- byte string
+- full-codepoint string
 - pair/list
 - vector
 - `co-ref` local code-object reference
@@ -388,8 +389,8 @@ Likely order:
 - [x] Add CL direct materializer and loader detection.
 - [x] Add disassemble-file support for binary archives.
 - [x] Add compiler/build flags for binary vs printed output.
-- [ ] Switch bootstrap to binary after loader tests pass.
+- [x] Switch bootstrap to binary after loader tests pass.
 - [x] Update native-zone generation to avoid depending on archive text.
 - [x] Add WASM byte-oriented binary archive loader.
 - [x] Switch browser packaging/reload to fetch bytes.
-- [ ] Remove obsolete `.ecec -> .ececb` conversion code.
+- [x] Remove obsolete `.ecec -> .ececb` conversion code.

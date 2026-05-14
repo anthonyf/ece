@@ -19,8 +19,8 @@ The major boot path is:
 
 1. CL loads generated host primitive functions from [`bootstrap/primitives-auto.lisp`](../../bootstrap/primitives-auto.lisp), produced from [`primitives.def`](../../primitives.def) and [`src/primitives.scm`](../../src/primitives.scm).
 2. CL loads the generated `.tmp/bootstrap-zones/manifest.sexp` shard manifest, when present, then loads the listed native-zone shard files so native-zone functions register themselves.
-3. CL loads [`bootstrap/bootstrap.ecec`](../../bootstrap/bootstrap.ecec), a concatenated bundle of `.ecec` archive sections for the self-hosted modules listed in `BOOTSTRAP_SRCS` in [`Makefile`](../../Makefile).
-4. The WASM browser path builds an initial environment in [`wasm/glue.js`](../../wasm/glue.js), fetches `bootstrap.ecec`, and iterates the archive sections with `load_archive`, `load_archive_continue`, and `run_code_object`.
+3. CL loads [`bootstrap/bootstrap.ecec`](../../bootstrap/bootstrap.ecec), a binary `.ecec` bundle for the self-hosted modules listed in `BOOTSTRAP_SRCS` in [`Makefile`](../../Makefile).
+4. The WASM browser path builds an initial environment in [`wasm/glue.js`](../../wasm/glue.js), fetches `bootstrap.ecec` as bytes, and executes each binary archive section in order.
 
 ## Source Modules
 
@@ -322,7 +322,7 @@ WASM implements:
 - A winding-stack mirror used by continuation capture and `dynamic-wind`.
 - Browser I/O, localStorage-backed file ports, canvas primitives, JavaScript FFI, and handle-table interop.
 
-The JS glue creates the global environment, registers boot primitives needed by `boot-env.ecec`, initializes assembler symbol IDs for the WAT archive loader, defines `#t`, `#f`, and `*global-env*`, fetches `bootstrap.ecec`, and executes each archive init code object in order.
+The JS glue creates the global environment, registers boot primitives needed by `boot-env.ecec`, initializes assembler symbol IDs for archive loading, defines `#t`, `#f`, and `*global-env*`, fetches `bootstrap.ecec`, and executes each archive init code object in order.
 
 WASM does not use the CL native-zone pipeline. Its `native-fn` field exists for
 structural parity; WASM native zones are registered through the WASM native-zone

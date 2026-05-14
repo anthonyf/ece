@@ -22,8 +22,6 @@
   (import "io" "display_number" (func $js-display-number (param f64)))
   (import "io" "newline" (func $js-newline))
 
-  ;; .ececb loading — JS fetches the bytes, passes them in
-  (import "loader" "fetch_ececb" (func $js-fetch-ececb (param externref) (result externref)))
   (import "io" "trace_pc" (func $js-trace-pc (param i32 i32)))
   (import "io" "runtime_error" (func $js-runtime-error (param i32)))
   ;; Save/restore trace: pc, space-id, is-save(1)/is-restore(0), register-id, value-type, stack-depth
@@ -1683,7 +1681,7 @@
   ;; Section 7: Instruction Representation & Executor Loop
   ;; ═══════════════════════════════════════════════════════════════════
   ;;
-  ;; Instruction encoding (loaded from .ececb):
+  ;; Instruction encoding (loaded from binary .ecec archives):
   ;;   Each instruction is a $instr struct in a GC array.
   ;;   The opcode field determines the meaning of the other fields.
   ;;
@@ -2176,7 +2174,7 @@
 
   ;; --- Machine operation IDs (from operations.def) ---
   ;; These are internal register machine operations, NOT ECE primitives.
-  ;; The compiler emits (op-fn <name>); the .ececb loader maps names
+  ;; The compiler emits (op-fn <name>); the archive loader maps names
   ;; to these numeric IDs. IDs match operations.def canonical assignment.
   ;;
   ;;  0 = lookup-variable-value     14 = apply-parameter
@@ -2729,7 +2727,7 @@
   ;; ═══════════════════════════════════════════════════════════════════
   ;; Machine operations are internal to the register machine (NOT the
   ;; same as ECE primitives). The compiler emits (op-fn <name>); the
-  ;; .ececb loader converts names to numeric IDs.
+  ;; archive loader converts names to numeric IDs.
 
   (func $dispatch-op (param $op-id i32) (param $operands (ref null eq))
                      (param $val (ref null eq)) (param $env (ref null eq))
@@ -6999,6 +6997,14 @@
         (i32.shl (call $bca-read-u8) (i32.const 8))
         (call $bca-read-u8))))
 
+  (func $bca-read-f64 (result f64)
+    (f64.reinterpret_i64
+      (i64.or
+        (i64.shl
+          (i64.extend_i32_u (call $bca-read-u32))
+          (i64.const 32))
+        (i64.extend_i32_u (call $bca-read-u32)))))
+
   (func $bca-make-integer (param $sign i32) (param $mag i32)
                           (result (ref null eq))
     (if (i32.eq (local.get $sign) (i32.const 0))
@@ -7035,6 +7041,28 @@
     (block $done (loop $copy
       (br_if $done (i32.ge_u (local.get $i) (local.get $len)))
       (array.set $string (local.get $str) (local.get $i) (call $bca-read-u8))
+      (local.set $i (i32.add (local.get $i) (i32.const 1)))
+      (br $copy)))
+    (local.get $str))
+
+  (func $bca-read-string32 (result (ref $string))
+    (local $len i32)
+    (local $i i32)
+    (local $str (ref $string))
+    (local.set $len (call $bca-read-u32))
+    (if (i32.gt_u
+          (local.get $len)
+          (i32.div_u
+            (i32.sub (global.get $bca-end) (global.get $bca-pos))
+            (i32.const 4)))
+      (then
+        (call $signal-error-str (global.get $err-unknown-arch))
+        (unreachable)))
+    (local.set $str (array.new_default $string (local.get $len)))
+    (local.set $i (i32.const 0))
+    (block $done (loop $copy
+      (br_if $done (i32.ge_u (local.get $i) (local.get $len)))
+      (array.set $string (local.get $str) (local.get $i) (call $bca-read-u32))
       (local.set $i (i32.add (local.get $i) (i32.const 1)))
       (br $copy)))
     (local.get $str))
@@ -7105,6 +7133,12 @@
             (call $cons
               (call $make-fixnum (call $bca-read-u32))
               (global.get $nil))))))
+    (if (i32.eq (local.get $tag) (i32.const 10))
+      (then (return (call $make-char (call $bca-read-u32)))))
+    (if (i32.eq (local.get $tag) (i32.const 11))
+      (then (return (call $make-float (call $bca-read-f64)))))
+    (if (i32.eq (local.get $tag) (i32.const 12))
+      (then (return (call $bca-read-string32))))
     (call $signal-error-str (global.get $err-unknown-arch))
     (unreachable))
 

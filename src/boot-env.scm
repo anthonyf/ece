@@ -299,6 +299,11 @@
 (%register-primitive! '%wasm-export 266)
 (%register-primitive! '%wasm-native-zone-imports 267)
 
+;; --- Dev artifact building ---
+(%register-primitive! 'wasm-as 268)
+(%register-primitive! '%float64->bytes 269)
+(%register-primitive! '%bytes->float64 270)
+
 ;;; ═══════════════════════════════════════════════════════════════════
 ;;; 2. Initialize assembler symbol table
 ;;; ═══════════════════════════════════════════════════════════════════

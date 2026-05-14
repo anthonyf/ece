@@ -52,10 +52,6 @@ const ECE = {
     }
   },
 
-  loader: {
-    fetch_ececb() { return null; }  // placeholder
-  },
-
   // Canvas stubs (overridden by sandbox.js when canvas is available)
   canvas: {
     clear() {},
