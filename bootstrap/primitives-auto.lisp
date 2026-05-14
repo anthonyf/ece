@@ -15,6 +15,9 @@
 (defun ece-%archive-co-lookup (unit-id index)
   (cl:or (cl:gethash (cl:cons unit-id index) *archive-code-objects*) *scheme-false*))
 
+(defun ece-%bytes->float64 (bytes)
+  (let ((bs bytes)) (cl:unless (cl:= (cl:length bs) 8) (cl:error "%bytes->float64: expected eight bytes")) (cl:flet ((b (i) (let ((value (cl:nth i bs))) (cl:unless (cl:and (cl:integerp value) (cl:<= 0 value 255)) (cl:error "%bytes->float64: expected byte at index ~D" i)) value))) (sb-kernel:make-double-float (cl:logior (cl:ash (b 0) 24) (cl:ash (b 1) 16) (cl:ash (b 2) 8) (b 3)) (cl:logior (cl:ash (b 4) 24) (cl:ash (b 5) 16) (cl:ash (b 6) 8) (b 7))))))
+
 (defun ece-%chmod (path mode)
   (let* ((pkg (cl:find-package "SB-POSIX")) (chmod-fn (cl:and pkg (cl:find-symbol "CHMOD" pkg)))) (cl:when (cl:and chmod-fn (cl:fboundp chmod-fn)) (cl:funcall chmod-fn path mode)) cl:nil))
 
@@ -74,6 +77,9 @@
 
 (defun ece-%file-exists? (path)
   (scheme-bool (cl:probe-file path)))
+
+(defun ece-%float64->bytes (x)
+  (let* ((d (cl:coerce x 'cl:double-float)) (hi (sb-kernel:double-float-high-bits d)) (lo (sb-kernel:double-float-low-bits d))) (cl:list (cl:ldb (cl:byte 8 24) hi) (cl:ldb (cl:byte 8 16) hi) (cl:ldb (cl:byte 8 8) hi) (cl:ldb (cl:byte 8 0) hi) (cl:ldb (cl:byte 8 24) lo) (cl:ldb (cl:byte 8 16) lo) (cl:ldb (cl:byte 8 8) lo) (cl:ldb (cl:byte 8 0) lo))))
 
 (defun ece-%get-winding-stack ()
   (cl:or *cl-winding-stack* cl:nil))

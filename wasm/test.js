@@ -1394,7 +1394,6 @@ async function run() {
       },
       trace_save_restore() {}
     },
-    loader: { fetch_ececb() { return null; } },
     storage: ECE.storage,
     canvas: ECE.canvas,
     timing: ECE.timing,
@@ -1410,14 +1409,13 @@ async function run() {
   // Build global environment
   const envH = ECE.buildGlobalEnv();
 
-  // Boot from the bootstrap archive bundle (one or more ecec-archive sexps
-  // concatenated — one per compiled source file). loadArchiveBundle loads
-  // and runs each archive's init code-object in sequence.
+  // Boot from the bootstrap archive bundle. loadArchiveBundleAuto accepts
+  // either the binary .ecec bootstrap or the printed compatibility form.
   ECE.globalEnvHandle = envH;
   const bundlePath = path.join(bootstrapDir, "bootstrap.ecec");
-  const bundleText = fs.readFileSync(bundlePath, "utf-8").trimEnd();
+  const bundleBytes = fs.readFileSync(bundlePath);
   console.log("Loading bootstrap bundle...");
-  ECE.loadArchiveBundle(bundleText);
+  ECE.loadArchiveBundleAuto(bundleBytes);
   console.log("Bootstrap loaded.");
 
   // Mark handles after bootstrap so reset_handles() preserves bootstrap state

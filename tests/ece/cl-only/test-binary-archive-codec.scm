@@ -13,7 +13,10 @@
 (test "binary archive codec: datum round-trip" (lambda ()
   (let* ((datum (list 'alpha
                       -42
+                      3.5
                       "hello"
+                      "hello - λ"
+                      #\newline
                       #t
                       #f
                       '()

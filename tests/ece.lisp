@@ -3672,6 +3672,20 @@ during a clean run, which is by design."
               (ece::binary-ecec-read-datum
                (ece::make-binary-ecec-reader #(4 2 0 0 0 1))))))
 
+(deftest test-cl-binary-archive-decoder-reads-float64
+    (testing "CL binary archive decoder reads binary64 datum values"
+             (ok (= (ece::binary-ecec-read-datum
+                     (ece::make-binary-ecec-reader
+                      #(11 64 12 0 0 0 0 0 0)))
+                    3.5d0))))
+
+(deftest test-cl-binary-archive-decoder-reads-string32
+    (testing "CL binary archive decoder reads full codepoint strings"
+             (ok (string= (ece::binary-ecec-read-datum
+                           (ece::make-binary-ecec-reader
+                            #(12 0 0 0 1 0 0 3 187)))
+                          "λ"))))
+
 (deftest test-cl-archive-loader-module-import-specs
     (labels ((kw (name)
                (intern (format nil ":~(~A~)" name) :ece))

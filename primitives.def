@@ -391,3 +391,5 @@
 ;;; ═══════════════════════════════════════════════════════════════════════
 
 (268 wasm-as                           2  cl      "Assemble WAT to WASM with the host wasm-as tool; returns #f on failure")
+(269 %float64->bytes                   1  cl      "Return an IEEE-754 binary64 value as eight big-endian bytes")
+(270 %bytes->float64                   1  cl      "Return an IEEE-754 binary64 number from eight big-endian bytes")

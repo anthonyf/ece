@@ -2224,6 +2224,11 @@ so load-ecec-file can read both old and new serialization formats.")
      (ash (binary-ecec-read-u8 reader context) 8)
      (binary-ecec-read-u8 reader context)))
 
+(defun binary-ecec-read-float64 (reader)
+  (let ((hi (binary-ecec-read-u32 reader "binary float64"))
+        (lo (binary-ecec-read-u32 reader "binary float64")))
+    (sb-kernel:make-double-float hi lo)))
+
 (defun binary-ecec-remaining-bytes (reader)
   (- (length (binary-ecec-reader-bytes reader))
      (binary-ecec-reader-pos reader)))
@@ -2242,6 +2247,15 @@ so load-ecec-file can read both old and new serialization formats.")
       (dotimes (i len chars)
         (setf (char chars i)
               (code-char (binary-ecec-read-u8 reader "binary string")))))))
+
+(defun binary-ecec-read-string32 (reader)
+  (let ((len (binary-ecec-read-u32 reader "binary string32")))
+    (binary-ecec-check-count-fits reader (* len 4) "binary string32")
+    (let ((chars (make-string len)))
+      (dotimes (i len chars)
+        (setf (char chars i)
+              (code-char
+               (binary-ecec-read-u32 reader "binary string32")))))))
 
 (defun binary-ecec-read-indexed-symbol (table id context)
   (if (and (integerp id) (<= 0 id) (< id (length table)))
@@ -2271,6 +2285,9 @@ so load-ecec-file can read both old and new serialization formats.")
              (setf (aref vec i) (binary-ecec-read-datum reader))))))
       (9 (list (intern "co-ref" :ece)
                (binary-ecec-read-u32 reader "binary co-ref")))
+      (10 (code-char (binary-ecec-read-u32 reader "binary character")))
+      (11 (binary-ecec-read-float64 reader))
+      (12 (binary-ecec-read-string32 reader))
       (otherwise
        (archive-runtime-error "binary datum: unknown tag ~S." tag)))))
 
@@ -3090,62 +3107,3 @@ Downcases ECE-package symbols for CL→ECE boundary compatibility."
 
 ;;; All registrations done — validate that every core/cl primitive resolved.
 (validate-primitive-dispatch-tables)
-
-;;; .ecec → .ececb binary conversion
-;;; CL reads the .ecec (handles #S(SCHEME-FALSE), NIL, etc.), then
-;;; calls the ECE converter function to emit binary.
-
-(defun convert-ecec-to-ececb (input-path output-path)
-  "Read INPUT-PATH with CL reader, pass to ECE converter, write OUTPUT-PATH."
-  (let ((*readtable* (copy-readtable nil))
-        (*package* (find-package :ece))
-        (header nil)
-        (units nil))
-    ;; Use preserve case for reading ecec, read floats as double
-    (setf (readtable-case *readtable*) :preserve)
-    (setf *read-default-float-format* 'double-float)
-    (with-open-file (in input-path :direction :input)
-      ;; Read header
-      (setf header (read in nil :eof))
-      ;; Read all units
-      (loop for unit = (read in nil :eof)
-            until (eq unit :eof)
-            do (push (downcase-ece-symbols unit) units))
-      (setf units (nreverse units)))
-    ;; Parse header: (ecec-header (space <name>) (macros <list>))
-    (let* ((space-name (symbol-name (cadr (cadr header))))
-           (macros-raw (cadr (caddr header)))
-           (macros (if (or (null macros-raw) (eq macros-raw '|NIL|))
-                       '()
-                       (downcase-ece-symbols macros-raw)))
-           (header-info (cons space-name macros)))
-      ;; Replace all SCHEME-FALSE structs with ECE's actual #f singleton
-      (setf units (subst *scheme-false* *scheme-false* units
-                         :test (lambda (a b)
-                                 (declare (ignore a))
-                                 (scheme-false-p b))))
-      ;; Convert CL floats to tagged byte lists for the ECE converter
-      ;; (ECE can't do IEEE 754 bit manipulation, so CL extracts the bytes)
-      (labels ((float-to-bytes (f)
-                 (let* ((d (coerce f 'double-float))
-                        (hi (sb-kernel:double-float-high-bits d))
-                        (lo (sb-kernel:double-float-low-bits d)))
-                   (list (intern ":ece-float-bytes" :ece)
-                         (ldb (byte 8 0) lo) (ldb (byte 8 8) lo)
-                         (ldb (byte 8 16) lo) (ldb (byte 8 24) lo)
-                         (ldb (byte 8 0) hi) (ldb (byte 8 8) hi)
-                         (ldb (byte 8 16) hi) (ldb (byte 8 24) hi))))
-               (convert-floats (tree)
-                 (cond
-                   ((and (numberp tree) (not (integerp tree)))
-                    (float-to-bytes tree))
-                   ((consp tree)
-                    (cons (convert-floats (car tree))
-                          (convert-floats (cdr tree))))
-                   (t tree))))
-        (setf units (convert-floats units)))
-      ;; Call ECE converter
-      (evaluate (list (intern "ecec-to-binary-unit" :ece)
-                      (list 'quote header-info)
-                      (list 'quote units)
-                      output-path)))))

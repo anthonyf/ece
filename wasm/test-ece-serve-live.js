@@ -99,7 +99,7 @@ async function bootBrowserRuntime(output) {
   const { instance } = await WebAssembly.instantiate(wasmBytes, imports);
   ECE.wasm = instance.exports;
   ECE.globalEnvHandle = ECE.buildGlobalEnv();
-  ECE.loadArchiveBundle(fsSync.readFileSync(path.join(ROOT, "bootstrap", "bootstrap.ecec"), "utf8"));
+  ECE.loadArchiveBundleAuto(fsSync.readFileSync(path.join(ROOT, "bootstrap", "bootstrap.ecec")));
   ECE.wasm.mark_handles();
   ECE.wasmHost.clearResources();
   ECE._symCache = {};
