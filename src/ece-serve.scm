@@ -117,7 +117,7 @@ port is closed even if read-byte raises mid-stream."
    ((has-extension? path "wasm") "application/wasm")
    ((has-extension? path "wat")  "text/plain; charset=utf-8")
    ((has-extension? path "manifest") "text/plain; charset=utf-8")
-   ((has-extension? path "ecec") "text/plain; charset=utf-8")
+   ((has-extension? path "ecec") "application/octet-stream")
    ((has-extension? path "scm")  "text/plain; charset=utf-8")
    ((has-extension? path "ico")  "image/x-icon")
    ((has-extension? path "png")  "image/png")

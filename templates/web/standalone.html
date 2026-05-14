@@ -53,13 +53,11 @@
 
       // Boot bootstrap from multi-archive bundle
       ECE.globalEnvHandle = envHandle;
-      const bootText = atob(ECE_BOOTSTRAP_BUNDLE);
-      ECE.loadArchiveBundle(bootText);
+      ECE.loadArchiveBundleBase64(ECE_BOOTSTRAP_BUNDLE);
       ECE.wasm.mark_handles();
 
       // Load and execute app archive bundle
-      const appText = atob(ECE_APP_BUNDLE);
-      ECE.loadArchiveBundle(appText);
+      ECE.loadArchiveBundleBase64(ECE_APP_BUNDLE);
     })();
   </script>
 </body>

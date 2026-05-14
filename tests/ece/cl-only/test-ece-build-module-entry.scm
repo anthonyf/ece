@@ -53,7 +53,11 @@
   (assert-equal
    (build-args-error/native-zones "web" ".tmp/phase-b-build" '("app.scm")
                                   #f #f #f "binary")
-   "Error: --archive-format binary is only supported with --target cl until web packaging fetches bytes")
+   #f)
+  (assert-equal
+   (build-args-error/native-zones "test-page" ".tmp/phase-b-build" '("app.scm")
+                                  #f #f #f "binary")
+   #f)
   (assert-equal
    (build-args-error/native-zones "cl" ".tmp/phase-b-build" '("app.scm")
                                   #f #f #f "wat")

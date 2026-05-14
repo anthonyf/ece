@@ -67,15 +67,13 @@ async function runTests() {
 
     statusEl.textContent = "Loading bootstrap...";
     ECE.globalEnvHandle = envH;
-    const bootText = atob(ECE_BOOTSTRAP_BUNDLE);
-    ECE.loadArchiveBundle(bootText);
+    ECE.loadArchiveBundleBase64(ECE_BOOTSTRAP_BUNDLE);
     ECE.wasm.mark_handles();
 
     statusEl.textContent = "Running tests...";
 
     // Load and run test suite
-    const testText = atob(ECE_APP_BUNDLE);
-    const testCo = ECE.loadArchiveText(testText);
+    const testCo = ECE.loadArchiveBase64(ECE_APP_BUNDLE);
 
     const t0 = performance.now();
     try {

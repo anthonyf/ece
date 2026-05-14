@@ -391,5 +391,5 @@ Likely order:
 - [ ] Switch bootstrap to binary after loader tests pass.
 - [x] Update native-zone generation to avoid depending on archive text.
 - [x] Add WASM byte-oriented binary archive loader.
-- [ ] Switch browser packaging/reload to fetch bytes.
+- [x] Switch browser packaging/reload to fetch bytes.
 - [ ] Remove obsolete `.ecec -> .ececb` conversion code.

@@ -44,8 +44,7 @@
       ECE.wasm = runtime.instance.exports;
       ECE.globalEnvHandle = ECE.buildGlobalEnv();
 
-      const bootstrap = await fetch("bootstrap.ecec", { cache: "no-store" });
-      ECE.loadArchiveBundle(await bootstrap.text());
+      await ECE.fetchAndLoadArchiveBundle("bootstrap.ecec", { cache: "no-store" });
       ECE.wasm.mark_handles();
 
       async function reloadProgram(archiveUrl, zoneModuleUrl, manifestUrl) {
