@@ -399,6 +399,8 @@ the path-join of *walker-tmp-dir* is a subdir."
                 "text/plain; charset=utf-8")
   (assert-equal (ece-serve/content-type-for "app-zones.manifest")
                 "text/plain; charset=utf-8")
+  (assert-equal (ece-serve/content-type-for "app.ecec")
+                "application/octet-stream")
   (assert-equal (ece-serve/content-type-for "whatever.bin")
                 "application/octet-stream")))
 

@@ -1,7 +1,6 @@
 // ECE WebAssembly Runtime — JS Glue Layer
 // ========================================
-// Parses .ececb binary format and calls WASM builder functions.
-// Provides I/O imports. Minimal JS — all logic is in WASM.
+// Provides browser/Node glue for ECE's WASM runtime.
 
 const ECE = {
   outputElement: null,
@@ -431,6 +430,47 @@ const ECE = {
     return `"${String(jsStr).replace(/\\/g, "\\\\").replace(/"/g, "\\\"")}"`;
   },
 
+  _archiveBytes(bytesLike) {
+    if (bytesLike instanceof Uint8Array) return bytesLike;
+    if (bytesLike instanceof ArrayBuffer) return new Uint8Array(bytesLike);
+    if (ArrayBuffer.isView(bytesLike)) {
+      return new Uint8Array(bytesLike.buffer, bytesLike.byteOffset, bytesLike.byteLength);
+    }
+    throw new Error("archive bytes must be an ArrayBuffer or typed array");
+  },
+
+  _archiveBytesAreBinary(bytesLike) {
+    const bytes = ECE._archiveBytes(bytesLike);
+    return bytes.length >= 8 &&
+      bytes[0] === 0x45 && bytes[1] === 0x43 &&
+      bytes[2] === 0x45 && bytes[3] === 0x43 &&
+      bytes[4] === 0x00 &&
+      bytes[5] === 0x42 && bytes[6] === 0x49 && bytes[7] === 0x4e;
+  },
+
+  _decodeArchiveText(bytesLike) {
+    const bytes = ECE._archiveBytes(bytesLike);
+    if (typeof TextDecoder !== "undefined") {
+      return new TextDecoder("utf-8").decode(bytes);
+    }
+    if (typeof Buffer !== "undefined") {
+      return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString("utf8");
+    }
+    let text = "";
+    for (let i = 0; i < bytes.length; i++) text += String.fromCharCode(bytes[i]);
+    return text;
+  },
+
+  _base64ToBytes(base64) {
+    if (typeof Buffer !== "undefined") {
+      return new Uint8Array(Buffer.from(base64, "base64"));
+    }
+    const raw = atob(base64);
+    const bytes = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+    return bytes;
+  },
+
   evalStringLast(source) {
     const evalStr = ECE.wasm.env_lookup(ECE.globalEnvHandle, ECE.internSym("eval-string-last"));
     return ECE.wasm.call_ece_proc(
@@ -476,15 +516,68 @@ const ECE = {
     return ECE.wasm.load_binary_archive(offset, len);
   },
 
-  loadArchiveBundleBytes(bytes) {
-    const w = ECE.wasm;
-    let co = ECE.loadArchiveBytes(bytes);
-    w.run_code_object(co, ECE.globalEnvHandle);
-    while (w.binary_archive_has_more()) {
-      co = w.load_binary_archive_continue();
-      w.run_code_object(co, ECE.globalEnvHandle);
+  loadArchiveAuto(archive) {
+    if (typeof archive === "string") {
+      return ECE.loadArchiveText(archive);
     }
-    return co;
+    const bytes = ECE._archiveBytes(archive);
+    return ECE._archiveBytesAreBinary(bytes)
+      ? ECE.loadArchiveBytes(bytes)
+      : ECE.loadArchiveText(ECE._decodeArchiveText(bytes));
+  },
+
+  loadArchiveBase64(base64) {
+    return ECE.loadArchiveAuto(ECE._base64ToBytes(base64));
+  },
+
+  materializeArchiveBundleBytes(bytes) {
+    const w = ECE.wasm;
+    const codeObjects = [ECE.loadArchiveBytes(bytes)];
+    while (w.binary_archive_has_more()) {
+      codeObjects.push(w.load_binary_archive_continue());
+    }
+    return codeObjects;
+  },
+
+  runCodeObjects(codeObjects) {
+    const w = ECE.wasm;
+    let result = ECE._hVoid;
+    for (const co of codeObjects) {
+      result = w.run_code_object(co, ECE.globalEnvHandle);
+    }
+    return result;
+  },
+
+  loadArchiveBundleBytes(bytes) {
+    const codeObjects = ECE.materializeArchiveBundleBytes(bytes);
+    ECE.runCodeObjects(codeObjects);
+    return codeObjects[codeObjects.length - 1];
+  },
+
+  loadArchiveBundleAuto(archive) {
+    if (typeof archive === "string") {
+      return ECE.loadArchiveBundle(archive);
+    }
+    const bytes = ECE._archiveBytes(archive);
+    return ECE._archiveBytesAreBinary(bytes)
+      ? ECE.loadArchiveBundleBytes(bytes)
+      : ECE.loadArchiveBundle(ECE._decodeArchiveText(bytes));
+  },
+
+  loadArchiveBundleBase64(base64) {
+    return ECE.loadArchiveBundleAuto(ECE._base64ToBytes(base64));
+  },
+
+  async fetchArchiveBytes(url, options = {}) {
+    const resp = await fetch(url, options);
+    if (!resp.ok) {
+      throw new Error(`failed to fetch archive ${url}: ${resp.status}`);
+    }
+    return new Uint8Array(await resp.arrayBuffer());
+  },
+
+  async fetchAndLoadArchiveBundle(url, options = {}) {
+    return ECE.loadArchiveBundleAuto(await ECE.fetchArchiveBytes(url, options));
   },
 
   async reloadProgramFromUrls(archiveUrl, zoneModuleUrl = null, manifestUrl = null) {
@@ -496,7 +589,13 @@ const ECE = {
     if (!archiveResp.ok) {
       throw new Error(`reloadProgramFromUrls failed to fetch archive: ${archiveResp.status}`);
     }
-    ECE.wasmHost.setText(archiveUrl, await archiveResp.text());
+    const archiveBytes = new Uint8Array(await archiveResp.arrayBuffer());
+    const archiveIsBinary = ECE._archiveBytesAreBinary(archiveBytes);
+    if (archiveIsBinary) {
+      ECE.wasmHost.setBytes(archiveUrl, archiveBytes);
+    } else {
+      ECE.wasmHost.setText(archiveUrl, ECE._decodeArchiveText(archiveBytes));
+    }
 
     if (zoneModuleUrl && manifestUrl) {
       const [zoneResp, manifestResp] = await Promise.all([
@@ -516,6 +615,15 @@ const ECE = {
     ECE.wasm.reset_handles();
     ECE._refreshSingletonHandles();
     ECE._symCache = {};
+
+    if (archiveIsBinary) {
+      const codeObjects = ECE.materializeArchiveBundleBytes(archiveBytes);
+      if (zoneModuleUrl && manifestUrl) {
+        ECE.evalStringLast(
+          `(load-native-zone-module ${ECE._schemeStringLiteral(zoneModuleUrl)} ${ECE._schemeStringLiteral(manifestUrl)})`);
+      }
+      return ECE.runCodeObjects(codeObjects);
+    }
 
     const args = [
       ECE._schemeStringLiteral(archiveUrl),
@@ -632,9 +740,7 @@ const ECE = {
     // Load bootstrap bundle (multi-archive sexp)
     const url = `${baseUrl}/bootstrap.ecec`;
     console.log("Loading bootstrap bundle...");
-    const resp = await fetch(url);
-    const text = await resp.text();
-    ECE.loadArchiveBundle(text);
+    await ECE.fetchAndLoadArchiveBundle(url);
     ECE.wasm.mark_handles();
 
     console.log("Bootstrap complete.");

@@ -59,8 +59,7 @@ async function boot() {
   ECE.wasm = instance.exports;
   ECE.globalEnvHandle = ECE.buildGlobalEnv();
 
-  const bootResp = await fetch(`${baseUrl}/bootstrap.ecec`, { cache: "no-store" });
-  ECE.loadArchiveBundle(await bootResp.text());
+  await ECE.fetchAndLoadArchiveBundle(`${baseUrl}/bootstrap.ecec`, { cache: "no-store" });
   ECE.wasm.mark_handles();
 }
 

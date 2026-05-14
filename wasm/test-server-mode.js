@@ -72,17 +72,13 @@ async function run() {
   ECE.globalEnvHandle = envHandle;
 
   // Fetch and load bootstrap via archive loader (multi-archive bundle)
-  const bootResp = await fetch(`${baseUrl}/bootstrap.ecec`);
-  const bootText = await bootResp.text();
-  ECE.loadArchiveBundle(bootText);
+  await ECE.fetchAndLoadArchiveBundle(`${baseUrl}/bootstrap.ecec`);
   ECE.wasm.mark_handles();
 
   await tryLoadNativeZones(ECE, envHandle, baseUrl);
 
   // Fetch and load app via archive loader
-  const appResp = await fetch(`${baseUrl}/app.ecec`);
-  const appText = await appResp.text();
-  ECE.loadArchiveBundle(appText);
+  await ECE.fetchAndLoadArchiveBundle(`${baseUrl}/app.ecec`);
 
   // Verify output
   const text = output.join("");

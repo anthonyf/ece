@@ -145,13 +145,13 @@ async function run() {
   const envHandle = ECE.buildGlobalEnv();
   ECE.globalEnvHandle = envHandle;
 
-  const bootstrapText = fs.readFileSync(path.join(ROOT, "bootstrap", "bootstrap.ecec"), "utf8");
+  const bootstrapBytes = fs.readFileSync(path.join(ROOT, "bootstrap", "bootstrap.ecec"));
   try {
-    ECE.loadArchiveBundle(bootstrapText);
+    ECE.loadArchiveBundleAuto(bootstrapBytes);
     ECE.wasm.mark_handles();
-    check(true, "Bootstrap loaded via loadArchiveBundle", "Bootstrap loading failed");
+    check(true, "Bootstrap loaded via loadArchiveBundleAuto", "Bootstrap loading failed");
   } catch(e) {
-    check(false, "Bootstrap loaded via loadArchiveBundle", `Bootstrap loading failed: ${e.message}`);
+    check(false, "Bootstrap loaded via loadArchiveBundleAuto", `Bootstrap loading failed: ${e.message}`);
     process.exit(1);  // can't continue without bootstrap
   }
 
@@ -190,8 +190,7 @@ async function run() {
   if (match) {
     output.length = 0;
     try {
-      const ececText = Buffer.from(match[1], "base64").toString("binary");
-      const co = ECE.loadArchiveText(ececText);
+      const co = ECE.loadArchiveBase64(match[1]);
       ECE.runCodeObject(co);
       const text = output.join("");
       check(

@@ -51,9 +51,7 @@
 
       // Boot bootstrap from fetched archive bundle
       ECE.globalEnvHandle = envHandle;
-      const bootResp = await fetch("bootstrap.ecec");
-      const bootText = await bootResp.text();
-      ECE.loadArchiveBundle(bootText);
+      await ECE.fetchAndLoadArchiveBundle("bootstrap.ecec");
       ECE.wasm.mark_handles();
 
       async function tryLoadNativeZones() {
@@ -78,9 +76,7 @@
       await tryLoadNativeZones();
 
       // Load and execute app archive bundle
-      const appResp = await fetch("app.ecec");
-      const appText = await appResp.text();
-      ECE.loadArchiveBundle(appText);
+      await ECE.fetchAndLoadArchiveBundle("app.ecec");
     })();
   </script>
 </body>
