@@ -3659,22 +3659,34 @@ during a clean run, which is by design."
 
 (deftest test-cl-binary-archive-decoder-rejects-malformed-lengths
     (testing "CL binary archive decoder rejects malformed lengths before allocation"
-             (signals
-              (ece::binary-ecec-read-string
-               (ece::make-binary-ecec-reader #(0 0 0 5 65))))
-             (signals
-              (ece::binary-ecec-read-datum
-               (ece::make-binary-ecec-reader #(8 0 0 0 5 1))))))
+	     (signals
+	      (ece::binary-ecec-read-string
+	       (ece::make-binary-ecec-reader #(0 0 0 5 65))))
+	     (signals
+	      (ece::binary-ecec-read-string32
+	       (ece::make-binary-ecec-reader #(0 0 0 2 0 0 0 65))))
+	     (signals
+	      (ece::binary-ecec-read-datum
+	       (ece::make-binary-ecec-reader #(8 0 0 0 5 1))))))
 
 (deftest test-cl-binary-archive-decoder-rejects-invalid-sign
     (testing "CL binary archive decoder rejects invalid integer sign bytes"
-             (signals
-              (ece::binary-ecec-read-datum
-               (ece::make-binary-ecec-reader #(4 2 0 0 0 1))))))
+	     (signals
+	      (ece::binary-ecec-read-datum
+	       (ece::make-binary-ecec-reader #(4 2 0 0 0 1))))))
+
+(deftest test-cl-binary-archive-decoder-rejects-invalid-codepoints
+    (testing "CL binary archive decoder rejects invalid character codepoints"
+	     (signals
+	      (ece::binary-ecec-read-datum
+	       (ece::make-binary-ecec-reader #(10 0 17 0 0))))
+	     (signals
+	      (ece::binary-ecec-read-string32
+	       (ece::make-binary-ecec-reader #(0 0 0 1 0 17 0 0))))))
 
 (deftest test-cl-binary-archive-decoder-reads-float64
     (testing "CL binary archive decoder reads binary64 datum values"
-             (ok (= (ece::binary-ecec-read-datum
+	     (ok (= (ece::binary-ecec-read-datum
                      (ece::make-binary-ecec-reader
                       #(11 64 12 0 0 0 0 0 0)))
                     3.5d0))))

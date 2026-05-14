@@ -2240,6 +2240,12 @@ so load-ecec-file can read both old and new serialization formats.")
        "~A: length ~S exceeds remaining byte count ~S."
        context len remaining))))
 
+(defun binary-ecec-read-character-code (code context)
+  (let ((char (code-char code)))
+    (or char
+        (archive-runtime-error "~A: invalid character codepoint ~S."
+                               context code))))
+
 (defun binary-ecec-read-string (reader)
   (let ((len (binary-ecec-read-u32 reader "binary string")))
     (binary-ecec-check-count-fits reader len "binary string")
@@ -2254,8 +2260,9 @@ so load-ecec-file can read both old and new serialization formats.")
     (let ((chars (make-string len)))
       (dotimes (i len chars)
         (setf (char chars i)
-              (code-char
-               (binary-ecec-read-u32 reader "binary string32")))))))
+              (binary-ecec-read-character-code
+               (binary-ecec-read-u32 reader "binary string32")
+               "binary string32"))))))
 
 (defun binary-ecec-read-indexed-symbol (table id context)
   (if (and (integerp id) (<= 0 id) (< id (length table)))
@@ -2285,7 +2292,9 @@ so load-ecec-file can read both old and new serialization formats.")
              (setf (aref vec i) (binary-ecec-read-datum reader))))))
       (9 (list (intern "co-ref" :ece)
                (binary-ecec-read-u32 reader "binary co-ref")))
-      (10 (code-char (binary-ecec-read-u32 reader "binary character")))
+      (10 (binary-ecec-read-character-code
+           (binary-ecec-read-u32 reader "binary character")
+           "binary character"))
       (11 (binary-ecec-read-float64 reader))
       (12 (binary-ecec-read-string32 reader))
       (otherwise

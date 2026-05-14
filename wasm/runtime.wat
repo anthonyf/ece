@@ -7051,8 +7051,10 @@
     (local $str (ref $string))
     (local.set $len (call $bca-read-u32))
     (if (i32.gt_u
-          (i32.mul (local.get $len) (i32.const 4))
-          (i32.sub (global.get $bca-end) (global.get $bca-pos)))
+          (local.get $len)
+          (i32.div_u
+            (i32.sub (global.get $bca-end) (global.get $bca-pos))
+            (i32.const 4)))
       (then
         (call $signal-error-str (global.get $err-unknown-arch))
         (unreachable)))
