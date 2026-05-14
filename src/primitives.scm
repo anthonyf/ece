@@ -334,32 +334,12 @@
 ;;; %instruction-vector-push!, %label-table-set!, %label-table-ref) retired
 ;;; alongside the compilation-space struct in Phase F of the
 ;;; per-procedure-code-objects change. Their ids (93-96) stay reserved
-;;; in primitives.def — callers were removed together with
-;;; `assemble-into-global` in Phase G1, but we keep the registrations
-;;; so that stale archives surface a clear error instead of a primitive
-;;; mismatch. The :cl bodies below raise "retired primitive".
+;;; in primitives.def comments — callers were removed together with
+;;; `assemble-into-global` in Phase G1.
 ;;; ─────────────────────────────────────────────────────────────────────────
 
 (define-host-primitive (%intern-ece s)
   :cl `(cl:intern ,s :ece))
-
-(define-host-primitive (%instruction-vector-length)
-  :cl `(cl:error "Primitive %instruction-vector-length is retired; bootstrap-space assembler path removed in per-procedure-code-objects."))
-
-(define-host-primitive (%instruction-vector-push! source-instr)
-  :cl `(cl:progn
-        (cl:declare (cl:ignore ,source-instr))
-        (cl:error "Primitive %instruction-vector-push! is retired; bootstrap-space assembler path removed in per-procedure-code-objects.")))
-
-(define-host-primitive (%label-table-set! label pc)
-  :cl `(cl:progn
-        (cl:declare (cl:ignore ,label ,pc))
-        (cl:error "Primitive %label-table-set! is retired; bootstrap-space assembler path removed in per-procedure-code-objects.")))
-
-(define-host-primitive (%label-table-ref label)
-  :cl `(cl:progn
-        (cl:declare (cl:ignore ,label))
-        (cl:error "Primitive %label-table-ref is retired; bootstrap-space assembler path removed in per-procedure-code-objects.")))
 
 ;;; %procedure-name-set! (97) and %procedure-name-ref (240) retired in
 ;;; per-procedure-code-objects §11.2: procedure names now live on the
@@ -507,9 +487,6 @@
 ;;; ─────────────────────────────────────────────────────────────────────────
 ;;; Compiler/macro table introspection (ids 112-114)
 ;;; ─────────────────────────────────────────────────────────────────────────
-
-(define-host-primitive (%label-table-entries)
-  :cl `(cl:error "Primitive %label-table-entries is retired; bootstrap-space label table removed in per-procedure-code-objects."))
 
 (define-host-primitive (%macro-table-entries)
   :cl `(let ((entries (quote ())))
@@ -1061,7 +1038,7 @@
   ;; lives on the code-object struct (set at compile time via
   ;; %code-object-set-arity!). The *procedure-params-table* side table
   ;; is gone; this stub is a no-op so stale callers don't crash boot.
-  :cl `(cl:progn
+  :cl `(cl:locally
         (cl:declare (cl:ignore ,entry-addr ,params-info))
         cl:nil))
 

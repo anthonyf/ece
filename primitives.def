@@ -141,10 +141,9 @@
 
 ;;; --- Instruction vector / assembler support ---
 (92  %intern-ece         1  core   "Intern string as ECE symbol")
-(93  %instruction-vector-length 0 core "Length of global instruction vector")
-(94  %instruction-vector-push!  1 core "Append instruction to global vector")
-(95  %label-table-set!   2  core   "Set label in global label table")
-(96  %label-table-ref    1  core   "Look up label in global label table")
+;;; IDs 93-96 (%instruction-vector-length, %instruction-vector-push!,
+;;; %label-table-set!, %label-table-ref) retired with the bootstrap-space
+;;; assembler path; ids stay reserved.
 ;;; (97  %procedure-name-set! 2 core   "Set procedure name for PC") — retired in per-procedure-code-objects §11.2; name now lives on code-object struct; id stays reserved
 
 ;;; --- Platform discovery ---
@@ -171,7 +170,7 @@
 (108 truncate            1  core   "Truncate number toward zero to integer")
 (109 floor               1  core   "Floor number toward -infinity to integer")
 (110 exact->inexact      1  core   "Convert exact number to inexact (float)")
-(112 %label-table-entries        0 cl "All label table entries")
+;;; ID 112 (%label-table-entries) retired with the bootstrap-space label table.
 (113 %macro-table-entries        0 cl "All macro table entries")
 (114 parameter?                  1 core "Test if value is a parameter object")
 

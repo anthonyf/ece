@@ -40,16 +40,19 @@
   (cl:progn (cl:setf (code-object-source-loc co) loc) cl:nil))
 
 (defun ece-%create-repl-space! (name size)
-  (cl:locally (cl:declare (cl:ignore name size)) cl:nil))
+  (cl:declare (cl:ignore name size))
+  cl:nil)
 
 (defun ece-%display-to-port (obj port)
   (let ((stream (ece-port-stream port))) (ece-output-to-stream obj stream (cl:function cl:princ)) (cl:finish-output stream) obj))
 
 (defun ece-%env-frame-enclosing (frame)
-  (cl:locally (cl:declare (cl:ignore frame)) cl:nil))
+  (cl:declare (cl:ignore frame))
+  cl:nil)
 
 (defun ece-%env-frame-names (frame)
-  (cl:locally (cl:declare (cl:ignore frame)) cl:nil))
+  (cl:declare (cl:ignore frame))
+  cl:nil)
 
 (defun ece-%env-frame-vals (frame)
   (cl:coerce frame 'cl:list))
@@ -100,7 +103,8 @@
   (scheme-bool (hash-frame-p frame)))
 
 (defun ece-%init-asm-syms (count)
-  (cl:locally (cl:declare (cl:ignore count)) cl:nil))
+  (cl:declare (cl:ignore count))
+  cl:nil)
 
 (defun ece-%initial-input-port ()
   (ece-make-input-port (cl:make-synonym-stream 'cl:*standard-input*)))
@@ -108,23 +112,8 @@
 (defun ece-%initial-output-port ()
   (ece-make-output-port (cl:make-synonym-stream 'cl:*standard-output*)))
 
-(defun ece-%instruction-vector-length ()
-  (cl:error "Primitive %instruction-vector-length is retired; bootstrap-space assembler path removed in per-procedure-code-objects."))
-
-(defun ece-%instruction-vector-push! (source-instr)
-  (cl:progn (cl:declare (cl:ignore source-instr)) (cl:error "Primitive %instruction-vector-push! is retired; bootstrap-space assembler path removed in per-procedure-code-objects.")))
-
 (defun ece-%intern-ece (s)
   (cl:intern s :ece))
-
-(defun ece-%label-table-entries ()
-  (cl:error "Primitive %label-table-entries is retired; bootstrap-space label table removed in per-procedure-code-objects."))
-
-(defun ece-%label-table-ref (label)
-  (cl:progn (cl:declare (cl:ignore label)) (cl:error "Primitive %label-table-ref is retired; bootstrap-space assembler path removed in per-procedure-code-objects.")))
-
-(defun ece-%label-table-set! (label pc)
-  (cl:progn (cl:declare (cl:ignore label pc)) (cl:error "Primitive %label-table-set! is retired; bootstrap-space assembler path removed in per-procedure-code-objects.")))
 
 (defun ece-%list-directory (path)
   (let ((dir (cl:if (cl:and (cl:stringp path) (cl:> (cl:length path) 0) (cl:not (cl:char= (cl:char path (cl:1- (cl:length path))) #\/))) (cl:concatenate 'cl:string path "/") path))) (cl:mapcar (cl:lambda (p) (let ((name (cl:file-namestring p))) (cl:if (cl:or (cl:null name) (cl:zerop (cl:length name))) (cl:car (cl:last (cl:pathname-directory p))) name))) (cl:directory (cl:concatenate 'cl:string dir "*.*")))))
@@ -145,7 +134,8 @@
   (cl:progn (cl:ensure-directories-exist (cl:if (cl:and (cl:stringp path) (cl:> (cl:length path) 0) (cl:not (cl:char= (cl:char path (cl:1- (cl:length path))) #\/))) (cl:concatenate 'cl:string path "/") path)) cl:nil))
 
 (defun ece-%make-env-frame (names vals enclosing)
-  (cl:locally (cl:declare (cl:ignore names enclosing)) (cl:coerce vals 'cl:simple-vector)))
+  (cl:declare (cl:ignore names enclosing))
+  (cl:coerce vals 'cl:simple-vector))
 
 (defun ece-%make-hash-frame ()
   (cl:cons :hash-frame (cl:make-hash-table :test 'cl:eq)))
@@ -181,25 +171,30 @@
   (cl:cond ((compiled-procedure-p proc) (cl:let* ((entry (cl:cadr proc)) (co (cl:cond ((code-object-p entry) entry) ((cl:and (cl:consp entry) (code-object-p (cl:car entry))) (cl:car entry)) (cl:t cl:nil))) (params (cl:when co (code-object-arity co)))) (cl:or params *scheme-false*))) ((primitive-procedure-p proc) (cl:let* ((id (cl:cadr proc)) (entry (cl:find id *manifest-entries* :key (cl:function cl:first)))) (cl:if entry (cl:let ((arity (cl:third entry))) (cl:if (cl:= arity -1) (cl:cons (cl:list "args") 1) (cl:let ((names cl:nil)) (cl:dotimes (i arity) (cl:push (cl:format cl:nil "arg~D" (cl:1+ i)) names)) (cl:cons (cl:nreverse names) 0)))) *scheme-false*))) (cl:t *scheme-false*)))
 
 (defun ece-%procedure-params-set! (entry-addr params-info)
-  (cl:progn (cl:declare (cl:ignore entry-addr params-info)) cl:nil))
+  (cl:declare (cl:ignore entry-addr params-info))
+  cl:nil)
 
 (defun ece-%raw-error (&rest args)
   (cl:apply (cl:function cl:error) args))
 
 (defun ece-%register-primitive! (name id)
-  (cl:locally (cl:declare (cl:ignore name id)) cl:nil))
+  (cl:declare (cl:ignore name id))
+  cl:nil)
 
 (defun ece-%set-continuation-syms! (do-winds-sym winding-stack-sym)
-  (cl:locally (cl:declare (cl:ignore do-winds-sym winding-stack-sym)) cl:nil))
+  (cl:declare (cl:ignore do-winds-sym winding-stack-sym))
+  cl:nil)
 
 (defun ece-%set-error-sym! (error-sym)
-  (cl:locally (cl:declare (cl:ignore error-sym)) cl:nil))
+  (cl:declare (cl:ignore error-sym))
+  cl:nil)
 
 (defun ece-%set-winding-stack! (val)
   (cl:progn (cl:setf *cl-winding-stack* val) cl:nil))
 
 (defun ece-%store-asm-sym (slot name)
-  (cl:locally (cl:declare (cl:ignore slot name)) cl:nil))
+  (cl:declare (cl:ignore slot name))
+  cl:nil)
 
 (defun ece-%write-char-to-port (ch port)
   (let ((stream (ece-port-stream port))) (cl:write-char ch stream) (cl:finish-output stream) ch))

@@ -113,10 +113,7 @@
 
 ;; --- Instruction vector / assembler support ---
 (%register-primitive! '%intern-ece 92)
-(%register-primitive! '%instruction-vector-length 93)
-(%register-primitive! '%instruction-vector-push! 94)
-(%register-primitive! '%label-table-set! 95)
-(%register-primitive! '%label-table-ref 96)
+;; 93-96 = retired bootstrap-space assembler primitives; ids stay reserved.
 ;; 97 = %procedure-name-set! retired in per-procedure-code-objects §11.2
 ;; (name now lives on code-object struct); ID stays reserved.
 

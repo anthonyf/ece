@@ -168,10 +168,6 @@
            #:%initial-output-port
            #:%initial-input-port
            #:%intern-ece
-           #:%instruction-vector-length
-           #:%instruction-vector-push!
-           #:%label-table-set!
-           #:%label-table-ref
            #:code-object
            #:code-object-p
            #:make-code-object

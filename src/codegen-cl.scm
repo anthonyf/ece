@@ -473,6 +473,25 @@ trip through CL's :upcase reader to uppercase package symbols."
 ;;; Defun emission
 ;;; ─────────────────────────────────────────────────────────────────────────
 
+(define (top-level-locally-declaration? body)
+  "Return #t when BODY is (cl:locally (cl:declare ...) ...), so emit-defun can
+place the declaration directly in the defun body where parameter declarations
+are valid."
+  (and (pair? body)
+       (eq? (car body) 'cl:locally)
+       (pair? (cdr body))
+       (pair? (cadr body))
+       (eq? (car (cadr body)) 'cl:declare)))
+
+(define (emit-defun-body-forms port forms)
+  (let loop ((rest forms))
+    (when (pair? rest)
+      (write-string "  " port)
+      (write-cl-form (car rest) port)
+      (when (pair? (cdr rest))
+        (write-char #\newline port)
+        (loop (cdr rest))))))
+
 (define (emit-defun port name params body)
   "Write (defun ece-NAME PARAMS BODY) to PORT, indented for readability."
   (write-string "(defun ece-" port)
@@ -480,8 +499,11 @@ trip through CL's :upcase reader to uppercase package symbols."
   (write-char #\space port)
   (write-cl-form (params->cl-lambda-list params) port)
   (write-char #\newline port)
-  (write-string "  " port)
-  (write-cl-form body port)
+  (if (top-level-locally-declaration? body)
+      (emit-defun-body-forms port (cdr body))
+      (begin
+        (write-string "  " port)
+        (write-cl-form body port)))
   (write-char #\) port)
   (write-char #\newline port))
 
