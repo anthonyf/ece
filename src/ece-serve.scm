@@ -266,6 +266,7 @@ string responses."
 (define (ece-serve/editor-command-path? path)
   "Return #t if PATH is one of the localhost editor command endpoints."
   (or (string=? path "/__ece_dev/eval-source")
+      (string=? path "/__ece_dev/reload-entry")
       (string=? path "/__ece_dev/program-reload")))
 
 (define (ece-serve/editor-path-header req)
@@ -299,6 +300,7 @@ string responses."
 (define (ece-serve/handle-editor-command req clients-box sched)
   "Handle a POST from an editor integration.
 /__ece_dev/eval-source relays request body source text.
+/__ece_dev/reload-entry rebuilds the configured entry file and broadcasts reload.
 /__ece_dev/program-reload relays artifact URLs for browser-side archive reload."
   (cond
    ((not (ece-serve/valid-dev-token? (ece-serve/request-dev-token req)))
@@ -347,6 +349,28 @@ string responses."
                                    (list (cons "ok" #t)
                                          (cons "type" "eval-source")
                                          (cons "id" request-id)))))))))
+   ((string=? (http-request-path req) "/__ece_dev/reload-entry")
+    (cond
+     ((not *ece-serve/current-entry-file*)
+      (ece-serve/json-response 400 "Bad Request"
+                               (list (cons "ok" #f)
+                                     (cons "type" "reload-entry")
+                                     (cons "error" "no entry file configured"))))
+     (else
+      (let ((result
+             (ece-serve/broadcast-program-artifact-reload
+              clients-box
+              *ece-serve/current-entry-file*)))
+        (cond
+         ((eq? result 'program-reload-build-error)
+          (ece-serve/json-response 500 "Internal Server Error"
+                                   (list (cons "ok" #f)
+                                         (cons "type" "reload-entry")
+                                         (cons "error" "program reload build failed"))))
+         (else
+          (ece-serve/json-response 200 "OK"
+                                   (list (cons "ok" #t)
+                                         (cons "type" "reload-entry")))))))))
    ((string=? (http-request-path req) "/__ece_dev/program-reload")
     (let ((archive-url (http-request-body req))
           (zone-module-url

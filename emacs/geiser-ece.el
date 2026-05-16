@@ -758,6 +758,14 @@ ask ece-serve to return the browser eval result/error JSON."
       (error "ECE dev entry must be a regular .scm file, not a directory"))
     entry-file))
 
+(defun geiser-ece--dev-current-entry-file ()
+  "Return the current buffer's file as an ece-serve entry file."
+  (unless buffer-file-name
+    (error "Current buffer is not visiting an ECE .scm file"))
+  (unless (geiser-ece--dev-entry-file-p buffer-file-name)
+    (error "Current buffer is not visiting an ECE .scm file"))
+  buffer-file-name)
+
 (defun geiser-ece--dev-session-files ()
   "Return readable ece-serve local attach session files."
   (let ((dir (expand-file-name geiser-ece-dev-session-directory)))
@@ -1136,6 +1144,29 @@ after ece-serve reports its dev URL and token."
      (geiser-ece-dev-repl))))
 
 ;;;###autoload
+(defun geiser-ece-dev-start-current-file (&optional port)
+  "Start ece-serve for the current buffer's .scm file.
+With a prefix argument, prompt for the port."
+  (interactive
+   (list (when current-prefix-arg
+           (read-number "ECE dev server port: "
+                        geiser-ece-dev-server-port))))
+  (geiser-ece-dev-start (geiser-ece--dev-current-entry-file) port))
+
+;;;###autoload
+(defun geiser-ece-dev-jack-in (&optional port)
+  "Start ece-serve for the current .scm file, open the page and browser REPL.
+This is the one-command app startup path: the current file is treated as the
+entry file, the managed `ece-serve' process is started, the served page is opened
+after URL/token discovery, and an `ece-dev>' REPL is opened for the browser
+runtime. With a prefix argument, prompt for the port."
+  (interactive
+   (list (when current-prefix-arg
+           (read-number "ECE dev server port: "
+                        geiser-ece-dev-server-port))))
+  (geiser-ece-dev-start-repl (geiser-ece--dev-current-entry-file) port))
+
+;;;###autoload
 (defun geiser-ece-dev-stop ()
   "Stop the ece-serve process started by `geiser-ece-dev-start'."
   (interactive)
@@ -1190,6 +1221,21 @@ after ece-serve reports its dev URL and token."
    "Sent buffer to ece-serve"))
 
 ;;;###autoload
+(defun geiser-ece-dev-reload-entry ()
+  "Save the current file and force ece-serve to rebuild/reload the entry app."
+  (interactive)
+  (unless buffer-file-name
+    (error "Current buffer is not visiting a file"))
+  (when (buffer-modified-p)
+    (save-buffer))
+  (geiser-ece--dev-display-result
+   (geiser-ece--dev-post "/__ece_dev/reload-entry"
+                         ""
+                         buffer-file-name
+                         nil)
+   "Requested ece-serve app rebuild/reload"))
+
+;;;###autoload
 (defun geiser-ece-dev-save-buffer-and-reload ()
   "Save the current file for ece-serve watcher reload."
   (interactive)
@@ -1218,6 +1264,7 @@ after ece-serve reports its dev URL and token."
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "C-c C-z S") #'geiser-ece-dev-start)
     (define-key map (kbd "C-c C-z R") #'geiser-ece-dev-start-repl)
+    (define-key map (kbd "C-c C-z J") #'geiser-ece-dev-jack-in)
     (define-key map (kbd "C-c C-z K") #'geiser-ece-dev-stop)
     (define-key map (kbd "C-c C-z c") #'geiser-ece-dev-connect)
     (define-key map (kbd "C-c C-z C") #'geiser-ece-dev-connect-repl)
@@ -1230,7 +1277,24 @@ after ece-serve reports its dev URL and token."
     (define-key map (kbd "C-c C-z d") #'geiser-ece-dev-eval-definition)
     (define-key map (kbd "C-c C-z b") #'geiser-ece-dev-load-buffer)
     (define-key map (kbd "C-c C-z l") #'geiser-ece-dev-reload-file)
+    (define-key map (kbd "C-c C-z k") #'geiser-ece-dev-reload-entry)
     (define-key map (kbd "C-c C-z s") #'geiser-ece-dev-save-buffer-and-reload)
+    (define-key map [remap geiser-eval-last-sexp]
+                #'geiser-ece-dev-eval-last-sexp)
+    (define-key map [remap geiser-eval-definition]
+                #'geiser-ece-dev-eval-definition)
+    (define-key map [remap geiser-eval-region]
+                #'geiser-ece-dev-eval-region)
+    (define-key map [remap geiser-eval-buffer]
+                #'geiser-ece-dev-load-buffer)
+    (define-key map [remap geiser-load-current-buffer]
+                #'geiser-ece-dev-reload-entry)
+    (define-key map [remap geiser-compile-current-buffer]
+                #'geiser-ece-dev-reload-entry)
+    (define-key map [remap geiser-load-file]
+                #'geiser-ece-dev-reload-entry)
+    (define-key map [remap geiser-compile-file]
+                #'geiser-ece-dev-reload-entry)
     map)
   "Keymap for `geiser-ece-dev-mode'.")
 

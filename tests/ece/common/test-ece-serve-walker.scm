@@ -709,6 +709,33 @@ the path-join of *walker-tmp-dir* is a subdir."
     (assert-true (string-contains? resp "Content-Type: application/json"))
     (assert-true (string-contains? resp "\"type\":\"program-reload\"")))))
 
+(test "ece-serve/dispatch: editor reload-entry POST rebuilds current entry" (lambda ()
+  (let* ((crlf (string-append (string (integer->char 13)) (string #\newline)))
+         (crlf-crlf (string-append crlf crlf))
+         (raw (string-append "POST /__ece_dev/reload-entry HTTP/1.1" crlf
+                             "Content-Length: 0" crlf
+                             "X-ECE-Dev-Token: test-token" crlf-crlf))
+         (req (http-parse-request raw))
+         (clients (ece-serve/make-clients-box))
+         (old-entry *ece-serve/current-entry-file*)
+         (old-reload ece-serve/broadcast-program-artifact-reload)
+         (called-entry #f))
+    (dynamic-wind
+        (lambda () #f)
+        (lambda ()
+          (set! *ece-serve/current-entry-file* "/tmp/ece-app/main.scm")
+          (set! ece-serve/broadcast-program-artifact-reload
+                (lambda (box entry)
+                  (set! called-entry entry)
+                  'reload-requested))
+          (let ((resp (ece-serve/dispatch req clients)))
+            (assert-true (starts-with? resp (string-append "HTTP/1.1 200 OK" crlf)))
+            (assert-true (string-contains? resp "\"type\":\"reload-entry\""))
+            (assert-equal called-entry "/tmp/ece-app/main.scm")))
+        (lambda ()
+          (set! *ece-serve/current-entry-file* old-entry)
+          (set! ece-serve/broadcast-program-artifact-reload old-reload))))))
+
 (test "ece-serve/dispatch: editor program-reload rejects unpaired native-zone URL" (lambda ()
   (let* ((crlf (string-append (string (integer->char 13)) (string #\newline)))
          (crlf-crlf (string-append crlf crlf))
