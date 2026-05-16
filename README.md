@@ -340,7 +340,17 @@ Customize I/O by overriding `ECE.io.display_string`, `ECE.io.display_number`, an
 
 `ece-serve` serves a web build, watches the source files, and accepts dev
 commands from an editor. From Emacs, load `emacs/geiser-ece.el`, open your app
-entry file, then run:
+entry file, then run the one-command startup:
+
+```elisp
+M-x geiser-ece-dev-jack-in
+```
+
+That treats the current `.scm` buffer as the app entry file, starts `ece-serve`,
+opens the served page, and opens an `ece-dev>` REPL that evaluates in the
+browser runtime.
+
+You can also start the pieces separately:
 
 ```elisp
 M-x geiser-ece-dev-mode
@@ -393,6 +403,7 @@ commands without opening the REPL. In
 | --- | --- |
 | `C-c C-z S` | Start `ece-serve` for an entry file and capture URL/token |
 | `C-c C-z R` | Start `ece-serve`, open the browser, and open the browser REPL |
+| `C-c C-z J` | Start `ece-serve` from the current file, open browser, open REPL |
 | `C-c C-z K` | Stop the managed `ece-serve` process |
 | `C-c C-z a` | Attach to an existing `ece-serve` session file |
 | `C-c C-z c` | Connect to `ece-serve` by host and port |
@@ -405,11 +416,17 @@ commands without opening the REPL. In
 | `C-c C-z r` | Evaluate the active region in the browser |
 | `C-c C-z b` | Evaluate the whole buffer in the browser |
 | `C-c C-z l` | Send the current file contents to the browser |
+| `C-c C-z k` | Save and force an entry rebuild/reload through `ece-serve` |
 | `C-c C-z s` | Save the file; the `ece-serve` watcher rebuilds and reloads |
 
 Snippet evals return the browser result or error to Emacs. Saving a source file
 uses the normal watcher path, so the browser reloads the rebuilt `.ecec` bundle
 and native WASM zone artifacts when they change.
+
+While `geiser-ece-dev-mode` is active, common Geiser commands are remapped to
+the browser-dev loop. `C-x C-e`, `C-c C-r`, and `C-c C-b` evaluate in the
+browser; `C-c C-k` / `geiser-compile-current-buffer` and
+`geiser-load-current-buffer` save and force an `ece-serve` entry rebuild/reload.
 
 ### CL target
 
