@@ -215,8 +215,8 @@ async function run() {
     ECE._refreshSingletonHandles();
     ECE._symCache = {};
     ECE._storeSet(filename, source);
-    const escapedFilename = filename.replace(/\\/g, "\\\\").replace(/"/g, "\\\"");
-    const co = ECE.evalStringLast(`(car (compile-file->archive-result "${escapedFilename}"))`);
+    const co = ECE.evalStringLast(
+      `(car (compile-file->archive-result ${ECE._schemeStringLiteral(filename)}))`);
     return ECE.runCodeObject(co);
   }
 
@@ -234,6 +234,7 @@ async function run() {
   }
 
   // --- Test 8: Module-shaped demos use the same source compile path ---
+  const originalDocument = globalThis.document;
   try {
     const canvasContext = {
       canvas: { width: 640, height: 480 },
@@ -261,6 +262,8 @@ async function run() {
       "sandbox source compile module path failed");
   } catch(e) {
     check(false, "sandbox source compile path runs module-shaped demos", `sandbox source compile module failed: ${e.message}`);
+  } finally {
+    globalThis.document = originalDocument;
   }
 
   // --- Test 9: Edited module text is what runs ---

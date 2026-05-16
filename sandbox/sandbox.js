@@ -270,8 +270,8 @@ const Sandbox = {
     const filename = Sandbox.sourceFilename(progName);
     ECE._storeSet(filename, source);
     const compileProc = w.env_lookup(Sandbox.envHandle, ECE.internSym("eval-string-last"));
-    const escapedFilename = filename.replace(/\\/g, "\\\\").replace(/"/g, "\\\"");
-    const compileSource = "(car (compile-file->archive-result \"" + escapedFilename + "\"))";
+    const compileSource = "(car (compile-file->archive-result " +
+      ECE._schemeStringLiteral(filename) + "))";
     const co = w.call_ece_proc(compileProc, w.h_cons(ECE.makeString(compileSource), ECE._hNil));
     ECE.runCodeObject(co);
   },
