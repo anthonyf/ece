@@ -12,6 +12,7 @@
   ;; pre-computed: pi/6 and pi/2
   (define pi-over-6 0.5236)
   (define pi-over-2 1.5708)
+  (define pi-over-30 0.10472)
 
   (define (draw-clock)
     (canvas-clear)
@@ -29,15 +30,13 @@
 
     ;; Wall clock time -> hand angles
     (let* ((ms (wall-clock-ms))
-           ;; Second hand: full rotation every 60s
-           (sec-frac (modulo ms 60000))
-           (sa (- (* sec-frac 0.0001047) pi-over-2))
-           ;; Minute hand: full rotation every 60min
-           (min-frac (modulo ms 3600000))
-           (ma (- (* min-frac 0.00000175) pi-over-2))
-           ;; Hour hand: full rotation every 12h
-           (hr-frac (modulo ms 43200000))
-           (ha (- (* hr-frac 0.000000145) pi-over-2)))
+           (total-seconds (quotient ms 1000))
+           (second (modulo total-seconds 60))
+           (minute (modulo (quotient total-seconds 60) 60))
+           (hour (modulo (quotient total-seconds 3600) 12))
+           (sa (- (* second pi-over-30) pi-over-2))
+           (ma (- (* (+ minute (/ second 60)) pi-over-30) pi-over-2))
+           (ha (- (* (+ hour (/ minute 60)) pi-over-6) pi-over-2)))
 
       ;; Draw hand as a thin solid rectangle along the angle
       (define (hand angle len r g b thickness)

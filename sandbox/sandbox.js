@@ -50,11 +50,6 @@ const Sandbox = {
     Sandbox.setStatus("Loading ECE...");
     await Sandbox.bootECE();
     Sandbox.setupDevServer();
-    // Load pre-compiled programs
-    if (typeof ECE_COMPILED !== "undefined") {
-      Sandbox._compiledPrograms = ECE_COMPILED;
-    }
-
     Sandbox.setStatus("Ready");
   },
 
@@ -272,24 +267,21 @@ const Sandbox = {
     w.reset_handles();  // recycle temporary handles from previous run
     ECE._refreshSingletonHandles();
     ECE._symCache = {};  // clear stale symbol handle cache
-    // Try pre-compiled .ecec first (only if source hasn't been edited)
-    const key = progName || "";
-    const edited = Sandbox._editorOriginal !== undefined && source !== Sandbox._editorOriginal;
-    if (!edited && Sandbox._compiledPrograms && Sandbox._compiledPrograms[key]) {
-      const progData = Sandbox._compiledPrograms[key];
-      try {
-        const co = ECE.loadArchiveBase64(progData);
-        ECE.runCodeObject(co);
-      } catch(e) {
-        // Pre-compiled failed — fall through to eval-string path
-        Sandbox.appendConsole("Pre-compiled failed (" + e.message.substring(0,40) + "), trying eval-string...\n");
-      }
-      return;
-    }
+    const filename = Sandbox.sourceFilename(progName);
+    ECE._storeSet(filename, source);
+    const compileProc = w.env_lookup(Sandbox.envHandle, ECE.internSym("eval-string-last"));
+    const escapedFilename = filename.replace(/\\/g, "\\\\").replace(/"/g, "\\\"");
+    const compileSource = "(car (compile-file->archive-result \"" + escapedFilename + "\"))";
+    const co = w.call_ece_proc(compileProc, w.h_cons(ECE.makeString(compileSource), ECE._hNil));
+    ECE.runCodeObject(co);
+  },
 
-    // Use ECE's own reader and compiler via eval-string
-    const evalStrProc = w.env_lookup(Sandbox.envHandle, ECE.internSym("eval-string"));
-    w.call_ece_proc(evalStrProc, w.h_cons(ECE.makeString(source), ECE._hNil));
+  sourceFilename(progName) {
+    const stem = String(progName || "editor")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "editor";
+    return "__sandbox_run__/" + stem + ".scm";
   },
 
   // ── REPL ──
