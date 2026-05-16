@@ -409,16 +409,13 @@ sandbox: bin/ece-build
 	@# Generate ece-programs.js from manifest.sexp and referenced .scm files
 	@echo "Generating program list from sandbox/programs/manifest.sexp..."
 	@node scripts/gen-programs-js.js
-	@# Pre-compile canned programs (Hello World .scm → .ecec → base64 in JS)
+	@# Pre-compile canned programs (.scm -> .ecec -> base64 in JS)
 	@echo "Compiling canned programs..."
+	@node scripts/gen-program-compile-scm.js
 	@qlot exec sbcl --dynamic-space-size 4096 --disable-debugger --eval '(asdf:load-system :ece)' \
-	  --eval '(ece:evaluate (list (intern "compile-file" :ece) "sandbox/programs/hello-world.scm"))' \
+	  --eval '(ece:evaluate (list (quote load) ".tmp/sandbox-compile-programs.scm"))' \
 	  --quit 2>/dev/null
-	@echo '// Pre-compiled ECE programs — auto-generated' > sandbox/ece-compiled.js
-	@echo 'const ECE_COMPILED = {};' >> sandbox/ece-compiled.js
-	@printf '%s' 'ECE_COMPILED["Hello World"] = "' >> sandbox/ece-compiled.js
-	@base64 -i sandbox/programs/hello-world.ecec | tr -d '\n' >> sandbox/ece-compiled.js
-	@echo '";' >> sandbox/ece-compiled.js
+	@node scripts/gen-compiled-programs-js.js
 	@echo "Sandbox assets built in sandbox/"
 
 slides: slides/presentation.html

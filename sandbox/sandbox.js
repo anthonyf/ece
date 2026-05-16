@@ -80,8 +80,7 @@ const Sandbox = {
 
     // Boot bootstrap from a multi-archive bundle
     ECE.globalEnvHandle = Sandbox.envHandle;
-    const bootText = atob(ECE_BOOTSTRAP_BUNDLE);
-    ECE.loadArchiveBundle(bootText);
+    ECE.loadArchiveBundleBase64(ECE_BOOTSTRAP_BUNDLE);
     ECE.wasm.mark_handles();
     Sandbox.ready = true;
   },
@@ -278,11 +277,8 @@ const Sandbox = {
     const edited = Sandbox._editorOriginal !== undefined && source !== Sandbox._editorOriginal;
     if (!edited && Sandbox._compiledPrograms && Sandbox._compiledPrograms[key]) {
       const progData = Sandbox._compiledPrograms[key];
-      const text = (typeof atob === "function")
-        ? atob(progData)
-        : Buffer.from(progData, "base64").toString("binary");
       try {
-        const co = ECE.loadArchiveText(text);
+        const co = ECE.loadArchiveBase64(progData);
         ECE.runCodeObject(co);
       } catch(e) {
         // Pre-compiled failed — fall through to eval-string path

@@ -53,6 +53,15 @@ async function run() {
     "sandbox.js uses ECE_BOOTSTRAP_BUNDLE (not per-space)",
     "sandbox.js still uses old ECE_BOOTSTRAP[name] format");
   check(
+    sandboxJs.includes("ECE.loadArchiveBundleBase64(ECE_BOOTSTRAP_BUNDLE)") &&
+      !sandboxJs.includes("atob(ECE_BOOTSTRAP_BUNDLE)"),
+    "sandbox.js boots bootstrap via archive auto-detection",
+    "sandbox.js decodes bootstrap as text instead of using archive auto-detection");
+  check(
+    sandboxJs.includes("ECE.loadArchiveBase64(progData)"),
+    "sandbox.js loads precompiled demos via archive auto-detection",
+    "sandbox.js decodes precompiled demos as text instead of using archive auto-detection");
+  check(
     sandboxJs.includes("wasm_host: ECE.wasmHost"),
     "sandbox.js provides wasm_host imports",
     "sandbox.js missing wasm_host imports");
@@ -118,6 +127,18 @@ async function run() {
     }),
     "canvas sandbox demos import the browser canvas module",
     "one or more canvas sandbox demos still use unscoped global canvas code");
+
+  const manifest = fs.readFileSync(path.join(SANDBOX_DIR, "programs", "manifest.sexp"), "utf8");
+  const manifestNames = Array.from(manifest.matchAll(/name\s+"([^"]+)"\s+file\s+"([^"]+)"/g))
+    .map(match => match[1]);
+  const compiledJs = fs.readFileSync(path.join(SANDBOX_DIR, "ece-compiled.js"), "utf8");
+  const compiledNames = Array.from(compiledJs.matchAll(/ECE_COMPILED\["([^"]+)"\]\s*=/g))
+    .map(match => match[1]);
+  check(
+    manifestNames.length > 0 &&
+      manifestNames.every(name => compiledNames.includes(name)),
+    "all sandbox manifest demos have precompiled archives",
+    "one or more sandbox manifest demos are missing from ece-compiled.js");
 
   // --- Test 3: WASM instantiation with full imports ---
   const wasmBytes = fs.readFileSync(path.join(ROOT, "wasm", "runtime.wasm"));
@@ -185,7 +206,6 @@ async function run() {
   }
 
   // --- Test 7: Pre-compiled program loading (same path as sandbox Run with compiled) ---
-  const compiledJs = fs.readFileSync(path.join(SANDBOX_DIR, "ece-compiled.js"), "utf8");
   const match = compiledJs.match(/ECE_COMPILED\["Hello World"\]\s*=\s*"([^"]+)"/);
   if (match) {
     output.length = 0;
@@ -202,6 +222,43 @@ async function run() {
     }
   } else {
     check(false, "Pre-compiled Hello World loaded and ran", "Could not find ECE_COMPILED[\"Hello World\"] in ece-compiled.js");
+  }
+
+  // --- Test 8: Module-shaped demos use the precompiled path ---
+  const sierpinskiMatch = compiledJs.match(/ECE_COMPILED\["Sierpinski Triangle"\]\s*=\s*"([^"]+)"/);
+  if (sierpinskiMatch) {
+    try {
+      const canvasContext = {
+        canvas: { width: 640, height: 480 },
+        clearRect() {},
+        fillRect() {},
+        beginPath() {},
+        arc() {},
+        fill() {},
+        fillText() {},
+        set fillStyle(_value) {}
+      };
+      globalThis.document = {
+        getElementById() {
+          return { getContext() { return canvasContext; } };
+        }
+      };
+      ECE.wasm.reset_handles();
+      ECE._refreshSingletonHandles();
+      ECE._symCache = {};
+      const co = ECE.loadArchiveBase64(sierpinskiMatch[1]);
+      ECE.runCodeObject(co);
+      ECE.wasm.clear_yield_cont();
+      ECE.wasm.set_yield_flag(0);
+      check(
+        true,
+        "Pre-compiled Sierpinski module loaded and ran",
+        "Pre-compiled Sierpinski module failed");
+    } catch(e) {
+      check(false, "Pre-compiled Sierpinski module loaded and ran", `Pre-compiled Sierpinski failed: ${e.message}`);
+    }
+  } else {
+    check(false, "Pre-compiled Sierpinski module loaded and ran", "Could not find ECE_COMPILED[\"Sierpinski Triangle\"] in ece-compiled.js");
   }
 
   // --- Summary ---
