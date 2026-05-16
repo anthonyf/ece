@@ -409,13 +409,7 @@ sandbox: bin/ece-build
 	@# Generate ece-programs.js from manifest.sexp and referenced .scm files
 	@echo "Generating program list from sandbox/programs/manifest.sexp..."
 	@node scripts/gen-programs-js.js
-	@# Pre-compile canned programs (.scm -> .ecec -> base64 in JS)
-	@echo "Compiling canned programs..."
-	@node scripts/gen-program-compile-scm.js
-	@qlot exec sbcl --dynamic-space-size 4096 --disable-debugger --eval '(asdf:load-system :ece)' \
-	  --eval '(ece:evaluate (list (quote load) ".tmp/sandbox-compile-programs.scm"))' \
-	  --quit 2>/dev/null
-	@node scripts/gen-compiled-programs-js.js
+	@rm -f sandbox/ece-compiled.js
 	@echo "Sandbox assets built in sandbox/"
 
 slides: slides/presentation.html
@@ -430,7 +424,7 @@ site: sandbox
 	@mkdir -p _site/sandbox
 	@cp site/index.html _site/
 	@cp sandbox/index.html sandbox/sandbox.js sandbox/ece-programs.js _site/sandbox/
-	@cp sandbox/ece-runtime.js sandbox/ece-bootstrap.js sandbox/ece-compiled.js _site/sandbox/
+	@cp sandbox/ece-runtime.js sandbox/ece-bootstrap.js _site/sandbox/
 	@# Build browser test page via ece-build (reuses WASM_TEST_SRCS)
 	@mkdir -p .tmp
 	@cat $(WASM_TEST_SRCS) > .tmp/ece-site-tests.scm
