@@ -591,10 +591,11 @@ const ECE = {
     }
     const archiveBytes = new Uint8Array(await archiveResp.arrayBuffer());
     const archiveIsBinary = ECE._archiveBytesAreBinary(archiveBytes);
+    const archiveText = archiveIsBinary ? null : ECE._decodeArchiveText(archiveBytes);
     if (archiveIsBinary) {
       ECE.wasmHost.setBytes(archiveUrl, archiveBytes);
     } else {
-      ECE.wasmHost.setText(archiveUrl, ECE._decodeArchiveText(archiveBytes));
+      ECE.wasmHost.setText(archiveUrl, archiveText);
     }
 
     if (zoneModuleUrl && manifestUrl) {
@@ -619,7 +620,7 @@ const ECE = {
     if (archiveIsBinary || (!zoneModuleUrl && !manifestUrl)) {
       const codeObjects = archiveIsBinary
         ? ECE.materializeArchiveBundleBytes(archiveBytes)
-        : ECE.materializeArchiveBundleText(ECE._decodeArchiveText(archiveBytes));
+        : ECE.materializeArchiveBundleText(archiveText);
 
       if (zoneModuleUrl && manifestUrl) {
         ECE.evalStringLast(
