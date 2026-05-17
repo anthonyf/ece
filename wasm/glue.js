@@ -497,14 +497,9 @@ const ECE = {
   // lifetime. Callers that invoke loadArchiveBundle repeatedly without
   // marking afterwards should reset handles between calls.
   loadArchiveBundle(text) {
-    const w = ECE.wasm;
-    let co = ECE.loadArchiveText(text);
-    w.run_code_object(co, ECE.globalEnvHandle);
-    while (w.archive_has_more()) {
-      co = w.load_archive_continue();
-      w.run_code_object(co, ECE.globalEnvHandle);
-    }
-    return co;
+    const codeObjects = ECE.materializeArchiveBundleText(text);
+    ECE.runCodeObjects(codeObjects);
+    return codeObjects[codeObjects.length - 1];
   },
 
   loadArchiveBytes(bytes) {
@@ -531,6 +526,15 @@ const ECE = {
     const codeObjects = [ECE.loadArchiveBytes(bytes)];
     while (w.binary_archive_has_more()) {
       codeObjects.push(w.load_binary_archive_continue());
+    }
+    return codeObjects;
+  },
+
+  materializeArchiveBundleText(text) {
+    const w = ECE.wasm;
+    const codeObjects = [ECE.loadArchiveText(text)];
+    while (w.archive_has_more()) {
+      codeObjects.push(w.load_archive_continue());
     }
     return codeObjects;
   },
@@ -612,8 +616,11 @@ const ECE = {
     ECE._refreshSingletonHandles();
     ECE._symCache = {};
 
-    if (archiveIsBinary) {
-      const codeObjects = ECE.materializeArchiveBundleBytes(archiveBytes);
+    if (archiveIsBinary || (!zoneModuleUrl && !manifestUrl)) {
+      const codeObjects = archiveIsBinary
+        ? ECE.materializeArchiveBundleBytes(archiveBytes)
+        : ECE.materializeArchiveBundleText(ECE._decodeArchiveText(archiveBytes));
+
       if (zoneModuleUrl && manifestUrl) {
         ECE.evalStringLast(
           `(load-native-zone-module ${ECE._schemeStringLiteral(zoneModuleUrl)} ${ECE._schemeStringLiteral(manifestUrl)})`);
@@ -623,8 +630,8 @@ const ECE = {
 
     const args = [
       ECE._schemeStringLiteral(archiveUrl),
-      zoneModuleUrl ? ECE._schemeStringLiteral(zoneModuleUrl) : "#f",
-      manifestUrl ? ECE._schemeStringLiteral(manifestUrl) : "#f"
+      ECE._schemeStringLiteral(zoneModuleUrl),
+      ECE._schemeStringLiteral(manifestUrl)
     ].join(" ");
     return ECE.evalStringLast(`(reload-program ${args})`);
   },
