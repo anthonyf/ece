@@ -210,6 +210,42 @@ async function run() {
     check(false, "browser dev-client handles source updates in ECE", `browser dev-client source update failed: ${e.message}`);
   }
 
+  // --- Test 6b: archive-only reload uses the low-level bundle loader ---
+  try {
+    const archiveText = fs.readFileSync(
+      path.join(ROOT, "tests", "golden", "basic-arithmetic.expected"),
+      "utf8");
+    const originalFetch = globalThis.fetch;
+    const originalEvalStringLast = ECE.evalStringLast;
+    try {
+      globalThis.fetch = async function(_url, _options) {
+        const bytes = new TextEncoder().encode(archiveText);
+        return {
+          ok: true,
+          status: 200,
+          arrayBuffer: async function() { return bytes.buffer; }
+        };
+      };
+      ECE.evalStringLast = function(source) {
+        if (String(source).includes("(reload-program")) {
+          throw new Error("archive-only reload should not call Scheme reload-program");
+        }
+        return originalEvalStringLast(source);
+      };
+      await ECE.reloadProgramFromUrls("memory://archive-only-text.ecec");
+    } finally {
+      globalThis.fetch = originalFetch;
+      ECE.evalStringLast = originalEvalStringLast;
+    }
+    const y = ECE._eceToJs(ECE.evalStringLast("y"));
+    check(
+      y === 50,
+      "archive-only text reload uses low-level bundle loader",
+      `archive-only text reload y value: ${JSON.stringify(y)}`);
+  } catch(e) {
+    check(false, "archive-only text reload uses low-level bundle loader", `archive-only text reload failed: ${e.message}`);
+  }
+
   function compileAndRunSource(source, filename) {
     ECE.wasm.reset_handles();
     ECE._refreshSingletonHandles();
