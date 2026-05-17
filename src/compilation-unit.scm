@@ -1988,10 +1988,11 @@ tests and tooling."
 
 (define (bca/encode-operand-list operands)
   (let loop ((rest operands)
-             (acc (bca/encode-u16 (length operands))))
+             (chunks (list (bca/encode-u16 (length operands)))))
     (if (null? rest)
-        acc
-        (loop (cdr rest) (append acc (bca/encode-operand (car rest)))))))
+        (bca/append-byte-chunks (reverse chunks))
+        (loop (cdr rest)
+              (cons (bca/encode-operand (car rest)) chunks)))))
 
 (define (bca/read-operand-list bytes)
   (let* ((len-result (bca/read-u16 bytes))
@@ -2123,11 +2124,11 @@ tests and tooling."
 
 (define (bca/encode-code-object-entries entries)
   (let loop ((rest entries)
-             (acc (bca/encode-u32 (length entries))))
+             (chunks (list (bca/encode-u32 (length entries)))))
     (if (null? rest)
-        acc
+        (bca/append-byte-chunks (reverse chunks))
         (loop (cdr rest)
-              (append acc (bca/encode-code-object-entry (car rest)))))))
+              (cons (bca/encode-code-object-entry (car rest)) chunks)))))
 
 (define (bca/read-code-object-entries bytes)
   (let* ((len-result (bca/read-u32 bytes))
@@ -2185,11 +2186,11 @@ tests and tooling."
              bca/default-archive-version
              (archive/plist-get (cdr (car archives)) ':version))))
     (let loop ((rest archives)
-               (acc (bca/encode-header (length archives) archive-version)))
+               (chunks (list (bca/encode-header (length archives) archive-version))))
       (if (null? rest)
-          acc
+          (bca/append-byte-chunks (reverse chunks))
           (loop (cdr rest)
-                (append acc (bca/encode-archive-section (car rest))))))))
+                (cons (bca/encode-archive-section (car rest)) chunks))))))
 
 (define (bca/encode-archive archive)
   (bca/encode-archive-bundle (list archive)))
