@@ -141,8 +141,7 @@ the path-join of *walker-tmp-dir* is a subdir."
           (assert-equal url "/__ece_dev/artifacts/app.ecec")
           (assert-true (%file-exists? artifact-path))
           (assert-true
-           (string-contains? (ece-serve/read-file-as-string artifact-path)
-                             ":ecec-archive"))))
+           (bca/read-file-archives-if-binary artifact-path))))
       (lambda () (set! *ece-serve/artifact-root* old))))))
 
 (test "ece-serve/build-program-artifacts!: emits native-zone reload artifacts" (lambda ()
@@ -162,11 +161,13 @@ the path-join of *walker-tmp-dir* is a subdir."
           (assert-true (%file-exists? (path-join artifact-root "app-zones.wat")))
           (assert-true (%file-exists? (path-join artifact-root "app-zones.wasm")))
           (assert-true (%file-exists? (path-join artifact-root "app-zones.manifest")))
-          (assert-true
-           (string-contains?
-            (ece-serve/read-file-as-string
-             (path-join artifact-root "app-zones.manifest"))
-            ":ece-native-zones"))))
+          (let ((manifest-text
+                 (ece-serve/read-file-as-string
+                  (path-join artifact-root "app-zones.manifest"))))
+            (assert-true
+             (string-contains? manifest-text ":ece-native-zones"))
+            (assert-false
+             (string-contains? manifest-text ":fingerprint")))))
       (lambda () (set! *ece-serve/artifact-root* old))))))
 
 (test "wasm-as: returns #f when assembly fails" (lambda ()
@@ -212,13 +213,16 @@ the path-join of *walker-tmp-dir* is a subdir."
       (lambda () (set! *ece-serve/artifact-root* artifact-root))
       (lambda ()
         (ece-serve/build-program-artifact! entry)
-        (let ((archive-text
-               (ece-serve/read-file-as-string
+        (let ((archives
+               (bca/read-file-archives-if-binary
                 (path-join artifact-root "app.ecec"))))
-          (assert-true
-           (string-contains? archive-text "artifact-entry-with-load.scm"))
-          (assert-true
-           (string-contains? archive-text "artifact-lib.scm"))))
+          (assert-equal (length archives) 2)
+          (assert-equal
+           (archive/plist-get (cdr (car archives)) ':file)
+           "artifact-entry-with-load.scm")
+          (assert-equal
+           (archive/plist-get (cdr (cadr archives)) ':file)
+           "artifact-lib.scm")))
       (lambda () (set! *ece-serve/artifact-root* old))))))
 
 ;; ── ece-serve/is-websocket-upgrade? detector ──────────────────────────

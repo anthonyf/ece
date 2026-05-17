@@ -30,6 +30,11 @@ function withTimeout(promise, ms, label) {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
+function isBinaryEcecArchive(bytes) {
+  const magic = [0x45, 0x43, 0x45, 0x43, 0x00, 0x42, 0x49, 0x4e];
+  return bytes.length >= magic.length && magic.every((byte, index) => bytes[index] === byte);
+}
+
 async function waitForOutputContains(readOutput, needle, label) {
   const deadline = Date.now() + 5000;
   while (Date.now() < deadline) {
@@ -475,9 +480,9 @@ async function runAttempt() {
     if (!artifactResp.ok) {
       throw new Error(`dev artifact fetch failed: HTTP ${artifactResp.status}`);
     }
-    const artifactText = await artifactResp.text();
-    if (!artifactText.includes(":ecec-archive") || !artifactText.includes("live.scm")) {
-      throw new Error("dev artifact did not look like a compiled live.scm archive");
+    const artifactBytes = new Uint8Array(await artifactResp.arrayBuffer());
+    if (!isBinaryEcecArchive(artifactBytes)) {
+      throw new Error("dev artifact did not look like a binary .ecec archive");
     }
     const zoneResp = await fetch(`http://127.0.0.1:${port}${message.zoneModuleUrl}`);
     if (!zoneResp.ok) {
@@ -498,6 +503,9 @@ async function runAttempt() {
     const manifestText = await manifestResp.text();
     if (!manifestText.includes(":ece-native-zones")) {
       throw new Error("dev native-zone manifest did not look like a manifest");
+    }
+    if (manifestText.includes(":fingerprint")) {
+      throw new Error("dev native-zone manifest unexpectedly included fingerprints");
     }
 
     browserOutput.length = 0;

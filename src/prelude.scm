@@ -1528,7 +1528,11 @@ operands through CO's label table so both forms hash identically."
                        (vector-ref instrs i))
                       acc))))))
 
-(define (ser/code-object-fingerprint co)
+(define *ser/code-object-fingerprint-cache* (%make-hash-table))
+(define *ser/code-object-fingerprint-cache-miss*
+  (list 'ser-code-object-fingerprint-cache-miss))
+
+(define (ser/code-object-fingerprint/uncached co)
   "Return a deterministic fingerprint for CO, or #f when the runtime cannot
 expose enough code-object structure to verify it."
   (let ((instrs (code-object-instructions co)))
@@ -1543,6 +1547,21 @@ expose enough code-object structure to verify it."
                 ':labels (ser/fingerprint-label-entries
                           (code-object-label-entries co))
                 ':instructions (ser/fingerprint-instructions co)))))))
+
+(define (ser/code-object-fingerprint co)
+  "Return a deterministic fingerprint for CO, memoizing archive walks.
+Native-zone manifests may request fingerprints for every code object in a
+bundle; those code objects often reference each other, so uncached recursive
+fingerprinting repeats the same work many times."
+  (let ((cached
+         (hash-ref *ser/code-object-fingerprint-cache*
+                   co
+                   *ser/code-object-fingerprint-cache-miss*)))
+    (if (not (eq? cached *ser/code-object-fingerprint-cache-miss*))
+        cached
+        (let ((fingerprint (ser/code-object-fingerprint/uncached co)))
+          (hash-set! *ser/code-object-fingerprint-cache* co fingerprint)
+          fingerprint))))
 
 (define (ser/code-object->sexp co)
   "Dispatch a code-object to its reader-safe sexp form. Returns either

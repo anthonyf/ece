@@ -1359,7 +1359,8 @@ The dev token stays only in the chmod 0600 session file."
   "Write native-zone WAT and manifest artifacts for BUNDLE-PATH."
   (let* ((bundle (generate-register-machine-wasm-zone-archive-file
                   bundle-path
-                  wasm-name))
+                  wasm-name
+                  #f))
          (wat-path (ece-serve/artifact-path wat-name))
          (manifest-path (ece-serve/artifact-path manifest-name)))
     (ece-serve/write-string-to-file (wasm-zone-bundle-wat bundle) wat-path)
@@ -1383,7 +1384,7 @@ Returns (ARCHIVE-URL ZONE-MODULE-URL MANIFEST-URL)."
          (sources (ece-serve/artifact-source-list entry-file)))
     (ece-serve/log "building " bundle-name " from " (number->string (length sources))
                    " source file(s)")
-    (compile-system sources bundle-path)
+    (compile-system/binary sources bundle-path)
     (ece-serve/write-native-zone-artifacts! bundle-path wat-name wasm-name
                                             manifest-name)
     (when (not (wasm-as wat-path wasm-path))

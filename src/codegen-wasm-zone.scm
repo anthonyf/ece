@@ -619,22 +619,21 @@ is unsupported."
         (if (or (= len 0)
                 (not (wasm-zone/instruction-body-wat co instrs len 0)))
             #f
-            (let loop ((pc 0) (body ""))
+            (let loop ((pc 0) (cases '()))
               (if (>= pc len)
                   (string-append
                    "    (block " (wasm-zone/name "exit") "\n"
                    "      (loop " (wasm-zone/name "dispatch") "\n"
-                   body
+                   (apply string-append (reverse cases))
                    "        (return\n"
                    (wasm-zone/result-call-current-pc-wat 2)
                    ")\n"
                    "      ))\n"
                    "    (unreachable)\n")
                   (loop (+ pc 1)
-                        (string-append
-                         body
-                         (wasm-zone/instruction-case-wat
-                          co instrs len pc)))))))))
+                        (cons (wasm-zone/instruction-case-wat
+                               co instrs len pc)
+                              cases))))))))
 
 (define (wasm-zone/supported? co)
   (if (wasm-zone/body-wat co) #t #f))
@@ -919,12 +918,25 @@ omitted from the manifest, leaving them on the interpreter path."
                      ':export export-name)))
     (wasm-zone/manifest unit-id (list entry) maybe-module-url)))
 
-(define (generate-register-machine-wasm-zone-archive-text archive-text
-                                                          module-url)
-  "Generate one native-zone side-module WAT bundle for ARCHIVE-TEXT.
+(define (wasm-zone/fingerprint-fields co include-fingerprints?)
+  (if include-fingerprints?
+      (let ((fingerprint (ser/code-object-fingerprint co)))
+        (if fingerprint
+            (list ':fingerprint fingerprint)
+            '()))
+      '()))
+
+(define (generate-register-machine-wasm-zone-archive-forms archives
+                                                           module-url
+                                                           .
+                                                           maybe-include-fingerprints)
+  "Generate one native-zone side-module WAT bundle for ARCHIVES.
 The resulting manifest uses per-entry :unit-id fields so one module can cover
 all supported code objects across all archive sections in the .ecec bundle."
-  (let ((port (open-input-string archive-text)))
+  (let ((include-fingerprints?
+         (if (null? maybe-include-fingerprints)
+             #t
+             (car maybe-include-fingerprints))))
     (define (scan-code-objects section-index unit-id cos i functions entries)
       (if (>= i (vector-length cos))
           (list functions entries)
@@ -935,11 +947,8 @@ all supported code objects across all archive sections in the .ecec bundle."
                        (export-name (wasm-zone/archive-export-name
                                      section-index
                                      index))
-                       (fingerprint (ser/code-object-fingerprint co))
                        (fingerprint-fields
-                        (if fingerprint
-                            (list ':fingerprint fingerprint)
-                            '())))
+                        (wasm-zone/fingerprint-fields co include-fingerprints?)))
                   (scan-code-objects
                    section-index
                    unit-id
@@ -955,42 +964,75 @@ all supported code objects across all archive sections in the .ecec bundle."
                          entries)))
                 (scan-code-objects section-index unit-id cos (+ i 1)
                                    functions entries)))))
-    (define (scan-sections section-index functions entries)
+    (define (scan-sections section-index rest functions entries)
+      (if (null? rest)
+          (let ((manifest (wasm-zone/manifest
+                           'archive-bundle
+                           (reverse entries)
+                           (list module-url)))
+                (function-wat (apply string-append
+                                     (reverse functions))))
+            (list ':wat (wasm-zone/module-wat function-wat)
+                  ':manifest manifest))
+          (let* ((section (archive/materialize-section (car rest)))
+                 (unit (archive/section-unit section))
+                 (unit-id (wasm-host/plist-get unit ':unit-id))
+                 (cos (archive/section-cos section))
+                 (result (scan-code-objects section-index unit-id cos 0
+                                            functions entries)))
+            (scan-sections (+ section-index 1)
+                           (cdr rest)
+                           (car result)
+                           (cadr result)))))
+    (scan-sections 0 archives '() '())))
+
+(define (generate-register-machine-wasm-zone-archive-text archive-text
+                                                          module-url
+                                                          .
+                                                          maybe-include-fingerprints)
+  "Generate one native-zone side-module WAT bundle for ARCHIVE-TEXT."
+  (let ((port (open-input-string archive-text))
+        (include-fingerprints?
+         (if (null? maybe-include-fingerprints)
+             #t
+             (car maybe-include-fingerprints))))
+    (define (read-archives archives)
       (let ((archive (read-archive-section-form port)))
         (if (eof? archive)
             (begin
               (close-input-port port)
-              (let ((manifest (wasm-zone/manifest
-                               'archive-bundle
-                               (reverse entries)
-                               (list module-url)))
-                    (function-wat (apply string-append
-                                         (reverse functions))))
-                (list ':wat (wasm-zone/module-wat function-wat)
-                      ':manifest manifest)))
-            (let* ((section (archive/materialize-section archive))
-                   (unit (archive/section-unit section))
-                   (unit-id (wasm-host/plist-get unit ':unit-id))
-                   (cos (archive/section-cos section))
-                   (result (scan-code-objects section-index unit-id cos 0
-                                              functions entries)))
-              (scan-sections (+ section-index 1)
-                             (car result)
-                             (cadr result))))))
-    (scan-sections 0 '() '())))
+              (generate-register-machine-wasm-zone-archive-forms
+               (reverse archives)
+               module-url
+               include-fingerprints?))
+            (read-archives (cons archive archives)))))
+    (read-archives '())))
 
 (define (generate-register-machine-wasm-zone-archive-file archive-path
-                                                          module-url)
+                                                          module-url
+                                                          .
+                                                          maybe-include-fingerprints)
   "Generate native-zone WAT and manifest data from an archive bundle file."
-  (generate-register-machine-wasm-zone-archive-text
-   (call-with-input-file archive-path
-     (lambda (port)
-       (let ((out (open-output-string)))
-         (let loop ()
-           (let ((ch (read-char port)))
-             (if (eof? ch)
-                 (get-output-string out)
-                 (begin
-                   (%write-char-to-port ch out)
-                   (loop))))))))
-   module-url))
+  (let ((binary-archives (bca/read-file-archives-if-binary archive-path))
+        (include-fingerprints?
+         (if (null? maybe-include-fingerprints)
+             #t
+             (car maybe-include-fingerprints))))
+    (if binary-archives
+        (generate-register-machine-wasm-zone-archive-forms
+         binary-archives
+         module-url
+         include-fingerprints?)
+        (generate-register-machine-wasm-zone-archive-text
+         (call-with-input-file archive-path
+           (lambda (port)
+             (let ((out (open-output-string)))
+               (let loop ()
+                 (let ((ch (read-char port)))
+                   (if (eof? ch)
+                       (get-output-string out)
+                       (begin
+                         (%write-char-to-port ch out)
+                         (loop))))))))
+         module-url
+         include-fingerprints?))))
