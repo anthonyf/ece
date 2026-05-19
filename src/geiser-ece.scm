@@ -21,6 +21,7 @@
 (define (geiser-no-values) #f)
 
 (define *geiser-source-files* '())
+(define *geiser-source-index* (%make-hash-table))
 
 (define (string-prefix? prefix str)
   (let ((plen (string-length prefix))
@@ -98,25 +99,88 @@
 
 (define (geiser-register-source-file! path)
   "Remember PATH as source that Geiser may search for definitions."
-  (when (and (string? path)
-             (not (member path *geiser-source-files*)))
-    (set! *geiser-source-files* (cons path *geiser-source-files*)))
+  (when (string? path)
+    (when (not (member path *geiser-source-files*))
+      (set! *geiser-source-files* (cons path *geiser-source-files*)))
+    (geiser/index-source-file! path))
   *geiser-source-files*)
+
+(define (geiser/source-read-all-forms/strict path)
+  "Read every top-level form from PATH, propagating open/read errors."
+  (let ((in (open-input-file path)))
+    (dynamic-wind
+        (lambda () #f)
+        (lambda ()
+          (let loop ((acc '()))
+            (let ((form (read in)))
+              (cond
+               ((eof? form) (reverse acc))
+               (else (loop (cons form acc)))))))
+        (lambda () (close-input-port in)))))
 
 (define (geiser/source-read-all-forms path)
   "Read every top-level form from PATH, returning an empty list on errors."
   (guard
    (e (#t '()))
-   (let ((in (open-input-file path)))
-     (dynamic-wind
-         (lambda () #f)
-         (lambda ()
-           (let loop ((acc '()))
-             (let ((form (read in)))
-               (cond
-                ((eof? form) (reverse acc))
-                (else (loop (cons form acc)))))))
-         (lambda () (close-input-port in))))))
+   (geiser/source-read-all-forms/strict path)))
+
+(define (geiser/read-source-with-locations path)
+  "Read PATH with source-location tracking.
+Returns (FORMS . LOCATIONS), where LOCATIONS maps form identity to
+`(file line column)'. Returns #f if PATH cannot be read."
+  (guard
+   (e (#t #f))
+   (and (%file-exists? path)
+        (let ((previous-file *source-file-name*)
+              (previous-locations *source-locations*)
+              (result #f))
+          (dynamic-wind
+              (lambda ()
+                (set! *source-file-name* path)
+                (set! *source-locations* (%make-hash-table)))
+              (lambda ()
+                (let ((forms (geiser/source-read-all-forms/strict path)))
+                  (set! result (cons forms *source-locations*))
+                  result))
+              (lambda ()
+                (set! *source-file-name* previous-file)
+                (set! *source-locations* previous-locations)))))))
+
+(define (geiser/location-alist name loc)
+  "Return a Geiser location alist for NAME at LOC."
+  (list (cons "name" (symbol->string name))
+        (cons "file" (car loc))
+        (cons "line" (cadr loc))
+        (cons "column" (caddr loc))))
+
+(define (geiser/index-remove-file! path)
+  "Remove cached definition locations that came from PATH."
+  (for-each
+   (lambda (key)
+     (let* ((loc (hash-ref *geiser-source-index* key #f))
+            (file-entry (and loc (assoc "file" loc))))
+       (when (and file-entry (equal? (cdr file-entry) path))
+         (hash-remove! *geiser-source-index* key))))
+   (hash-keys *geiser-source-index*)))
+
+(define (geiser/index-source-file! path)
+  "Refresh cached definition locations for PATH."
+  (geiser/index-remove-file! path)
+  (let ((source (geiser/read-source-with-locations path)))
+    (when source
+      (let ((forms (car source))
+            (locations (cdr source)))
+        (for-each
+         (lambda (form)
+           (let ((loc (hash-ref locations form #f)))
+             (when loc
+               (for-each
+                (lambda (name)
+                  (hash-set! *geiser-source-index*
+                             name
+                             (geiser/location-alist name loc)))
+                (geiser/definition-names form)))))
+         forms)))))
 
 (define (geiser/load-form? form)
   "Return #t when FORM is a literal-string `(load ...)' form."
@@ -183,34 +247,6 @@
 (define (geiser/form-defines-symbol? form sym)
   (member sym (geiser/definition-names form)))
 
-(define (geiser/read-source-with-locations path)
-  "Read PATH with source-location tracking.
-Returns (FORMS . LOCATIONS), where LOCATIONS maps form identity to
-`(file line column)'. Returns #f if PATH cannot be read."
-  (guard
-   (e (#t #f))
-   (let ((previous-file *source-file-name*)
-         (previous-locations *source-locations*)
-         (result #f))
-     (dynamic-wind
-         (lambda ()
-           (set! *source-file-name* path)
-           (set! *source-locations* (%make-hash-table)))
-         (lambda ()
-           (let ((forms (geiser/source-read-all-forms path)))
-             (set! result (cons forms *source-locations*))
-             result))
-         (lambda ()
-           (set! *source-file-name* previous-file)
-           (set! *source-locations* previous-locations))))))
-
-(define (geiser/location-alist name loc)
-  "Return a Geiser location alist for NAME at LOC."
-  (list (cons "name" (symbol->string name))
-        (cons "file" (car loc))
-        (cons "line" (cadr loc))
-        (cons "column" (caddr loc))))
-
 (define (geiser/find-symbol-location-in-file name path)
   "Find NAME's top-level source location in PATH, or #f."
   (let ((source (geiser/read-source-with-locations path)))
@@ -232,12 +268,7 @@ Returns (FORMS . LOCATIONS), where LOCATIONS maps form identity to
   (let ((sym (if (symbol? name)
                  name
                  (string->symbol (write-to-string name)))))
-    (let loop ((files *geiser-source-files*))
-      (cond
-       ((null? files) #f)
-       (else
-        (let ((loc (geiser/find-symbol-location-in-file sym (car files))))
-          (if loc loc (loop (cdr files)))))))))
+    (hash-ref *geiser-source-index* sym #f)))
 
 (define (geiser-module-location module . rest)
   "Return #f because ECE does not yet track module source locations."
