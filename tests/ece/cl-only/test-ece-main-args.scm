@@ -91,3 +91,12 @@
   (let ((parsed (parse-init-web-args '("game" "--force"))))
     (assert-equal (car parsed) "game")
     (assert-equal (cadr parsed) #t))))
+
+(test "ece-init-web-project-text: writes app-local project defaults" (lambda ()
+  (let ((text (ece-init-web-project-text "apps/test-game")))
+    (assert-true (string-contains? text "(:ece-project"))
+    (assert-true (string-contains? text ":name \"test-game\""))
+    (assert-true (string-contains? text ":source-roots (\".\")"))
+    (assert-true (string-contains? text ":entry \"main.scm\""))
+    (assert-true (string-contains? text ":static-root \".\""))
+    (assert-true (string-contains? text ":index \"index.html\"")))))

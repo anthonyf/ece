@@ -148,8 +148,11 @@ between http-build-response (string body) and build-binary-response
 ;; commands are relayed to connected browser WebSocket clients.
 
 (define *ece-serve/sandbox-root* "sandbox")
+(define *ece-serve/default-project-file* "ece.project")
+(define *ece-serve/index-file* "index.html")
 (define *ece-serve/current-port* 8080)
 (define *ece-serve/current-entry-file* #f)
+(define *ece-serve/current-project-file* #f)
 (define *ece-serve/dev-ws-placeholder* "window.ECE_DEV_WS_URL = null;")
 (define *ece-serve/dev-token* "test-token")
 (define *ece-serve/artifact-url-prefix* "/__ece_dev/artifacts/")
@@ -191,7 +194,7 @@ root. Returns a string path, or #f if the path is unsafe (contains
                       request-path
                       (substring request-path 0 qmark)))
            (rel (if (string=? clean "/")
-                    "index.html"
+                    *ece-serve/index-file*
                     (substring clean 1 (string-length clean)))))
       (cond
        ((string-contains? rel "..") #f)
@@ -1319,6 +1322,189 @@ Returns #f on timeout or when called without a scheduler."
   "Return the app-local static root for ENTRY-FILE."
   (dirname entry-file))
 
+(define (ece-serve/plist? plist)
+  "Return #t when PLIST is a proper keyword plist."
+  (cond
+   ((null? plist) #t)
+   ((not (pair? plist)) #f)
+   ((not (keyword? (car plist))) #f)
+   ((not (pair? (cdr plist))) #f)
+   (else (ece-serve/plist? (cdr (cdr plist))))))
+
+(define (ece-serve/plist-get plist key)
+  "Return KEY's value in PLIST, or #f when KEY is absent."
+  (cond
+   ((null? plist) #f)
+   ((not (pair? plist)) #f)
+   ((not (pair? (cdr plist))) #f)
+   ((eq? (car plist) key) (car (cdr plist)))
+   (else (ece-serve/plist-get (cdr (cdr plist)) key))))
+
+(define (ece-serve/plist-has-key? plist key)
+  "Return #t when PLIST contains KEY, even if the value is #f."
+  (cond
+   ((null? plist) #f)
+   ((not (pair? plist)) #f)
+   ((not (pair? (cdr plist))) #f)
+   ((eq? (car plist) key) #t)
+   (else (ece-serve/plist-has-key? (cdr (cdr plist)) key))))
+
+(define (ece-serve/read-one-form path)
+  "Read and return the first datum from PATH."
+  (let* ((open-failed (list 'open-failed))
+         (in (guard (e (#t open-failed))
+                    (open-input-file path))))
+    (when (eq? in open-failed)
+      (error (string-append "ece-serve: project file must be a readable file: "
+                            path)))
+    (dynamic-wind
+      (lambda () #f)
+      (lambda ()
+        (let* ((read-failed (list 'read-failed))
+               (form (guard (e (#t read-failed))
+                            (read in))))
+          (cond
+           ((eq? form read-failed)
+            (error (string-append
+                    "ece-serve: project file must be a readable file: "
+                    path)))
+           ((eof? form)
+            (error (string-append "ece-serve: empty project file: " path)))
+           (else form))))
+      (lambda () (close-input-port in)))))
+
+(define (ece-serve/project-fields form path)
+  "Return the plist fields from an ece.project FORM."
+  (cond
+   ((not (pair? form))
+    (error (string-append "ece-serve: project file must start with (:ece-project ...): "
+                          path)))
+   ((or (eq? (car form) ':ece-project)
+        (eq? (car form) 'ece-project))
+    (let ((fields (cdr form)))
+      (when (not (ece-serve/plist? fields))
+        (error (string-append "ece-serve: project fields must be a keyword plist: "
+                              path)))
+      fields))
+   (else
+    (error (string-append "ece-serve: project file must start with :ece-project: "
+                          path)))))
+
+(define (ece-serve/project-string fields key path required?)
+  "Return string field KEY from FIELDS, validating REQUIRED?."
+  (let ((value (ece-serve/plist-get fields key)))
+    (cond
+     ((and (string? value) (> (string-length value) 0)) value)
+     ((and (not value) (not required?)) #f)
+     ((not value)
+      (error (string-append "ece-serve: project missing required field "
+                            (ece-serve/%show key)
+                            " in "
+                            path)))
+     ((string? value)
+      (error (string-append "ece-serve: project field "
+                            (ece-serve/%show key)
+                            " must be non-empty in "
+                            path)))
+     (else
+      (error (string-append "ece-serve: project field "
+                            (ece-serve/%show key)
+                            " must be a string in "
+                            path))))))
+
+(define (ece-serve/project-string-list fields key path)
+  "Return optional list-of-string field KEY from FIELDS."
+  (let ((value (ece-serve/plist-get fields key)))
+    (cond
+     ((not value) '())
+     ((not (list? value))
+      (error (string-append "ece-serve: project field "
+                            (ece-serve/%show key)
+                            " must be a list of strings in "
+                            path)))
+     (else
+      (for-each
+       (lambda (item)
+         (when (or (not (string? item))
+                   (= (string-length item) 0))
+           (error (string-append "ece-serve: project field "
+                                 (ece-serve/%show key)
+                                 " must contain only non-empty strings in "
+                                 path))))
+       value)
+      value))))
+
+(define (ece-serve/validate-project-version fields path)
+  "Validate the required :version field in project FIELDS."
+  (cond
+   ((not (ece-serve/plist-has-key? fields ':version))
+    (error (string-append "ece-serve: project missing required field :version in "
+                          path)))
+   ((not (equal? (ece-serve/plist-get fields ':version) 1))
+    (error (string-append "ece-serve: project :version must be 1 in "
+                          path)))))
+
+(define (ece-serve/project-resolve-path project-root path)
+  "Resolve project-relative PATH against PROJECT-ROOT."
+  (ece-serve/%resolve-relative path project-root))
+
+(define (ece-serve/project-resolve-paths project-root paths)
+  "Resolve each path in PATHS against PROJECT-ROOT."
+  (map (lambda (path) (ece-serve/project-resolve-path project-root path))
+       paths))
+
+(define (ece-serve/directory-path? path)
+  "Return #t when PATH exists and appears to be a directory."
+  (and (%file-exists? path)
+       (%file-exists? (path-join path "."))))
+
+(define (ece-serve/load-project project-file)
+  "Read PROJECT-FILE and return normalized project metadata as a plist."
+  (when (not (%file-exists? project-file))
+    (error (string-append "ece-serve: project file does not exist: "
+                          project-file)))
+  (when (ece-serve/directory-path? project-file)
+    (error (string-append "ece-serve: project file must be a readable file: "
+                          project-file)))
+  (let* ((project-root (dirname project-file))
+         (fields (ece-serve/project-fields
+                  (ece-serve/read-one-form project-file)
+                  project-file)))
+    (ece-serve/validate-project-version fields project-file)
+    (let* ((entry (ece-serve/project-string fields ':entry project-file #t))
+           (static-root (or (ece-serve/project-string fields ':static-root
+                                                      project-file #f)
+                            (dirname entry)))
+           (index-file (or (ece-serve/project-string fields ':index
+                                                     project-file #f)
+                           "index.html"))
+           (source-roots (ece-serve/project-string-list fields ':source-roots
+                                                        project-file))
+           (name (ece-serve/plist-get fields ':name)))
+      (list ':project-file project-file
+            ':project-root project-root
+            ':name name
+            ':entry (ece-serve/project-resolve-path project-root entry)
+            ':static-root (ece-serve/project-resolve-path project-root static-root)
+            ':index index-file
+            ':source-roots (ece-serve/project-resolve-paths project-root
+                                                           source-roots)))))
+
+(define (ece-serve-project project-file . opts)
+  "Start ece-serve from PROJECT-FILE.
+The project supplies :entry, :static-root, and :index; OPTS may override
+serve-time settings such as :port, :poll-interval, and :dev-token."
+  (let* ((project (ece-serve/load-project project-file))
+         (entry (ece-serve/plist-get project ':entry))
+         (static-root (ece-serve/plist-get project ':static-root))
+         (index-file (ece-serve/plist-get project ':index)))
+    (apply ece-serve
+           (cons entry
+                 (append (list ':static-root static-root
+                               ':index index-file
+                               ':project-file project-file)
+                         opts)))))
+
 (define (ece-serve/session-data entry-file port)
   "Return the local editor attach session S-expression for ENTRY-FILE and PORT."
   (list (cons "type" "ece-serve-session")
@@ -1327,6 +1513,11 @@ Returns #f on timeout or when called without a scheduler."
         (cons "ws-url" (ece-serve/dev-ws-url-for-port port))
         (cons "token" *ece-serve/dev-token*)
         (cons "entry" entry-file)
+        (cons "project" (if *ece-serve/current-project-file*
+                            *ece-serve/current-project-file*
+                            ""))
+        (cons "static-root" *ece-serve/sandbox-root*)
+        (cons "index" *ece-serve/index-file*)
         (cons "port" port)
         (cons "started-at" (current-milliseconds))))
 
@@ -1337,6 +1528,11 @@ The dev token stays only in the chmod 0600 session file."
         (cons "version" 1)
         (cons "url" (string-append "http://127.0.0.1:" (number->string port)))
         (cons "entry" entry-file)
+        (cons "project" (if *ece-serve/current-project-file*
+                            *ece-serve/current-project-file*
+                            ""))
+        (cons "static-root" *ece-serve/sandbox-root*)
+        (cons "index" *ece-serve/index-file*)
         (cons "port" port)
         (cons "session-file" (ece-serve/session-path port))
         (cons "started-at" (current-milliseconds))))
@@ -1561,20 +1757,28 @@ surface."
 
 (define (ece-serve/parse-options opts)
   "Parse the keyword args passed to (ece-serve entry . opts). Returns
-a record-like list (port poll-interval-ms dev-token). Options:
+a record-like list (port poll-interval-ms dev-token static-root index-file
+project-file). Options:
   :port INT          listen port (integer in [1, 65535], default 8080)
   :poll-interval INT ms between file-watch polls (non-negative integer,
                      default 250)
   :dev-token STRING  shared token for browser/editor dev commands
+  :static-root STRING static assets root (default: entry file directory)
+  :index STRING      file served for /
+  :project-file STRING project metadata path for session discovery
 
 All values are validated and any failure raises an error that names
 the offending option key (and value, where relevant) so programmatic
 callers can diagnose the miscall without reading this source."
   (let loop ((rest opts) (port *ece-serve/default-port*)
              (interval *ece-serve/default-poll-interval-ms*)
-             (dev-token #f))
+             (dev-token #f)
+             (static-root #f)
+             (index-file #f)
+             (project-file #f))
     (cond
-     ((null? rest) (list port interval dev-token))
+     ((null? rest) (list port interval dev-token static-root index-file
+                         project-file))
      ((null? (cdr rest))
       (error (string-append "ece-serve: option "
                             (ece-serve/%show (car rest))
@@ -1587,7 +1791,8 @@ callers can diagnose the miscall without reading this source."
          ((eq? key ':port)
           (cond
            ((and (integer? val) (>= val 1) (<= val 65535))
-            (loop more val interval dev-token))
+            (loop more val interval dev-token static-root index-file
+                  project-file))
            (else
             (error (string-append
                     "ece-serve: :port must be an integer in [1, 65535], got "
@@ -1595,7 +1800,7 @@ callers can diagnose the miscall without reading this source."
          ((eq? key ':poll-interval)
           (cond
            ((and (integer? val) (>= val 0))
-            (loop more port val dev-token))
+            (loop more port val dev-token static-root index-file project-file))
            (else
             (error (string-append
                     "ece-serve: :poll-interval must be a non-negative integer, got "
@@ -1603,10 +1808,34 @@ callers can diagnose the miscall without reading this source."
          ((eq? key ':dev-token)
           (cond
            ((and (string? val) (> (string-length val) 0))
-            (loop more port interval val))
+            (loop more port interval val static-root index-file project-file))
            (else
             (error (string-append
                     "ece-serve: :dev-token must be a non-empty string, got "
+                    (ece-serve/%show val))))))
+         ((eq? key ':static-root)
+          (cond
+           ((and (string? val) (> (string-length val) 0))
+            (loop more port interval dev-token val index-file project-file))
+           (else
+            (error (string-append
+                    "ece-serve: :static-root must be a non-empty string, got "
+                    (ece-serve/%show val))))))
+         ((eq? key ':index)
+          (cond
+           ((and (string? val) (> (string-length val) 0))
+            (loop more port interval dev-token static-root val project-file))
+           (else
+            (error (string-append
+                    "ece-serve: :index must be a non-empty string, got "
+                    (ece-serve/%show val))))))
+         ((eq? key ':project-file)
+          (cond
+           ((and (string? val) (> (string-length val) 0))
+            (loop more port interval dev-token static-root index-file val))
+           (else
+            (error (string-append
+                    "ece-serve: :project-file must be a non-empty string, got "
                     (ece-serve/%show val))))))
          (else
           (error (string-append "ece-serve: unknown option "
@@ -1627,14 +1856,20 @@ and :dev-token (generated by default)."
            (port (car parsed))
            (poll-interval (car (cdr parsed)))
            (dev-token (car (cdr (cdr parsed))))
+           (static-root (list-ref parsed 3))
+           (index-file (list-ref parsed 4))
+           (project-file (list-ref parsed 5))
            (sched (make-scheduler))
            (watch-set (ece-serve/walk-loads entry-file))
            (clients-box (ece-serve/make-clients-box))
            (server (tcp-listen port "127.0.0.1")))
       (set! *ece-serve/current-port* port)
       (set! *ece-serve/current-entry-file* entry-file)
+      (set! *ece-serve/current-project-file* project-file)
       (set! *ece-serve/sandbox-root*
-            (ece-serve/static-root-for-entry entry-file))
+            (if static-root static-root (ece-serve/static-root-for-entry entry-file)))
+      (set! *ece-serve/index-file*
+            (if index-file index-file "index.html"))
       (set! *ece-serve/dev-token*
             (if dev-token dev-token (ece-serve/generate-dev-token)))
       (set! *ece-serve/artifact-root*
@@ -1685,25 +1920,131 @@ then calls (ece-serve). Unknown flags print an error and exit."
        (exit 1)))
    (ece-serve-main/unsafe argv)))
 
+(define (ece-serve/print-usage)
+  "Print ece-serve CLI usage."
+  (display "Usage: ece-serve [OPTIONS]")
+  (newline)
+  (display "       ece-serve <entry.scm> [OPTIONS]")
+  (newline)
+  (display "       ece-serve --project ")
+  (display *ece-serve/default-project-file*)
+  (display " [OPTIONS]")
+  (newline)
+  (newline)
+  (display "Options:")
+  (newline)
+  (display "  --project FILE        Read entry/static roots from an ece.project file")
+  (newline)
+  (display "  --static-root DIR     Serve static HTML/assets from DIR")
+  (newline)
+  (display "  --index FILE          File under static root served for /")
+  (newline)
+  (display "  --port N              Listen port (default 8080)")
+  (newline)
+  (display "  --poll-interval N     File-watch poll interval in ms (default 250)")
+  (newline)
+  (display "  --dev-token TOKEN     Shared browser/editor dev token")
+  (newline))
+
+(define (ece-serve/cli-options port interval dev-token static-root index-file
+                               project-file)
+  "Build an option plist for ece-serve or ece-serve-project."
+  (let ((opts (list ':port port
+                    ':poll-interval interval
+                    ':dev-token
+                    (if dev-token dev-token (ece-serve/generate-dev-token)))))
+    (when static-root
+      (set! opts (append opts (list ':static-root static-root))))
+    (when index-file
+      (set! opts (append opts (list ':index index-file))))
+    (when project-file
+      (set! opts (append opts (list ':project-file project-file))))
+    opts))
+
+(define (ece-serve/start-entry-from-cli entry port interval dev-token
+                                        static-root index-file)
+  "Start a direct entry-file server from parsed CLI values."
+  (apply ece-serve
+         (cons entry
+               (ece-serve/cli-options port interval dev-token static-root
+                                      index-file #f))))
+
+(define (ece-serve/start-project-from-cli project-file port interval dev-token
+                                          static-root index-file)
+  "Start a project-file server from parsed CLI values."
+  (apply ece-serve-project
+         (cons project-file
+               (ece-serve/cli-options port interval dev-token static-root
+                                      index-file #f))))
+
 (define (ece-serve-main/unsafe argv)
   "Unwrapped implementation for ece-serve-main."
   (let loop ((rest argv) (port *ece-serve/default-port*)
              (interval *ece-serve/default-poll-interval-ms*)
              (dev-token #f)
-             (entry #f))
+             (entry #f)
+             (project-file #f)
+             (static-root #f)
+             (index-file #f))
     (cond
      ((null? rest)
       (cond
-       ((not entry)
-        (display "Usage: ece-serve <entry.scm> [--port N] [--poll-interval N] [--dev-token TOKEN]")
+       ((and entry project-file)
+        (display "Error: pass either an entry .scm file or --project, not both")
         (newline)
         (exit 2))
+       (project-file
+        (ece-serve/start-project-from-cli project-file port interval dev-token
+                                          static-root index-file))
+       (entry
+        (ece-serve/start-entry-from-cli entry port interval dev-token
+                                        static-root index-file))
+       ((%file-exists? *ece-serve/default-project-file*)
+        (ece-serve/start-project-from-cli *ece-serve/default-project-file*
+                                          port interval dev-token
+                                          static-root index-file))
        (else
-        (ece-serve entry ':port port ':poll-interval interval ':dev-token
-                   (if dev-token dev-token (ece-serve/generate-dev-token))))))
+        (ece-serve/print-usage)
+        (exit 2))))
      (else
       (let ((arg (car rest)))
         (cond
+         ((string=? arg "--project")
+          (cond
+           ((null? (cdr rest))
+            (display "Error: --project requires an argument") (newline)
+            (exit 2))
+           ((= (string-length (car (cdr rest))) 0)
+            (display "Error: --project value must be non-empty")
+            (newline)
+            (exit 2))
+           (else
+            (loop (cdr (cdr rest)) port interval dev-token entry
+                  (car (cdr rest)) static-root index-file))))
+         ((string=? arg "--static-root")
+          (cond
+           ((null? (cdr rest))
+            (display "Error: --static-root requires an argument") (newline)
+            (exit 2))
+           ((= (string-length (car (cdr rest))) 0)
+            (display "Error: --static-root value must be non-empty")
+            (newline)
+            (exit 2))
+           (else
+            (loop (cdr (cdr rest)) port interval dev-token entry project-file
+                  (car (cdr rest)) index-file))))
+         ((string=? arg "--index")
+          (cond
+           ((null? (cdr rest))
+            (display "Error: --index requires an argument") (newline)
+            (exit 2))
+           ((= (string-length (car (cdr rest))) 0)
+            (display "Error: --index value must be non-empty")
+            (newline)
+            (exit 2))
+           (else
+            (loop (cdr (cdr rest)) port interval dev-token entry project-file
+                  static-root (car (cdr rest))))))
          ((string=? arg "--port")
           (cond
            ((null? (cdr rest))
@@ -1716,7 +2057,9 @@ then calls (ece-serve). Unknown flags print an error and exit."
                 (display "Error: --port value must be an integer in [1, 65535]")
                 (newline)
                 (exit 2))
-               (else (loop (cdr (cdr rest)) n interval dev-token entry)))))))
+               (else
+                (loop (cdr (cdr rest)) n interval dev-token entry project-file
+                      static-root index-file)))))))
          ((string=? arg "--poll-interval")
           (cond
            ((null? (cdr rest))
@@ -1729,7 +2072,9 @@ then calls (ece-serve). Unknown flags print an error and exit."
                 (display "Error: --poll-interval value must be an integer >= 0")
                 (newline)
                 (exit 2))
-               (else (loop (cdr (cdr rest)) port n dev-token entry)))))))
+               (else
+                (loop (cdr (cdr rest)) port n dev-token entry project-file
+                      static-root index-file)))))))
          ((string=? arg "--dev-token")
           (cond
            ((null? (cdr rest))
@@ -1740,22 +2085,57 @@ then calls (ece-serve). Unknown flags print an error and exit."
             (newline)
             (exit 2))
            (else
-            (loop (cdr (cdr rest)) port interval (car (cdr rest)) entry))))
+            (loop (cdr (cdr rest)) port interval (car (cdr rest)) entry
+                  project-file static-root index-file))))
          ((or (string=? arg "-h") (string=? arg "--help"))
-          (display "Usage: ece-serve <entry.scm> [--port N] [--poll-interval N] [--dev-token TOKEN]")
+          (ece-serve/print-usage)
           (newline)
-          (display "  Dev server for ECE programs. Serves sandbox static assets")
+          (display "  Dev server for ECE programs. Serves static assets and")
           (newline)
-          (display "  and broadcasts program-reload messages over WebSocket when")
+          (display "  broadcasts program-reload messages over WebSocket when")
           (newline)
-          (display "  watched files change.")
+          (display "  watched source files change.")
           (newline)
           (exit 0))
          ((starts-with? arg "-")
           (display "Error: unknown option: ") (display arg) (newline)
           (exit 2))
          (else
-          (loop (cdr rest) port interval dev-token arg))))))))
+          (cond
+           (entry
+            (display "Error: ece-serve accepts only one entry .scm file")
+            (newline)
+            (exit 2))
+           (else
+            (loop (cdr rest) port interval dev-token arg project-file
+                  static-root index-file))))))))))
+
+(define (ece-serve/argv-has-project? argv)
+  "Return #t when ARGV contains --project."
+  (cond
+   ((null? argv) #f)
+   ((string=? (car argv) "--project") #t)
+   (else (ece-serve/argv-has-project? (cdr argv)))))
+
+(define (ece-dev-main argv)
+  "Implement `ece dev': start ece-serve from an ece.project file."
+  (cond
+   ((and (pair? argv)
+         (or (string=? (car argv) "-h")
+             (string=? (car argv) "--help")))
+    (display "Usage: ece dev [ece.project] [OPTIONS]")
+    (newline)
+    (display "Start ece-serve from an ECE project file.")
+    (newline)
+    (exit 0))
+   ((or (null? argv)
+        (and (pair? argv) (starts-with? (car argv) "-")))
+    (if (ece-serve/argv-has-project? argv)
+        (ece-serve-main argv)
+        (ece-serve-main
+         (append (list "--project" *ece-serve/default-project-file*) argv))))
+   (else
+    (ece-serve-main (append (list "--project" (car argv)) (cdr argv))))))
 
 ;; No custom gensym / intern helpers — ECE's prelude gensym is nullary
 ;; and returns a unique symbol, and literal quoted symbols in this file
