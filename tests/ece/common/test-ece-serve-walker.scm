@@ -543,8 +543,63 @@ the path-join of *walker-tmp-dir* is a subdir."
   (assert-equal (ece-serve/static-root-for-entry "game/main.scm") "game")
   (assert-equal (ece-serve/static-root-for-entry "main.scm") ".")))
 
+(test "ece-serve/load-project: resolves split entry and static roots" (lambda ()
+  (let* ((project-root (path-join *walker-tmp-dir* "project-split"))
+         (scheme-root (path-join project-root "scheme"))
+         (html-root (path-join project-root "html"))
+         (project-file (path-join project-root "ece.project"))
+         (entry (path-join scheme-root "main.scm")))
+    (%make-directory project-root)
+    (%make-directory scheme-root)
+    (%make-directory html-root)
+    (walker-test/write entry "(display \"hello\")")
+    (walker-test/write
+     project-file
+     "(:ece-project :version 1 :name dunge :source-roots (\"scheme\") :entry \"scheme/main.scm\" :static-root \"html\" :index \"game.html\")")
+    (let ((project (ece-serve/load-project project-file)))
+      (assert-equal (ece-serve/plist-get project ':project-root) project-root)
+      (assert-equal (ece-serve/plist-get project ':entry) entry)
+      (assert-equal (ece-serve/plist-get project ':static-root) html-root)
+      (assert-equal (ece-serve/plist-get project ':index) "game.html")
+      (assert-equal (ece-serve/plist-get project ':source-roots)
+                    (list scheme-root))))))
+
+(test "ece-serve/load-project: rejects directory project path clearly" (lambda ()
+  (let ((project-dir (path-join *walker-tmp-dir* "directory.ece.project")))
+    (%make-directory project-dir)
+    (assert-error-message
+     (ece-serve/load-project project-dir)
+     (string-append "ece-serve: project file must be a readable file: "
+                    project-dir)))))
+
+(test "ece-serve/load-project: reports missing project version clearly" (lambda ()
+  (let* ((project-root (path-join *walker-tmp-dir* "project-missing-version"))
+         (project-file (path-join project-root "ece.project")))
+    (%make-directory project-root)
+    (walker-test/write
+     project-file
+     "(:ece-project :entry \"main.scm\")")
+    (assert-error-message
+     (ece-serve/load-project project-file)
+     (string-append "ece-serve: project missing required field :version in "
+                    project-file)))))
+
+(test "ece-serve/resolve-path: / uses configured project index file" (lambda ()
+  (let ((old-root *ece-serve/sandbox-root*)
+        (old-index *ece-serve/index-file*))
+    (dynamic-wind
+      (lambda ()
+        (set! *ece-serve/sandbox-root* "web")
+        (set! *ece-serve/index-file* "game.html"))
+      (lambda ()
+        (assert-equal (ece-serve/resolve-path "/") "web/game.html"))
+      (lambda ()
+        (set! *ece-serve/sandbox-root* old-root)
+        (set! *ece-serve/index-file* old-index))))))
+
 (test "ece-serve/dispatch: serves app-local index with dev WebSocket injection" (lambda ()
   (let ((old-root *ece-serve/sandbox-root*)
+        (old-index *ece-serve/index-file*)
         (old-port *ece-serve/current-port*)
         (old-token *ece-serve/dev-token*)
         (app-root (path-join *walker-tmp-dir* "app-static")))
@@ -555,6 +610,7 @@ the path-join of *walker-tmp-dir* is a subdir."
          (path-join app-root "index.html")
          "<script>window.ECE_DEV_WS_URL = null;</script>")
         (set! *ece-serve/sandbox-root* app-root)
+        (set! *ece-serve/index-file* "index.html")
         (set! *ece-serve/current-port* 8128)
         (set! *ece-serve/dev-token* "app-token"))
       (lambda ()
@@ -571,6 +627,7 @@ the path-join of *walker-tmp-dir* is a subdir."
             "window.ECE_DEV_WS_URL = \"ws://127.0.0.1:8128/ws?token=app-token\";"))))
       (lambda ()
         (set! *ece-serve/sandbox-root* old-root)
+        (set! *ece-serve/index-file* old-index)
         (set! *ece-serve/current-port* old-port)
         (set! *ece-serve/dev-token* old-token))))))
 
@@ -816,10 +873,82 @@ the path-join of *walker-tmp-dir* is a subdir."
   (let ((result (ece-serve/parse-options (list ':dev-token "abc123"))))
     (assert-equal (car (cdr (cdr result))) "abc123"))))
 
+(test "ece-serve/parse-options: accepts static root, index, and project file" (lambda ()
+  (let ((result (ece-serve/parse-options
+                 (list ':static-root "web" ':index "game.html"
+                       ':project-file "ece.project"))))
+    (assert-equal (list-ref result 3) "web")
+    (assert-equal (list-ref result 4) "game.html")
+    (assert-equal (list-ref result 5) "ece.project"))))
+
 (test "ece-serve/parse-options: defaults when no options given" (lambda ()
   (let ((result (ece-serve/parse-options '())))
     (assert-equal (car result) 8080)
     (assert-equal (car (cdr result)) 250))))
+
+(test "ece-serve-main: defaults to project file when present" (lambda ()
+  (let ((project-file (path-join *walker-tmp-dir* "default.ece.project"))
+        (old-default *ece-serve/default-project-file*)
+        (old-start ece-serve/start-project-from-cli)
+        (captured #f))
+    (walker-test/write
+     project-file
+     "(:ece-project :version 1 :entry \"main.scm\")")
+    (dynamic-wind
+      (lambda ()
+        (set! *ece-serve/default-project-file* project-file)
+        (set! ece-serve/start-project-from-cli
+              (lambda (project port interval dev-token static-root index-file)
+                (set! captured
+                      (list project port interval dev-token
+                            static-root index-file))
+                'started)))
+      (lambda ()
+        (let ((result (ece-serve-main/unsafe
+                       (list "--port" "8090"
+                             "--poll-interval" "10"
+                             "--dev-token" "tok"))))
+          (assert-equal result 'started)
+          (assert-equal captured
+                        (list project-file 8090 10 "tok" #f #f))))
+      (lambda ()
+        (set! *ece-serve/default-project-file* old-default)
+        (set! ece-serve/start-project-from-cli old-start))))))
+
+(test "ece-serve-main: explicit entry wins over default project file" (lambda ()
+  (let ((project-file (path-join *walker-tmp-dir* "entry-wins.ece.project"))
+        (old-default *ece-serve/default-project-file*)
+        (old-start-entry ece-serve/start-entry-from-cli)
+        (old-start-project ece-serve/start-project-from-cli)
+        (captured #f))
+    (walker-test/write
+     project-file
+     "(:ece-project :version 1 :entry \"main.scm\")")
+    (dynamic-wind
+      (lambda ()
+        (set! *ece-serve/default-project-file* project-file)
+        (set! ece-serve/start-entry-from-cli
+              (lambda (entry port interval dev-token static-root index-file)
+                (set! captured
+                      (list 'entry entry port interval dev-token
+                            static-root index-file))
+                'entry-started))
+        (set! ece-serve/start-project-from-cli
+              (lambda (project port interval dev-token static-root index-file)
+                (set! captured
+                      (list 'project project port interval dev-token
+                            static-root index-file))
+                'project-started)))
+      (lambda ()
+        (let ((result (ece-serve-main/unsafe
+                       (list "main.scm" "--port" "8091"))))
+          (assert-equal result 'entry-started)
+          (assert-equal captured
+                        (list 'entry "main.scm" 8091 250 #f #f #f))))
+      (lambda ()
+        (set! *ece-serve/default-project-file* old-default)
+        (set! ece-serve/start-entry-from-cli old-start-entry)
+        (set! ece-serve/start-project-from-cli old-start-project))))))
 
 (test "ece-serve/parse-options: rejects :port 0 and :port 65536" (lambda ()
   (let ((too-low  (guard (e (#t 'error)) (ece-serve/parse-options (list ':port 0))))

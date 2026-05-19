@@ -33,6 +33,8 @@
 (define (print-usage)
   (display "Usage: ece [OPTIONS] [FILE...]")
   (newline)
+  (display "       ece dev [ece.project] [OPTIONS]")
+  (newline)
   (display "       ece init web DIR [--force]")
   (newline)
   (newline)
@@ -136,10 +138,28 @@ Returns (list target-dir force?)."
     (newline)
     (exit 2)))
 
+(define (ece-init-web-project-text target-dir)
+  "Return the default ece.project contents for a generated web app."
+  (string-append
+   "(:ece-project\n"
+   " :version 1\n"
+   " :name " (write-to-string-flat (basename target-dir)) "\n"
+   " :source-roots (\".\")\n"
+   " :entry \"main.scm\"\n"
+   " :static-root \".\"\n"
+   " :index \"index.html\")\n"))
+
+(define (write-text-file/simple path text)
+  "Write TEXT to PATH."
+  (let ((out (open-output-file path)))
+    (display text out)
+    (close-output-port out)))
+
 (define (ece-init-web target-dir force?)
   "Create a minimal app-local web skeleton under TARGET-DIR."
   (let* ((home (ece-home))
          (template-dir (path-join home "templates" "web-app"))
+         (project-file (path-join target-dir "ece.project"))
          (files (list (list (path-join template-dir "main.scm")
                             (path-join target-dir "main.scm")
                             'text)
@@ -169,6 +189,7 @@ Returns (list target-dir force?)."
      (lambda (spec)
        (ensure-init-target-safe! (cadr spec) force?))
      files)
+    (ensure-init-target-safe! project-file force?)
     (for-each
      (lambda (spec)
        (let ((src (car spec))
@@ -178,6 +199,7 @@ Returns (list target-dir force?)."
           ((eq? kind 'text) (copy-file-text/simple src dst))
           (else (copy-file-binary/simple src dst)))))
      files)
+    (write-text-file/simple project-file (ece-init-web-project-text target-dir))
     (display "Created ECE web app skeleton in ")
     (display target-dir)
     (newline)
@@ -186,7 +208,7 @@ Returns (list target-dir force?)."
     (display "  cd ")
     (display target-dir)
     (newline)
-    (display "  ece-serve main.scm --port 8080")
+    (display "  ece dev")
     (newline)))
 
 (define (ece-init-main argv)
@@ -512,6 +534,10 @@ Returns the value of the last expression."
      ((string=? tool "ece-serve") (ece-serve-main rest))
      ((and (string=? tool "ece")
            (not (null? rest))
+           (string=? (car rest) "dev"))
+      (ece-dev-main (cdr rest)))
+     ((and (string=? tool "ece")
+           (not (null? rest))
            (string=? (car rest) "init"))
       (ece-init-main (cdr rest)))
      (else (ece-default-main rest)))))
@@ -532,6 +558,11 @@ Returns the value of the last expression."
   (exit 2))
 
 (define (ece-serve-main argv)
+  (display "Error: ece-serve.scm not loaded")
+  (newline)
+  (exit 2))
+
+(define (ece-dev-main argv)
   (display "Error: ece-serve.scm not loaded")
   (newline)
   (exit 2))

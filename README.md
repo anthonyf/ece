@@ -247,7 +247,7 @@ Options:
 
 Positional FILE args, `--load`, and `--eval` steps execute in the order they appear. With no work (no files, no `-e`), `ece` drops into the REPL.
 
-**argv[0] dispatch.** All four tools are the same binary; the tool is selected by `basename(argv[0])`:
+**argv[0] dispatch.** The tools are the same binary; the tool is selected by `basename(argv[0])`:
 
 | Name | Behavior |
 |------|----------|
@@ -255,8 +255,11 @@ Positional FILE args, `--load`, and `--eval` steps execute in the order they app
 | `ece-repl` | Always enter REPL, even after loading files |
 | `ece-build` | Compile and package a project (see [Build your own apps](#build-your-own-apps)) |
 | `ece-test` | Discover and run `test-*.scm` files (see [Testing your code](#testing-your-code)) |
+| `ece-serve` | Start the live browser development server |
 
 Unrecognized names (e.g. adding your own symlink) fall through to `ece` behavior.
+The `ece dev` subcommand and bare `ece-serve` default to the project file
+`ece.project` in the current directory.
 
 **Accessing process state from ECE code:**
 
@@ -346,11 +349,13 @@ entry file, then run the one-command startup:
 M-x geiser-ece-dev-jack-in
 ```
 
-That treats the current `.scm` buffer as the app entry file, starts `ece-serve`,
-opens the served page, and opens an `ece-dev>` REPL that evaluates in the
-browser runtime. It also starts/associates a normal Geiser ECE REPL for editor
-metadata commands, so `M-.` can jump to registered source definitions while the
-browser-dev commands keep evaluating in the page.
+That looks upward for an `ece.project` file; if one exists, it starts
+`ece-serve` from the project entry/static roots. Otherwise it treats the current
+`.scm` buffer as the app entry file. It then opens the served page and an
+`ece-dev>` REPL that evaluates in the browser runtime. It also starts/associates
+a normal Geiser ECE REPL for editor metadata commands, so `M-.` can jump to
+registered source definitions while the browser-dev commands keep evaluating in
+the page.
 
 You can also start the pieces separately:
 
@@ -378,14 +383,49 @@ Create a minimal app-local web skeleton:
 ```sh
 ece init web test-game
 cd test-game
-ece-serve main.scm --port 8080
+ece dev
 ```
 
 The generated `index.html` is intentionally small: it contains the runtime boot
 script, an `#app-root` node, and an `#output` log node. The generated
 `main.scm` is an `(app main)` module that imports the browser DOM/HTML modules,
 renders the app shell from ECE code, exports `start` and `tick`, and calls
-`start` when the bundle loads.
+`start` when the bundle loads. The generated `ece.project` points `ece dev` at
+`main.scm`, serves static assets from the app directory, and records the default
+source root.
+
+For an existing project with separate Scheme and static HTML roots, add an
+`ece.project` file at the project root:
+
+```scheme
+(:ece-project
+ :version 1
+ :name dunge
+ :source-roots ("scheme")
+ :entry "scheme/main.scm"
+ :static-root "html"
+ :index "index.html")
+```
+
+Then start the development server from the project root:
+
+```sh
+ece dev
+# or:
+ece-serve
+# or, explicitly:
+ece-serve --project ece.project --port 8080
+```
+
+The project file is data, not a build script. In v1, `:entry` selects the Scheme
+source loaded and rebuilt by `ece-serve`; `:static-root` selects the directory
+served over HTTP; `:index` selects the file served for `/`; and
+`:source-roots` records source roots for editor/tooling discovery. The old
+entry-file form still works, and can also serve split roots directly:
+
+```sh
+ece-serve scheme/main.scm --static-root html --index index.html
+```
 
 The browser sandbox demos follow the same direction: canvas demos are ordinary
 ECE modules that import `(ece browser canvas)`, export `start`, and auto-start
