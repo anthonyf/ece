@@ -149,6 +149,7 @@ between http-build-response (string body) and build-binary-response
 
 (define *ece-serve/sandbox-root* "sandbox")
 (define *ece-serve/default-project-file* "ece.project")
+(define *ece-serve/default-project-search-limit* 32)
 (define *ece-serve/index-file* "index.html")
 (define *ece-serve/current-port* 8080)
 (define *ece-serve/current-entry-file* #f)
@@ -1453,6 +1454,23 @@ Returns #f on timeout or when called without a scheduler."
   (map (lambda (path) (ece-serve/project-resolve-path project-root path))
        paths))
 
+(define (ece-serve/default-project-candidate dir)
+  "Return the default project file path under DIR."
+  (if (string=? dir ".")
+      *ece-serve/default-project-file*
+      (path-join dir *ece-serve/default-project-file*)))
+
+(define (ece-serve/find-upward-project-file . maybe-start-dir)
+  "Return the nearest default project file from START-DIR upward, or #f."
+  (let ((start-dir (if (null? maybe-start-dir) "." (car maybe-start-dir))))
+    (let loop ((dir start-dir)
+               (remaining *ece-serve/default-project-search-limit*))
+      (let ((candidate (ece-serve/default-project-candidate dir)))
+        (cond
+         ((%file-exists? candidate) candidate)
+         ((<= remaining 0) #f)
+         (else (loop (path-join dir "..") (- remaining 1))))))))
+
 (define (ece-serve/directory-path? path)
   "Return #t when PATH exists and appears to be a directory."
   (and (%file-exists? path)
@@ -1944,6 +1962,9 @@ then calls (ece-serve). Unknown flags print an error and exit."
   (display "  --poll-interval N     File-watch poll interval in ms (default 250)")
   (newline)
   (display "  --dev-token TOKEN     Shared browser/editor dev token")
+  (newline)
+  (newline)
+  (display "With no entry or --project, uses the nearest ece.project upward.")
   (newline))
 
 (define (ece-serve/cli-options port interval dev-token static-root index-file
@@ -1999,13 +2020,15 @@ then calls (ece-serve). Unknown flags print an error and exit."
        (entry
         (ece-serve/start-entry-from-cli entry port interval dev-token
                                         static-root index-file))
-       ((%file-exists? *ece-serve/default-project-file*)
-        (ece-serve/start-project-from-cli *ece-serve/default-project-file*
-                                          port interval dev-token
-                                          static-root index-file))
        (else
-        (ece-serve/print-usage)
-        (exit 2))))
+        (let ((default-project (ece-serve/find-upward-project-file)))
+          (if default-project
+              (ece-serve/start-project-from-cli default-project port interval
+                                                dev-token static-root
+                                                index-file)
+              (begin
+                (ece-serve/print-usage)
+                (exit 2)))))))
      (else
       (let ((arg (car rest)))
         (cond
@@ -2110,30 +2133,20 @@ then calls (ece-serve). Unknown flags print an error and exit."
             (loop (cdr rest) port interval dev-token arg project-file
                   static-root index-file))))))))))
 
-(define (ece-serve/argv-has-project? argv)
-  "Return #t when ARGV contains --project."
-  (cond
-   ((null? argv) #f)
-   ((string=? (car argv) "--project") #t)
-   (else (ece-serve/argv-has-project? (cdr argv)))))
-
 (define (ece-dev-main argv)
-  "Implement `ece dev': start ece-serve from an ece.project file."
+  "Implement `ece dev': start ece-serve from an ECE project file."
   (cond
    ((and (pair? argv)
          (or (string=? (car argv) "-h")
              (string=? (car argv) "--help")))
     (display "Usage: ece dev [ece.project] [OPTIONS]")
     (newline)
-    (display "Start ece-serve from an ECE project file.")
+    (display "Start ece-serve from the nearest ECE project file.")
     (newline)
     (exit 0))
    ((or (null? argv)
         (and (pair? argv) (starts-with? (car argv) "-")))
-    (if (ece-serve/argv-has-project? argv)
-        (ece-serve-main argv)
-        (ece-serve-main
-         (append (list "--project" *ece-serve/default-project-file*) argv))))
+    (ece-serve-main argv))
    (else
     (ece-serve-main (append (list "--project" (car argv)) (cdr argv))))))
 

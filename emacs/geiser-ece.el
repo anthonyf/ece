@@ -521,7 +521,9 @@ and the legacy `eldoc-documentation-function' API."
 
 (defun geiser-ece--dev-integrate-geiser (&optional buffer entry-file)
   "Enable normal Geiser metadata commands for BUFFER and ENTRY-FILE."
-  (let ((buffer (or buffer (current-buffer))))
+  (let* ((buffer (or buffer (current-buffer)))
+         (source-file (and (buffer-live-p buffer)
+                           (buffer-local-value 'buffer-file-name buffer))))
     (when (buffer-live-p buffer)
       (require 'geiser-mode)
       (require 'geiser-edit)
@@ -533,7 +535,7 @@ and the legacy `eldoc-documentation-function' API."
             (geiser-mode 1)))
         (when repl
           (geiser-ece--register-source-tree
-           (or entry-file buffer-file-name)
+           (or entry-file source-file)
            repl)
           (let ((dev-repl (get-buffer geiser-ece-dev-repl-buffer)))
             (when (buffer-live-p dev-repl)
@@ -1234,8 +1236,10 @@ displaying or prompting for the token."
   (require 'browse-url)
   (browse-url (geiser-ece--dev-server-base-url)))
 
-(defun geiser-ece--dev-start-process (args listen-port)
-  "Start ece-serve with ARGS and configure process integration."
+(defun geiser-ece--dev-start-process (args listen-port &optional entry-file)
+  "Start ece-serve with ARGS and configure process integration.
+ENTRY-FILE records the direct source entry when the server is not started from
+a project file."
   (when (geiser-ece--dev-server-live-p)
     (error "ece-serve is already running; use geiser-ece-dev-stop first"))
   (let ((binary (geiser-ece--dev-server-binary)))
@@ -1248,7 +1252,8 @@ displaying or prompting for the token."
       (setq geiser-ece-dev--server-ready nil)
       (geiser-ece--dev-clear-ready-callbacks)
       (setq geiser-ece-dev--source-buffer (current-buffer))
-      (setq geiser-ece-dev--entry-file (expand-file-name entry-file))
+      (setq geiser-ece-dev--entry-file
+            (and entry-file (expand-file-name entry-file)))
       (with-current-buffer buffer
         (let ((inhibit-read-only t))
           (erase-buffer)
@@ -1284,7 +1289,7 @@ parsed from its startup output."
                      "--port" (number-to-string listen-port)
                      "--poll-interval"
                      (number-to-string geiser-ece-dev-poll-interval-ms))))
-    (geiser-ece--dev-start-process args listen-port)))
+    (geiser-ece--dev-start-process args listen-port entry-file)))
 
 ;;;###autoload
 (defun geiser-ece-dev-start-project (project-file &optional port)

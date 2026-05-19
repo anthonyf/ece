@@ -564,6 +564,56 @@ the path-join of *walker-tmp-dir* is a subdir."
       (assert-equal (ece-serve/plist-get project ':source-roots)
                     (list scheme-root))))))
 
+(test "ece-serve/find-upward-project-file: finds dunge-style project root" (lambda ()
+  (let* ((project-root (path-join *walker-tmp-dir* "dunge-upward"))
+         (scheme-root (path-join project-root "scheme"))
+         (rooms-root (path-join scheme-root "rooms"))
+         (html-root (path-join project-root "html"))
+         (project-file (path-join project-root "ece.project"))
+         (expected (path-join rooms-root ".." ".."
+                              *ece-serve/default-project-file*)))
+    (%make-directory project-root)
+    (%make-directory scheme-root)
+    (%make-directory rooms-root)
+    (%make-directory html-root)
+    (walker-test/write
+     project-file
+     "(:ece-project :version 1 :name dunge :source-roots (\"scheme\") :entry \"scheme/main.scm\" :static-root \"html\" :index \"index.html\")")
+    (assert-equal (ece-serve/find-upward-project-file rooms-root)
+                  expected))))
+
+(test "ece-serve/load-project: resolves upward dunge split roots" (lambda ()
+  (let* ((project-root (path-join *walker-tmp-dir* "dunge-upward-resolve"))
+         (scheme-root (path-join project-root "scheme"))
+         (rooms-root (path-join scheme-root "rooms"))
+         (html-root (path-join project-root "html"))
+         (project-file (path-join project-root "ece.project")))
+    (%make-directory project-root)
+    (%make-directory scheme-root)
+    (%make-directory rooms-root)
+    (%make-directory html-root)
+    (walker-test/write (path-join scheme-root "main.scm")
+                       "(display \"dunge\")")
+    (walker-test/write (path-join html-root "index.html")
+                       "<!doctype html><title>dunge</title>")
+    (walker-test/write
+     project-file
+     "(:ece-project :version 1 :name dunge :source-roots (\"scheme\") :entry \"scheme/main.scm\" :static-root \"html\" :index \"index.html\")")
+    (let* ((found (ece-serve/find-upward-project-file rooms-root))
+           (found-root (dirname found))
+           (project (ece-serve/load-project found)))
+      (assert-equal found
+                    (path-join rooms-root ".." ".."
+                               *ece-serve/default-project-file*))
+      (assert-equal (ece-serve/plist-get project ':project-root) found-root)
+      (assert-equal (ece-serve/plist-get project ':entry)
+                    (path-join found-root "scheme/main.scm"))
+      (assert-equal (ece-serve/plist-get project ':static-root)
+                    (path-join found-root "html"))
+      (assert-equal (ece-serve/plist-get project ':index) "index.html")
+      (assert-equal (ece-serve/plist-get project ':source-roots)
+                    (list (path-join found-root "scheme")))))))
+
 (test "ece-serve/load-project: rejects directory project path clearly" (lambda ()
   (let ((project-dir (path-join *walker-tmp-dir* "directory.ece.project")))
     (%make-directory project-dir)
