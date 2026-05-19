@@ -348,7 +348,9 @@ M-x geiser-ece-dev-jack-in
 
 That treats the current `.scm` buffer as the app entry file, starts `ece-serve`,
 opens the served page, and opens an `ece-dev>` REPL that evaluates in the
-browser runtime.
+browser runtime. It also starts/associates a normal Geiser ECE REPL for editor
+metadata commands, so `M-.` can jump to registered source definitions while the
+browser-dev commands keep evaluating in the page.
 
 You can also start the pieces separately:
 
@@ -427,6 +429,8 @@ While `geiser-ece-dev-mode` is active, common Geiser commands are remapped to
 the browser-dev loop. `C-x C-e`, `C-c C-r`, and `C-c C-b` evaluate in the
 browser; `C-c C-k` / `geiser-compile-current-buffer` and
 `geiser-load-current-buffer` save and force an `ece-serve` entry rebuild/reload.
+Definition lookup remains a normal Geiser command backed by the associated ECE
+REPL.
 
 ### CL target
 
