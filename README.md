@@ -258,8 +258,8 @@ Positional FILE args, `--load`, and `--eval` steps execute in the order they app
 | `ece-serve` | Start the live browser development server |
 
 Unrecognized names (e.g. adding your own symlink) fall through to `ece` behavior.
-The `ece dev` subcommand and bare `ece-serve` default to the project file
-`ece.project` in the current directory.
+The `ece dev` subcommand and bare `ece-serve` default to the nearest
+`ece.project` in the current directory or an ancestor.
 
 **Accessing process state from ECE code:**
 
@@ -407,7 +407,8 @@ For an existing project with separate Scheme and static HTML roots, add an
  :index "index.html")
 ```
 
-Then start the development server from the project root:
+Then start the development server from the project root or from a source
+subdirectory such as `scheme/rooms`:
 
 ```sh
 ece dev
