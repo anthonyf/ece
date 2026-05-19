@@ -264,7 +264,10 @@ The Geiser backend is intentionally thin. In `--geiser` mode the REPL evaluates
 raw Scheme forms, captures output to a string port, and returns a chibi-style
 alist containing result and output strings. The Emacs side sends raw eval forms
 and direct `(load "...")` forms; helper procedures in `geiser-ece.scm` provide
-completion and autodoc data from the global environment.
+completion, autodoc, and registered-source definition lookup data. Browser-dev
+jack-in also associates the source buffer with a normal Geiser ECE REPL so
+metadata commands such as `M-.` continue to use Geiser while eval commands are
+remapped to the connected browser runtime.
 
 `ece serve` is a CL-hosted live browser development server with most policy
 implemented in ECE. A small CL-only primitive surface provides non-blocking TCP

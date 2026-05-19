@@ -138,3 +138,73 @@
       (assert (member "+" result) "includes +")
       (assert (member "test-completion-xyz" result)
               "includes test-completion-xyz"))))
+
+;; ---- Test geiser-symbol-location ----
+
+(when (platform-has? 'open-output-file)
+
+(test "geiser-symbol-location finds registered source definition"
+  (lambda ()
+    (let ((path ".tmp/geiser-location-test.scm"))
+      (let ((out (open-output-file path)))
+        (display ";; leading line\n" out)
+        (display "(define (geiser-location-target x) x)\n" out)
+        (close-output-port out))
+      (set! *geiser-source-files* '())
+      (set! *geiser-source-index* (%make-hash-table))
+      (geiser-register-source-file! path)
+      (assert (hash-ref *geiser-source-index* 'geiser-location-target #f)
+              "indexes source location")
+      (let ((loc (geiser-symbol-location 'geiser-location-target)))
+        (assert (pair? loc) "returns a location alist")
+        (assert-equal (cdr (assoc "name" loc)) "geiser-location-target")
+        (assert-equal (cdr (assoc "file" loc)) path)
+        (assert-equal (cdr (assoc "line" loc)) 2)
+        (assert-equal (cdr (assoc "column" loc)) 0)))))
+
+(test "geiser/read-source-with-locations returns #f for missing source"
+  (lambda ()
+    (assert-equal (geiser/read-source-with-locations
+                   ".tmp/geiser-missing-source-dir/missing.scm")
+                  #f)))
+
+(test "geiser-register-source-file refreshes source index"
+  (lambda ()
+    (let ((path ".tmp/geiser-location-refresh.scm"))
+      (let ((out (open-output-file path)))
+        (display "(define geiser-refresh-a 1)\n" out)
+        (close-output-port out))
+      (set! *geiser-source-files* '())
+      (set! *geiser-source-index* (%make-hash-table))
+      (geiser-register-source-file! path)
+      (assert (geiser-symbol-location 'geiser-refresh-a)
+              "indexes initial source definition")
+      (let ((out (open-output-file path)))
+        (display "(define geiser-refresh-b 2)\n" out)
+        (close-output-port out))
+      (geiser-register-source-file! path)
+      (assert-equal (geiser-symbol-location 'geiser-refresh-a) #f)
+      (let ((loc (geiser-symbol-location 'geiser-refresh-b)))
+        (assert (pair? loc) "indexes refreshed source definition")
+        (assert-equal (cdr (assoc "file" loc)) path)
+        (assert-equal (cdr (assoc "line" loc)) 1)))))
+
+(test "geiser-register-source-tree follows literal relative loads"
+  (lambda ()
+    (let ((main ".tmp/geiser-tree-main.scm")
+          (lib ".tmp/geiser-tree-lib.scm"))
+      (let ((out (open-output-file lib)))
+        (display "(define geiser-tree-value 42)\n" out)
+        (close-output-port out))
+      (let ((out (open-output-file main)))
+        (display "(load \"geiser-tree-lib.scm\")\n" out)
+        (close-output-port out))
+      (set! *geiser-source-files* '())
+      (set! *geiser-source-index* (%make-hash-table))
+      (geiser-register-source-tree! main)
+      (let ((loc (geiser-symbol-location 'geiser-tree-value)))
+        (assert (pair? loc) "returns a location from a loaded file")
+        (assert-equal (cdr (assoc "file" loc)) lib)
+        (assert-equal (cdr (assoc "line" loc)) 1)))))
+
+) ;; end platform-has? guard

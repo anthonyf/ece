@@ -11,8 +11,8 @@
 
 ;; Geiser backend for the ECE Scheme implementation.  Supports eval at
 ;; point (C-x C-e), load file (C-c C-l), REPL buffer with clean output,
-;; symbol completions (C-M-i), and autodoc (eldoc-mode signature hints).
-;; No jump-to-def yet.
+;; symbol completions (C-M-i), autodoc (eldoc-mode signature hints), and
+;; source-definition lookup for registered files.
 ;;
 ;; Usage: add to your init.el:
 ;;   (load "/path/to/ece/emacs/geiser-ece.el")
@@ -38,6 +38,16 @@
 (require 'geiser-log)
 (require 'compile)
 (require 'comint)
+
+(declare-function geiser "geiser-repl" (impl))
+(declare-function geiser-mode "geiser-mode" (&optional arg))
+(declare-function geiser-edit-symbol-at-point "geiser-edit" (&optional arg))
+(declare-function geiser-pop-symbol-stack "geiser-edit" ())
+(declare-function geiser-doc-symbol-at-point "geiser-doc" (&optional arg))
+(declare-function geiser-repl--repl/impl "geiser-repl"
+                  (impl &optional proj repls))
+(declare-function geiser-repl--set-this-buffer-repl "geiser-repl"
+                  (r &optional this))
 
 ;;; Customization
 
@@ -235,7 +245,9 @@ In ECE's Geiser mode the REPL handles eval/load directly:
            (_module (car args)))
        (format "%s" form)))
     ((load-file compile-file)
-     (format "(load %S)" (car args)))
+     (format "(begin (geiser-register-source-tree! %S) (load %S))"
+             (car args)
+             (car args)))
     ((no-values)
      "(geiser-no-values)")
     (t
@@ -271,11 +283,18 @@ In ECE's Geiser mode the REPL handles eval/load directly:
 
 (defun geiser-ece--repl-buffer ()
   "Find the live ECE Geiser REPL buffer."
-  (cl-loop for buf in (buffer-list)
-           when (and (string-match-p "\\*Geiser Ece REPL\\*" (buffer-name buf))
-                     (get-buffer-process buf)
-                     (process-live-p (get-buffer-process buf)))
-           return buf))
+  (or (and (fboundp 'geiser-repl--repl/impl)
+           (let ((buf (ignore-errors (geiser-repl--repl/impl 'ece))))
+             (and (buffer-live-p buf)
+                  (get-buffer-process buf)
+                  (process-live-p (get-buffer-process buf))
+                  buf)))
+      (cl-loop for buf in (buffer-list)
+               when (and (string-match-p "\\*Geiser Ece REPL\\*"
+                                         (buffer-name buf))
+                         (get-buffer-process buf)
+                         (process-live-p (get-buffer-process buf)))
+               return buf)))
 
 (defun geiser-ece--sync-completions (prefix)
   "Query the ECE REPL for completions matching PREFIX."
@@ -428,6 +447,9 @@ and the legacy `eldoc-documentation-function' API."
 (defvar geiser-ece-dev--source-buffer nil
   "Buffer that started the current managed ece-serve process.")
 
+(defvar geiser-ece-dev--entry-file nil
+  "Current ece-serve entry source file, when known.")
+
 (defvar geiser-ece-dev--ready-callbacks nil
   "Functions to call once the current ece-serve settings are ready.")
 
@@ -437,8 +459,88 @@ and the legacy `eldoc-documentation-function' API."
     (define-key map (kbd "C-c C-z S") #'geiser-ece-dev-start-repl)
     (define-key map (kbd "C-c C-z o") #'geiser-ece-dev-open-browser)
     (define-key map (kbd "C-c C-z ?") #'geiser-ece-dev-status)
+    (define-key map (kbd "M-.") #'geiser-edit-symbol-at-point)
+    (define-key map (kbd "M-,") #'geiser-pop-symbol-stack)
+    (define-key map (kbd "C-c C-d C-d") #'geiser-doc-symbol-at-point)
     map)
   "Keymap for `geiser-ece-dev-repl-mode'.")
+
+(defun geiser-ece--live-geiser-repl-buffer (&optional source-buffer)
+  "Return the live Geiser ECE REPL for SOURCE-BUFFER's project."
+  (require 'geiser-repl)
+  (let ((context (or source-buffer (current-buffer))))
+    (when (buffer-live-p context)
+      (with-current-buffer context
+        (let ((buf (ignore-errors (geiser-repl--repl/impl 'ece))))
+          (and (buffer-live-p buf)
+               (get-buffer-process buf)
+               (process-live-p (get-buffer-process buf))
+               buf))))))
+
+(defun geiser-ece--ensure-geiser-repl (&optional source-buffer)
+  "Ensure SOURCE-BUFFER has a real Geiser ECE REPL."
+  (require 'geiser-repl)
+  (let ((context (or source-buffer (current-buffer))))
+    (when (buffer-live-p context)
+      (or (geiser-ece--live-geiser-repl-buffer context)
+          (condition-case err
+              (progn
+                (save-window-excursion
+                  (save-current-buffer
+                    (with-current-buffer context
+                      (geiser 'ece))))
+                (geiser-ece--live-geiser-repl-buffer context))
+            (error
+             (message "ECE dev could not start Geiser REPL: %s"
+                      (error-message-string err))
+             nil))))))
+
+(defun geiser-ece--associate-geiser-buffer (buffer &optional repl)
+  "Mark BUFFER as ECE Scheme and associate it with REPL."
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (setq-local geiser-scheme-implementation 'ece)
+      (geiser-impl--set-buffer-implementation 'ece)
+      (when (and repl (fboundp 'geiser-repl--set-this-buffer-repl))
+        (geiser-repl--set-this-buffer-repl repl buffer)))))
+
+(defun geiser-ece--register-source-tree (entry-file repl)
+  "Register ENTRY-FILE and its literal loads with the Geiser REPL."
+  (when (and entry-file (buffer-live-p repl))
+    (with-current-buffer repl
+      (ignore-errors
+        (geiser-eval--send/wait
+         (format "(geiser-register-source-tree! %S)"
+                 (expand-file-name entry-file))
+         3000)))))
+
+(defun geiser-ece--dev-integrate-geiser (&optional buffer entry-file)
+  "Enable normal Geiser metadata commands for BUFFER and ENTRY-FILE."
+  (let ((buffer (or buffer (current-buffer))))
+    (when (buffer-live-p buffer)
+      (require 'geiser-mode)
+      (require 'geiser-edit)
+      (require 'geiser-doc)
+      (let ((repl (geiser-ece--ensure-geiser-repl buffer)))
+        (geiser-ece--associate-geiser-buffer buffer repl)
+        (with-current-buffer buffer
+          (unless (bound-and-true-p geiser-mode)
+            (geiser-mode 1)))
+        (when repl
+          (geiser-ece--register-source-tree
+           (or entry-file buffer-file-name)
+           repl)
+          (let ((dev-repl (get-buffer geiser-ece-dev-repl-buffer)))
+            (when (buffer-live-p dev-repl)
+              (geiser-ece--associate-geiser-buffer dev-repl repl))))))))
+
+(defun geiser-ece--dev-schedule-geiser-integration (&optional buffer entry-file)
+  "Schedule Geiser integration for BUFFER outside process filters."
+  (when (buffer-live-p buffer)
+    (run-at-time 0 nil
+                 #'geiser-ece--dev-integrate-geiser
+                 buffer
+                 entry-file)))
 
 (defun geiser-ece--dev-run-ready-callbacks ()
   "Run and clear callbacks waiting for ece-serve startup."
@@ -550,6 +652,9 @@ and the legacy `eldoc-documentation-function' API."
     (when (buffer-live-p geiser-ece-dev--source-buffer)
       (with-current-buffer geiser-ece-dev--source-buffer
         (geiser-ece-dev-mode 1)))
+    (geiser-ece--dev-schedule-geiser-integration
+     geiser-ece-dev--source-buffer
+     geiser-ece-dev--entry-file)
     (geiser-ece--dev-run-ready-callbacks)
     (message "ECE dev server ready at %s" geiser-ece-dev-server-url)))
 
@@ -702,7 +807,12 @@ ask ece-serve to return the browser eval result/error JSON."
   "REPL mode for evaluating ECE forms in the browser through ece-serve."
   (setq-local comint-prompt-regexp "^ece-dev> ")
   (setq-local comint-input-sender #'geiser-ece--dev-repl-input-sender)
-  (setq-local comint-process-echoes nil))
+  (setq-local comint-process-echoes nil)
+  (geiser-ece--associate-geiser-buffer
+   (current-buffer)
+   (geiser-ece--live-geiser-repl-buffer geiser-ece-dev--source-buffer))
+  (geiser-ece--setup-completion)
+  (geiser-ece--setup-eldoc))
 
 (defun geiser-ece--dev-repl-process (buffer)
   "Create the backing process for browser dev REPL BUFFER."
@@ -925,7 +1035,12 @@ ask ece-serve to return the browser eval result/error JSON."
      (geiser-ece--dev-session-get session "port")))
   (setq geiser-ece-dev--server-ready t)
   (setq geiser-ece-dev--source-buffer (current-buffer))
-  (geiser-ece-dev-mode 1))
+  (setq geiser-ece-dev--entry-file
+        (geiser-ece--dev-session-get session "entry"))
+  (geiser-ece-dev-mode 1)
+  (geiser-ece--dev-schedule-geiser-integration
+   (current-buffer)
+   geiser-ece-dev--entry-file))
 
 (defun geiser-ece--dev-json-get (url)
   "GET URL and return its JSON response as an alist."
@@ -1018,6 +1133,13 @@ When TOKEN is non-nil, treat HOST as a full URL and configure manually."
       (progn
         (geiser-ece--dev-set-server-url (string-remove-suffix "/" host))
         (geiser-ece--dev-set-server-token token)
+        (setq geiser-ece-dev--server-ready t)
+        (setq geiser-ece-dev--source-buffer (current-buffer))
+        (setq geiser-ece-dev--entry-file buffer-file-name)
+        (geiser-ece-dev-mode 1)
+        (geiser-ece--dev-schedule-geiser-integration
+         (current-buffer)
+         geiser-ece-dev--entry-file)
         (message "ECE dev connected to %s" geiser-ece-dev-server-url))
     (let ((session (geiser-ece--dev-discover-session host port)))
       (geiser-ece--dev-apply-session session)
@@ -1107,6 +1229,7 @@ parsed from its startup output."
       (setq geiser-ece-dev--server-ready nil)
       (geiser-ece--dev-clear-ready-callbacks)
       (setq geiser-ece-dev--source-buffer (current-buffer))
+      (setq geiser-ece-dev--entry-file (expand-file-name entry-file))
       (with-current-buffer buffer
         (let ((inhibit-read-only t))
           (erase-buffer)
